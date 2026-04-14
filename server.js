@@ -18,38 +18,61 @@ app.post('/api/extract', async (req, res) => {
     const { image, mime } = req.body || {};
     if (!image) return res.status(400).json({ error: 'Missing image (base64) in body' });
 
-    const prompt = `You are extracting MLB pitcher prop bets from a screenshot of a spreadsheet. Return ONLY valid JSON, no prose.
+    const prompt = `You are extracting MLB pitcher prop bets from a screenshot of a spreadsheet. Return ONLY valid JSON, no prose, no markdown fences.
 
-The table has these columns in this order:
-league | date | time | game | market | bet_name | book | L | M | odds | limit | books_count | avg_odds | avg_fv | avg_hold | fbc | ev | qk
+The table header row contains these 18 columns in this left-to-right order:
+1=league  2=date  3=time  4=game  5=market  6=bet_name  7=book  8=L  9=M  10=odds  11=limit  12=books_count  13=avg_odds  14=avg_fv  15=avg_hold  16=fbc  17=ev  18=qk
 
-CRITICAL: You must extract the value from the "avg_fv" column ONLY.
+YOUR TASK: For each data row, return ONE JSON object with the pitcher, the normalized leg, and the value from column 14 (avg_fv) ONLY.
 
-Column distinctions (do NOT confuse these):
-- "odds" column contains TWO numbers separated by " / " (e.g. "-120 / -111") — this is the book's over/under price pair. IGNORE.
-- "avg_odds" column contains TWO numbers separated by " / " (e.g. "-128 / -105") — this is the market consensus over/under price pair. IGNORE.
-- "avg_fv" column contains ONE SINGLE signed integer (e.g. "-110" or "+152" or "+109"). THIS is the number you extract.
+═══ CRITICAL COLUMN DISAMBIGUATION ═══
+Three adjacent columns contain American odds. You MUST distinguish them:
 
-For each row, extract:
-- pitcher: the pitcher's name from bet_name (e.g. "Cole Ragans" from "Cole Ragans Over 6.5")
-- leg: the bet direction + line + market, normalized (see list below)
-- avg_fv: the ONE signed integer from the avg_fv column
+Column 10 "odds": a PAIR like "+109 / -145" or "-120 / -111" — IGNORE THIS COLUMN
+Column 13 "avg_odds": a PAIR like "-103 / -132" or "+128 / -183" — IGNORE THIS COLUMN
+Column 14 "avg_fv": a SINGLE signed integer like "+114" or "-110" or "+158" — EXTRACT THIS VALUE
 
-Normalize the leg to EXACTLY one of these canonical strings (preserve Over/Under exactly as shown in bet_name):
+The first two columns have a "/" character. The avg_fv column has NO slash. If you see a value containing "/", you are reading the wrong column.
+
+The avg_hold column (15) is a percentage like "7.0%" or "6.5%" — it is immediately to the right of avg_fv. Use that as a positional anchor: the signed integer IMMEDIATELY LEFT of the percentage column IS avg_fv.
+
+═══ ROW-BY-ROW REASONING ═══
+For each row, before emitting JSON, mentally verify:
+- Does the value I'm about to return have a "/" in it? If yes, STOP — I'm reading a pair column. Move one column right.
+- Does the value I'm about to return have a "%" in it? If yes, STOP — that's avg_hold. Move one column left.
+- The correct avg_fv should be a single signed integer with no slash, no percent.
+
+═══ EXTRACTION FIELDS ═══
+- pitcher: the player name from bet_name column (e.g., "Cole Ragans" from "Cole Ragans Over 6.5")
+- leg: normalized to canonical string (see list below) — preserve Over/Under from bet_name
+- avg_fv: the signed integer from column 14
+
+═══ CANONICAL LEG STRINGS ═══
 - Strikeouts: "Over 4.5 Strikeouts", "Over 5.5 Strikeouts", "Over 6.5 Strikeouts", "Over 7.5 Strikeouts", "Under 4.5 Strikeouts", "Under 5.5 Strikeouts", "Under 6.5 Strikeouts", "Under 7.5 Strikeouts"
-- Earned Runs: "Under 1.5 Earned Runs", "Under 2.5 Earned Runs", "Under 3.5 Earned Runs", "Over 1.5 Earned Runs", "Over 2.5 Earned Runs", "Over 3.5 Earned Runs"
-- Walks: "Under 1.5 Walks", "Under 2.5 Walks", "Under 3.5 Walks"
-- Hits Allowed: "Under 3.5 Hits Allowed", "Under 4.5 Hits Allowed", "Under 5.5 Hits Allowed", "Over 3.5 Hits Allowed", "Over 4.5 Hits Allowed", "Over 5.5 Hits Allowed"
-- Outs Recorded (market may say "Player Pitching Outs"): "Over 14.5 Outs Recorded", "Over 15.5 Outs Recorded", "Over 16.5 Outs Recorded", "Over 17.5 Outs Recorded", "Over 18.5 Outs Recorded", "Under 14.5 Outs Recorded", "Under 15.5 Outs Recorded", "Under 16.5 Outs Recorded", "Under 17.5 Outs Recorded", "Under 18.5 Outs Recorded"
+- Earned Runs: "Over 1.5 Earned Runs", "Over 2.5 Earned Runs", "Over 3.5 Earned Runs", "Under 1.5 Earned Runs", "Under 2.5 Earned Runs", "Under 3.5 Earned Runs"
+- Walks: "Over 1.5 Walks", "Over 2.5 Walks", "Over 3.5 Walks", "Under 1.5 Walks", "Under 2.5 Walks", "Under 3.5 Walks"
+- Hits Allowed: "Over 3.5 Hits Allowed", "Over 4.5 Hits Allowed", "Over 5.5 Hits Allowed", "Under 3.5 Hits Allowed", "Under 4.5 Hits Allowed", "Under 5.5 Hits Allowed"
+- Outs Recorded (market may read "Player Pitching Outs"): "Over 14.5 Outs Recorded", "Over 15.5 Outs Recorded", "Over 16.5 Outs Recorded", "Over 17.5 Outs Recorded", "Over 18.5 Outs Recorded", "Under 14.5 Outs Recorded", "Under 15.5 Outs Recorded", "Under 16.5 Outs Recorded", "Under 17.5 Outs Recorded", "Under 18.5 Outs Recorded"
 
-Example: if bet_name is "Cole Ragans Over 15.5" and the market is "Player Pitching Outs" and the avg_fv column shows "+152", return {"pitcher":"Cole Ragans","leg":"Over 15.5 Outs Recorded","avg_fv":152}. Do NOT return -176 or any number from the odds/avg_odds pair columns.
+═══ WORKED EXAMPLES (WRONG vs RIGHT) ═══
+Row: market="Player Pitching Outs", bet_name="Yoshinobu Yamamoto Over 18.5", odds="+136 / -182", avg_odds="+132 / -183", avg_fv="+158", avg_hold="7.2%"
+  WRONG: avg_fv=-182  (that came from odds column)
+  WRONG: avg_fv=-183  (that came from avg_odds column)
+  WRONG: avg_fv=-127  (that belongs to a different row entirely)
+  RIGHT: {"pitcher":"Yoshinobu Yamamoto","leg":"Over 18.5 Outs Recorded","avg_fv":158}
 
-Return this exact format:
-{"rows":[{"pitcher":"Cole Ragans","leg":"Over 15.5 Outs Recorded","avg_fv":152}, ...]}`;
+Row: market="Player Pitching Strikeouts", bet_name="Yoshinobu Yamamoto Over 6.5", odds="-108 / -118", avg_odds="-112 / -116", avg_fv="-102", avg_hold="6.8%"
+  WRONG: avg_fv=-118  (odds column pair, second value)
+  WRONG: avg_fv=-116  (avg_odds column pair, second value)
+  RIGHT: {"pitcher":"Yoshinobu Yamamoto","leg":"Over 6.5 Strikeouts","avg_fv":-102}
+
+═══ OUTPUT ═══
+Return exactly this JSON shape, nothing else:
+{"rows":[{"pitcher":"...","leg":"...","avg_fv":123}, ...]}`;
 
     const body = {
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 2000,
+      model: 'claude-opus-4-5',
+      max_tokens: 4000,
       messages: [{
         role: 'user',
         content: [
