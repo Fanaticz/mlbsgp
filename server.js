@@ -76,4 +76,4 @@ Return format:
 
 app.get('/healthz', (_req, res) => res.send('ok'));
 
-app.listen(PORT, () => console.log('Listening on ' + PORT));
+app.listen(PORT, '0.0.0.0', () => console.log('Listening on 0.0.0.0:' + PORT));
