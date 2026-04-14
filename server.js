@@ -18,21 +18,34 @@ app.post('/api/extract', async (req, res) => {
     const { image, mime } = req.body || {};
     if (!image) return res.status(400).json({ error: 'Missing image (base64) in body' });
 
-    const prompt = `You are extracting MLB pitcher prop bets from a screenshot. Return ONLY valid JSON, no prose.
+    const prompt = `You are extracting MLB pitcher prop bets from a screenshot of a spreadsheet. Return ONLY valid JSON, no prose.
 
-For each row, extract: the pitcher name, the bet (Over/Under + line + stat), and the avg_fv value (American odds number, may be positive or negative, integer).
+The table has these columns in this order:
+league | date | time | game | market | bet_name | book | L | M | odds | limit | books_count | avg_odds | avg_fv | avg_hold | fbc | ev | qk
 
-Normalize the bet to EXACTLY one of these canonical leg strings (match stat type):
+CRITICAL: You must extract the value from the "avg_fv" column ONLY.
+
+Column distinctions (do NOT confuse these):
+- "odds" column contains TWO numbers separated by " / " (e.g. "-120 / -111") — this is the book's over/under price pair. IGNORE.
+- "avg_odds" column contains TWO numbers separated by " / " (e.g. "-128 / -105") — this is the market consensus over/under price pair. IGNORE.
+- "avg_fv" column contains ONE SINGLE signed integer (e.g. "-110" or "+152" or "+109"). THIS is the number you extract.
+
+For each row, extract:
+- pitcher: the pitcher's name from bet_name (e.g. "Cole Ragans" from "Cole Ragans Over 6.5")
+- leg: the bet direction + line + market, normalized (see list below)
+- avg_fv: the ONE signed integer from the avg_fv column
+
+Normalize the leg to EXACTLY one of these canonical strings (preserve Over/Under exactly as shown in bet_name):
 - Strikeouts: "Over 4.5 Strikeouts", "Over 5.5 Strikeouts", "Over 6.5 Strikeouts", "Over 7.5 Strikeouts", "Under 4.5 Strikeouts", "Under 5.5 Strikeouts", "Under 6.5 Strikeouts", "Under 7.5 Strikeouts"
 - Earned Runs: "Under 1.5 Earned Runs", "Under 2.5 Earned Runs", "Under 3.5 Earned Runs", "Over 1.5 Earned Runs", "Over 2.5 Earned Runs", "Over 3.5 Earned Runs"
 - Walks: "Under 1.5 Walks", "Under 2.5 Walks", "Under 3.5 Walks"
 - Hits Allowed: "Under 3.5 Hits Allowed", "Under 4.5 Hits Allowed", "Under 5.5 Hits Allowed", "Over 3.5 Hits Allowed", "Over 4.5 Hits Allowed", "Over 5.5 Hits Allowed"
-- Outs Recorded (includes Pitching Outs): "Over 14.5 Outs Recorded", "Over 15.5 Outs Recorded", "Over 16.5 Outs Recorded", "Over 17.5 Outs Recorded", "Over 18.5 Outs Recorded", "Under 14.5 Outs Recorded", "Under 15.5 Outs Recorded", "Under 16.5 Outs Recorded", "Under 17.5 Outs Recorded", "Under 18.5 Outs Recorded"
+- Outs Recorded (market may say "Player Pitching Outs"): "Over 14.5 Outs Recorded", "Over 15.5 Outs Recorded", "Over 16.5 Outs Recorded", "Over 17.5 Outs Recorded", "Over 18.5 Outs Recorded", "Under 14.5 Outs Recorded", "Under 15.5 Outs Recorded", "Under 16.5 Outs Recorded", "Under 17.5 Outs Recorded", "Under 18.5 Outs Recorded"
 
-The column "avg_fv" is the target number. It may show "+109" or "-145". Return as signed integer (109 or -145).
+Example: if bet_name is "Cole Ragans Over 15.5" and the market is "Player Pitching Outs" and the avg_fv column shows "+152", return {"pitcher":"Cole Ragans","leg":"Over 15.5 Outs Recorded","avg_fv":152}. Do NOT return -176 or any number from the odds/avg_odds pair columns.
 
-Return format:
-{"rows":[{"pitcher":"Cole Ragans","leg":"Under 3.5 Hits Allowed","avg_fv":109}, ...]}`;
+Return this exact format:
+{"rows":[{"pitcher":"Cole Ragans","leg":"Over 15.5 Outs Recorded","avg_fv":152}, ...]}`;
 
     const body = {
       model: 'claude-sonnet-4-5-20250929',
