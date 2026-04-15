@@ -44,8 +44,11 @@ For each row, before emitting JSON, mentally verify:
 
 ═══ EXTRACTION FIELDS ═══
 - pitcher: the player name from bet_name column (e.g., "Cole Ragans" from "Cole Ragans Over 6.5")
-- leg: normalized to canonical string (see list below) — preserve Over/Under from bet_name
+- leg: normalized to canonical string (see list below) — the Over/Under comes ONLY from the bet_name column (column 6), never from the market column. The market column (column 5) always says things like "Player Pitching Strikeouts" with no direction — ignore it for direction. Read "Over" or "Under" verbatim from the bet_name text.
 - avg_fv: the signed integer from column 14
+
+═══ OVER vs UNDER — CRITICAL ═══
+Each pitcher will often have BOTH an Over row and an Under row for the same line (e.g., "Jesus Luzardo Over 2.5" and "Jesus Luzardo Under 2.5"). These are TWO different bets. Read the word "Over" or "Under" directly from the bet_name column for each row independently. Never infer direction from the avg_fv sign or from a neighbouring row.
 
 ═══ CANONICAL LEG STRINGS ═══
 - Strikeouts: "Over 4.5 Strikeouts", "Over 5.5 Strikeouts", "Over 6.5 Strikeouts", "Over 7.5 Strikeouts", "Under 4.5 Strikeouts", "Under 5.5 Strikeouts", "Under 6.5 Strikeouts", "Under 7.5 Strikeouts"
