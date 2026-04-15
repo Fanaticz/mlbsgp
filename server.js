@@ -15,11 +15,11 @@ app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1h' }));
 // leg string here so the model can't mis-pair stat-type with line value.
 const STAT_FROM_MARKET = [
   // order matters: check more specific first
-  { re: /strikeout/i,             stat: 'Strikeouts',    valid: [4.5, 5.5, 6.5, 7.5] },
-  { re: /earned\s*run/i,          stat: 'Earned Runs',   valid: [1.5, 2.5, 3.5] },
-  { re: /walk/i,                  stat: 'Walks',         valid: [1.5, 2.5, 3.5] },
-  { re: /hits?\s*allowed|hits?$/i,stat: 'Hits Allowed',  valid: [3.5, 4.5, 5.5] },
-  { re: /out/i,                   stat: 'Outs Recorded', valid: [14.5, 15.5, 16.5, 17.5, 18.5] },
+  { re: /strikeout/i,             stat: 'Strikeouts'    },
+  { re: /earned\s*run/i,          stat: 'Earned Runs'   },
+  { re: /walk/i,                  stat: 'Walks'         },
+  { re: /hits?\s*allowed|hits?$/i,stat: 'Hits Allowed'  },
+  { re: /out/i,                   stat: 'Outs Recorded' },
 ];
 
 function normalizeLeg(market, betName) {
@@ -31,10 +31,14 @@ function normalizeLeg(market, betName) {
   if (!isFinite(line)) return null;
   const hit = STAT_FROM_MARKET.find(s => s.re.test(market));
   if (!hit) return null;
-  // Drop legs whose line value can't possibly belong to this stat type —
-  // those are almost always a cross-row OCR mistake.
-  if (!hit.valid.includes(line)) return null;
-  return `${direction} ${line} ${hit.stat}`;
+  let stat = hit.stat;
+  // Cross-row OCR recovery: lines >= 8.5 are unambiguously Outs Recorded —
+  // if the market disagrees, the market cell came from a different row.
+  if (line >= 8.5) stat = 'Outs Recorded';
+  // Inverse: lines < 8.5 are never Outs Recorded — if the market said Outs
+  // we have no way to recover the true stat type, so drop the row.
+  else if (stat === 'Outs Recorded') return null;
+  return `${direction} ${line} ${stat}`;
 }
 
 function normalizeRows(rows) {
