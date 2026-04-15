@@ -10,6 +10,60 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json({ limit: '25mb' }));
 app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1h' }));
 
+// ===== Deterministic leg normalization =====
+// The model returns raw cells (market, bet_name, avg_fv). We build the canonical
+// leg string here so the model can't mis-pair stat-type with line value.
+const STAT_FROM_MARKET = [
+  // order matters: check more specific first
+  { re: /strikeout/i,             stat: 'Strikeouts',    valid: [4.5, 5.5, 6.5, 7.5] },
+  { re: /earned\s*run/i,          stat: 'Earned Runs',   valid: [1.5, 2.5, 3.5] },
+  { re: /walk/i,                  stat: 'Walks',         valid: [1.5, 2.5, 3.5] },
+  { re: /hits?\s*allowed|hits?$/i,stat: 'Hits Allowed',  valid: [3.5, 4.5, 5.5] },
+  { re: /out/i,                   stat: 'Outs Recorded', valid: [14.5, 15.5, 16.5, 17.5, 18.5] },
+];
+
+function normalizeLeg(market, betName) {
+  if (!market || !betName) return null;
+  const m = String(betName).match(/\b(Over|Under)\s+(\d+(?:\.\d+)?)/i);
+  if (!m) return null;
+  const direction = m[1][0].toUpperCase() + m[1].slice(1).toLowerCase();
+  const line = parseFloat(m[2]);
+  if (!isFinite(line)) return null;
+  const hit = STAT_FROM_MARKET.find(s => s.re.test(market));
+  if (!hit) return null;
+  // Drop legs whose line value can't possibly belong to this stat type —
+  // those are almost always a cross-row OCR mistake.
+  if (!hit.valid.includes(line)) return null;
+  return `${direction} ${line} ${hit.stat}`;
+}
+
+function normalizeRows(rows) {
+  if (!Array.isArray(rows)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const r of rows) {
+    if (!r || typeof r !== 'object') continue;
+    // Backwards-compat: if the model still returned a pre-normalized "leg",
+    // accept it as-is when no market/bet_name is present.
+    let leg = null;
+    if (r.market && r.bet_name) {
+      leg = normalizeLeg(r.market, r.bet_name);
+    } else if (typeof r.leg === 'string') {
+      leg = r.leg;
+    }
+    if (!leg) continue;
+    const pitcher = (r.pitcher || '').trim();
+    if (!pitcher) continue;
+    const fv = Number(r.avg_fv);
+    if (!isFinite(fv)) continue;
+    const key = pitcher + '|' + leg;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ pitcher, leg, avg_fv: fv });
+  }
+  return out;
+}
+
 app.post('/api/extract', async (req, res) => {
   try {
     const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -23,9 +77,22 @@ app.post('/api/extract', async (req, res) => {
 The table header row contains these 18 columns in this left-to-right order:
 1=league  2=date  3=time  4=game  5=market  6=bet_name  7=book  8=L  9=M  10=odds  11=limit  12=books_count  13=avg_odds  14=avg_fv  15=avg_hold  16=fbc  17=ev  18=qk
 
-YOUR TASK: For each data row, return ONE JSON object with the pitcher, the normalized leg, and the value from column 14 (avg_fv) ONLY.
+YOUR TASK: For each data row, return ONE JSON object with FOUR raw cell values copied verbatim from that single row. Do NOT normalize, do NOT combine columns, do NOT infer values from other rows. Each row of JSON must come from exactly ONE row of the table.
 
-═══ CRITICAL COLUMN DISAMBIGUATION ═══
+═══ FIELDS TO RETURN (raw, per row) ═══
+- pitcher: the player name (everything in bet_name BEFORE the word "Over" or "Under")
+- market: the EXACT text from column 5 ("market"), verbatim. Examples: "Player Pitching Strikeouts", "Player Pitching Earned Runs Allowed", "Player Pitching Walks", "Player Pitching Hits Allowed", "Player Pitching Outs"
+- bet_name: the EXACT text from column 6 ("bet_name"), verbatim. Examples: "Emerson Hancock Over 15.5", "Clay Holmes Under 2.5"
+- avg_fv: the SIGNED INTEGER from column 14 ("avg_fv")
+
+═══ ROW DISCIPLINE — THE #1 SOURCE OF BUGS ═══
+The market and bet_name MUST come from the SAME row as the avg_fv. Use the row number (column 8 "L", a small integer like 1,2,3,...) as a positional anchor. Before emitting JSON for a row, ask:
+- "Am I reading market, bet_name, and avg_fv all from the row whose L = X?"
+If you cannot answer YES with the same X, you have crossed rows — re-align before emitting.
+
+DO NOT cross rows. DO NOT pair the market from one row with the bet_name from another. The most common mistake is taking bet_name "Over 4.5" from a Strikeouts row and pairing it with "Earned Runs Allowed" market from a different row, or vice versa.
+
+═══ CRITICAL COLUMN DISAMBIGUATION FOR avg_fv ═══
 Three adjacent columns contain American odds. You MUST distinguish them:
 
 Column 10 "odds": a PAIR like "+109 / -145" or "-120 / -111" — IGNORE THIS COLUMN
@@ -36,42 +103,21 @@ The first two columns have a "/" character. The avg_fv column has NO slash. If y
 
 The avg_hold column (15) is a percentage like "7.0%" or "6.5%" — it is immediately to the right of avg_fv. Use that as a positional anchor: the signed integer IMMEDIATELY LEFT of the percentage column IS avg_fv.
 
-═══ ROW-BY-ROW REASONING ═══
-For each row, before emitting JSON, mentally verify:
-- Does the value I'm about to return have a "/" in it? If yes, STOP — I'm reading a pair column. Move one column right.
-- Does the value I'm about to return have a "%" in it? If yes, STOP — that's avg_hold. Move one column left.
-- The correct avg_fv should be a single signed integer with no slash, no percent.
-
-═══ EXTRACTION FIELDS ═══
-- pitcher: the player name from bet_name column (e.g., "Cole Ragans" from "Cole Ragans Over 6.5")
-- leg: normalized to canonical string (see list below) — the Over/Under comes ONLY from the bet_name column (column 6), never from the market column. The market column (column 5) always says things like "Player Pitching Strikeouts" with no direction — ignore it for direction. Read "Over" or "Under" verbatim from the bet_name text.
-- avg_fv: the signed integer from column 14
-
 ═══ OVER vs UNDER — CRITICAL ═══
 Each pitcher will often have BOTH an Over row and an Under row for the same line (e.g., "Jesus Luzardo Over 2.5" and "Jesus Luzardo Under 2.5"). These are TWO different bets. Read the word "Over" or "Under" directly from the bet_name column for each row independently. Never infer direction from the avg_fv sign or from a neighbouring row.
 
-═══ CANONICAL LEG STRINGS ═══
-- Strikeouts: "Over 4.5 Strikeouts", "Over 5.5 Strikeouts", "Over 6.5 Strikeouts", "Over 7.5 Strikeouts", "Under 4.5 Strikeouts", "Under 5.5 Strikeouts", "Under 6.5 Strikeouts", "Under 7.5 Strikeouts"
-- Earned Runs: "Over 1.5 Earned Runs", "Over 2.5 Earned Runs", "Over 3.5 Earned Runs", "Under 1.5 Earned Runs", "Under 2.5 Earned Runs", "Under 3.5 Earned Runs"
-- Walks: "Over 1.5 Walks", "Over 2.5 Walks", "Over 3.5 Walks", "Under 1.5 Walks", "Under 2.5 Walks", "Under 3.5 Walks"
-- Hits Allowed: "Over 3.5 Hits Allowed", "Over 4.5 Hits Allowed", "Over 5.5 Hits Allowed", "Under 3.5 Hits Allowed", "Under 4.5 Hits Allowed", "Under 5.5 Hits Allowed"
-- Outs Recorded (market may read "Player Pitching Outs"): "Over 14.5 Outs Recorded", "Over 15.5 Outs Recorded", "Over 16.5 Outs Recorded", "Over 17.5 Outs Recorded", "Over 18.5 Outs Recorded", "Under 14.5 Outs Recorded", "Under 15.5 Outs Recorded", "Under 16.5 Outs Recorded", "Under 17.5 Outs Recorded", "Under 18.5 Outs Recorded"
+═══ WORKED EXAMPLES ═══
+Table row: L=15, market="Player Pitching Outs", bet_name="Emerson Hancock Over 15.5", odds="-352 / +267", avg_odds="-436 / +287", avg_fv="-298", avg_hold="7.9%"
+  RIGHT: {"pitcher":"Emerson Hancock","market":"Player Pitching Outs","bet_name":"Emerson Hancock Over 15.5","avg_fv":-298}
+  WRONG: {"pitcher":"Emerson Hancock","market":"Player Pitching Earned Runs Allowed","bet_name":"Emerson Hancock Over 2.5","avg_fv":-298}  (market and bet_name pulled from a DIFFERENT row)
 
-═══ WORKED EXAMPLES (WRONG vs RIGHT) ═══
-Row: market="Player Pitching Outs", bet_name="Yoshinobu Yamamoto Over 18.5", odds="+136 / -182", avg_odds="+132 / -183", avg_fv="+158", avg_hold="7.2%"
-  WRONG: avg_fv=-182  (that came from odds column)
-  WRONG: avg_fv=-183  (that came from avg_odds column)
-  WRONG: avg_fv=-127  (that belongs to a different row entirely)
-  RIGHT: {"pitcher":"Yoshinobu Yamamoto","leg":"Over 18.5 Outs Recorded","avg_fv":158}
-
-Row: market="Player Pitching Strikeouts", bet_name="Yoshinobu Yamamoto Over 6.5", odds="-108 / -118", avg_odds="-112 / -116", avg_fv="-102", avg_hold="6.8%"
-  WRONG: avg_fv=-118  (odds column pair, second value)
-  WRONG: avg_fv=-116  (avg_odds column pair, second value)
-  RIGHT: {"pitcher":"Yoshinobu Yamamoto","leg":"Over 6.5 Strikeouts","avg_fv":-102}
+Table row: L=24, market="Player Pitching Earned Runs Allowed", bet_name="Emerson Hancock Over 4.5", odds="+168 / nan", avg_odds="+150 / -209", avg_fv="+181", avg_hold="7.1%"
+  RIGHT: {"pitcher":"Emerson Hancock","market":"Player Pitching Earned Runs Allowed","bet_name":"Emerson Hancock Over 4.5","avg_fv":181}
+  WRONG: {"pitcher":"Emerson Hancock","market":"Player Pitching Strikeouts","bet_name":"Emerson Hancock Over 4.5","avg_fv":181}  (market crossed from a different row)
 
 ═══ OUTPUT ═══
 Return exactly this JSON shape, nothing else:
-{"rows":[{"pitcher":"...","leg":"...","avg_fv":123}, ...]}`;
+{"rows":[{"pitcher":"...","market":"...","bet_name":"...","avg_fv":123}, ...]}`;
 
     const body = {
       model: 'claude-opus-4-5',
@@ -104,7 +150,8 @@ Return exactly this JSON shape, nothing else:
 
     try {
       const parsed = JSON.parse(m[0]);
-      return res.json(parsed);
+      const rows = normalizeRows(parsed.rows);
+      return res.json({ rows });
     } catch (e) {
       return res.status(500).json({ error: 'JSON parse error: ' + e.message, raw: m[0] });
     }
