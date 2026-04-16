@@ -160,6 +160,39 @@ Return exactly this JSON shape, nothing else:
   }
 });
 
+// ===== SGP AI Insight =====
+app.post('/api/sgp-insight', async (req, res) => {
+  try {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not set on server' });
+
+    const { prompt } = req.body || {};
+    if (!prompt) return res.status(400).json({ error: 'Missing prompt in body' });
+
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 512,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+
+    const j = await r.json();
+    if (j.error) return res.status(500).json({ error: j.error.message || 'Anthropic API error' });
+
+    const text = (j.content && j.content[0] && j.content[0].text) || '';
+    return res.json({ text });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
 // ===== DraftKings SGP API proxy =====
 // Uses a Python helper (dk_api.py) with curl_cffi for Chrome TLS impersonation
 // to bypass DraftKings Akamai bot protection. Node.js fetch gets 403'd.
