@@ -14,6 +14,9 @@ Usage:
 import sys
 import json
 import re
+import random
+import threading
+import time as _time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from curl_cffi import requests as cffi_requests
 
@@ -23,34 +26,72 @@ DK_MARKETS = "https://sportsbook-nash.draftkings.com/sites/US-SB/api/sportsconte
 DK_SGP = "https://sportsbook-nash.draftkings.com/sites/US-SB/api/sportscontent/parlays/v1/sgp/events"
 DK_PRICE = "https://gaming-us-nj.draftkings.com/api/wager/v1/calculateBets"
 
-session = cffi_requests.Session(impersonate="chrome")
+# Rotate TLS fingerprints so Akamai can't pin a single one as "bot" and 403
+# every subcategory request for the remainder of the subprocess.
+_IMPERSONATES = ["chrome", "chrome120", "chrome116", "chrome110", "chrome107",
+                 "chrome101", "edge101", "edge99", "safari17_2_ios"]
+
+_session_lock = threading.Lock()
+session = cffi_requests.Session(impersonate=random.choice(_IMPERSONATES))
+
+# Throttle gate: once DK returns a 403 we pause all threads for a cool-off.
+# Without this, every in-flight request races into the Akamai block and the
+# retry budget burns out in a fraction of a second.
+_cooloff_until = 0.0
 
 
-def _get_with_retry(url, params=None, timeout=15, attempts=4):
-    """GET with exponential backoff on Akamai rate limits (429/5xx).
+def _rotate_session():
+    global session
+    with _session_lock:
+        session = cffi_requests.Session(impersonate=random.choice(_IMPERSONATES))
+
+
+def _trigger_cooloff(seconds):
+    global _cooloff_until
+    target = _time.time() + seconds
+    if target > _cooloff_until:
+        _cooloff_until = target
+
+
+def _wait_for_cooloff():
+    now = _time.time()
+    if _cooloff_until > now:
+        _time.sleep(_cooloff_until - now + random.uniform(0, 0.25))
+
+
+def _get_with_retry(url, params=None, timeout=15, attempts=6):
+    """GET with exponential backoff + session rotation on Akamai blocks.
 
     DK rate-limits aggressively once we fan out across ~100 subcategory
-    fetches; the games and event endpoints get collateral damage. Raising on
-    the first 403/503 used to kill the whole subprocess (exit code 1), which
-    surfaced to the frontend as "DK find-sgps failed: dk_api.py exited with
-    code 1". Retry transient failures before giving up."""
-    import time as _time
+    fetches; once Akamai 403s one request it will 403 the rest in flight. Before
+    giving up we:
+      - rotate the curl_cffi TLS impersonation profile (new fingerprint)
+      - hold a global cool-off so parallel threads don't burn their retry budget
+        hammering the block
+      - back off with jitter."""
     last_exc = None
     last_status = None
     for attempt in range(attempts):
+        _wait_for_cooloff()
         try:
-            r = session.get(url, params=params, timeout=timeout)
+            sess = session
+            r = sess.get(url, params=params, timeout=timeout)
             last_status = r.status_code
             if r.status_code == 200:
                 return r
             if r.status_code in (403, 429, 502, 503, 504):
-                _time.sleep(0.4 * (2 ** attempt))
+                # 403 = Akamai bot block — longer cool-off + session rotation.
+                if r.status_code in (403, 429):
+                    _trigger_cooloff(1.5 + attempt * 1.2)
+                    if attempt >= 1:
+                        _rotate_session()
+                _time.sleep(0.6 * (2 ** attempt) + random.uniform(0, 0.4))
                 continue
             # Any other non-200 is unrecoverable
             r.raise_for_status()
         except Exception as e:
             last_exc = e
-            _time.sleep(0.4 * (2 ** attempt))
+            _time.sleep(0.6 * (2 ** attempt) + random.uniform(0, 0.4))
             continue
     if last_exc:
         raise last_exc
@@ -149,10 +190,11 @@ def get_markets(event_id):
     all_selections = []
     sel_by_mkt = {}
 
-    # max_workers=4 (was 8): higher parallelism was driving DK's Akamai into
-    # rate limiting, which meant even with retries we were taking longer than
-    # running fewer concurrent requests upfront.
-    with ThreadPoolExecutor(max_workers=4) as ex:
+    # max_workers=2 (was 4, originally 8): Akamai 403's once it detects a burst
+    # against the subcategory endpoint, and a single 403 cascades — every
+    # in-flight request trips the same block. Keeping concurrency low here is
+    # measurably faster end-to-end than retrying through a block.
+    with ThreadPoolExecutor(max_workers=2) as ex:
         futures = [ex.submit(_fetch_subcategory, event_id, sc) for sc in subcats]
         for fut in as_completed(futures):
             try:
@@ -531,7 +573,10 @@ def find_sgps(legs):
         except Exception:
             return eid, None
 
-    with ThreadPoolExecutor(max_workers=6) as ex:
+    # max_workers=2: each per-event scan itself fans out 2 subcat workers, so
+    # effective concurrency against DK is 4. Anything higher triggers Akamai's
+    # 403 cascade and the whole find-sgps call ends up retrying through a block.
+    with ThreadPoolExecutor(max_workers=2) as ex:
         futs = {ex.submit(scan, e["id"]): e["id"] for e in events[:15]}
         for fut in as_completed(futs):
             eid, md = fut.result()
