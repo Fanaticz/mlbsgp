@@ -5,13 +5,16 @@ Uses curl_cffi with Chrome TLS impersonation to bypass Akamai bot protection.
 Called from Node.js server via subprocess.
 
 Usage:
-  python3 dk_api.py games                  # Get today's MLB games
-  python3 dk_api.py markets <eventId>      # Get pitcher prop markets for a game
-  python3 dk_api.py price <sel1> <sel2> .. # Get SGP price for selections
+  python3 dk_api.py games                       # Get today's MLB games
+  python3 dk_api.py markets <eventId>           # Get markets for a game (scoped)
+  python3 dk_api.py featured <eventId>          # Auto-build + price SGPs for game
+  python3 dk_api.py price                       # Price SGP (selections via stdin JSON)
 """
 
 import sys
 import json
+import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from curl_cffi import requests as cffi_requests
 
 DK_MLB_LEAGUE_ID = "84240"
@@ -42,6 +45,8 @@ def get_games():
             "awayTeam": away.get("name", e.get("teamName1", "")),
             "homeShort": home.get("metadata", {}).get("shortName", e.get("teamShortName2", "")),
             "awayShort": away.get("metadata", {}).get("shortName", e.get("teamShortName1", "")),
+            "homeStarterId": home.get("metadata", {}).get("startingPitcherPlayerId", ""),
+            "awayStarterId": away.get("metadata", {}).get("startingPitcherPlayerId", ""),
             "hasSGP": "SGP" in tags,
             "isLive": e.get("isLive", False),
             "status": e.get("status", ""),
@@ -50,8 +55,52 @@ def get_games():
     return {"events": out}
 
 
+def _extract_player_name(market_name, market_type, subcat_name):
+    """Strip market type/subcategory suffix from the market name to get the player name."""
+    name = market_name
+    for suffix in [market_type, subcat_name]:
+        if not suffix:
+            continue
+        for pat in [suffix, suffix.replace(" O/U", ""), suffix.replace(" Milestones", "")]:
+            if pat and name.lower().endswith(pat.lower()):
+                name = name[:-len(pat)].strip()
+                break
+    # Fallback: split on known stat keywords
+    if name == market_name:
+        for kw in ["Strikeouts", "Earned Runs", "Walks", "Hits Allowed",
+                    "Pitching Outs", "Total Bases", "Home Runs", "RBIs",
+                    "Hits", "Runs", "Singles", "Doubles", "Stolen Bases"]:
+            idx = market_name.find(kw)
+            if idx > 0:
+                name = market_name[:idx].strip()
+                break
+    return name
+
+
+def _fetch_subcategory(event_id, sc):
+    """Fetch one subcategory worth of markets, scoped to this event."""
+    r = session.get(DK_MARKETS, params={
+        "isBatchable": "false",
+        "templateVars": event_id,
+        "marketsQuery": f"$filter=clientMetadata/subCategoryId eq '{sc['id']}'",
+        "entity": "markets",
+    }, timeout=10)
+    if r.status_code != 200:
+        return [], []
+    d = r.json()
+    # Client-side filter by eventId — the DK API doesn't filter server-side even
+    # though it's called "eventSubcategory". Returns markets from other games too.
+    mkts = [m for m in d.get("markets", []) if m.get("eventId") == event_id]
+    for m in mkts:
+        m["_subCategoryName"] = sc.get("name", "")
+        m["_subCategoryId"] = sc.get("id", "")
+    kept_mids = {m.get("id", "") for m in mkts}
+    sels = [s for s in d.get("selections", []) if s.get("marketId", "") in kept_mids]
+    return mkts, sels
+
+
 def get_markets(event_id):
-    """Return pitcher prop markets and all SGP-eligible markets for an event."""
+    """Return all markets and selections for an event, scoped properly to that event."""
     # Step 1: Get event metadata (subcategories + market groups)
     r0 = session.get(f"{DK_SGP}/{event_id}", timeout=15)
     r0.raise_for_status()
@@ -59,36 +108,23 @@ def get_markets(event_id):
     subcats = evt.get("clientMetadata", {}).get("subCategories", [])
     market_groups = evt.get("marketGroups", [])
 
-    # Step 2: Fetch markets for each subcategory
+    # Step 2: Fetch markets for each subcategory in parallel
     all_markets = []
     all_selections = []
     sel_by_mkt = {}
 
-    for sc in subcats:
-        try:
-            r = session.get(DK_MARKETS, params={
-                "isBatchable": "false",
-                "templateVars": event_id,
-                "marketsQuery": f"$filter=clientMetadata/subCategoryId eq '{sc['id']}'",
-                "entity": "markets",
-            }, timeout=10)
-            if r.status_code != 200:
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        futures = [ex.submit(_fetch_subcategory, event_id, sc) for sc in subcats]
+        for fut in as_completed(futures):
+            try:
+                mkts, sels = fut.result()
+            except Exception:
                 continue
-            d = r.json()
-            mkts = d.get("markets", [])
-            sels = d.get("selections", [])
-            for m in mkts:
-                m["_subCategoryName"] = sc.get("name", "")
-                m["_subCategoryId"] = sc.get("id", "")
             all_markets.extend(mkts)
             all_selections.extend(sels)
             for s in sels:
                 mid = s.get("marketId", "")
-                if mid not in sel_by_mkt:
-                    sel_by_mkt[mid] = []
-                sel_by_mkt[mid].append(s)
-        except Exception:
-            continue
+                sel_by_mkt.setdefault(mid, []).append(s)
 
     # Step 3: Build structured output
     pitcher_keywords = {"strikeout", "earned run", "walk", "hits allowed", "pitching out",
@@ -101,36 +137,12 @@ def get_markets(event_id):
         m_sels = sel_by_mkt.get(mid, [])
 
         is_pitcher = any(kw in mname.lower() or kw in mtype.lower() for kw in pitcher_keywords)
-
-        # Extract player name from market name by removing market type suffix
-        # e.g. "Kris Bubic Strikeouts Thrown O/U" -> "Kris Bubic"
-        player_name = mname
-        for suffix in [mtype, m.get("_subCategoryName", "")]:
-            if suffix and player_name.endswith(suffix):
-                player_name = player_name[:-len(suffix)].strip()
-            elif suffix:
-                # Try removing common suffix patterns
-                for pat in [suffix, suffix.replace(" O/U", ""), suffix.replace(" Milestones", "")]:
-                    if pat and player_name.lower().endswith(pat.lower()):
-                        player_name = player_name[:-len(pat)].strip()
-                        break
-        # Fallback: split on known stat keywords
-        if player_name == mname:
-            for kw in ["Strikeouts", "Earned Runs", "Walks", "Hits Allowed",
-                        "Pitching Outs", "Total Bases", "Home Runs", "RBIs",
-                        "Hits", "Runs", "Singles", "Doubles", "Stolen Bases"]:
-                idx = mname.find(kw)
-                if idx > 0:
-                    player_name = mname[:idx].strip()
-                    break
+        player_name = _extract_player_name(mname, mtype, m.get("_subCategoryName", ""))
 
         for s in m_sels:
-            # Selection data from this endpoint uses 'label' and 'outcomeType'
             outcome_type = s.get("outcomeType", s.get("name", ""))
             points = s.get("points")
             display = f"{outcome_type} {points}" if points is not None else outcome_type
-
-            # Also check for players array (present in SGP endpoint but not subcategory endpoint)
             sel_players = s.get("players", [])
             pname = sel_players[0].get("name", "") if sel_players else player_name
 
@@ -159,6 +171,162 @@ def get_markets(event_id):
     }
 
 
+def _american_from_decimal(dec):
+    if not dec or dec <= 1:
+        return ""
+    if dec >= 2:
+        return f"+{round((dec - 1) * 100)}"
+    return f"{round(-100 / (dec - 1))}"
+
+
+def _price_combo(selection_ids):
+    """Call calculateBets for a list of selection IDs. Returns None on incompat/error."""
+    try:
+        payload = {
+            "selections": [],
+            "selectionsForYourBet": [{"id": sid, "yourBetGroup": 0} for sid in selection_ids],
+            "selectionsForCombinator": [],
+            "selectionsForProgressiveParlay": [],
+            "oddsStyle": "american",
+        }
+        r = session.post(DK_PRICE, json=payload, timeout=10)
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        if data.get("combinabilityRestrictions"):
+            return None
+        bet = next((b for b in data.get("bets", [])
+                   if b.get("trueOdds") and len(b.get("selectionsMapped", [])) >= 2), None)
+        if not bet:
+            return None
+        return {
+            "sgpOdds": bet.get("displayOdds", ""),
+            "sgpDecimal": bet.get("trueOdds"),
+            "legInfo": data.get("selectionsForYourBet", []),
+        }
+    except Exception:
+        return None
+
+
+def get_featured(event_id):
+    """Auto-build and price a handful of interesting SGPs for the game."""
+    mkts_data = get_markets(event_id)
+    props = mkts_data["props"]
+
+    # Group props by player (only Over/Under O/U markets on pitcher props)
+    by_player = {}
+    for p in props:
+        if not p["isPitcherProp"] or p["outcomeType"] not in ("Over", "Under"):
+            continue
+        # Only standard O/U markets (skip milestones which have no Over/Under semantics)
+        if "O/U" not in p["subcategory"]:
+            continue
+        by_player.setdefault(p["player"], []).append(p)
+
+    # Identify pitchers - they should each have an Over and Under
+    pitchers = []
+    for player, legs in by_player.items():
+        over = next((l for l in legs if l["outcomeType"] == "Over"), None)
+        under = next((l for l in legs if l["outcomeType"] == "Under"), None)
+        if over and under and over["points"] == under["points"]:
+            pitchers.append({"name": player, "over": over, "under": under, "line": over["points"]})
+
+    # Also collect team total strikeout props
+    team_total_k = []
+    for p in props:
+        if "Total" in p["marketName"] and "Strikeout" in p["marketName"] and p["outcomeType"] in ("Over", "Under"):
+            team_total_k.append(p)
+
+    # Build candidate SGPs
+    candidates = []
+
+    # Cross-pitcher combos: both starters Over, both Under, split directions
+    if len(pitchers) >= 2:
+        # Take the two most common (typically the starters)
+        p1, p2 = pitchers[0], pitchers[1]
+        candidates.append({
+            "title": "Both Starters Over K's",
+            "legs": [p1["over"], p2["over"]],
+            "thesis": "Dominant pitching duel — both starters rack up strikeouts",
+        })
+        candidates.append({
+            "title": "Both Starters Under K's",
+            "legs": [p1["under"], p2["under"]],
+            "thesis": "Bullpen game / both starters exit early",
+        })
+        candidates.append({
+            "title": f"{p1['name']} Over + {p2['name']} Under K's",
+            "legs": [p1["over"], p2["under"]],
+            "thesis": f"{p1['name']} dominates, {p2['name']} struggles",
+        })
+        candidates.append({
+            "title": f"{p1['name']} Under + {p2['name']} Over K's",
+            "legs": [p1["under"], p2["over"]],
+            "thesis": f"{p2['name']} dominates, {p1['name']} struggles",
+        })
+
+    # Individual pitcher + opposing team total K combos
+    # (Pitcher K Over is positively correlated with opposing team K Total Over)
+    for pitcher in pitchers[:2]:
+        for tt in team_total_k[:2]:
+            candidates.append({
+                "title": f"{pitcher['name']} Over {pitcher['line']} K + {tt['marketName']} {tt['displayPoints']}",
+                "legs": [pitcher["over"], tt],
+                "thesis": f"{pitcher['name']} getting strikeouts correlates with team K total {tt['outcomeType'].lower()}",
+            })
+
+    # Limit to 6 candidates max
+    candidates = candidates[:6]
+
+    # Price all candidates in parallel
+    def _price_candidate(c):
+        sel_ids = [l["selectionId"] for l in c["legs"]]
+        price = _price_combo(sel_ids)
+        if not price:
+            return None
+        # Compute uncorrelated parlay price for comparison
+        uncorr_dec = 1.0
+        for l in c["legs"]:
+            if l["oddsDecimal"]:
+                uncorr_dec *= l["oddsDecimal"]
+        return {
+            "title": c["title"],
+            "thesis": c["thesis"],
+            "legs": [{
+                "player": l["player"],
+                "description": f"{l['displayPoints']} {l['subcategory'] or l['marketName']}",
+                "selectionId": l["selectionId"],
+                "oddsAmerican": l["oddsAmerican"],
+                "oddsDecimal": l["oddsDecimal"],
+            } for l in c["legs"]],
+            "sgpOdds": price["sgpOdds"],
+            "sgpDecimal": price["sgpDecimal"],
+            "uncorrelatedOdds": _american_from_decimal(uncorr_dec),
+            "uncorrelatedDecimal": uncorr_dec,
+            "correlationFactor": price["sgpDecimal"] / uncorr_dec if uncorr_dec else None,
+        }
+
+    priced = []
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        futs = [ex.submit(_price_candidate, c) for c in candidates]
+        for f in as_completed(futs):
+            try:
+                result = f.result()
+                if result:
+                    priced.append(result)
+            except Exception:
+                pass
+
+    # Sort by correlation factor (DK-loosened SGPs first — usually more interesting)
+    priced.sort(key=lambda x: -(x.get("correlationFactor") or 0))
+
+    return {
+        "eventId": event_id,
+        "pitchers": [{"name": p["name"], "line": p["line"]} for p in pitchers],
+        "sgps": priced,
+    }
+
+
 def get_price(selection_ids):
     """Get correlated SGP price from DraftKings."""
     payload = {
@@ -180,13 +348,11 @@ def get_price(selection_ids):
     if restrictions:
         return {"error": "Legs cannot be combined", "incompatible": True, "restrictions": restrictions}
 
-    # Extract bet info
     bets = data.get("bets", [])
     bet = next((b for b in bets if b.get("trueOdds") and len(b.get("selectionsMapped", [])) >= 2), None)
     if not bet:
         return {"error": "No valid SGP price returned"}
 
-    # Also return individual leg info
     legs = []
     for sel in data.get("selectionsForYourBet", []):
         legs.append({
@@ -206,7 +372,7 @@ def get_price(selection_ids):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print(json.dumps({"error": "Usage: dk_api.py <games|markets|price> [args]"}))
+        print(json.dumps({"error": "Usage: dk_api.py <games|markets|featured|price> [args]"}))
         sys.exit(1)
 
     cmd = sys.argv[1]
@@ -215,8 +381,9 @@ if __name__ == "__main__":
             result = get_games()
         elif cmd == "markets" and len(sys.argv) >= 3:
             result = get_markets(sys.argv[2])
+        elif cmd == "featured" and len(sys.argv) >= 3:
+            result = get_featured(sys.argv[2])
         elif cmd == "price":
-            # Read selection IDs from stdin (JSON array) to avoid shell escaping issues
             stdin_data = sys.stdin.read().strip()
             if stdin_data:
                 selection_ids = json.loads(stdin_data)

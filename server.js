@@ -208,6 +208,17 @@ app.get('/api/dk/markets/:eventId', async (req, res) => {
   }
 });
 
+// GET /api/dk/featured/:eventId — auto-built and pre-priced SGPs for a game
+app.get('/api/dk/featured/:eventId', async (req, res) => {
+  try {
+    const result = await dkCall(['featured', req.params.eventId]);
+    if (result.error) return res.status(500).json(result);
+    return res.json(result);
+  } catch (e) {
+    return res.status(500).json({ error: 'DK featured fetch failed: ' + e.message });
+  }
+});
+
 // POST /api/dk/price — get correlated SGP price from DraftKings
 app.post('/api/dk/price', async (req, res) => {
   try {
