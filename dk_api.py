@@ -78,14 +78,37 @@ def _extract_player_name(market_name, market_type, subcat_name):
 
 
 def _fetch_subcategory(event_id, sc):
-    """Fetch one subcategory worth of markets, scoped to this event."""
-    r = session.get(DK_MARKETS, params={
-        "isBatchable": "false",
-        "templateVars": event_id,
-        "marketsQuery": f"$filter=clientMetadata/subCategoryId eq '{sc['id']}'",
-        "entity": "markets",
-    }, timeout=10)
-    if r.status_code != 200:
+    """Fetch one subcategory worth of markets, scoped to this event.
+
+    DK's Akamai layer rate-limits aggressively when we fan out across all ~100
+    subcategories in parallel. A single 503 here used to silently drop every
+    market in that subcategory — e.g. "Hits Allowed O/U" missing meant every
+    Over/Under X.5 Hits Allowed leg ended up in unmatched_legs. Retry with
+    exponential backoff so transient 503s don't corrupt the market list."""
+    import time as _time
+    last_status = None
+    for attempt in range(4):
+        try:
+            r = session.get(DK_MARKETS, params={
+                "isBatchable": "false",
+                "templateVars": event_id,
+                "marketsQuery": f"$filter=clientMetadata/subCategoryId eq '{sc['id']}'",
+                "entity": "markets",
+            }, timeout=10)
+            last_status = r.status_code
+            if r.status_code == 200:
+                break
+            if r.status_code in (429, 502, 503, 504):
+                _time.sleep(0.3 * (2 ** attempt))
+                continue
+            # Any other non-200 is unrecoverable for this subcat
+            return [], []
+        except Exception:
+            _time.sleep(0.3 * (2 ** attempt))
+            continue
+    else:
+        # All retries failed
+        sys.stderr.write(f"dk_api: subcat {sc.get('id')} ({sc.get('name')}) failed after 4 attempts (last status={last_status})\n")
         return [], []
     d = r.json()
     # Client-side filter by eventId — the DK API doesn't filter server-side even
