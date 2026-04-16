@@ -1,0 +1,15 @@
+# Railway/Nixpacks build config.
+# Installs Node.js + Python 3 + curl_cffi so dk_api.py can call DraftKings
+# with Chrome TLS fingerprint impersonation (bypasses Akamai bot protection).
+
+[phases.setup]
+nixPkgs = ["nodejs_20", "python311", "python311Packages.pip", "gcc"]
+
+[phases.install]
+cmds = [
+  "npm ci --omit=dev",
+  "pip install --break-system-packages --no-cache-dir -r requirements.txt",
+]
+
+[start]
+cmd = "node server.js"
