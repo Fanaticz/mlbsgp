@@ -149,7 +149,8 @@ def get_markets(event_id):
         player_name = _extract_player_name(mname, mtype, m.get("_subCategoryName", ""))
 
         for s in m_sels:
-            outcome_type = s.get("outcomeType", s.get("name", ""))
+            sel_name = s.get("name", "")
+            outcome_type = s.get("outcomeType", sel_name)
             points = s.get("points")
             display = f"{outcome_type} {points}" if points is not None else outcome_type
             sel_players = s.get("players", [])
@@ -163,6 +164,7 @@ def get_markets(event_id):
                 "subcategory": m.get("_subCategoryName", ""),
                 "player": pname,
                 "outcomeType": outcome_type,
+                "selectionName": sel_name,
                 "displayPoints": display,
                 "points": points,
                 "oddsAmerican": s.get("displayOdds", {}).get("american", ""),
@@ -387,21 +389,55 @@ def _stat_matches_market(stat_str, market_blob):
     return False
 
 
-def _selection_direction(outcome_type):
-    """Resolve a DK selection's outcomeType to 'Over' / 'Under', handling
-    milestone selections whose outcomeType may be literal text like '5+' or
-    '4 or Fewer' instead of the plain word."""
-    if not outcome_type:
-        return None
-    ot = str(outcome_type).strip()
-    if ot in ("Over", "Under"):
-        return ot
-    lo = ot.lower()
-    if "fewer" in lo or "or less" in lo or "at most" in lo:
-        return "Under"
-    if "or more" in lo or "at least" in lo or ot.endswith("+"):
-        return "Over"
-    return None
+_MILESTONE_PLUS = re.compile(r"(\d+)\s*\+")
+_MILESTONE_OR = re.compile(r"(\d+)\s+or\s+(fewer|less|more)", re.IGNORECASE)
+
+
+def _selection_normalized_line(outcome_type, selection_name, points):
+    """Resolve a DK selection to (direction, equivalent .5 line).
+
+    Handles all the shapes we see in practice:
+      - O/U:           outcomeType='Over'/'Under', points=4.5        → (Over/Under, 4.5)
+      - "5+" milestone: outcomeType='Over' with points=5,
+                        OR outcomeType/name literal '5+',
+                        OR outcomeType='Over' with points=None and
+                        selectionName='5+ Strikeouts'                → (Over, 4.5)
+      - "4 or Fewer":  outcomeType='Under' with points=4,
+                        OR literal '4 or Fewer' in outcomeType/name  → (Under, 4.5)
+
+    Returns (None, None) if the selection doesn't represent a directional
+    over/under threshold we can reason about.
+    """
+    ot = str(outcome_type or "").strip()
+    sn = str(selection_name or "").strip()
+    text_blob = (ot + " " + sn).strip()
+
+    # Milestone literal "5+"  →  Over (threshold-0.5)
+    m = _MILESTONE_PLUS.search(text_blob)
+    if m:
+        return "Over", float(m.group(1)) - 0.5
+
+    # Milestone literal "N or Fewer/Less/More"
+    m = _MILESTONE_OR.search(text_blob)
+    if m:
+        n = float(m.group(1))
+        word = m.group(2).lower()
+        if word in ("fewer", "less"):
+            return "Under", n + 0.5   # "4 or Fewer" == Under 4.5
+        return "Over", n - 0.5         # "5 or More"  == Over 4.5
+
+    # Plain Over/Under
+    if ot in ("Over", "Under") and points is not None:
+        pts = float(points)
+        # Integer points with plain Over/Under is the DK "at least/at most"
+        # milestone encoding — convert to the equivalent .5 line.
+        if pts == int(pts):
+            if ot == "Over":
+                return "Over", pts - 0.5   # Over 5 (integer) == "5 or more" == Over 4.5
+            return "Under", pts + 0.5       # Under 4 (integer) == "4 or fewer" == Under 4.5
+        return ot, pts
+
+    return None, None
 
 
 def _match_leg_to_dk(leg, props, pitcher):
@@ -417,26 +453,15 @@ def _match_leg_to_dk(leg, props, pitcher):
     except (ValueError, TypeError):
         return None
 
-    # DK exposes pitcher Strikeouts / Hits Allowed as milestone markets (5+,
-    # 4 or Fewer, …) as well as O/U markets. Over X.5 is equivalent to the
-    # "X+1 or more" milestone; Under X.5 is equivalent to "X or fewer". So we
-    # accept both the exact .5 line and the integer milestone threshold.
-    if direction == "Over":
-        accept_points = (line, line + 0.5)
-    elif direction == "Under":
-        accept_points = (line, line - 0.5)
-    else:
-        accept_points = (line,)
-
     for p in props:
         if not p.get("isPitcherProp"):
             continue
         if not _pitcher_matches(pitcher, p.get("player", "")):
             continue
-        if _selection_direction(p.get("outcomeType")) != direction:
-            continue
-        pts = p.get("points")
-        if pts is None or pts not in accept_points:
+        sel_dir, sel_line = _selection_normalized_line(
+            p.get("outcomeType"), p.get("selectionName"), p.get("points")
+        )
+        if sel_dir != direction or sel_line != line:
             continue
         blob = (p.get("marketName", "") + " " + p.get("subcategory", "") + " " + p.get("marketType", ""))
         if _stat_matches_market(stat_str, blob):
