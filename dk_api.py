@@ -544,12 +544,39 @@ def find_sgps(legs):
             else:
                 unmatched.append(l.get("leg"))
 
+        # Debug: emit all pitcher-scoped DK props + their normalized (dir, line)
+        # when any leg for this pitcher failed to match. Lets us see from the
+        # response what DK actually returned and why nothing matched.
+        dk_candidates = []
+        if unmatched:
+            for p in md["props"]:
+                if not p.get("isPitcherProp"):
+                    continue
+                if not _pitcher_matches(pitcher, p.get("player", "")):
+                    continue
+                sd, sl = _selection_normalized_line(
+                    p.get("outcomeType"), p.get("selectionName"), p.get("points")
+                )
+                dk_candidates.append({
+                    "outcomeType": p.get("outcomeType"),
+                    "selectionName": p.get("selectionName"),
+                    "points": p.get("points"),
+                    "marketName": p.get("marketName"),
+                    "subcategory": p.get("subcategory"),
+                    "normalizedDirection": sd,
+                    "normalizedLine": sl,
+                })
+            print(f"[dk] unmatched for {pitcher}: {unmatched}", file=sys.stderr)
+            print(f"[dk] pitcher candidates for {pitcher}: {json.dumps(dk_candidates)}",
+                  file=sys.stderr)
+
         base = {
             "event_id": eid,
             "game_name": game_info.get("name", ""),
             "start_date": game_info.get("startDate", ""),
             "matched_legs": matched,
             "unmatched_legs": unmatched,
+            "dk_candidates": dk_candidates,
         }
 
         if len(matched) < 2:

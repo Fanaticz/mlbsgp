@@ -252,7 +252,7 @@ function dkCall(args, stdinData) {
     });
     let stdout = '', stderr = '';
     proc.stdout.on('data', d => stdout += d);
-    proc.stderr.on('data', d => stderr += d);
+    proc.stderr.on('data', d => { stderr += d; process.stderr.write(d); });
     proc.on('close', code => {
       if (code !== 0) return reject(new Error(stderr || 'dk_api.py exited with code ' + code));
       try { resolve(JSON.parse(stdout)); }
