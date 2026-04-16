@@ -327,6 +327,211 @@ def get_featured(event_id):
     }
 
 
+def _normalize_name(n):
+    """Normalize a player name for fuzzy matching."""
+    n = (n or "").lower().strip()
+    n = re.sub(r"[^a-z\s]", "", n)
+    return " ".join(n.split())
+
+
+def _pitcher_matches(name_a, name_b):
+    """Fuzzy match two pitcher names. Handles 'Kris Bubic' vs 'K Bubic' vs 'kris bubic'."""
+    a = _normalize_name(name_a)
+    b = _normalize_name(name_b)
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    a_parts = a.split()
+    b_parts = b.split()
+    if len(a_parts) >= 2 and len(b_parts) >= 2:
+        # Last name match + first-letter match
+        if a_parts[-1] == b_parts[-1] and a_parts[0][0] == b_parts[0][0]:
+            return True
+    # Last name only match (some OCR might drop first name)
+    if len(a_parts) >= 1 and len(b_parts) >= 1 and a_parts[-1] == b_parts[-1] and len(a_parts[-1]) > 3:
+        return True
+    return False
+
+
+def _stat_matches_market(stat_str, market_blob):
+    """Check if the leg's stat type matches the DK market's name/subcategory."""
+    stat_lower = stat_str.lower()
+    market_lower = market_blob.lower()
+    # Strict keyword matches — order matters (most specific first)
+    if "earned run" in stat_lower:
+        return "earned run" in market_lower
+    if "hits allowed" in stat_lower or (stat_lower == "hits"):
+        return "hits allowed" in market_lower or ("hits" in market_lower and "pitch" in market_lower)
+    if "walk" in stat_lower:
+        return "walks" in market_lower or "walk" in market_lower
+    if "strikeout" in stat_lower:
+        return "strikeout" in market_lower
+    if "out" in stat_lower:  # Outs Recorded / Pitching Outs
+        return "pitching out" in market_lower or "outs recorded" in market_lower
+    return False
+
+
+def _match_leg_to_dk(leg, props, pitcher):
+    """Given an OCR'd leg (dict with 'leg', 'avg_fv'), find the matching DK selection ID."""
+    leg_str = leg.get("leg", "")
+    # Parse: "Over 5.5 Strikeouts" → direction, line, stat
+    parts = leg_str.split(None, 2)
+    if len(parts) < 3:
+        return None
+    direction, line_str, stat_str = parts[0], parts[1], parts[2]
+    try:
+        line = float(line_str)
+    except (ValueError, TypeError):
+        return None
+
+    for p in props:
+        if not p.get("isPitcherProp"):
+            continue
+        if not _pitcher_matches(pitcher, p.get("player", "")):
+            continue
+        if p.get("outcomeType") != direction:
+            continue
+        if p.get("points") != line:
+            continue
+        blob = (p.get("marketName", "") + " " + p.get("subcategory", "") + " " + p.get("marketType", ""))
+        if _stat_matches_market(stat_str, blob):
+            return p.get("selectionId")
+    return None
+
+
+def find_sgps(legs):
+    """Given OCR'd legs, auto-match them to DK selections, enumerate 2/3-leg combos,
+    and return DK-priced SGPs. Frontend computes FV and EV."""
+    from itertools import combinations
+
+    # Group by pitcher
+    by_pitcher = {}
+    for l in legs:
+        by_pitcher.setdefault(l.get("pitcher", ""), []).append(l)
+    by_pitcher.pop("", None)
+
+    if not by_pitcher:
+        return {"error": "No pitcher legs provided"}
+
+    # Fetch games list
+    games_data = get_games()
+    events = [e for e in games_data["events"] if e.get("hasSGP")]
+
+    # Scan games in parallel to find each pitcher's event
+    event_markets = {}
+    pitcher_events = {}
+    unfound = set(by_pitcher.keys())
+
+    def scan(eid):
+        try:
+            md = get_markets(eid)
+            return eid, md
+        except Exception:
+            return eid, None
+
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        futs = {ex.submit(scan, e["id"]): e["id"] for e in events[:15]}
+        for fut in as_completed(futs):
+            eid, md = fut.result()
+            if md is None:
+                continue
+            event_markets[eid] = md
+            for p in md["props"]:
+                if not p.get("isPitcherProp"):
+                    continue
+                player = p.get("player", "")
+                if not player:
+                    continue
+                for pitcher in list(unfound):
+                    if _pitcher_matches(pitcher, player):
+                        pitcher_events[pitcher] = eid
+                        unfound.discard(pitcher)
+            if not unfound:
+                # Cancel remaining futures
+                for f in futs:
+                    f.cancel()
+                break
+
+    results = {}
+    for pitcher, plegs in by_pitcher.items():
+        eid = pitcher_events.get(pitcher)
+        game_info = next((e for e in events if e["id"] == eid), {}) if eid else {}
+        if not eid or eid not in event_markets:
+            results[pitcher] = {"error": "Pitcher not found in today's DK games"}
+            continue
+
+        md = event_markets[eid]
+        matched = []
+        unmatched = []
+        for l in plegs:
+            dk_id = _match_leg_to_dk(l, md["props"], pitcher)
+            if dk_id:
+                matched.append({
+                    "leg": l.get("leg"),
+                    "avg_fv": l.get("avg_fv"),
+                    "dk_selection_id": dk_id,
+                })
+            else:
+                unmatched.append(l.get("leg"))
+
+        base = {
+            "event_id": eid,
+            "game_name": game_info.get("name", ""),
+            "start_date": game_info.get("startDate", ""),
+            "matched_legs": matched,
+            "unmatched_legs": unmatched,
+        }
+
+        if len(matched) < 2:
+            results[pitcher] = {**base, "combos_2": [], "combos_3": [],
+                               "warning": f"Need 2+ matched legs ({len(matched)}/{len(plegs)} matched to DK)"}
+            continue
+
+        # Enumerate 2-leg and 3-leg combos (indices into matched[])
+        combos_by_size = {2: [], 3: []}
+        for size in (2, 3):
+            for combo in combinations(range(len(matched)), size):
+                combos_by_size[size].append(list(combo))
+
+        # Price every combo in parallel
+        all_combos_flat = [(size, idx, indices) for size in (2, 3)
+                           for idx, indices in enumerate(combos_by_size[size])]
+
+        def price_one(size, idx, indices):
+            sel_ids = [matched[i]["dk_selection_id"] for i in indices]
+            price = _price_combo(sel_ids)
+            return size, idx, indices, price
+
+        priced_combos = {2: {}, 3: {}}
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            futs = [ex.submit(price_one, *c) for c in all_combos_flat]
+            for f in as_completed(futs):
+                try:
+                    size, idx, indices, price = f.result()
+                    if price:
+                        priced_combos[size][tuple(indices)] = price
+                except Exception:
+                    pass
+
+        combos_2 = []
+        combos_3 = []
+        for size, out in [(2, combos_2), (3, combos_3)]:
+            for indices in combos_by_size[size]:
+                price = priced_combos[size].get(tuple(indices))
+                if not price:
+                    continue
+                out.append({
+                    "leg_indices": indices,
+                    "dk_odds": price["sgpOdds"],
+                    "dk_decimal": price["sgpDecimal"],
+                })
+
+        results[pitcher] = {**base, "combos_2": combos_2, "combos_3": combos_3}
+
+    return {"pitchers": results}
+
+
 def get_price(selection_ids):
     """Get correlated SGP price from DraftKings."""
     payload = {
@@ -383,6 +588,10 @@ if __name__ == "__main__":
             result = get_markets(sys.argv[2])
         elif cmd == "featured" and len(sys.argv) >= 3:
             result = get_featured(sys.argv[2])
+        elif cmd == "find-sgps":
+            stdin_data = sys.stdin.read().strip()
+            legs = json.loads(stdin_data) if stdin_data else []
+            result = find_sgps(legs)
         elif cmd == "price":
             stdin_data = sys.stdin.read().strip()
             if stdin_data:

@@ -219,6 +219,19 @@ app.get('/api/dk/featured/:eventId', async (req, res) => {
   }
 });
 
+// POST /api/dk/find-sgps — unified: take OCR'd legs, match to DK, enumerate + price combos
+app.post('/api/dk/find-sgps', async (req, res) => {
+  try {
+    const { legs } = req.body || {};
+    if (!Array.isArray(legs) || !legs.length) return res.status(400).json({ error: 'legs array required' });
+    const result = await dkCall(['find-sgps'], JSON.stringify(legs));
+    if (result.error && !result.pitchers) return res.json(result);
+    return res.json(result);
+  } catch (e) {
+    return res.status(500).json({ error: 'DK find-sgps failed: ' + e.message });
+  }
+});
+
 // POST /api/dk/price — get correlated SGP price from DraftKings
 app.post('/api/dk/price', async (req, res) => {
   try {
