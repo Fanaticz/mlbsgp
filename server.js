@@ -160,6 +160,69 @@ Return exactly this JSON shape, nothing else:
   }
 });
 
+// ===== DraftKings SGP API proxy =====
+// Uses a Python helper (dk_api.py) with curl_cffi for Chrome TLS impersonation
+// to bypass DraftKings Akamai bot protection. Node.js fetch gets 403'd.
+const { execFile } = require('child_process');
+const DK_PY = path.join(__dirname, 'dk_api.py');
+
+function dkCall(args, stdinData) {
+  return new Promise((resolve, reject) => {
+    const proc = require('child_process').spawn('python3', [DK_PY, ...args], {
+      maxBuffer: 50 * 1024 * 1024,
+      timeout: 60000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '', stderr = '';
+    proc.stdout.on('data', d => stdout += d);
+    proc.stderr.on('data', d => stderr += d);
+    proc.on('close', code => {
+      if (code !== 0) return reject(new Error(stderr || 'dk_api.py exited with code ' + code));
+      try { resolve(JSON.parse(stdout)); }
+      catch (e) { reject(new Error('Failed to parse dk_api.py output: ' + stdout.slice(0, 200))); }
+    });
+    if (stdinData) { proc.stdin.write(stdinData); }
+    proc.stdin.end();
+  });
+}
+
+// GET /api/dk/games — today's MLB games from DraftKings
+app.get('/api/dk/games', async (_req, res) => {
+  try {
+    const result = await dkCall(['games']);
+    if (result.error) return res.status(500).json(result);
+    return res.json(result);
+  } catch (e) {
+    return res.status(500).json({ error: 'DK games fetch failed: ' + e.message });
+  }
+});
+
+// GET /api/dk/markets/:eventId — all markets + selections for a game
+app.get('/api/dk/markets/:eventId', async (req, res) => {
+  try {
+    const result = await dkCall(['markets', req.params.eventId]);
+    if (result.error) return res.status(500).json(result);
+    return res.json(result);
+  } catch (e) {
+    return res.status(500).json({ error: 'DK markets fetch failed: ' + e.message });
+  }
+});
+
+// POST /api/dk/price — get correlated SGP price from DraftKings
+app.post('/api/dk/price', async (req, res) => {
+  try {
+    const { selections } = req.body;
+    if (!Array.isArray(selections) || selections.length < 2)
+      return res.status(400).json({ error: 'Need at least 2 selection IDs' });
+    // Pass selection IDs via stdin to avoid shell escaping issues with # chars
+    const result = await dkCall(['price'], JSON.stringify(selections));
+    if (result.error) return res.json(result);
+    return res.json(result);
+  } catch (e) {
+    return res.status(500).json({ error: 'DK price fetch failed: ' + e.message });
+  }
+});
+
 app.get('/healthz', (_req, res) => res.send('ok'));
 
 app.listen(PORT, '0.0.0.0', () => console.log('Listening on 0.0.0.0:' + PORT));
