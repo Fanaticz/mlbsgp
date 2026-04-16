@@ -630,26 +630,24 @@ def find_sgps(legs):
         }
 
         if len(matched) < 2:
-            results[pitcher] = {**base, "combos_2": [], "combos_3": [],
+            results[pitcher] = {**base, "combos_2": [],
                                "warning": f"Need 2+ matched legs ({len(matched)}/{len(plegs)} matched to DK)"}
             continue
 
-        # Enumerate 2-leg and 3-leg combos (indices into matched[])
-        combos_by_size = {2: [], 3: []}
-        for size in (2, 3):
-            for combo in combinations(range(len(matched)), size):
-                combos_by_size[size].append(list(combo))
+        # Enumerate 2-leg combos (indices into matched[])
+        combos_by_size = {2: []}
+        for combo in combinations(range(len(matched)), 2):
+            combos_by_size[2].append(list(combo))
 
         # Price every combo in parallel
-        all_combos_flat = [(size, idx, indices) for size in (2, 3)
-                           for idx, indices in enumerate(combos_by_size[size])]
+        all_combos_flat = [(2, idx, indices) for idx, indices in enumerate(combos_by_size[2])]
 
         def price_one(size, idx, indices):
             sel_ids = [matched[i]["dk_selection_id"] for i in indices]
             price = _price_combo(sel_ids)
             return size, idx, indices, price
 
-        priced_combos = {2: {}, 3: {}}
+        priced_combos = {2: {}}
         with ThreadPoolExecutor(max_workers=8) as ex:
             futs = [ex.submit(price_one, *c) for c in all_combos_flat]
             for f in as_completed(futs):
@@ -661,19 +659,17 @@ def find_sgps(legs):
                     pass
 
         combos_2 = []
-        combos_3 = []
-        for size, out in [(2, combos_2), (3, combos_3)]:
-            for indices in combos_by_size[size]:
-                price = priced_combos[size].get(tuple(indices))
-                if not price:
-                    continue
-                out.append({
-                    "leg_indices": indices,
-                    "dk_odds": price["sgpOdds"],
-                    "dk_decimal": price["sgpDecimal"],
-                })
+        for indices in combos_by_size[2]:
+            price = priced_combos[2].get(tuple(indices))
+            if not price:
+                continue
+            combos_2.append({
+                "leg_indices": indices,
+                "dk_odds": price["sgpOdds"],
+                "dk_decimal": price["sgpDecimal"],
+            })
 
-        results[pitcher] = {**base, "combos_2": combos_2, "combos_3": combos_3}
+        results[pitcher] = {**base, "combos_2": combos_2}
 
     return {"pitchers": results}
 
