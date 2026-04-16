@@ -127,16 +127,25 @@ def get_markets(event_id):
                 sel_by_mkt.setdefault(mid, []).append(s)
 
     # Step 3: Build structured output
-    pitcher_keywords = {"strikeout", "earned run", "walk", "hits allowed", "pitching out",
-                        "pitcher", "outs recorded"}
+    # Pitcher prop detector: match against name AND subcategory AND market type.
+    # Order matters — more specific matches first. Skip batter markets explicitly.
+    PITCHER_KEYWORDS = ("strikeout", "earned run", "walks", "walk ", "hits allowed",
+                        "pitching out", "pitcher", "outs recorded", "pitching strikeouts",
+                        "outs o/u", "outs thrown")
+    BATTER_HINTS = ("rbi", "total bases", "home run", "at bat", "stolen base", "singles",
+                    "doubles", "batting")
     props = []
     for m in all_markets:
         mname = m.get("name", "")
         mtype = m.get("marketType", {}).get("name", "")
+        subcat = m.get("_subCategoryName", "")
         mid = m.get("id", "")
         m_sels = sel_by_mkt.get(mid, [])
 
-        is_pitcher = any(kw in mname.lower() or kw in mtype.lower() for kw in pitcher_keywords)
+        blob_lower = (mname + " " + mtype + " " + subcat).lower()
+        # Only pitcher if pitcher keywords hit AND no batter hints
+        is_pitcher = any(kw in blob_lower for kw in PITCHER_KEYWORDS) and \
+                     not any(bh in blob_lower for bh in BATTER_HINTS)
         player_name = _extract_player_name(mname, mtype, m.get("_subCategoryName", ""))
 
         for s in m_sels:
@@ -357,18 +366,24 @@ def _pitcher_matches(name_a, name_b):
 def _stat_matches_market(stat_str, market_blob):
     """Check if the leg's stat type matches the DK market's name/subcategory."""
     stat_lower = stat_str.lower()
+    # Strip "strikeout" from market so it doesn't pollute the outs check
+    # (strikeouts contains "out" as a substring)
     market_lower = market_blob.lower()
-    # Strict keyword matches — order matters (most specific first)
+    market_no_so = market_lower.replace("strikeouts", "").replace("strikeout", "")
+
     if "earned run" in stat_lower:
         return "earned run" in market_lower
-    if "hits allowed" in stat_lower or (stat_lower == "hits"):
-        return "hits allowed" in market_lower or ("hits" in market_lower and "pitch" in market_lower)
+    if "hits allowed" in stat_lower or stat_lower == "hits":
+        return ("hits allowed" in market_lower or "hits" in market_lower) and \
+               ("pitch" in market_lower or "allow" in market_lower or "pitcher" in market_lower)
     if "walk" in stat_lower:
-        return "walks" in market_lower or "walk" in market_lower
+        return "walk" in market_lower
     if "strikeout" in stat_lower:
         return "strikeout" in market_lower
-    if "out" in stat_lower:  # Outs Recorded / Pitching Outs
-        return "pitching out" in market_lower or "outs recorded" in market_lower
+    if "out" in stat_lower:
+        # Any "outs" market — Pitching Outs, Outs Recorded, Total Outs, or just Outs
+        # (strikeouts already filtered out above)
+        return "outs" in market_no_so
     return False
 
 
