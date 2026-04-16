@@ -26,10 +26,40 @@ DK_PRICE = "https://gaming-us-nj.draftkings.com/api/wager/v1/calculateBets"
 session = cffi_requests.Session(impersonate="chrome")
 
 
+def _get_with_retry(url, params=None, timeout=15, attempts=4):
+    """GET with exponential backoff on Akamai rate limits (429/5xx).
+
+    DK rate-limits aggressively once we fan out across ~100 subcategory
+    fetches; the games and event endpoints get collateral damage. Raising on
+    the first 403/503 used to kill the whole subprocess (exit code 1), which
+    surfaced to the frontend as "DK find-sgps failed: dk_api.py exited with
+    code 1". Retry transient failures before giving up."""
+    import time as _time
+    last_exc = None
+    last_status = None
+    for attempt in range(attempts):
+        try:
+            r = session.get(url, params=params, timeout=timeout)
+            last_status = r.status_code
+            if r.status_code == 200:
+                return r
+            if r.status_code in (403, 429, 502, 503, 504):
+                _time.sleep(0.4 * (2 ** attempt))
+                continue
+            # Any other non-200 is unrecoverable
+            r.raise_for_status()
+        except Exception as e:
+            last_exc = e
+            _time.sleep(0.4 * (2 ** attempt))
+            continue
+    if last_exc:
+        raise last_exc
+    raise RuntimeError(f"DK request failed after {attempts} attempts: {url} (last status={last_status})")
+
+
 def get_games():
     """Return today's MLB games from DraftKings."""
-    r = session.get(f"{DK_NAV}/{DK_MLB_LEAGUE_ID}", timeout=15)
-    r.raise_for_status()
+    r = _get_with_retry(f"{DK_NAV}/{DK_MLB_LEAGUE_ID}")
     events = r.json().get("events", [])
     out = []
     for e in events:
@@ -83,32 +113,16 @@ def _fetch_subcategory(event_id, sc):
     DK's Akamai layer rate-limits aggressively when we fan out across all ~100
     subcategories in parallel. A single 503 here used to silently drop every
     market in that subcategory — e.g. "Hits Allowed O/U" missing meant every
-    Over/Under X.5 Hits Allowed leg ended up in unmatched_legs. Retry with
-    exponential backoff so transient 503s don't corrupt the market list."""
-    import time as _time
-    last_status = None
-    for attempt in range(4):
-        try:
-            r = session.get(DK_MARKETS, params={
-                "isBatchable": "false",
-                "templateVars": event_id,
-                "marketsQuery": f"$filter=clientMetadata/subCategoryId eq '{sc['id']}'",
-                "entity": "markets",
-            }, timeout=10)
-            last_status = r.status_code
-            if r.status_code == 200:
-                break
-            if r.status_code in (429, 502, 503, 504):
-                _time.sleep(0.3 * (2 ** attempt))
-                continue
-            # Any other non-200 is unrecoverable for this subcat
-            return [], []
-        except Exception:
-            _time.sleep(0.3 * (2 ** attempt))
-            continue
-    else:
-        # All retries failed
-        sys.stderr.write(f"dk_api: subcat {sc.get('id')} ({sc.get('name')}) failed after 4 attempts (last status={last_status})\n")
+    Over/Under X.5 Hits Allowed leg ended up in unmatched_legs."""
+    try:
+        r = _get_with_retry(DK_MARKETS, params={
+            "isBatchable": "false",
+            "templateVars": event_id,
+            "marketsQuery": f"$filter=clientMetadata/subCategoryId eq '{sc['id']}'",
+            "entity": "markets",
+        }, timeout=10)
+    except Exception as e:
+        sys.stderr.write(f"dk_api: subcat {sc.get('id')} ({sc.get('name')}) failed: {e}\n")
         return [], []
     d = r.json()
     # Client-side filter by eventId — the DK API doesn't filter server-side even
@@ -125,8 +139,7 @@ def _fetch_subcategory(event_id, sc):
 def get_markets(event_id):
     """Return all markets and selections for an event, scoped properly to that event."""
     # Step 1: Get event metadata (subcategories + market groups)
-    r0 = session.get(f"{DK_SGP}/{event_id}", timeout=15)
-    r0.raise_for_status()
+    r0 = _get_with_retry(f"{DK_SGP}/{event_id}")
     evt = r0.json()["data"]["events"][0]
     subcats = evt.get("clientMetadata", {}).get("subCategories", [])
     market_groups = evt.get("marketGroups", [])
@@ -136,7 +149,10 @@ def get_markets(event_id):
     all_selections = []
     sel_by_mkt = {}
 
-    with ThreadPoolExecutor(max_workers=8) as ex:
+    # max_workers=4 (was 8): higher parallelism was driving DK's Akamai into
+    # rate limiting, which meant even with retries we were taking longer than
+    # running fewer concurrent requests upfront.
+    with ThreadPoolExecutor(max_workers=4) as ex:
         futures = [ex.submit(_fetch_subcategory, event_id, sc) for sc in subcats]
         for fut in as_completed(futures):
             try:
@@ -494,8 +510,13 @@ def find_sgps(legs):
     if not by_pitcher:
         return {"error": "No pitcher legs provided"}
 
-    # Fetch games list
-    games_data = get_games()
+    # Fetch games list (graceful on DK rate-limit failure so the subprocess
+    # doesn't exit 1 and surface as an opaque "dk_api.py exited with code 1"
+    # to the frontend).
+    try:
+        games_data = get_games()
+    except Exception as e:
+        return {"error": f"DK games endpoint unavailable: {e}. Try again in a moment."}
     events = [e for e in games_data["events"] if e.get("hasSGP")]
 
     # Scan games in parallel to find each pitcher's event
