@@ -37,6 +37,42 @@ function normalizeLeg(market, betName) {
   return `${direction} ${line} ${hit.stat}`;
 }
 
+function complementFV(fv) {
+  const f = Number(fv);
+  if (!isFinite(f) || f === 0) return null;
+  const p = f > 0 ? 100 / (f + 100) : -f / (-f + 100);
+  const q = 1 - p;
+  if (q <= 0 || q >= 1) return null;
+  return q >= 0.5 ? -Math.round(q / (1 - q) * 100) : Math.round((1 - q) / q * 100);
+}
+
+// For every (pitcher, stat, line) that only has ONE direction, auto-add the other
+// direction so correlations can be found in both orientations.
+function addComplementLegs(rows) {
+  const groups = Object.create(null);
+  for (const r of rows) {
+    const m = r.leg.match(/^(Over|Under)\s+([\d.]+)\s+(.+)$/i);
+    if (!m) continue;
+    const [, dir, line, stat] = m;
+    const key = r.pitcher + '|' + stat + '|' + line;
+    if (!groups[key]) groups[key] = {};
+    groups[key][dir] = r;
+  }
+  const extras = [];
+  for (const g of Object.values(groups)) {
+    if (g.Over && !g.Under) {
+      const fv = complementFV(g.Over.avg_fv);
+      if (fv !== null)
+        extras.push({ pitcher: g.Over.pitcher, leg: 'Under ' + g.Over.leg.slice(5), avg_fv: fv });
+    } else if (g.Under && !g.Over) {
+      const fv = complementFV(g.Under.avg_fv);
+      if (fv !== null)
+        extras.push({ pitcher: g.Under.pitcher, leg: 'Over ' + g.Under.leg.slice(6), avg_fv: fv });
+    }
+  }
+  return [...rows, ...extras];
+}
+
 function normalizeRows(rows) {
   if (!Array.isArray(rows)) return [];
   const out = [];
@@ -104,7 +140,7 @@ The first two columns have a "/" character. The avg_fv column has NO slash. If y
 The avg_hold column (15) is a percentage like "7.0%" or "6.5%" — it is immediately to the right of avg_fv. Use that as a positional anchor: the signed integer IMMEDIATELY LEFT of the percentage column IS avg_fv.
 
 ═══ OVER vs UNDER — CRITICAL ═══
-Each pitcher will often have BOTH an Over row and an Under row for the same line (e.g., "Jesus Luzardo Over 2.5" and "Jesus Luzardo Under 2.5"). These are TWO different bets. Read the word "Over" or "Under" directly from the bet_name column for each row independently. Never infer direction from the avg_fv sign or from a neighbouring row.
+Each pitcher will often have BOTH an Over row and an Under row for the same line (e.g., "Jesus Luzardo Over 2.5" and "Jesus Luzardo Under 2.5"). These are TWO different bets with TWO different L numbers and TWO different avg_fv values. They may appear far apart in the table (e.g., L=3 is Under 4.5 Strikeouts and L=13 is Over 4.5 Strikeouts). Return BOTH as separate JSON objects. Read the word "Over" or "Under" directly from the bet_name column for each row independently and read avg_fv from THAT SAME ROW. Never carry forward an avg_fv value you saw on a different row, even if the pitcher, stat, and line look identical — the direction is different and so is the avg_fv. The Over and Under of the same stat+line WILL have different avg_fv values.
 
 ═══ WORKED EXAMPLES ═══
 Table row: L=15, market="Player Pitching Outs", bet_name="Emerson Hancock Over 15.5", odds="-352 / +267", avg_odds="-436 / +287", avg_fv="-298", avg_hold="7.9%"
@@ -150,7 +186,7 @@ Return exactly this JSON shape, nothing else:
 
     try {
       const parsed = JSON.parse(m[0]);
-      const rows = normalizeRows(parsed.rows);
+      const rows = addComplementLegs(normalizeRows(parsed.rows));
       return res.json({ rows });
     } catch (e) {
       return res.status(500).json({ error: 'JSON parse error: ' + e.message, raw: m[0] });
