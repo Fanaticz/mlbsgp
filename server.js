@@ -247,7 +247,7 @@ function dkCall(args, stdinData) {
   return new Promise((resolve, reject) => {
     const proc = require('child_process').spawn('python3', [DK_PY, ...args], {
       maxBuffer: 50 * 1024 * 1024,
-      timeout: 60000,
+      timeout: 90000,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     let stdout = '', stderr = '';

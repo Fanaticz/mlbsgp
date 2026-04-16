@@ -539,9 +539,14 @@ def _match_leg_to_dk(leg, props, pitcher):
 
 
 def find_sgps(legs):
-    """Given OCR'd legs, auto-match them to DK selections, enumerate 2/3-leg combos,
+    """Given OCR'd legs, auto-match them to DK selections, enumerate 2-leg combos,
     and return DK-priced SGPs. Frontend computes FV and EV."""
     from itertools import combinations
+    import concurrent.futures
+
+    # Soft deadline: return partial results before Node's spawn timeout SIGTERMs us.
+    pricing_deadline = _time.monotonic() + 75.0
+    truncated = False
 
     # Group by pitcher
     by_pitcher = {}
@@ -634,6 +639,12 @@ def find_sgps(legs):
                                "warning": f"Need 2+ matched legs ({len(matched)}/{len(plegs)} matched to DK)"}
             continue
 
+        if _time.monotonic() >= pricing_deadline:
+            truncated = True
+            results[pitcher] = {**base, "combos_2": [],
+                               "warning": "Skipped: pricing time budget exceeded. Try again."}
+            continue
+
         # Enumerate 2-leg combos (indices into matched[])
         combos_by_size = {2: []}
         for combo in combinations(range(len(matched)), 2):
@@ -650,13 +661,19 @@ def find_sgps(legs):
         priced_combos = {2: {}}
         with ThreadPoolExecutor(max_workers=8) as ex:
             futs = [ex.submit(price_one, *c) for c in all_combos_flat]
-            for f in as_completed(futs):
-                try:
-                    size, idx, indices, price = f.result()
-                    if price:
-                        priced_combos[size][tuple(indices)] = price
-                except Exception:
-                    pass
+            remaining = max(0.5, pricing_deadline - _time.monotonic())
+            try:
+                for f in as_completed(futs, timeout=remaining):
+                    try:
+                        size, idx, indices, price = f.result()
+                        if price:
+                            priced_combos[size][tuple(indices)] = price
+                    except Exception:
+                        pass
+            except concurrent.futures.TimeoutError:
+                truncated = True
+                for f in futs:
+                    f.cancel()
 
         combos_2 = []
         for indices in combos_by_size[2]:
@@ -671,7 +688,10 @@ def find_sgps(legs):
 
         results[pitcher] = {**base, "combos_2": combos_2}
 
-    return {"pitchers": results}
+    out = {"pitchers": results}
+    if truncated:
+        out["truncated"] = True
+    return out
 
 
 def get_price(selection_ids):
