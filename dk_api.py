@@ -387,6 +387,23 @@ def _stat_matches_market(stat_str, market_blob):
     return False
 
 
+def _selection_direction(outcome_type):
+    """Resolve a DK selection's outcomeType to 'Over' / 'Under', handling
+    milestone selections whose outcomeType may be literal text like '5+' or
+    '4 or Fewer' instead of the plain word."""
+    if not outcome_type:
+        return None
+    ot = str(outcome_type).strip()
+    if ot in ("Over", "Under"):
+        return ot
+    lo = ot.lower()
+    if "fewer" in lo or "or less" in lo or "at most" in lo:
+        return "Under"
+    if "or more" in lo or "at least" in lo or ot.endswith("+"):
+        return "Over"
+    return None
+
+
 def _match_leg_to_dk(leg, props, pitcher):
     """Given an OCR'd leg (dict with 'leg', 'avg_fv'), find the matching DK selection ID."""
     leg_str = leg.get("leg", "")
@@ -400,14 +417,26 @@ def _match_leg_to_dk(leg, props, pitcher):
     except (ValueError, TypeError):
         return None
 
+    # DK exposes pitcher Strikeouts / Hits Allowed as milestone markets (5+,
+    # 4 or Fewer, …) as well as O/U markets. Over X.5 is equivalent to the
+    # "X+1 or more" milestone; Under X.5 is equivalent to "X or fewer". So we
+    # accept both the exact .5 line and the integer milestone threshold.
+    if direction == "Over":
+        accept_points = (line, line + 0.5)
+    elif direction == "Under":
+        accept_points = (line, line - 0.5)
+    else:
+        accept_points = (line,)
+
     for p in props:
         if not p.get("isPitcherProp"):
             continue
         if not _pitcher_matches(pitcher, p.get("player", "")):
             continue
-        if p.get("outcomeType") != direction:
+        if _selection_direction(p.get("outcomeType")) != direction:
             continue
-        if p.get("points") != line:
+        pts = p.get("points")
+        if pts is None or pts not in accept_points:
             continue
         blob = (p.get("marketName", "") + " " + p.get("subcategory", "") + " " + p.get("marketType", ""))
         if _stat_matches_market(stat_str, blob):
