@@ -149,10 +149,23 @@ def get_markets(event_id):
         player_name = _extract_player_name(mname, mtype, m.get("_subCategoryName", ""))
 
         for s in m_sels:
-            outcome_type = s.get("outcomeType", s.get("name", ""))
+            # Milestone selections (e.g. "5+", "4 or Fewer") omit outcomeType,
+            # points, and players entirely — the threshold is in `label` and
+            # `milestoneValue`, and the pitcher is in `participants`. Fall back
+            # through those so milestone legs actually get matched downstream.
+            outcome_type = s.get("outcomeType") or s.get("name") or s.get("label") or ""
             points = s.get("points")
+            if points is None:
+                points = s.get("milestoneValue")
+            if points is None:
+                # Last resort: parse an integer threshold out of the label text
+                # (handles "5+", "5 or More", "4 or Fewer", etc.)
+                label = s.get("label") or ""
+                m_pts = re.search(r"\d+", label)
+                if m_pts:
+                    points = int(m_pts.group(0))
             display = f"{outcome_type} {points}" if points is not None else outcome_type
-            sel_players = s.get("players", [])
+            sel_players = s.get("players") or s.get("participants") or []
             pname = sel_players[0].get("name", "") if sel_players else player_name
 
             props.append({
