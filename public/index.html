@@ -207,8 +207,15 @@ var CORR_MODE='blended';
    n=k gives 50/50 weights. Tune down if blended underperforms player for high-sample pitchers,
    tune up if it overperforms global for low-sample ones. */
 var SHRINKAGE_K=50;
-/* Below this many starts the player sample is too noisy to contribute; blended falls back to global. */
-var BLEND_MIN_STARTS=10;
+/* Sanity floor for edge cases. The shrinkage formula n/(n+SHRINKAGE_K)
+   already degrades player influence at low samples (9% at n=5, 17% at
+   n=10, 29% at n=20), so this threshold is just a floor for n_eff values
+   that are effectively noise (a single start or two). Lowered from 10 to
+   5 to avoid double-counting the small-sample penalty — at 10, veterans
+   with thin recent seasons (injury years, swing roles, mid-season
+   callups) were being forced to pure global when their year-weighted
+   data still carried appropriately-shrunk signal. */
+var BLEND_MIN_STARTS=5;
 
 function evSetCorrMode(m){
   if(m===CORR_MODE)return;
