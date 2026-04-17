@@ -298,14 +298,26 @@ app.get('/api/dk/featured/:eventId', async (req, res) => {
 
 // POST /api/dk/find-sgps — unified: take OCR'd legs, match to DK, enumerate + price combos
 app.post('/api/dk/find-sgps', async (req, res) => {
+  const { legs } = req.body || {};
+  if (!Array.isArray(legs) || !legs.length) return res.status(400).json({ error: 'legs array required' });
+
+  // Mobile Safari aborts fetches that go ~60s without receiving any bytes. DK
+  // scanning + pricing can legitimately exceed that, so trickle whitespace to
+  // keep the connection alive. Leading whitespace is valid JSON, so the final
+  // JSON.parse on the client still works.
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('X-Accel-Buffering', 'no');
+  if (typeof res.flushHeaders === 'function') res.flushHeaders();
+  const heartbeat = setInterval(() => { try { res.write(' '); } catch (_) {} }, 15000);
+
   try {
-    const { legs } = req.body || {};
-    if (!Array.isArray(legs) || !legs.length) return res.status(400).json({ error: 'legs array required' });
     const result = await dkCall(['find-sgps'], JSON.stringify(legs));
-    if (result.error && !result.pitchers) return res.json(result);
-    return res.json(result);
+    clearInterval(heartbeat);
+    return res.end(JSON.stringify(result));
   } catch (e) {
-    return res.status(500).json({ error: 'DK find-sgps failed: ' + e.message });
+    clearInterval(heartbeat);
+    return res.end(JSON.stringify({ error: 'DK find-sgps failed: ' + e.message }));
   }
 });
 
