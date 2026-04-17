@@ -210,7 +210,15 @@ var SHRINKAGE_K=50;
 /* Below this many starts the player sample is too noisy to contribute; blended falls back to global. */
 var BLEND_MIN_STARTS=10;
 
-function evSetCorrMode(m){if(m!==CORR_MODE){CORR_MODE=m;evRenderResults();}}
+function evSetCorrMode(m){
+  if(m===CORR_MODE)return;
+  CORR_MODE=m;
+  evRenderResults();
+  /* Pitcher page can be open while the user switches mode on the EV page;
+     its card r values depend on CORR_MODE too, so re-render when active. */
+  var pp=document.getElementById('page-pitcher');
+  if(pp&&pp.classList.contains('active')&&typeof applyPF==='function')applyPF();
+}
 
 /* ---------- shared helpers (American↔Probability, stat category, correlation) ---------- */
 function americanToProb(o){o=parseFloat(o);if(!o||isNaN(o))return null;return o>0?100/(o+100):-o/(-o+100);}
@@ -218,25 +226,108 @@ function probToAmerican(p){if(p<=0||p>=1)return null;return p>=0.5?Math.round(-p
 function fmtAm(o){if(o===null||isNaN(o))return '--';return(o>0?'+':'')+o;}
 function statCat(leg){if(leg.indexOf('Strikeout')>=0)return 'SO';if(leg.indexOf('Earned Run')>=0)return 'ER';if(leg.indexOf('Walk')>=0)return 'BB';if(leg.indexOf('Hit')>=0)return 'H';if(leg.indexOf('Out')>=0)return 'OUTS';return '';}
 var _NF=Object.create(null);
+/* Toggle true when investigating blend gaps — no-ops in production. */
+var DEBUG=false;
+var _warnSeen={};
+function _warnMissingPair(kind,a,b){
+  if(!DEBUG)return;
+  var k=kind+'|'+a+'|'+b;
+  if(_warnSeen[k])return;
+  _warnSeen[k]=1;
+  console.warn('[resolveR]',kind,a,'x',b);
+}
 function flipDir(leg){if(leg.startsWith('Over '))return 'Under '+leg.slice(5);if(leg.startsWith('Under '))return 'Over '+leg.slice(6);return leg;}
 function _findRIn(arr,a,b){if(!arr)return _NF;var fa=flipDir(a),fb=flipDir(b);function tryArr(x,y,sign){for(var i=0;i<arr.length;i++){var c=arr[i];if((c.leg1===x&&c.leg2===y)||(c.leg1===y&&c.leg2===x)){var rm=(c.r_margin!==null&&c.r_margin!==undefined)?c.r_margin:c.r;if(rm===null||rm===undefined)return null;return rm*sign;}}return _NF;}var r;if((r=tryArr(a,b,1))!==_NF)return r;if((r=tryArr(fa,fb,1))!==_NF)return r;if((r=tryArr(fa,b,-1))!==_NF)return r;if((r=tryArr(a,fb,-1))!==_NF)return r;return _NF;}
 function _blendWeights(n){if(n<BLEND_MIN_STARTS)return{wPlayer:0,wGlobal:1,insufficient:true,n:n};var wp=n/(n+SHRINKAGE_K);return{wPlayer:wp,wGlobal:1-wp,insufficient:false,n:n};}
-function findR(pd,a,b){
-  if(a===b)return 1;
+
+/* Single source of truth for correlation resolution under the active mode.
+   Returns {r, source, wPlayer, wGlobal, n, rPlayer, rGlobal} so the UI can
+   show provenance (EV card blend line, raw_corr tooltip) without
+   re-implementing the math. Every correlation read in the app MUST flow
+   through resolveR or its findR() wrapper — bypassing it lets displayed
+   numbers diverge from the EV math.
+   Uses n_starts_eff (year-weighted sample size) for the shrinkage threshold
+   and blend weights — a pitcher with 80 raw starts but 20 effective should
+   shrink toward global, not resist it. */
+function resolveR(pd,a,b){
+  if(a===b)return{r:1,source:'identity',wPlayer:1,wGlobal:0,n:0,rPlayer:1,rGlobal:1};
   var mode=CORR_MODE;
   var playerR=pd?_findRIn(pd.combos_2,a,b):_NF;
   var globalR=_findRIn(D.global_2,a,b);
   if(playerR===_NF)playerR=null;
   if(globalR===_NF)globalR=null;
-  if(mode==='global')return globalR;
-  if(mode==='player'){if(playerR!==null&&playerR!==undefined)return playerR;return globalR;}
+  var nEff=(pd&&pd.n_starts_eff)||0;
+  var base={rPlayer:playerR,rGlobal:globalR,n:nEff};
+
+  if(mode==='global')return Object.assign({r:globalR,source:'global',wPlayer:0,wGlobal:1},base);
+  if(mode==='player'){
+    if(playerR!=null)return Object.assign({r:playerR,source:'player',wPlayer:1,wGlobal:0},base);
+    _warnMissingPair('player-fallback',a,b);
+    return Object.assign({r:globalR,source:'player(fallback)',wPlayer:0,wGlobal:1},base);
+  }
   /* blended */
-  var n=(pd&&pd.n_starts)||0;
-  if(n<BLEND_MIN_STARTS)return globalR;
-  if(playerR===null||playerR===undefined)return globalR;
-  if(globalR===null||globalR===undefined)return playerR;
-  var w=_blendWeights(n);
-  return w.wPlayer*playerR+w.wGlobal*globalR;
+  if(playerR==null)return Object.assign({r:globalR,source:'blended(no-player)',wPlayer:0,wGlobal:1},base);
+  if(globalR==null){_warnMissingPair('blend-missing-global',a,b);
+                    return Object.assign({r:playerR,source:'blended(no-global)',wPlayer:1,wGlobal:0},base);}
+  if(nEff<BLEND_MIN_STARTS)return Object.assign({r:globalR,source:'blended(low-sample)',wPlayer:0,wGlobal:1},base);
+  var w=_blendWeights(nEff);
+  return Object.assign({r:w.wPlayer*playerR+w.wGlobal*globalR,source:'blended',wPlayer:w.wPlayer,wGlobal:w.wGlobal},base);
+}
+function findR(pd,a,b){return resolveR(pd,a,b).r;}
+
+/* raw_corr (stat x stat) shrinkage mirrors resolveR but pulls from
+   pd.raw_corr / D.global_raw_corr. Used by the pitcher page's "MARGIN r
+   (Excel CORREL)" display and by card3 for the 3-leg binary pairwise view. */
+function resolveRawCorrPair(pd,s1,s2){
+  function pick(obj){ if(!obj)return null; var a=obj[s1+'_'+s2],b=obj[s2+'_'+s1];
+                      return a!=null?a:(b!=null?b:null); }
+  var playerR=pd?pick(pd.raw_corr):null;
+  var globalR=pick(D.global_raw_corr);
+  var nEff=(pd&&pd.n_starts_eff)||0;
+  var mode=CORR_MODE;
+  var base={rPlayer:playerR,rGlobal:globalR,n:nEff};
+  if(mode==='global')return Object.assign({r:globalR,source:'global',wPlayer:0,wGlobal:1},base);
+  if(mode==='player'){
+    if(playerR!=null)return Object.assign({r:playerR,source:'player',wPlayer:1,wGlobal:0},base);
+    _warnMissingPair('player-fallback-rawcorr',s1,s2);
+    return Object.assign({r:globalR,source:'player(fallback)',wPlayer:0,wGlobal:1},base);
+  }
+  if(playerR==null)return Object.assign({r:globalR,source:'blended(no-player)',wPlayer:0,wGlobal:1},base);
+  if(globalR==null){_warnMissingPair('blend-missing-global-rawcorr',s1,s2);
+                    return Object.assign({r:playerR,source:'blended(no-global)',wPlayer:1,wGlobal:0},base);}
+  if(nEff<BLEND_MIN_STARTS)return Object.assign({r:globalR,source:'blended(low-sample)',wPlayer:0,wGlobal:1},base);
+  var w=_blendWeights(nEff);
+  return Object.assign({r:w.wPlayer*playerR+w.wGlobal*globalR,source:'blended',wPlayer:w.wPlayer,wGlobal:w.wGlobal},base);
+}
+
+/* Mode label reflects the resolved source, not the toggle position, so a
+   user in Blended mode whose pitcher falls back to global sees
+   "(blended → global)" rather than "(blended)". */
+function fmtEVLabel(ev,source){
+  var s=source||CORR_MODE;
+  var tag=s;
+  if(s==='blended')tag='blended';
+  else if(s.indexOf('blended')===0)tag='blended → global';   /* low-sample, no-player, no-global all collapse here */
+  else if(s==='player(fallback)')tag='player → global';
+  else if(s==='identity')tag='';
+  var pct=(ev>=0?'+':'')+ev.toFixed(1)+'%';
+  return tag?pct+' ('+tag+')':pct;
+}
+function _resolvedSourceForCombo(pairSources){
+  if(!pairSources||!pairSources.length)return CORR_MODE;
+  var allSame=pairSources.every(function(s){return s===pairSources[0];});
+  if(allSame)return pairSources[0];
+  /* mixed sources across the combo's pairs — fall back to the toggle label */
+  return CORR_MODE;
+}
+function rCorrTooltip(res){
+  if(!res||res.r==null)return '';
+  var fmt4=function(v){return v==null?'--':(v>=0?'+':'')+v.toFixed(4);};
+  if(res.source==='player'||res.source==='global'||res.source==='identity')return '';
+  if(res.source.indexOf('blended')!==0&&res.source.indexOf('player(fallback)')!==0)return '';
+  var wp=Math.round((res.wPlayer||0)*100),wg=100-wp;
+  return 'player '+fmt4(res.rPlayer)+' → shrunk toward global '+fmt4(res.rGlobal)+
+         ' ('+wp+'% player / '+wg+'% global, n_eff='+Math.round(res.n)+') → '+fmt4(res.r);
 }
 function jointFrechet(pa,pb,r){if(r===null||r===undefined||isNaN(r))r=0;var pab=pa*pb;if(r>=0){return pab+r*(Math.min(pa,pb)-pab);}return pab+r*(pab-Math.max(0,pa+pb-1));}
 
@@ -409,13 +500,16 @@ function evComputeCombo(pitcher,pd,matchedLegs,indices,dkDecimal){
   var pairDetails=[];
   for(var i=0;i<legs.length;i++){
     for(var j=i+1;j<legs.length;j++){
-      var r=findR(pd,legs[i].leg,legs[j].leg);
+      /* resolveR carries provenance so the EV card label reflects the source
+         actually used (e.g. "blended → global" when low sample triggered fallback). */
+      var res=resolveR(pd,legs[i].leg,legs[j].leg);
+      var r=res.r;
       var pa=legs[i].p,pb=legs[j].p;
-      if(r===null){missingPairs++;pairDetails.push({a:legs[i].leg,b:legs[j].leg,r:null});continue;}
+      if(r==null){missingPairs++;pairDetails.push({a:legs[i].leg,b:legs[j].leg,r:null,source:res.source});continue;}
       var pab=Math.max(1e-6,Math.min(0.999999,jointFrechet(pa,pb,r)));
       corrSum+=Math.log(pab)-Math.log(pa*pb);
       usedPairs++;
-      pairDetails.push({a:legs[i].leg,b:legs[j].leg,r:r});
+      pairDetails.push({a:legs[i].leg,b:legs[j].leg,r:r,source:res.source,rPlayer:res.rPlayer,rGlobal:res.rGlobal,wPlayer:res.wPlayer,wGlobal:res.wGlobal,n:res.n});
     }
   }
   var pIndep=Math.exp(logIndep);
@@ -537,7 +631,13 @@ function evRenderResults(){
     html+='<div class="card '+cls+'" id="sgp-card-'+idx+'">';
     html+='<div style="display:flex;justify-content:space-between;align-items:start;gap:8px;margin-bottom:8px">';
     html+='<div><div style="font-size:12px;font-weight:700">'+c.pitcher+(c.inDB?' <span style="font-size:8px;color:var(--ac);font-family:Space Mono,monospace">[DB]</span>':' <span style="font-size:8px;color:var(--ac2);font-family:Space Mono,monospace">[NO CORR]</span>')+'</div><div style="font-size:9px;color:var(--mu);font-family:Space Mono,monospace">'+c.game+' &middot; '+c.size+'-leg</div></div>';
-    html+='<div style="text-align:right"><div style="font-size:20px;font-weight:800;font-family:Space Mono,monospace;color:'+evColor+'">'+(ev>=0?'+':'')+ev.toFixed(1)+'%</div><div style="font-size:8px;color:var(--mu);font-family:Space Mono,monospace">EV</div></div>';
+    /* Label EV with the resolved source, not the toggle. If any pair collapsed
+       to global via low-sample/missing-data, the label becomes "blended → global"
+       instead of claiming "blended" the user isn't actually getting. */
+    var _srcs=(c.calc.pairDetails||[]).filter(function(p){return p.r!=null;}).map(function(p){return p.source;});
+    var _resolved=_resolvedSourceForCombo(_srcs);
+    var _evLabel=fmtEVLabel(ev,_resolved);
+    html+='<div style="text-align:right"><div style="font-size:20px;font-weight:800;font-family:Space Mono,monospace;color:'+evColor+'">'+_evLabel+'</div><div style="font-size:8px;color:var(--mu);font-family:Space Mono,monospace">EV</div></div>';
     html+='</div>';
 
     /* Leg list */
@@ -560,17 +660,20 @@ function evRenderResults(){
     html+='<div class="hi"><div class="hv" style="color:var(--mu);font-size:13px">'+c.calc.qkPct.toFixed(2)+'u</div><div class="hl">QK</div></div>';
     html+='</div>';
 
-    /* Blended correlation transparency: show effective r, weights, n */
+    /* Blended correlation transparency: show effective r, weights, n_eff.
+       Uses n_starts_eff so a pitcher with 80 raw starts but most weight on
+       2023 (deweighted) still hits the shrinkage threshold as a small sample. */
     if(CORR_MODE==='blended'&&rAvg!==null){
-      var bn=(c.inDB&&pdC&&pdC.n_starts)?pdC.n_starts:0;
+      var bn=(c.inDB&&pdC&&pdC.n_starts_eff)?pdC.n_starts_eff:0;
+      var bnRaw=(c.inDB&&pdC&&pdC.n_starts)?pdC.n_starts:0;
       var blendStr;
       if(!c.inDB||bn<=0){
         blendStr='no player data, using 100% global';
       }else if(bn<BLEND_MIN_STARTS){
-        blendStr='n='+bn+' · insufficient sample for blending, using 100% global';
+        blendStr='n_eff='+bn.toFixed(1)+' (raw '+bnRaw+') · insufficient sample for blending, using 100% global';
       }else{
         var bw=_blendWeights(bn);
-        blendStr='blended: '+Math.round(bw.wPlayer*100)+'% player / '+Math.round(bw.wGlobal*100)+'% global, n='+bn;
+        blendStr='blended: '+Math.round(bw.wPlayer*100)+'% player / '+Math.round(bw.wGlobal*100)+'% global, n_eff='+bn.toFixed(1)+' (raw '+bnRaw+')';
       }
       html+='<div style="margin-top:6px;font-size:10px;color:var(--mu);font-family:Space Mono,monospace">Correlation: '+rText+' ('+blendStr+')</div>';
     }
@@ -710,10 +813,7 @@ function _blendComboField(indexByYear, key, field, weights, isGlobal){
       vals[y] = c[field];
     }
   }
-  if (isGlobal && anyYearHasCombo) {
-    // Warn when a global combo exists in a year but the specific field is
-    // null — indicates a systemic aggregator gap (globals pool thousands of
-    // starts and every field should populate).
+  if (DEBUG && isGlobal && anyYearHasCombo) {
     for (var j = 0; j < missingYearsWithCombo.length; j++) {
       var wk = key + '|' + field;
       if (!_globalGapWarns[wk]) {
@@ -723,6 +823,24 @@ function _blendComboField(indexByYear, key, field, weights, isGlobal){
     }
   }
   return blendScalar(vals, weights);
+}
+
+/* Display-precision rounding for blended combo fields. Percentages go to
+   one decimal; Excel-CORREL-style secondary correlation variants go to four.
+   Primary correlation fields (r, r_margin, r12, r13, r23, avg_r) stay
+   un-rounded since they feed shrinkage + joint-probability math, not just
+   the UI — precision is cheap and float comparison at full precision
+   matches legacy D behavior for those fields.
+   Fields rounded to 1 decimal:  hit1, hit2, hit3, both, neither, all3,
+                                 given1, given2
+   Fields rounded to 4 decimals: r_avg, r12a, r13a, r23a, avg_ra  */
+var _ROUND1 = {hit1:1,hit2:1,hit3:1,both:1,neither:1,all3:1,given1:1,given2:1};
+var _ROUND4 = {r_avg:1,r12a:1,r13a:1,r23a:1,avg_ra:1};
+function _roundField(field, v){
+  if (v == null || !isFinite(v)) return v;
+  if (_ROUND1[field]) return Math.round(v * 10) / 10;
+  if (_ROUND4[field]) return Math.round(v * 10000) / 10000;
+  return v;
 }
 
 function _blendCombosGeneric(combosByYear, weights, isGlobal, size){
@@ -784,7 +902,7 @@ function _blendCombosGeneric(combosByYear, weights, isGlobal, size){
       if (allPresent) {
         sum = 0;
         for (j = 0; j < comboYears.length; j++) sum += w[comboYears[j]] * comboRows[j][field];
-        row[field] = sum;
+        row[field] = _roundField(field, sum);
         anyNonNull = true;
       } else {
         // Slow path: re-filter and renormalize for this field
@@ -800,7 +918,7 @@ function _blendCombosGeneric(combosByYear, weights, isGlobal, size){
             useVals.push(vv);
           }
         }
-        if (isGlobal && warnMissing.length > 0) {
+        if (DEBUG && isGlobal && warnMissing.length > 0) {
           for (var mwi = 0; mwi < warnMissing.length; mwi++) {
             var wk = key + '|' + field;
             if (!_globalGapWarns[wk]) {
@@ -816,7 +934,7 @@ function _blendCombosGeneric(combosByYear, weights, isGlobal, size){
         useW = normalizeWeights(weights, useYears);
         sum = 0;
         for (j = 0; j < useYears.length; j++) sum += useW[useYears[j]] * useVals[j];
-        row[field] = sum;
+        row[field] = _roundField(field, sum);
         anyNonNull = true;
       }
     }
@@ -1007,10 +1125,11 @@ function lc(l){return l.startsWith('Over')?'ov':'un';}
 function mf(d,f){if(f==='all')return true;var t=[d.leg1,d.leg2,d.leg3||''].join(' ');return t.indexOf(SMAP[f]||f)>=0;}
 function ms(d,q){if(!q)return true;return[d.leg1,d.leg2,d.leg3||''].join(' ').toLowerCase().indexOf(q.toLowerCase())>=0;}
 function diffStats(d){var s1=statOf(d.leg1);var s2=statOf(d.leg2);return s1!==s2;}
-function makeRbox(vals){var cols=vals.length;var cls='r'+cols;var html='<div class="rbox '+cls+'">';for(var i=0;i<vals.length;i++){var v=vals[i];if(v===null)continue;html+='<div class="ri"><div class="rl">'+v.label+'</div><div class="rv '+rCol(v.r)+'">'+fmt(v.r)+'</div><div class="rs">'+v.sub+'</div></div>';}html+='</div>';return html;}
+function _escAttr(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function makeRbox(vals){var cols=vals.length;var cls='r'+cols;var html='<div class="rbox '+cls+'">';for(var i=0;i<vals.length;i++){var v=vals[i];if(v===null)continue;var ttl=v.tooltip?' title="'+_escAttr(v.tooltip)+'"':'';html+='<div class="ri"><div class="rl">'+v.label+'</div><div class="rv '+rCol(v.r)+'"'+ttl+'>'+fmt(v.r)+'</div><div class="rs">'+v.sub+'</div></div>';}html+='</div>';return html;}
 function card2global(d){var r=d.r;var r2=d.r_avg!==undefined?d.r_avg:null;var rc=rCls(r);var neither=d.neither!==undefined?d.neither:(100-d.hit1-d.hit2+d.both).toFixed(1);var vals=[{label:'PER-GAME r',r:r,sub:'14,840 starts'},{label:'EXCEL r (AVG)',r:r2,sub:'pitcher season avgs'}];var rSection=makeRbox(vals);return '<div class="card '+rc+'"><div class="legs"><span class="leg '+lc(d.leg1)+'">'+d.leg1+'</span><span class="conn">+ parlay</span><span class="leg '+lc(d.leg2)+'">'+d.leg2+'</span></div>'+rSection+'<div class="hr4"><div class="hi"><div class="hv h1c">'+d.hit1+'%</div><div class="hl">Leg 1</div></div><div class="hi"><div class="hv h2c">'+d.hit2+'%</div><div class="hl">Leg 2</div></div><div class="hi"><div class="hv hboth">'+d.both+'%</div><div class="hl">Both</div></div><div class="hi"><div class="hv hn">'+neither+'%</div><div class="hl">Neither</div></div></div><div class="bw"><div class="bl"><span>Given Leg 1 to Leg 2</span><span>'+d.given1+'%</span></div><div class="bt"><div class="bf" style="width:'+Math.min(d.given1,100)+'%"></div></div></div></div>';}
-function card2pitcher(d,ns,rc_map){var r=d.r;var rm=d.r_margin!==undefined?d.r_margin:null;var rCl=rCls(rm!==null?rm:r);var neither=d.neither!==undefined?d.neither:(100-d.hit1-d.hit2+d.both).toFixed(1);var vals=[{label:'BINARY r (prop hit/miss)',r:r,sub:ns+' starts'},{label:'MARGIN r (Excel CORREL)',r:rm,sub:'continuous distance from line'}];var rSection=makeRbox(vals);return '<div class="card '+rCl+'"><div class="legs"><span class="leg '+lc(d.leg1)+'">'+d.leg1+'</span><span class="conn">+ parlay</span><span class="leg '+lc(d.leg2)+'">'+d.leg2+'</span></div>'+rSection+'<div class="hr4"><div class="hi"><div class="hv h1c">'+d.hit1+'%</div><div class="hl">Leg 1</div></div><div class="hi"><div class="hv h2c">'+d.hit2+'%</div><div class="hl">Leg 2</div></div><div class="hi"><div class="hv hboth">'+d.both+'%</div><div class="hl">Both</div></div><div class="hi"><div class="hv hn">'+neither+'%</div><div class="hl">Neither</div></div></div><div class="bw"><div class="bl"><span>Given Leg 1 to Leg 2</span><span>'+d.given1+'%</span></div><div class="bt"><div class="bf" style="width:'+Math.min(d.given1,100)+'%"></div></div></div></div>';}
-function card3(d){var rc=rCls(d.avg_r);var hasAvg=d.avg_ra!==null&&d.avg_ra!==undefined;var vals=[{label:'AVG PAIRWISE r',r:d.avg_r,sub:'per-game all starts'}];if(hasAvg)vals.push({label:'EXCEL AVG r',r:d.avg_ra,sub:'pitcher season avgs'});var rSection=makeRbox(vals);var pw1='<div class="pw3"><div class="pwi"><div class="pwl">L1-L2</div><div class="pwv '+rCol(d.r12)+'">'+fmt(d.r12)+'</div></div><div class="pwi"><div class="pwl">L1-L3</div><div class="pwv '+rCol(d.r13)+'">'+fmt(d.r13)+'</div></div><div class="pwi"><div class="pwl">L2-L3</div><div class="pwv '+rCol(d.r23)+'">'+fmt(d.r23)+'</div></div></div>';var pw2=hasAvg?'<div class="divl">Excel (season avgs)</div><div class="pw3a"><div class="pwi"><div class="pwl">L1-L2</div><div class="pwv '+rCol(d.r12a)+'">'+fmt(d.r12a)+'</div></div><div class="pwi"><div class="pwl">L1-L3</div><div class="pwv '+rCol(d.r13a)+'">'+fmt(d.r13a)+'</div></div><div class="pwi"><div class="pwl">L2-L3</div><div class="pwv '+rCol(d.r23a)+'">'+fmt(d.r23a)+'</div></div></div>':'';return '<div class="card '+rc+'"><div class="legs"><span class="leg '+lc(d.leg1)+'">'+d.leg1+'</span><span class="conn">+</span><span class="leg '+lc(d.leg2)+'">'+d.leg2+'</span><span class="conn">+</span><span class="leg '+lc(d.leg3)+'">'+d.leg3+'</span></div>'+rSection+pw1+pw2+'<div class="th3"><div class="t3i"><div class="t3v" style="color:var(--ac3)">'+d.hit1+'%</div><div class="t3l">Leg 1</div></div><div class="t3i"><div class="t3v" style="color:var(--ac2)">'+d.hit2+'%</div><div class="t3l">Leg 2</div></div><div class="t3i"><div class="t3v" style="color:var(--cyan)">'+d.hit3+'%</div><div class="t3l">Leg 3</div></div><div class="t3i" style="border:1px solid rgba(74,222,128,.3)"><div class="t3v" style="color:var(--ac)">'+d.all3+'%</div><div class="t3l">All 3</div></div><div class="t3i"><div class="t3v" style="color:var(--mu)">'+(d.neither!==undefined?d.neither:'--')+'%</div><div class="t3l">None</div></div></div></div>';}
+function card2pitcher(d,ns,rc_map){var r=d.r;var rm=d.r_margin!==undefined?d.r_margin:null;var rCl=rCls(rm!==null?rm:r);var neither=d.neither!==undefined?d.neither:(100-d.hit1-d.hit2+d.both).toFixed(1);var vals=[{label:'BINARY r (prop hit/miss)',r:r,sub:ns+' starts',tooltip:d._rTooltip},{label:'MARGIN r (Excel CORREL)',r:rm,sub:'continuous distance from line',tooltip:d._rmTooltip}];var rSection=makeRbox(vals);return '<div class="card '+rCl+'"><div class="legs"><span class="leg '+lc(d.leg1)+'">'+d.leg1+'</span><span class="conn">+ parlay</span><span class="leg '+lc(d.leg2)+'">'+d.leg2+'</span></div>'+rSection+'<div class="hr4"><div class="hi"><div class="hv h1c">'+d.hit1+'%</div><div class="hl">Leg 1</div></div><div class="hi"><div class="hv h2c">'+d.hit2+'%</div><div class="hl">Leg 2</div></div><div class="hi"><div class="hv hboth">'+d.both+'%</div><div class="hl">Both</div></div><div class="hi"><div class="hv hn">'+neither+'%</div><div class="hl">Neither</div></div></div><div class="bw"><div class="bl"><span>Given Leg 1 to Leg 2</span><span>'+d.given1+'%</span></div><div class="bt"><div class="bf" style="width:'+Math.min(d.given1,100)+'%"></div></div></div></div>';}
+function card3(d){var rc=rCls(d.avg_r);var hasAvg=d.avg_ra!==null&&d.avg_ra!==undefined;var vals=[{label:'AVG PAIRWISE r',r:d.avg_r,sub:'per-game all starts',tooltip:d._avgRTooltip}];if(hasAvg)vals.push({label:'EXCEL AVG r',r:d.avg_ra,sub:'pitcher season avgs'});var rSection=makeRbox(vals);var t12=d._r12Tooltip?' title="'+_escAttr(d._r12Tooltip)+'"':'';var t13=d._r13Tooltip?' title="'+_escAttr(d._r13Tooltip)+'"':'';var t23=d._r23Tooltip?' title="'+_escAttr(d._r23Tooltip)+'"':'';var pw1='<div class="pw3"><div class="pwi"><div class="pwl">L1-L2</div><div class="pwv '+rCol(d.r12)+'"'+t12+'>'+fmt(d.r12)+'</div></div><div class="pwi"><div class="pwl">L1-L3</div><div class="pwv '+rCol(d.r13)+'"'+t13+'>'+fmt(d.r13)+'</div></div><div class="pwi"><div class="pwl">L2-L3</div><div class="pwv '+rCol(d.r23)+'"'+t23+'>'+fmt(d.r23)+'</div></div></div>';var pw2=hasAvg?'<div class="divl">Excel (season avgs)</div><div class="pw3a"><div class="pwi"><div class="pwl">L1-L2</div><div class="pwv '+rCol(d.r12a)+'">'+fmt(d.r12a)+'</div></div><div class="pwi"><div class="pwl">L1-L3</div><div class="pwv '+rCol(d.r13a)+'">'+fmt(d.r13a)+'</div></div><div class="pwi"><div class="pwl">L2-L3</div><div class="pwv '+rCol(d.r23a)+'">'+fmt(d.r23a)+'</div></div></div>':'';return '<div class="card '+rc+'"><div class="legs"><span class="leg '+lc(d.leg1)+'">'+d.leg1+'</span><span class="conn">+</span><span class="leg '+lc(d.leg2)+'">'+d.leg2+'</span><span class="conn">+</span><span class="leg '+lc(d.leg3)+'">'+d.leg3+'</span></div>'+rSection+pw1+pw2+'<div class="th3"><div class="t3i"><div class="t3v" style="color:var(--ac3)">'+d.hit1+'%</div><div class="t3l">Leg 1</div></div><div class="t3i"><div class="t3v" style="color:var(--ac2)">'+d.hit2+'%</div><div class="t3l">Leg 2</div></div><div class="t3i"><div class="t3v" style="color:var(--cyan)">'+d.hit3+'%</div><div class="t3l">Leg 3</div></div><div class="t3i" style="border:1px solid rgba(74,222,128,.3)"><div class="t3v" style="color:var(--ac)">'+d.all3+'%</div><div class="t3l">All 3</div></div><div class="t3i"><div class="t3v" style="color:var(--mu)">'+(d.neither!==undefined?d.neither:'--')+'%</div><div class="t3l">None</div></div></div></div>';}
 function renderG(){var q=document.getElementById('gQ').value;var sort=document.getElementById('gSort').value;var src=gLegs===2?D.global_2:D.global_3;var items=src.filter(function(d){return mf(d,gFilt)&&ms(d,q)&&(gLegs===3||diffStats(d));});if(gLegs===2){if(sort==='r_d')items.sort(function(a,b){return(b.r||0)-(a.r||0);});else if(sort==='r_a')items.sort(function(a,b){return(a.r||0)-(b.r||0);});else if(sort==='b_d')items.sort(function(a,b){return b.both-a.both;});else items.sort(function(a,b){return b.hit1-a.hit1;});}else{if(sort==='r_d')items.sort(function(a,b){return b.avg_r-a.avg_r;});else if(sort==='r_a')items.sort(function(a,b){return a.avg_r-b.avg_r;});else items.sort(function(a,b){return b.all3-a.all3;});}var grid=document.getElementById('gGrid');if(!items.length){grid.innerHTML='<div class="empty">No results.</div>';return;}grid.innerHTML=items.map(function(d){return gLegs===2?card2global(d):card3(d);}).join('');}
 function pInput(){var q=document.getElementById('pSrch').value.toLowerCase();var dd=document.getElementById('pDD');if(!q){dd.innerHTML='';dd.classList.remove('open');return;}var m=PNAMES.filter(function(p){return p.toLowerCase().indexOf(q)>=0;}).slice(0,25);if(!m.length){dd.innerHTML='<div class="pit" style="color:var(--mu)">No pitchers found</div>';dd.classList.add('open');return;}dd.innerHTML=m.map(function(p){var pd=D.pitchers[p];return'<div class="pit" onclick="selP(\'' +p.replace(/'/g,"\\'")+'\')">' +p+'<span class="py">'+pd.years.join(', ')+' - '+pd.n_starts+'G</span></div>';}).join('');dd.classList.add('open');}
 function pFocus(){if(document.getElementById('pSrch').value)pInput();}
@@ -1018,8 +1137,72 @@ function pBlur(){document.getElementById('pDD').classList.remove('open');}
 function selP(name){document.getElementById('pSrch').value=name;document.getElementById('pDD').classList.remove('open');renderP(name);}
 function setPLegs(n){pLegs=n;document.querySelectorAll('#pTG .tb').forEach(function(t,i){t.classList.toggle('active',(i===0&&n===2)||(i===1&&n===3));});applyPF();}
 function setPF(f){pFilt=f;document.querySelectorAll('#pFB .fb').forEach(function(b){var t=b.textContent.trim();b.classList.toggle('active',f==='all'?t==='All':f==='SO'?t==='K':f==='ER'?t==='ER':f==='BB'?t==='BB':f==='H'?t==='Hits':f==='OUTS'?t==='Outs':false);});applyPF();}
-function renderP(name){var pd=D.pitchers[name];if(!pd)return;var html='<div class="pprof"><div class="pname">'+name+'</div><div class="pmeta"><div class="pmi"><span class="pmn">'+pd.n_starts+'</span><span class="pml">STARTS · EFF '+Math.round(pd.n_starts_eff||0)+'</span></div><div class="pmi"><span class="pmn">'+pd.avg_SO+'</span><span class="pml">AVG K</span></div><div class="pmi"><span class="pmn">'+pd.avg_ER+'</span><span class="pml">AVG ER</span></div><div class="pmi"><span class="pmn">'+pd.avg_BB+'</span><span class="pml">AVG BB</span></div><div class="pmi"><span class="pmn">'+pd.avg_H+'</span><span class="pml">AVG H</span></div><div class="pmi"><span class="pmn">'+pd.avg_OUTS+'</span><span class="pml">AVG OUTS</span></div><div class="pmi"><span class="pmn">'+pd.years.join(', ')+'</span><span class="pml">SEASONS</span></div></div><div class="note">Per-game r = binary prop correlation on his starts only. Excel CORREL() = raw stat values (e.g. actual K and ER totals each game).</div></div><div class="ctrl"><div class="tg" id="pTG"><button class="tb active" onclick="setPLegs(2)">2-Leg</button><button class="tb" onclick="setPLegs(3)">3-Leg</button></div><div class="fb-wrap" id="pFB"><button class="fb active" onclick="setPF(\x27all\x27)">All</button><button class="fb" onclick="setPF(\x27SO\x27)">K</button><button class="fb" onclick="setPF(\x27ER\x27)">ER</button><button class="fb" onclick="setPF(\x27BB\x27)">BB</button><button class="fb" onclick="setPF(\x27H\x27)">Hits</button><button class="fb" onclick="setPF(\x27OUTS\x27)">Outs</button></div><select class="ssel" id="pSort" onchange="applyPF()"><option value="r_d">r: high to low</option><option value="r_a">r: low to high</option><option value="b_d">Both Hit %</option></select><input class="srch" id="pQ" placeholder="Filter combos..." oninput="applyPF()"></div><div class="lgw"><div class="lgi"><div class="lgd" style="background:var(--ac)"></div>0.30+ Strong</div><div class="lgi"><div class="lgd" style="background:var(--ac2)"></div>0.15-0.29 Mod</div><div class="lgi"><div class="lgd" style="background:var(--b2)"></div>Under 0.15 Weak</div><div class="lgi"><div class="lgd" style="background:var(--red)"></div>Negative</div></div><div class="grid" id="pGrid"></div>';document.getElementById('pContent').innerHTML=html;pLegs=2;pFilt='all';applyPF();}
-function applyPF(){var name=document.getElementById('pSrch').value;var pd=D.pitchers[name];if(!pd)return;var qEl=document.getElementById('pQ');var q=qEl?qEl.value:'';var sEl=document.getElementById('pSort');var sort=sEl?sEl.value:'r_d';var src=pLegs===2?pd.combos_2:pd.combos_3;var rc_map=pd.raw_corr||{};var items=src.filter(function(d){return mf(d,pFilt)&&ms(d,q);});if(pLegs===2){if(sort==='r_d')items.sort(function(a,b){return(b.r||0)-(a.r||0);});else if(sort==='r_a')items.sort(function(a,b){return(a.r||0)-(b.r||0);});else items.sort(function(a,b){return b.both-a.both;});}else{if(sort==='r_d')items.sort(function(a,b){return b.avg_r-a.avg_r;});else if(sort==='r_a')items.sort(function(a,b){return a.avg_r-b.avg_r;});else items.sort(function(a,b){return b.all3-a.all3;});}var grid=document.getElementById('pGrid');if(!grid)return;if(!items.length){grid.innerHTML='<div class="empty">No combos match.</div>';return;}grid.innerHTML=items.map(function(d){return pLegs===2?card2pitcher(d,pd.n_starts,rc_map):card3(d);}).join('');}
+/* Mode summary shown on the pitcher page header so the user knows what
+   CORR_MODE the r values they're looking at are filtered through. Shows the
+   shrinkage weights when Blended actually applies (n_eff >= BLEND_MIN_STARTS).
+   Toggle lives on the EV page; this is read-only context. */
+function _modeSummary(pd){
+  if(!pd)return '';
+  if(CORR_MODE==='player')return 'mode: PLAYER (pitcher-only)';
+  if(CORR_MODE==='global')return 'mode: GLOBAL (league baseline)';
+  var nEff=pd.n_starts_eff||0;
+  if(nEff<BLEND_MIN_STARTS)return 'mode: BLENDED → 100% GLOBAL (n_eff '+nEff.toFixed(1)+' < '+BLEND_MIN_STARTS+')';
+  var w=_blendWeights(nEff);
+  return 'mode: BLENDED · '+Math.round(w.wPlayer*100)+'% player / '+Math.round(w.wGlobal*100)+'% global · n_eff '+nEff.toFixed(1);
+}
+function renderP(name){var pd=D.pitchers[name];if(!pd)return;var modeTxt=_modeSummary(pd);var html='<div class="pprof"><div class="pname">'+name+' <span style="font-size:10px;color:var(--cyan);font-family:Space Mono,monospace;font-weight:400;letter-spacing:.4px;margin-left:8px">'+modeTxt+'</span></div><div class="pmeta"><div class="pmi"><span class="pmn">'+pd.n_starts+'</span><span class="pml">STARTS · EFF '+Math.round(pd.n_starts_eff||0)+'</span></div><div class="pmi"><span class="pmn">'+pd.avg_SO+'</span><span class="pml">AVG K</span></div><div class="pmi"><span class="pmn">'+pd.avg_ER+'</span><span class="pml">AVG ER</span></div><div class="pmi"><span class="pmn">'+pd.avg_BB+'</span><span class="pml">AVG BB</span></div><div class="pmi"><span class="pmn">'+pd.avg_H+'</span><span class="pml">AVG H</span></div><div class="pmi"><span class="pmn">'+pd.avg_OUTS+'</span><span class="pml">AVG OUTS</span></div><div class="pmi"><span class="pmn">'+pd.years.join(', ')+'</span><span class="pml">SEASONS</span></div></div><div class="note">Per-game r = binary prop correlation on his starts only. Excel CORREL() = raw stat values (e.g. actual K and ER totals each game). In Blended mode, r values are shrunk toward the global prior — hover for weights.</div></div><div class="ctrl"><div class="tg" id="pTG"><button class="tb active" onclick="setPLegs(2)">2-Leg</button><button class="tb" onclick="setPLegs(3)">3-Leg</button></div><div class="fb-wrap" id="pFB"><button class="fb active" onclick="setPF(\x27all\x27)">All</button><button class="fb" onclick="setPF(\x27SO\x27)">K</button><button class="fb" onclick="setPF(\x27ER\x27)">ER</button><button class="fb" onclick="setPF(\x27BB\x27)">BB</button><button class="fb" onclick="setPF(\x27H\x27)">Hits</button><button class="fb" onclick="setPF(\x27OUTS\x27)">Outs</button></div><select class="ssel" id="pSort" onchange="applyPF()"><option value="r_d">r: high to low</option><option value="r_a">r: low to high</option><option value="b_d">Both Hit %</option></select><input class="srch" id="pQ" placeholder="Filter combos..." oninput="applyPF()"></div><div class="lgw"><div class="lgi"><div class="lgd" style="background:var(--ac)"></div>0.30+ Strong</div><div class="lgi"><div class="lgd" style="background:var(--ac2)"></div>0.15-0.29 Mod</div><div class="lgi"><div class="lgd" style="background:var(--b2)"></div>Under 0.15 Weak</div><div class="lgi"><div class="lgd" style="background:var(--red)"></div>Negative</div></div><div class="grid" id="pGrid"></div>';document.getElementById('pContent').innerHTML=html;pLegs=2;pFilt='all';applyPF();}
+/* Mode-aware transform: take a raw pitcher combo row (year-weighted values
+   from buildBlendedD) and return a display copy whose r fields reflect the
+   active CORR_MODE. Player mode: pass-through. Global mode: swap in
+   D.global_2 values for the same leg pair. Blended mode: shrink player
+   toward global using n_eff. Tooltip text is attached for display only. */
+function _xformCombo2(d,pd){
+  if(CORR_MODE==='player')return d;
+  var binRes=resolveR(pd,d.leg1,d.leg2);
+  var s1=statCat(d.leg1),s2=statCat(d.leg2);
+  var rmRes=resolveRawCorrPair(pd,s1,s2);
+  var out={};for(var k in d)out[k]=d[k];
+  out.r=binRes.r;
+  out.r_margin=rmRes.r;
+  out._rTooltip=rCorrTooltip(binRes);
+  out._rmTooltip=rCorrTooltip(rmRes);
+  return out;
+}
+function _xformCombo3(d,pd){
+  if(CORR_MODE==='player')return d;
+  var r12Res=resolveR(pd,d.leg1,d.leg2);
+  var r13Res=resolveR(pd,d.leg1,d.leg3);
+  var r23Res=resolveR(pd,d.leg2,d.leg3);
+  var valid=[r12Res.r,r13Res.r,r23Res.r].filter(function(v){return v!=null;});
+  /* avg_r stays defined as the simple arithmetic mean of the three shrunk
+     pair correlations — matches the aggregator's own computation on raw r's,
+     so the meaning of "AVG PAIRWISE r" doesn't change between modes. */
+  var avg_r=valid.length?valid.reduce(function(s,v){return s+v;},0)/valid.length:null;
+  var out={};for(var k in d)out[k]=d[k];
+  out.r12=r12Res.r;out.r13=r13Res.r;out.r23=r23Res.r;
+  out.avg_r=avg_r;
+  out._r12Tooltip=rCorrTooltip(r12Res);
+  out._r13Tooltip=rCorrTooltip(r13Res);
+  out._r23Tooltip=rCorrTooltip(r23Res);
+  /* avg_ra (season-avg Excel variant) is display-only per spec — leave the
+     year-weighted value untouched, no shrinkage. */
+  return out;
+}
+function applyPF(){
+  var name=document.getElementById('pSrch').value;var pd=D.pitchers[name];if(!pd)return;
+  var qEl=document.getElementById('pQ');var q=qEl?qEl.value:'';
+  var sEl=document.getElementById('pSort');var sort=sEl?sEl.value:'r_d';
+  var src=pLegs===2?pd.combos_2:pd.combos_3;var rc_map=pd.raw_corr||{};
+  var items=src.filter(function(d){return mf(d,pFilt)&&ms(d,q);});
+  /* Apply mode-aware shrinkage BEFORE sorting so sort keys reflect what the
+     user will see (sorting by player r while displaying shrunk r would be
+     visually confusing). */
+  items=items.map(pLegs===2?function(d){return _xformCombo2(d,pd);}:function(d){return _xformCombo3(d,pd);});
+  if(pLegs===2){if(sort==='r_d')items.sort(function(a,b){return(b.r||0)-(a.r||0);});else if(sort==='r_a')items.sort(function(a,b){return(a.r||0)-(b.r||0);});else items.sort(function(a,b){return b.both-a.both;});}else{if(sort==='r_d')items.sort(function(a,b){return b.avg_r-a.avg_r;});else if(sort==='r_a')items.sort(function(a,b){return a.avg_r-b.avg_r;});else items.sort(function(a,b){return b.all3-a.all3;});}
+  var grid=document.getElementById('pGrid');if(!grid)return;
+  if(!items.length){grid.innerHTML='<div class="empty">No combos match.</div>';return;}
+  grid.innerHTML=items.map(function(d){return pLegs===2?card2pitcher(d,pd.n_starts,rc_map):card3(d);}).join('');
+}
 /* renderG now invoked by initializeApp() after data loads */
 </script>
 </body>
