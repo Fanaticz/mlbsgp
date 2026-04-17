@@ -2,11 +2,14 @@
   "name": "mlb-sgp-correlations",
   "version": "1.0.0",
   "private": true,
-  "engines": { "node": ">=18.0.0" },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
+    "compression": "^1.8.1",
     "express": "^4.19.2"
   }
 }
