@@ -177,13 +177,36 @@ def _fetch_subcategory(event_id, sc):
     return mkts, sels
 
 
-def get_markets(event_id):
-    """Return all markets and selections for an event, scoped properly to that event."""
+def get_markets(event_id, pitcher_only=False):
+    """Return all markets and selections for an event, scoped properly to that event.
+
+    When pitcher_only=True, skip subcategories that are clearly batter/team/game
+    markets before making the per-subcat HTTP call. DK's subcategory endpoint is
+    the slowest/most rate-limited part of the flow, so dropping ~80% of the
+    fetches (we only care about pitcher props for SGP pricing) is the biggest
+    lever we have on end-to-end latency."""
     # Step 1: Get event metadata (subcategories + market groups)
     r0 = _get_with_retry(f"{DK_SGP}/{event_id}")
     evt = r0.json()["data"]["events"][0]
     subcats = evt.get("clientMetadata", {}).get("subCategories", [])
     market_groups = evt.get("marketGroups", [])
+
+    if pitcher_only:
+        _SC_BATTER_HINTS = ("batter", "hitter", "home run", "rbi", "total bases",
+                            "at bat", "stolen base", "singles", "doubles", "batting",
+                            "team total", "game prop", "game lines", "moneyline",
+                            "run line", "first inning", "first 5", "1st 5",
+                            "innings", "player combo", "alternate run",
+                            "parlay", "quick pick")
+        _SC_PITCHER_HINTS = ("pitcher", "pitching", "strikeout", "earned run",
+                             "walks allowed", "walk allowed", "hits allowed",
+                             "outs recorded", "outs o/u", "outs thrown")
+        def _keep(sc):
+            n = (sc.get("name") or "").lower()
+            if any(h in n for h in _SC_BATTER_HINTS):
+                return False
+            return any(k in n for k in _SC_PITCHER_HINTS)
+        subcats = [sc for sc in subcats if _keep(sc)]
 
     # Step 2: Fetch markets for each subcategory in parallel
     all_markets = []
@@ -545,7 +568,7 @@ def find_sgps(legs):
     import concurrent.futures
 
     # Soft deadline: return partial results before Node's spawn timeout SIGTERMs us.
-    pricing_deadline = _time.monotonic() + 75.0
+    pricing_deadline = _time.monotonic() + 110.0
     truncated = False
 
     # Group by pitcher
@@ -573,7 +596,7 @@ def find_sgps(legs):
 
     def scan(eid):
         try:
-            md = get_markets(eid)
+            md = get_markets(eid, pitcher_only=True)
             return eid, md
         except Exception:
             return eid, None
