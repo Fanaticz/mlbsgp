@@ -20,7 +20,7 @@ import pandas as pd
 
 
 ROOT = Path(__file__).resolve().parent
-DATA_DIR = ROOT / "data"
+DATA_DIR = ROOT / "public" / "data"
 
 # year -> (xlsx filename, sheet name)
 SOURCES = {
@@ -162,10 +162,10 @@ def main() -> int:
             f"  {year}: {n_rows:>5} rows  "
             f"{size_mb:6.2f} MB  "
             f"{drange['first']} .. {drange['last']}  "
-            f"-> {path.relative_to(ROOT)}"
+            f"-> {path.relative_to(ROOT).as_posix()}"
         )
     print("-" * 64)
-    print(f"  manifest -> {manifest_path.relative_to(ROOT)}")
+    print(f"  manifest -> {manifest_path.relative_to(ROOT).as_posix()}")
     print(f"  last_updated: {manifest['last_updated']}")
     return 0
 
