@@ -663,6 +663,7 @@ def find_sgps(legs):
                 matched.append({
                     "leg": l.get("leg"),
                     "avg_fv": l.get("avg_fv"),
+                    "_fv_suspicious": bool(l.get("_fv_suspicious", False)),
                     "dk_selection_id": dk_id,
                 })
             else:

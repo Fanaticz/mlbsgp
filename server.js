@@ -90,6 +90,34 @@ function normalizeRows(rows) {
     const fv = Number(r.avg_fv);
     if (!isFinite(fv)) return;
 
+    // Defense against OCR column-confusion: when the model picks a number from
+    // the avg_odds pair ("+204 / -309") and returns it as avg_fv, it will
+    // exactly match one half of that pair. Flag but don't drop — the user
+    // sees a warning on the card and decides.
+    const avgOddsRaw = String(r.avg_odds == null ? '' : r.avg_odds);
+    const oddsPair = avgOddsRaw.match(/([+-]?\d+)\s*\/\s*([+-]?\d+)/);
+    let fvSuspicious = false;
+    if (oddsPair) {
+      const oddsOver = Number(oddsPair[1]);
+      const oddsUnder = Number(oddsPair[2]);
+      if (fv === oddsOver || fv === oddsUnder) {
+        fvSuspicious = true;
+        console.warn('[suspicious_fv] L=' + (r.L != null ? r.L : '?') +
+          ' ' + (r.bet_name || pitcher + ' ' + leg) +
+          ': avg_fv=' + fv + ' matches avg_odds pair (' +
+          oddsOver + '/' + oddsUnder + ') — OCR likely picked wrong column');
+      }
+    }
+
+    if (DEBUG) {
+      console.log('[ocr_raw]', r.L, r.bet_name, {
+        avg_fv: r.avg_fv,
+        avg_odds: r.avg_odds,
+        fbc: r.fbc,
+        _fv_suspicious: fvSuspicious,
+      });
+    }
+
     // First-pass dedupe by row number (L) — prevents two distinct sheet rows
     // from being collapsed when an OCR direction misread makes their
     // canonical leg strings collide. (Previously dedupe by pitcher|leg
@@ -110,12 +138,13 @@ function normalizeRows(rows) {
       pitcher,
       leg,
       avg_fv: fv,
+      _fv_suspicious: fvSuspicious,
       _L: L,
       _books: Number.isFinite(booksCount) ? booksCount : 0,
     });
   });
   return collapseLegDupes(firstPass).map(function(x) {
-    return { pitcher: x.pitcher, leg: x.leg, avg_fv: x.avg_fv };
+    return { pitcher: x.pitcher, leg: x.leg, avg_fv: x.avg_fv, _fv_suspicious: !!x._fv_suspicious };
   });
 }
 
@@ -163,62 +192,71 @@ app.post('/api/extract', async (req, res) => {
 
     const prompt = `You are extracting MLB pitcher prop bets from a screenshot of a spreadsheet. Return ONLY valid JSON, no prose, no markdown fences.
 
-The table header row contains these 18 columns in this left-to-right order:
-1=league  2=date  3=time  4=game  5=market  6=bet_name  7=book  8=L  9=M  10=odds  11=limit  12=books_count  13=avg_odds  14=avg_fv  15=avg_hold  16=fbc  17=ev  18=qk
+The table header row contains these column names (left to right): league, date, time, game, market, bet_name, book, L, M, odds, limit, books_count, avg_odds, avg_fv, avg_hold, fbc, ev, qk.
 
-YOUR TASK: For each data row, return ONE JSON object with raw cell values copied verbatim from that single row. Do NOT normalize, do NOT combine columns, do NOT infer values from other rows. Each row of JSON must come from exactly ONE row of the table. Emit one object per row — do NOT skip rows, do NOT merge rows.
+YOUR TASK: For each data row, return ONE JSON object with cell values from that single row. Do NOT normalize, do NOT combine columns, do NOT infer values from other rows. Each row of JSON must come from exactly ONE row of the table. Emit one object per row — do NOT skip rows, do NOT merge rows.
 
-═══ FIELDS TO RETURN (raw, per row) ═══
-- L: the integer in column 8 ("L"), the small per-row index (1, 2, 3, ...). Required — this anchors the row.
+═══ FIELDS TO RETURN (per row) ═══
+- L: the integer in the "L" column, the small per-row index (1, 2, 3, ...). Required — anchors the row.
 - pitcher: the player name (everything in bet_name BEFORE the word "Over" or "Under")
-- market: the EXACT text from column 5 ("market"), verbatim. Examples: "Player Pitching Strikeouts", "Player Pitching Earned Runs Allowed", "Player Pitching Walks", "Player Pitching Hits Allowed", "Player Pitching Outs"
-- bet_name: the EXACT text from column 6 ("bet_name"), verbatim. Examples: "Emerson Hancock Over 15.5", "Clay Holmes Under 2.5"
-- direction: the word "Over" or "Under" — read it letter-by-letter from this row's bet_name cell. Do NOT copy from a neighbouring row.
-- line: the numeric line value from this row's bet_name (4.5, 14.5, 16.5, etc.) as a number, not a string.
-- avg_fv: the SIGNED INTEGER from column 14 ("avg_fv")
-- books_count: the UNSIGNED INTEGER from column 12 ("books_count"), a small count like 2, 3, 5, 7, 8 that tells us how many sportsbooks contributed to the averaged lines. If the cell is empty or non-numeric, return 0.
+- market: the EXACT text from the "market" column. Examples: "Player Pitching Strikeouts", "Player Pitching Earned Runs Allowed", "Player Pitching Walks", "Player Pitching Hits Allowed", "Player Pitching Outs"
+- bet_name: the EXACT text from the "bet_name" column. Examples: "Emerson Hancock Over 15.5", "Clay Holmes Under 2.5"
+- direction: the word "Over" or "Under" — read it letter-by-letter from this row's bet_name cell
+- line: the numeric line from this row's bet_name (4.5, 14.5, 16.5, etc.) as a number
+- avg_odds: the EXACT text under the "avg_odds" header for this row, as a STRING. This cell always contains a PAIR of signed integers separated by "/". Preserve the format verbatim: "+204 / -309", "-101 / -136", "+150 / -209". If the cell is genuinely empty, return "".
+- avg_fv: the SINGLE SIGNED INTEGER under the "avg_fv" header for this row. ONE number, not a pair. Examples: 261, -298, 117, -110.
+- books_count: the UNSIGNED INTEGER under the "books_count" header. A small count like 2, 3, 5, 7, 8. If empty or non-numeric, return 0.
 
-═══ ROW DISCIPLINE — THE #1 SOURCE OF BUGS ═══
-The market, bet_name, direction, and avg_fv MUST come from the SAME row. Use L (column 8) as a positional anchor. Before emitting JSON for a row, ask:
-- "Am I reading market, bet_name, direction, line, AND avg_fv all from the row whose L = X?"
-If you cannot answer YES with the same X, you have crossed rows — re-align before emitting.
+═══ HOW TO IDENTIFY THE avg_fv COLUMN — READ THIS CAREFULLY ═══
+Do NOT count columns. Do NOT infer column position from neighbors. Do NOT use adjacent columns as positional anchors. Instead:
 
-DO NOT cross rows. DO NOT pair the market from one row with the bet_name from another. The most common mistake is taking bet_name "Over 4.5" from a Strikeouts row and pairing it with "Earned Runs Allowed" market from a different row, or vice versa.
+1. Locate the HEADER ROW at the top of the table. Visually find the text "avg_fv".
+2. Read values straight DOWN from that specific header cell. For each data row, the avg_fv value is the cell directly under the "avg_fv" header.
+3. The "avg_odds" header sits immediately to the LEFT of "avg_fv". Its cells contain TWO numbers separated by "/". That column is NOT avg_fv. Never substitute one for the other.
 
-═══ CRITICAL COLUMN DISAMBIGUATION FOR avg_fv ═══
-Three adjacent columns contain American odds. You MUST distinguish them:
+═══ MANDATORY SELF-CHECK BEFORE EMITTING EACH ROW ═══
+For every row, verify these three conditions. If ANY fail, you are reading the wrong column — re-locate the "avg_fv" header and re-read.
 
-Column 10 "odds": a PAIR like "+109 / -145" or "-120 / -111" — IGNORE THIS COLUMN
-Column 13 "avg_odds": a PAIR like "-103 / -132" or "+128 / -183" — IGNORE THIS COLUMN
-Column 14 "avg_fv": a SINGLE signed integer like "+114" or "-110" or "+158" — EXTRACT THIS VALUE
+(a) avg_fv is a SINGLE integer. It contains NO "/" character and NO space-separated second number.
+(b) avg_fv is NOT numerically equal to either half of this row's avg_odds pair.
+    If avg_odds is "+204 / -309" and you think avg_fv is -309, that's impossible — you copied from the wrong column.
+    If avg_odds is "-101 / -136" and you think avg_fv is -101, that's impossible — same mistake.
+(c) avg_fv is the value directly under the "avg_fv" header text, not under "avg_odds" or "avg_hold".
 
-The first two columns have a "/" character. The avg_fv column has NO slash. If you see a value containing "/", you are reading the wrong column.
+═══ ROW DISCIPLINE ═══
+market, bet_name, direction, avg_odds, and avg_fv MUST all come from the SAME row. Use L as a positional anchor. Before emitting JSON for a row, ask: "Am I reading every field from the row whose L = X?" If not, re-align.
 
-The avg_hold column (15) is a percentage like "7.0%" or "6.5%" — it is immediately to the right of avg_fv. Use that as a positional anchor: the signed integer IMMEDIATELY LEFT of the percentage column IS avg_fv.
+DO NOT cross rows. DO NOT pair the market from one row with the bet_name from another.
 
-═══ OVER vs UNDER — CRITICAL — READ THE LETTER, NOT THE PATTERN ═══
-The same pitcher will often appear in MULTIPLE rows of the sheet, with DIFFERENT directions and lines (e.g. row 3 might be "Braxton Ashcraft Under 4.5" Strikeouts and row 13 might be "Braxton Ashcraft Over 4.5" Strikeouts — those are two SEPARATE rows for two SEPARATE bets). For EACH row independently:
-1. Locate the bet_name cell for the row whose L = X.
-2. Read the literal letters after the player name. The next word is either "Over" (starts with O) or "Under" (starts with U). Do NOT guess from context, do NOT infer from the avg_fv sign, do NOT infer from a similar pitcher row elsewhere.
-3. Copy that exact word into the "direction" field AND keep it inside the verbatim "bet_name" field. They MUST agree.
+═══ OVER vs UNDER ═══
+The same pitcher often appears in MULTIPLE rows with different directions and lines. For EACH row independently:
+1. Locate the bet_name cell in the row whose L = X.
+2. Read the literal letters after the player name — "Over" (O) or "Under" (U). Do NOT guess from context, do NOT infer from avg_fv sign.
+3. Copy that exact word into "direction" AND keep it in the verbatim "bet_name". They MUST agree.
 
-If the same pitcher has two rows with the same line+stat (e.g., two "Ashcraft 4.5 Strikeouts" rows), one MUST be Over and the other MUST be Under. Never label both with the same direction.
+If the same pitcher has two rows with the same line+stat, one MUST be Over and the other MUST be Under. Never label both with the same direction.
 
 ═══ WORKED EXAMPLES ═══
-Table row: L=15, market="Player Pitching Outs", bet_name="Emerson Hancock Over 15.5", odds="-352 / +267", books_count=7, avg_odds="-436 / +287", avg_fv="-298", avg_hold="7.9%"
-  RIGHT: {"L":15,"pitcher":"Emerson Hancock","market":"Player Pitching Outs","bet_name":"Emerson Hancock Over 15.5","direction":"Over","line":15.5,"avg_fv":-298,"books_count":7}
-  WRONG: {"L":15,"pitcher":"Emerson Hancock","market":"Player Pitching Earned Runs Allowed","bet_name":"Emerson Hancock Over 2.5","direction":"Over","line":2.5,"avg_fv":-298,"books_count":7}  (market and bet_name pulled from a DIFFERENT row)
+CORRECT:
+{"L":15,"pitcher":"Emerson Hancock","market":"Player Pitching Outs","bet_name":"Emerson Hancock Over 15.5","direction":"Over","line":15.5,"avg_odds":"-436 / +287","avg_fv":-298,"books_count":7}
 
-Table row: L=24, market="Player Pitching Earned Runs Allowed", bet_name="Emerson Hancock Over 4.5", odds="+168 / nan", books_count=4, avg_odds="+150 / -209", avg_fv="+181", avg_hold="7.1%"
-  RIGHT: {"L":24,"pitcher":"Emerson Hancock","market":"Player Pitching Earned Runs Allowed","bet_name":"Emerson Hancock Over 4.5","direction":"Over","line":4.5,"avg_fv":181,"books_count":4}
+CORRECT:
+{"L":2,"pitcher":"Dean Kremer","market":"Player Pitching Strikeouts","bet_name":"Dean Kremer Over 5.5","direction":"Over","line":5.5,"avg_odds":"+204 / -309","avg_fv":261,"books_count":2}
 
-Table row: L=3, market="Player Pitching Strikeouts", bet_name="Braxton Ashcraft Under 4.5", odds="+109 / -139", books_count=8, avg_odds="+100 / -132", avg_fv="+115", avg_hold="6.5%"
-  RIGHT: {"L":3,"pitcher":"Braxton Ashcraft","market":"Player Pitching Strikeouts","bet_name":"Braxton Ashcraft Under 4.5","direction":"Under","line":4.5,"avg_fv":115,"books_count":8}
-  WRONG: {"L":3,"pitcher":"Braxton Ashcraft","market":"Player Pitching Strikeouts","bet_name":"Braxton Ashcraft Over 4.5","direction":"Over","line":4.5,"avg_fv":115,"books_count":8}  (direction flipped — the bet_name cell says "Under", not "Over")
+CORRECT:
+{"L":6,"pitcher":"Dean Kremer","market":"Player Pitching Outs","bet_name":"Dean Kremer Over 15.5","direction":"Over","line":15.5,"avg_odds":"-101 / -136","avg_fv":117,"books_count":4}
+
+WRONG — the exact bug this prompt guards against:
+{"L":2,"pitcher":"Dean Kremer","bet_name":"Dean Kremer Over 5.5","avg_odds":"+204 / -309","avg_fv":-309,"books_count":2}
+  — avg_fv was copied from the avg_odds pair. ALWAYS WRONG. The real avg_fv (261) lives in the NEXT column to the right.
+
+WRONG — direction flipped:
+{"L":3,"bet_name":"Braxton Ashcraft Under 4.5","direction":"Over",...}
+  — bet_name says "Under" but direction says "Over". They MUST agree.
 
 ═══ OUTPUT ═══
 Return exactly this JSON shape, nothing else:
-{"rows":[{"L":1,"pitcher":"...","market":"...","bet_name":"...","direction":"Over","line":4.5,"avg_fv":123,"books_count":7}, ...]}`;
+{"rows":[{"L":1,"pitcher":"...","market":"...","bet_name":"...","direction":"Over","line":4.5,"avg_odds":"+X / -Y","avg_fv":123,"books_count":7}, ...]}`;
 
     const body = {
       model: 'claude-opus-4-6',

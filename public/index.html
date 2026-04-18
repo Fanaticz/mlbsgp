@@ -484,7 +484,7 @@ function evRenderDetected(){
   Object.keys(byPitcher).forEach(function(p){
     var inDB=!!D.pitchers[p];
     html+='<div style="background:var(--s2);border:1px solid var(--b1);border-radius:6px;padding:8px 10px"><div style="font-size:12px;font-weight:600;margin-bottom:3px">'+p+(inDB?' <span style="font-size:9px;color:var(--ac);font-family:Space Mono,monospace">[DB]</span>':'')+'</div>';
-    byPitcher[p].forEach(function(l){var cls=l.leg.startsWith('Over')?'ov':'un';html+='<div style="margin-top:2px"><span class="leg '+cls+'" style="font-size:10px">'+l.leg+'</span> <span style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">('+fmtAm(l.avg_fv)+')</span></div>';});
+    byPitcher[p].forEach(function(l){var cls=l.leg.startsWith('Over')?'ov':'un';var warn=l._fv_suspicious?' <span title="OCR may have mis-extracted fair value for this leg — verify against source sheet" style="color:var(--ac2);font-size:11px;cursor:help">&#9888;</span>':'';html+='<div style="margin-top:2px"><span class="leg '+cls+'" style="font-size:10px">'+l.leg+'</span> <span style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">('+fmtAm(l.avg_fv)+')</span>'+warn+'</div>';});
     html+='</div>';
   });
   html+='</div></div>';
@@ -512,7 +512,7 @@ function evComputeCombo(pitcher,pd,matchedLegs,indices,dkDecimal){
      - pairwise correlations from pd.combos_2 / D.global_2
      - log-correction on pairwise joint probs
      Then: evPct = (fvProb * dkDecimal - 1) * 100 */
-  var legs=indices.map(function(i){var m=matchedLegs[i];return{leg:m.leg,fv:m.avg_fv,p:americanToProb(m.avg_fv)};});
+  var legs=indices.map(function(i){var m=matchedLegs[i];return{leg:m.leg,fv:m.avg_fv,fvSuspicious:!!m._fv_suspicious,p:americanToProb(m.avg_fv)};});
   if(legs.some(function(l){return l.p===null;}))return null;
 
   var logIndep=0;legs.forEach(function(x){logIndep+=Math.log(x.p);});
@@ -662,7 +662,7 @@ function evRenderResults(){
 
     /* Leg list */
     html+='<div style="background:var(--s2);border-radius:6px;padding:7px 9px;margin-bottom:8px">';
-    c.calc.legs.forEach(function(l,legIdx){var lcls=l.leg.startsWith('Over')?'ov':'un';var legPct=_legHitRate(pdC,l.leg);var legHitStr=legPct!=null?(nStarts?Math.round(legPct/100*nStarts)+'/'+nStarts:legPct.toFixed(0)+'%'):null;html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0"><span class="leg '+lcls+'" style="font-size:10px">'+l.leg+'</span><div style="display:flex;align-items:center;gap:6px"><span style="font-size:10px;font-family:Space Mono,monospace;color:var(--mu)">'+fmtAm(l.fv)+'</span>'+(legHitStr?'<span style="font-size:9px;font-family:Space Mono,monospace;color:var(--ac2)">'+legHitStr+'</span>':'')+'</div></div>';});
+    c.calc.legs.forEach(function(l,legIdx){var lcls=l.leg.startsWith('Over')?'ov':'un';var legPct=_legHitRate(pdC,l.leg);var legHitStr=legPct!=null?(nStarts?Math.round(legPct/100*nStarts)+'/'+nStarts:legPct.toFixed(0)+'%'):null;var fvWarn=l.fvSuspicious?'<span title="OCR may have mis-extracted fair value for this leg — verify against source sheet. EV for this SGP is unreliable until confirmed." style="color:var(--ac2);font-size:11px;cursor:help;margin-right:2px">&#9888;</span>':'';html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0"><span class="leg '+lcls+'" style="font-size:10px">'+l.leg+'</span><div style="display:flex;align-items:center;gap:6px">'+fvWarn+'<span style="font-size:10px;font-family:Space Mono,monospace;color:'+(l.fvSuspicious?'var(--ac2)':'var(--mu)')+'">'+fmtAm(l.fv)+'</span>'+(legHitStr?'<span style="font-size:9px;font-family:Space Mono,monospace;color:var(--ac2)">'+legHitStr+'</span>':'')+'</div></div>';});
     if(hr&&hr.both!=null){var bothPct=hr.both;var bothStr=nStarts?Math.round(bothPct/100*nStarts)+'/'+nStarts+' starts':bothPct.toFixed(0)+'% hit';html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-top:5px;padding-top:5px;border-top:1px solid rgba(255,255,255,0.07)"><span style="font-size:9px;color:var(--mu);font-family:Space Mono,monospace">Combined</span><span style="font-size:9px;font-family:Space Mono,monospace;color:var(--ac)">'+bothStr+'</span></div>';}
     html+='</div>';
 
