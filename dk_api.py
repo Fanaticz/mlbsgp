@@ -504,6 +504,25 @@ def _stat_matches_market(stat_str, market_blob):
     return False
 
 
+def _stat_cat(leg):
+    """Short stat category for a canonical leg string, used to canonicalize
+    2-leg combo ordering so ("Over 4.5 SO", "Under 2.5 ER") always renders
+    with the same leg first regardless of matched[] insertion order.
+    Alphabetical over: BB < ER < H < OUTS < SO."""
+    s = leg or ""
+    if "Strikeout" in s:
+        return "SO"
+    if "Earned Run" in s:
+        return "ER"
+    if "Walk" in s:
+        return "BB"
+    if "Hit" in s:
+        return "H"
+    if "Out" in s:
+        return "OUTS"
+    return "ZZZ"
+
+
 def _selection_direction(outcome_type):
     """Resolve a DK selection's outcomeType to 'Over' / 'Under', handling
     milestone selections whose outcomeType may be literal text like '5+' or
@@ -668,10 +687,17 @@ def find_sgps(legs):
                                "warning": "Skipped: pricing time budget exceeded. Try again."}
             continue
 
-        # Enumerate 2-leg combos (indices into matched[])
+        # Enumerate 2-leg combos (indices into matched[]).
+        # combinations() gives canonical (i,j) with i<j but matched[] order
+        # follows the OCR row order, so the same logical combo can render
+        # "ER x Outs" on one sheet and "Outs x ER" on another. Canonicalize
+        # by stat category (alphabetical) so the leg pair is stable.
         combos_by_size = {2: []}
         for combo in combinations(range(len(matched)), 2):
-            combos_by_size[2].append(list(combo))
+            a, b = combo
+            if _stat_cat(matched[a].get("leg")) > _stat_cat(matched[b].get("leg")):
+                a, b = b, a
+            combos_by_size[2].append([a, b])
 
         # Price every combo in parallel
         all_combos_flat = [(2, idx, indices) for idx, indices in enumerate(combos_by_size[2])]

@@ -8,6 +8,11 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+/* Server-side diagnostic flag. Mirrors the DEBUG flag in public/index.html
+   but lives in this process. Set DEBUG=true in env to see dedup collapses,
+   OCR gaps, and other post-ingest diagnostics. No-op in production. */
+const DEBUG = process.env.DEBUG === 'true';
+
 app.use(compression());
 app.use(express.json({ limit: '25mb' }));
 app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1h' }));
@@ -54,7 +59,7 @@ function normalizeLeg(market, direction, line) {
 
 function normalizeRows(rows) {
   if (!Array.isArray(rows)) return [];
-  const out = [];
+  const firstPass = [];
   const seen = new Set();
   rows.forEach((r, idx) => {
     if (!r || typeof r !== 'object') return;
@@ -85,17 +90,66 @@ function normalizeRows(rows) {
     const fv = Number(r.avg_fv);
     if (!isFinite(fv)) return;
 
-    // Dedupe by row number (L) when available — prevents two distinct sheet
-    // rows from being collapsed when an OCR direction misread makes their
-    // canonical leg strings collide. (Previously dedupe by pitcher|leg silently
-    // dropped the second row, e.g. a Strikeouts Under row whose direction was
-    // misread to Over collided with the real Over row.)
-    const rowId = (r.L !== undefined && r.L !== null && r.L !== '') ? String(r.L) : ('idx' + idx);
-    const key = pitcher + '|' + rowId;
+    // First-pass dedupe by row number (L) — prevents two distinct sheet rows
+    // from being collapsed when an OCR direction misread makes their
+    // canonical leg strings collide. (Previously dedupe by pitcher|leg
+    // silently dropped the second row, e.g. a Strikeouts Under row whose
+    // direction was misread to Over collided with the real Over row.)
+    const rowIdRaw = (r.L !== undefined && r.L !== null && r.L !== '') ? r.L : ('idx' + idx);
+    const rowIdKey = String(rowIdRaw);
+    const key = pitcher + '|' + rowIdKey;
     if (seen.has(key)) return;
     seen.add(key);
-    out.push({ pitcher, leg, avg_fv: fv });
+
+    // Carry L and books_count forward so collapseLegDupes can pick a
+    // canonical row when the sheet (or OCR) emits multiple entries for the
+    // same (pitcher, leg). Both fields are stripped from the final output.
+    const L = Number.isFinite(Number(rowIdRaw)) ? Number(rowIdRaw) : -1;
+    const booksCount = Number(r.books_count);
+    firstPass.push({
+      pitcher,
+      leg,
+      avg_fv: fv,
+      _L: L,
+      _books: Number.isFinite(booksCount) ? booksCount : 0,
+    });
   });
+  return collapseLegDupes(firstPass).map(function(x) {
+    return { pitcher: x.pitcher, leg: x.leg, avg_fv: x.avg_fv };
+  });
+}
+
+/* Second-pass collapse: group by (pitcher, leg), pick one canonical row.
+   Preference order:
+     1. Highest books_count  (more books = more robust FV, less OCR-artifact-y)
+     2. Highest L            (newer row; assumes sheets are appended to)
+   No averaging — we pick one row and use it whole so avg_fv stays
+   self-consistent with whatever other fields of that row matter downstream. */
+function collapseLegDupes(legs) {
+  const groups = new Map();
+  for (const l of legs) {
+    const key = l.pitcher + '|' + l.leg;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(l);
+  }
+  const out = [];
+  for (const [key, rows] of groups) {
+    if (rows.length === 1) { out.push(rows[0]); continue; }
+    rows.sort(function(a, b) {
+      if (b._books !== a._books) return b._books - a._books;
+      return b._L - a._L;
+    });
+    const winner = rows[0];
+    if (DEBUG) {
+      const losers = rows.slice(1).map(function(r) {
+        return 'L=' + r._L + ' books=' + r._books + ' avg_fv=' + r.avg_fv;
+      }).join(', ');
+      console.log('[collapse] ' + key + ' — ' + rows.length + ' rows → winner L=' +
+                  winner._L + ' books=' + winner._books + ' avg_fv=' + winner.avg_fv +
+                  '; dropped: ' + losers);
+    }
+    out.push(winner);
+  }
   return out;
 }
 
@@ -122,6 +176,7 @@ YOUR TASK: For each data row, return ONE JSON object with raw cell values copied
 - direction: the word "Over" or "Under" — read it letter-by-letter from this row's bet_name cell. Do NOT copy from a neighbouring row.
 - line: the numeric line value from this row's bet_name (4.5, 14.5, 16.5, etc.) as a number, not a string.
 - avg_fv: the SIGNED INTEGER from column 14 ("avg_fv")
+- books_count: the UNSIGNED INTEGER from column 12 ("books_count"), a small count like 2, 3, 5, 7, 8 that tells us how many sportsbooks contributed to the averaged lines. If the cell is empty or non-numeric, return 0.
 
 ═══ ROW DISCIPLINE — THE #1 SOURCE OF BUGS ═══
 The market, bet_name, direction, and avg_fv MUST come from the SAME row. Use L (column 8) as a positional anchor. Before emitting JSON for a row, ask:
@@ -150,20 +205,20 @@ The same pitcher will often appear in MULTIPLE rows of the sheet, with DIFFERENT
 If the same pitcher has two rows with the same line+stat (e.g., two "Ashcraft 4.5 Strikeouts" rows), one MUST be Over and the other MUST be Under. Never label both with the same direction.
 
 ═══ WORKED EXAMPLES ═══
-Table row: L=15, market="Player Pitching Outs", bet_name="Emerson Hancock Over 15.5", odds="-352 / +267", avg_odds="-436 / +287", avg_fv="-298", avg_hold="7.9%"
-  RIGHT: {"L":15,"pitcher":"Emerson Hancock","market":"Player Pitching Outs","bet_name":"Emerson Hancock Over 15.5","direction":"Over","line":15.5,"avg_fv":-298}
-  WRONG: {"L":15,"pitcher":"Emerson Hancock","market":"Player Pitching Earned Runs Allowed","bet_name":"Emerson Hancock Over 2.5","direction":"Over","line":2.5,"avg_fv":-298}  (market and bet_name pulled from a DIFFERENT row)
+Table row: L=15, market="Player Pitching Outs", bet_name="Emerson Hancock Over 15.5", odds="-352 / +267", books_count=7, avg_odds="-436 / +287", avg_fv="-298", avg_hold="7.9%"
+  RIGHT: {"L":15,"pitcher":"Emerson Hancock","market":"Player Pitching Outs","bet_name":"Emerson Hancock Over 15.5","direction":"Over","line":15.5,"avg_fv":-298,"books_count":7}
+  WRONG: {"L":15,"pitcher":"Emerson Hancock","market":"Player Pitching Earned Runs Allowed","bet_name":"Emerson Hancock Over 2.5","direction":"Over","line":2.5,"avg_fv":-298,"books_count":7}  (market and bet_name pulled from a DIFFERENT row)
 
-Table row: L=24, market="Player Pitching Earned Runs Allowed", bet_name="Emerson Hancock Over 4.5", odds="+168 / nan", avg_odds="+150 / -209", avg_fv="+181", avg_hold="7.1%"
-  RIGHT: {"L":24,"pitcher":"Emerson Hancock","market":"Player Pitching Earned Runs Allowed","bet_name":"Emerson Hancock Over 4.5","direction":"Over","line":4.5,"avg_fv":181}
+Table row: L=24, market="Player Pitching Earned Runs Allowed", bet_name="Emerson Hancock Over 4.5", odds="+168 / nan", books_count=4, avg_odds="+150 / -209", avg_fv="+181", avg_hold="7.1%"
+  RIGHT: {"L":24,"pitcher":"Emerson Hancock","market":"Player Pitching Earned Runs Allowed","bet_name":"Emerson Hancock Over 4.5","direction":"Over","line":4.5,"avg_fv":181,"books_count":4}
 
-Table row: L=3, market="Player Pitching Strikeouts", bet_name="Braxton Ashcraft Under 4.5", odds="+109 / -139", avg_odds="+100 / -132", avg_fv="+115", avg_hold="6.5%"
-  RIGHT: {"L":3,"pitcher":"Braxton Ashcraft","market":"Player Pitching Strikeouts","bet_name":"Braxton Ashcraft Under 4.5","direction":"Under","line":4.5,"avg_fv":115}
-  WRONG: {"L":3,"pitcher":"Braxton Ashcraft","market":"Player Pitching Strikeouts","bet_name":"Braxton Ashcraft Over 4.5","direction":"Over","line":4.5,"avg_fv":115}  (direction flipped — the bet_name cell says "Under", not "Over")
+Table row: L=3, market="Player Pitching Strikeouts", bet_name="Braxton Ashcraft Under 4.5", odds="+109 / -139", books_count=8, avg_odds="+100 / -132", avg_fv="+115", avg_hold="6.5%"
+  RIGHT: {"L":3,"pitcher":"Braxton Ashcraft","market":"Player Pitching Strikeouts","bet_name":"Braxton Ashcraft Under 4.5","direction":"Under","line":4.5,"avg_fv":115,"books_count":8}
+  WRONG: {"L":3,"pitcher":"Braxton Ashcraft","market":"Player Pitching Strikeouts","bet_name":"Braxton Ashcraft Over 4.5","direction":"Over","line":4.5,"avg_fv":115,"books_count":8}  (direction flipped — the bet_name cell says "Under", not "Over")
 
 ═══ OUTPUT ═══
 Return exactly this JSON shape, nothing else:
-{"rows":[{"L":1,"pitcher":"...","market":"...","bet_name":"...","direction":"Over","line":4.5,"avg_fv":123}, ...]}`;
+{"rows":[{"L":1,"pitcher":"...","market":"...","bet_name":"...","direction":"Over","line":4.5,"avg_fv":123,"books_count":7}, ...]}`;
 
     const body = {
       model: 'claude-opus-4-6',
