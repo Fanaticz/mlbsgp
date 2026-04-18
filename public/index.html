@@ -843,7 +843,22 @@ function blendScalar(valuesByYear, weights){
 /* ============ DATA LOADING ============ */
 var D = null;             // assembled blend, same shape as the old inline D
 var PITCHER_DATA = null;  // raw per-year aggregate dicts, kept for reference
+var POOLED_DATA = null;   // {scheme: pooled-file-json} pitcher correlations
 var _globalGapWarns = {}; // warn-once per (combo|field) when a global combo is missing a year
+
+/* Pool-and-weight scheme files. One per dynamic bucket + static fallback.
+ * Correlation r values in each file are computed by weighted Pearson over
+ * the pitcher's pooled career starts, not averaged from per-year r's. Which
+ * scheme a pitcher reads from is chosen at blend time by their 2026 sample:
+ * see bucketForStarts2026(). Static is the fallback when dynamic weighting
+ * is off. "unweighted" is diagnostic-only and not loaded by the UI. */
+var POOLED_SCHEMES = ['dyn_1_3', 'dyn_4_8', 'dyn_9_15', 'dyn_16plus', 'static'];
+function bucketForStarts2026(s){
+  if (s <= 3)  return 'dyn_1_3';
+  if (s <= 8)  return 'dyn_4_8';
+  if (s <= 15) return 'dyn_9_15';
+  return       'dyn_16plus';
+}
 
 async function loadAllAggregates(){
   var responses = await Promise.all(YEARS.map(function(y){
@@ -854,6 +869,18 @@ async function loadAllAggregates(){
   }));
   var out = {};
   YEARS.forEach(function(y, i){ out[y] = responses[i]; });
+  return out;
+}
+
+async function loadPooledAggregates(){
+  var responses = await Promise.all(POOLED_SCHEMES.map(function(s){
+    return fetch('data/aggregates_pooled_' + s + '.json').then(function(r){
+      if (!r.ok) throw new Error('Failed to load pooled ' + s + ' data: ' + r.status);
+      return r.json();
+    });
+  }));
+  var out = {};
+  POOLED_SCHEMES.forEach(function(s, i){ out[s] = responses[i]; });
   return out;
 }
 
@@ -1010,101 +1037,64 @@ function _blendCombosGeneric(combosByYear, weights, isGlobal, size){
   return out;
 }
 
-function buildBlendedD(data){
+function buildBlendedD(data, pooled){
   var y, i, name, p;
 
-  // Pitchers: dynamic weights keyed to each pitcher's 2026 sample.
+  /* Pitchers: correlations (combos_2, combos_3, raw_corr) come from the
+   * pool-and-weight file matching each pitcher's 2026 sample bucket. This
+   * replaces the old per-year r blend, which let noisy low-sample seasons
+   * (e.g. 3-start 2026s producing r=±1.0) dominate the weighted average
+   * of r's. Every static per-pitcher attribute (n_starts, avg_*, years) is
+   * read from the same pooled file so downstream consumers see a consistent
+   * snapshot. Globals below still blend per-year files with static weights. */
+  var staticPool = pooled.static || pooled[POOLED_SCHEMES[0]];
+  var pitchers = {};
   var pitcherUnion = {};
-  for (i = 0; i < YEARS.length; i++) {
-    y = YEARS[i];
-    var pts = (data[y] && data[y].pitchers) || {};
+  for (i = 0; i < POOLED_SCHEMES.length; i++) {
+    var sn = POOLED_SCHEMES[i];
+    var pts = (pooled[sn] && pooled[sn].pitchers) || {};
     for (name in pts) pitcherUnion[name] = true;
   }
-  var pitchers = {};
   var pitcherNames = Object.keys(pitcherUnion);
   for (var n = 0; n < pitcherNames.length; n++) {
     name = pitcherNames[n];
-    var perYear = {};
-    var yearsPresent = [];
-    var nStartsRaw = 0;
-    for (i = 0; i < YEARS.length; i++) {
-      y = YEARS[i];
-      p = (data[y] && data[y].pitchers) ? data[y].pitchers[name] : null;
-      if (p && p.n_starts > 0) {
-        perYear[y] = p;
-        yearsPresent.push(y);
-        nStartsRaw += p.n_starts;
-      }
-    }
-    var starts2026 = (perYear[2026] && perYear[2026].n_starts) || 0;
-    var baseWeights = USE_DYNAMIC_WEIGHTS ? getDynamicWeights(starts2026) : YEAR_WEIGHTS;
-    var w = normalizeWeights(baseWeights, yearsPresent);
-    /* n_starts_eff is the *effective* sample size used by the shrinkage
-       blend — NOT a year-weighted rollup. Pitcher game logs exhibit mild
-       positive autocorrelation (lag-1 ≈ 0.10), so n_eff ≈ 0.82 * n_raw;
-       we also trim slightly for non-stationarity across seasons (role
-       changes, aging). The old year-weighted sum collapsed n_eff to
-       ~27% of n_raw, which made veterans look like small-sample pitchers
-       and over-pulled their correlations toward global. Year weighting
-       still drives r value blending above (combos_2, raw_corr, avg_*);
-       this change only affects the shrinkage weight. */
-    var nStartsEff = computeNEff(nStartsRaw, 0.10, yearsPresent.length);
-    function blendStat(key){
-      var vals = {};
-      for (var i = 0; i < yearsPresent.length; i++) {
-        var yy = yearsPresent[i];
-        var v = perYear[yy][key];
-        if (v !== null && v !== undefined) vals[yy] = v;
-      }
-      return blendScalar(vals, baseWeights);
-    }
-    var avg_SO = blendStat('avg_SO');
-    var avg_ER = blendStat('avg_ER');
-    var avg_BB = blendStat('avg_BB');
-    var avg_H  = blendStat('avg_H');
-    var avg_OUTS = blendStat('avg_OUTS');
+    var basePitcher = (staticPool.pitchers && staticPool.pitchers[name]) || null;
+    /* starts_by_year is the same under every scheme (the weights only shape
+     * r, not raw sample counts), so pull from any pool — static is cheapest. */
+    var sby = (basePitcher && basePitcher.starts_by_year) || {};
+    var starts2026 = +(sby['2026'] || 0);
+    var schemeKey = USE_DYNAMIC_WEIGHTS ? bucketForStarts2026(starts2026) : 'static';
+    var src = (pooled[schemeKey] && pooled[schemeKey].pitchers && pooled[schemeKey].pitchers[name])
+              || basePitcher;
+    if (!src) continue;
 
-    // raw_corr per stat-pair
-    var rawCorrKeys = {};
-    for (i = 0; i < yearsPresent.length; i++) {
-      y = yearsPresent[i];
-      var rc = perYear[y].raw_corr || {};
-      for (var k in rc) rawCorrKeys[k] = true;
-    }
-    var raw_corr = {};
-    for (var rk in rawCorrKeys) {
-      var rvals = {};
-      for (i = 0; i < yearsPresent.length; i++) {
-        y = yearsPresent[i];
-        var rv = (perYear[y].raw_corr || {})[rk];
-        if (rv !== null && rv !== undefined) rvals[y] = rv;
-      }
-      raw_corr[rk] = blendScalar(rvals, baseWeights);
-    }
-
-    // Combos
-    var c2ByYear = {}, c3ByYear = {};
-    for (i = 0; i < yearsPresent.length; i++) {
-      y = yearsPresent[i];
-      c2ByYear[y] = perYear[y].combos_2 || [];
-      c3ByYear[y] = perYear[y].combos_3 || [];
-    }
-    var combos_2 = _blendCombosGeneric(c2ByYear, baseWeights, false, 2);
-    var combos_3 = _blendCombosGeneric(c3ByYear, baseWeights, false, 3);
+    var nStartsRaw = src.n_starts_raw != null ? src.n_starts_raw : src.n_starts;
+    var yrs = (src.years || []).slice();
+    /* n_starts_eff is the *effective* sample size used by the shrinkage blend,
+       NOT a year-weighted rollup. The pooled files ship a year-weighted
+       n_starts_eff (sum of norm_w[y] * n_year[y]) which matches the legacy
+       behavior, but main (commit 014a5e9) switched the UI to AR(1): pitcher
+       game logs exhibit lag-1 autocorrelation ≈ 0.10 (so n_eff ≈ 0.82 * n_raw)
+       with a mild multi-season non-stationarity trim. Compute it here so the
+       shrinkage prior sees the veteran-friendly value, while the pooled file's
+       weighted r values still drive correlation blending. */
+    var nStartsEff = computeNEff(nStartsRaw, 0.10, yrs.length);
 
     pitchers[name] = {
-      n_starts: nStartsRaw,        // preserved for downstream compatibility
-      n_starts_raw: nStartsRaw,
-      n_starts_eff: nStartsEff,
-      years: yearsPresent,
-      avg_SO:  avg_SO  == null ? null : +avg_SO.toFixed(2),
-      avg_ER:  avg_ER  == null ? null : +avg_ER.toFixed(2),
-      avg_BB:  avg_BB  == null ? null : +avg_BB.toFixed(2),
-      avg_H:   avg_H   == null ? null : +avg_H.toFixed(2),
-      avg_OUTS:avg_OUTS== null ? null : +avg_OUTS.toFixed(2),
-      raw_corr: raw_corr,
-      combos_2: combos_2,
-      combos_3: combos_3,
+      n_starts:       src.n_starts,
+      n_starts_raw:   nStartsRaw,
+      n_starts_eff:   nStartsEff,
+      years:          yrs,
+      starts_by_year: src.starts_by_year || null,
+      scheme:         schemeKey,
+      avg_SO:       src.avg_SO   == null ? null : +(+src.avg_SO).toFixed(2),
+      avg_ER:       src.avg_ER   == null ? null : +(+src.avg_ER).toFixed(2),
+      avg_BB:       src.avg_BB   == null ? null : +(+src.avg_BB).toFixed(2),
+      avg_H:        src.avg_H    == null ? null : +(+src.avg_H).toFixed(2),
+      avg_OUTS:     src.avg_OUTS == null ? null : +(+src.avg_OUTS).toFixed(2),
+      raw_corr:     src.raw_corr || {},
+      combos_2:     src.combos_2 || [],
+      combos_3:     src.combos_3 || [],
     };
   }
 
@@ -1172,8 +1162,11 @@ function initializeApp(){
 document.addEventListener('DOMContentLoaded', async function(){
   showLoadingState();
   try {
-    PITCHER_DATA = await loadAllAggregates();
-    D = buildBlendedD(PITCHER_DATA);
+    /* Per-year and pooled files are independent, fetched in parallel. */
+    var results = await Promise.all([loadAllAggregates(), loadPooledAggregates()]);
+    PITCHER_DATA = results[0];
+    POOLED_DATA  = results[1];
+    D = buildBlendedD(PITCHER_DATA, POOLED_DATA);
     hideLoadingState();
     initializeApp();
   } catch (e) {
