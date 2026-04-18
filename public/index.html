@@ -244,7 +244,20 @@ function _warnMissingPair(kind,a,b){
   console.warn('[resolveR]',kind,a,'x',b);
 }
 function flipDir(leg){if(leg.startsWith('Over '))return 'Under '+leg.slice(5);if(leg.startsWith('Under '))return 'Over '+leg.slice(6);return leg;}
-function _findRIn(arr,a,b){if(!arr)return _NF;var fa=flipDir(a),fb=flipDir(b);function tryArr(x,y,sign){for(var i=0;i<arr.length;i++){var c=arr[i];if((c.leg1===x&&c.leg2===y)||(c.leg1===y&&c.leg2===x)){var rm=(c.r_margin!==null&&c.r_margin!==undefined)?c.r_margin:c.r;if(rm===null||rm===undefined)return null;return rm*sign;}}return _NF;}var r;if((r=tryArr(a,b,1))!==_NF)return r;if((r=tryArr(fa,fb,1))!==_NF)return r;if((r=tryArr(fa,b,-1))!==_NF)return r;if((r=tryArr(a,fb,-1))!==_NF)return r;return _NF;}
+/* r vs r_margin in combos_2:
+     r        = binary phi (Pearson on 0/1 leg-hit indicators). Flipping one leg's
+                direction (Over↔Under) flips its indicator, which flips phi's sign.
+                Flipping BOTH legs leaves phi unchanged.
+     r_margin = continuous Pearson on the raw stat columns (e.g. ER vs OUTS).
+                This is a property of the underlying raw stats, NOT of the dichotomy,
+                so it is INVARIANT to Over/Under direction on either leg.
+   _findRIn synthesizes a requested (a,b) pair from whichever direction combination
+   happens to be stored. When sign=+1 (direct hit, or both legs flipped) either r or
+   r_margin is valid; prefer r_margin since it's the higher-resolution continuous
+   estimate. When sign=-1 (exactly one leg flipped) we MUST use r (binary phi) —
+   multiplying r_margin by -1 would invert a direction-invariant quantity and
+   produce a wrong-sign correlation, which inverts downstream EV math. */
+function _findRIn(arr,a,b){if(!arr)return _NF;var fa=flipDir(a),fb=flipDir(b);function tryArr(x,y,sign){for(var i=0;i<arr.length;i++){var c=arr[i];if((c.leg1===x&&c.leg2===y)||(c.leg1===y&&c.leg2===x)){var rm;if(sign===-1){rm=c.r;}else{rm=(c.r_margin!==null&&c.r_margin!==undefined)?c.r_margin:c.r;}if(rm===null||rm===undefined)return null;return rm*sign;}}return _NF;}var r;if((r=tryArr(a,b,1))!==_NF)return r;if((r=tryArr(fa,fb,1))!==_NF)return r;if((r=tryArr(fa,b,-1))!==_NF)return r;if((r=tryArr(a,fb,-1))!==_NF)return r;return _NF;}
 function _blendWeights(n){if(n<BLEND_MIN_STARTS)return{wPlayer:0,wGlobal:1,insufficient:true,n:n};var wp=n/(n+SHRINKAGE_K);return{wPlayer:wp,wGlobal:1-wp,insufficient:false,n:n};}
 
 /* Single source of truth for correlation resolution under the active mode.
