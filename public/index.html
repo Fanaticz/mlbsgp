@@ -203,18 +203,52 @@ var EV_RESULTS=null;
    Default 'blended' — Bayesian shrinkage of player r toward the global prior,
    weighted by sample size. Best point estimate for most pitchers. */
 var CORR_MODE='blended';
-/* Shrinkage prior strength in "pseudo-starts". Higher k = more aggressive pull toward global.
-   n=k gives 50/50 weights. Tune down if blended underperforms player for high-sample pitchers,
-   tune up if it overperforms global for low-sample ones. */
-var SHRINKAGE_K=50;
-/* Sanity floor for edge cases. The shrinkage formula n/(n+SHRINKAGE_K)
-   already degrades player influence at low samples (9% at n=5, 17% at
-   n=10, 29% at n=20), so this threshold is just a floor for n_eff values
-   that are effectively noise (a single start or two). Lowered from 10 to
-   5 to avoid double-counting the small-sample penalty — at 10, veterans
-   with thin recent seasons (injury years, swing roles, mid-season
-   callups) were being forced to pure global when their year-weighted
-   data still carried appropriately-shrunk signal. */
+/* Default shrinkage prior strength in "pseudo-starts" for stat pairs not in the
+   STAT_PAIR_K table. Kept as DEFAULT_K for clarity. Lower k = faster convergence
+   to the player signal; stat pairs whose values are driven by the same underlying
+   process (e.g. hits and outs both come from batters faced) should use a lower k. */
+var DEFAULT_K=50;
+var SHRINKAGE_K=DEFAULT_K; /* back-compat alias */
+/* Stat-pair specific k. Keys use the statCat() categories (SO/ER/BB/H/OUTS),
+   alphabetised and joined with "|". Values reflect how mechanically linked the
+   two stats are: k=30-35 when the same generative process drives both (hits and
+   outs both depend on batters faced + contact rate), k=40-50 when stats are
+   linked but with significant independent variance, k=60+ when stats are nearly
+   independent in the data-generating process. */
+var STAT_PAIR_K={
+  'H|OUTS':  30,  /* same process: batters faced × contact outcomes */
+  'ER|H':    35,
+  'OUTS|SO': 30,  /* strikeouts are a subset of outs recorded */
+  'BB|ER':   40,
+  'BB|H':    45,
+  'ER|SO':   55,
+  'H|SO':    50,
+  'ER|OUTS': 45,
+};
+function _pairKey(s1,s2){return s1<s2?s1+'|'+s2:s2+'|'+s1;}
+function getKForStats(s1,s2){
+  if(!s1||!s2)return DEFAULT_K;
+  var v=STAT_PAIR_K[_pairKey(s1,s2)];
+  return v==null?DEFAULT_K:v;
+}
+function getKForLegs(leg1,leg2){return getKForStats(statCat(leg1),statCat(leg2));}
+/* Effective sample size for an AR(1)-ish time series. MLB pitcher game logs
+   have lag-1 autocorrelation around 0.10, so n_eff ≈ 0.82 * n_raw by default.
+   The multi-season penalty accounts for non-stationarity (role changes, aging,
+   arm injuries) — a pitcher with 4 seasons of data isn't producing 4 IID seasons
+   of samples, so we trim a bit. Floor at 0.7 keeps the penalty bounded. */
+function computeNEff(nRaw,lag1Autocorr,seasonsSpanned){
+  if(!(nRaw>0))return 0;
+  if(lag1Autocorr==null)lag1Autocorr=0.10;
+  if(seasonsSpanned==null||seasonsSpanned<1)seasonsSpanned=1;
+  var rho=Math.max(-0.99,Math.min(0.99,lag1Autocorr));
+  var autocorrFactor=(1-rho)/(1+rho);
+  var seasonFactor=Math.max(0.7,1.0-0.05*(seasonsSpanned-1));
+  return nRaw*autocorrFactor*seasonFactor;
+}
+/* Sanity floor for edge cases. The shrinkage formula n/(n+k) already degrades
+   player influence at low samples, so this threshold is just a floor for n_eff
+   values that are effectively noise (a single start or two). */
 var BLEND_MIN_STARTS=5;
 
 function evSetCorrMode(m){
@@ -258,7 +292,7 @@ function flipDir(leg){if(leg.startsWith('Over '))return 'Under '+leg.slice(5);if
    multiplying r_margin by -1 would invert a direction-invariant quantity and
    produce a wrong-sign correlation, which inverts downstream EV math. */
 function _findRIn(arr,a,b){if(!arr)return _NF;var fa=flipDir(a),fb=flipDir(b);function tryArr(x,y,sign){for(var i=0;i<arr.length;i++){var c=arr[i];if((c.leg1===x&&c.leg2===y)||(c.leg1===y&&c.leg2===x)){var rm;if(sign===-1){rm=c.r;}else{rm=(c.r_margin!==null&&c.r_margin!==undefined)?c.r_margin:c.r;}if(rm===null||rm===undefined)return null;return rm*sign;}}return _NF;}var r;if((r=tryArr(a,b,1))!==_NF)return r;if((r=tryArr(fa,fb,1))!==_NF)return r;if((r=tryArr(fa,b,-1))!==_NF)return r;if((r=tryArr(a,fb,-1))!==_NF)return r;return _NF;}
-function _blendWeights(n){if(n<BLEND_MIN_STARTS)return{wPlayer:0,wGlobal:1,insufficient:true,n:n};var wp=n/(n+SHRINKAGE_K);return{wPlayer:wp,wGlobal:1-wp,insufficient:false,n:n};}
+function _blendWeights(n,k){if(k==null)k=DEFAULT_K;if(n<BLEND_MIN_STARTS)return{wPlayer:0,wGlobal:1,insufficient:true,n:n,k:k};var wp=n/(n+k);return{wPlayer:wp,wGlobal:1-wp,insufficient:false,n:n,k:k};}
 
 /* Single source of truth for correlation resolution under the active mode.
    Returns {r, source, wPlayer, wGlobal, n, rPlayer, rGlobal} so the UI can
@@ -270,14 +304,15 @@ function _blendWeights(n){if(n<BLEND_MIN_STARTS)return{wPlayer:0,wGlobal:1,insuf
    and blend weights — a pitcher with 80 raw starts but 20 effective should
    shrink toward global, not resist it. */
 function resolveR(pd,a,b){
-  if(a===b)return{r:1,source:'identity',wPlayer:1,wGlobal:0,n:0,rPlayer:1,rGlobal:1};
+  if(a===b)return{r:1,source:'identity',wPlayer:1,wGlobal:0,n:0,k:0,rPlayer:1,rGlobal:1};
   var mode=CORR_MODE;
   var playerR=pd?_findRIn(pd.combos_2,a,b):_NF;
   var globalR=_findRIn(D.global_2,a,b);
   if(playerR===_NF)playerR=null;
   if(globalR===_NF)globalR=null;
   var nEff=(pd&&pd.n_starts_eff)||0;
-  var base={rPlayer:playerR,rGlobal:globalR,n:nEff};
+  var k=getKForLegs(a,b);
+  var base={rPlayer:playerR,rGlobal:globalR,n:nEff,k:k};
 
   if(mode==='global')return Object.assign({r:globalR,source:'global',wPlayer:0,wGlobal:1},base);
   if(mode==='player'){
@@ -290,7 +325,7 @@ function resolveR(pd,a,b){
   if(globalR==null){_warnMissingPair('blend-missing-global',a,b);
                     return Object.assign({r:playerR,source:'blended(no-global)',wPlayer:1,wGlobal:0},base);}
   if(nEff<BLEND_MIN_STARTS)return Object.assign({r:globalR,source:'blended(low-sample)',wPlayer:0,wGlobal:1},base);
-  var w=_blendWeights(nEff);
+  var w=_blendWeights(nEff,k);
   return Object.assign({r:w.wPlayer*playerR+w.wGlobal*globalR,source:'blended',wPlayer:w.wPlayer,wGlobal:w.wGlobal},base);
 }
 function findR(pd,a,b){return resolveR(pd,a,b).r;}
@@ -304,8 +339,9 @@ function resolveRawCorrPair(pd,s1,s2){
   var playerR=pd?pick(pd.raw_corr):null;
   var globalR=pick(D.global_raw_corr);
   var nEff=(pd&&pd.n_starts_eff)||0;
+  var k=getKForStats(s1,s2);
   var mode=CORR_MODE;
-  var base={rPlayer:playerR,rGlobal:globalR,n:nEff};
+  var base={rPlayer:playerR,rGlobal:globalR,n:nEff,k:k};
   if(mode==='global')return Object.assign({r:globalR,source:'global',wPlayer:0,wGlobal:1},base);
   if(mode==='player'){
     if(playerR!=null)return Object.assign({r:playerR,source:'player',wPlayer:1,wGlobal:0},base);
@@ -316,7 +352,7 @@ function resolveRawCorrPair(pd,s1,s2){
   if(globalR==null){_warnMissingPair('blend-missing-global-rawcorr',s1,s2);
                     return Object.assign({r:playerR,source:'blended(no-global)',wPlayer:1,wGlobal:0},base);}
   if(nEff<BLEND_MIN_STARTS)return Object.assign({r:globalR,source:'blended(low-sample)',wPlayer:0,wGlobal:1},base);
-  var w=_blendWeights(nEff);
+  var w=_blendWeights(nEff,k);
   return Object.assign({r:w.wPlayer*playerR+w.wGlobal*globalR,source:'blended',wPlayer:w.wPlayer,wGlobal:w.wGlobal},base);
 }
 
@@ -346,8 +382,9 @@ function rCorrTooltip(res){
   if(res.source==='player'||res.source==='global'||res.source==='identity')return '';
   if(res.source.indexOf('blended')!==0&&res.source.indexOf('player(fallback)')!==0)return '';
   var wp=Math.round((res.wPlayer||0)*100),wg=100-wp;
+  var kStr=res.k!=null?', k='+res.k:'';
   return 'player '+fmt4(res.rPlayer)+' → shrunk toward global '+fmt4(res.rGlobal)+
-         ' ('+wp+'% player / '+wg+'% global, n_eff='+Math.round(res.n)+') → '+fmt4(res.r);
+         ' ('+wp+'% player / '+wg+'% global, n_eff='+Math.round(res.n)+kStr+') → '+fmt4(res.r);
 }
 function jointFrechet(pa,pb,r){if(r===null||r===undefined||isNaN(r))r=0;var pab=pa*pb;if(r>=0){return pab+r*(Math.min(pa,pb)-pab);}return pab+r*(pab-Math.max(0,pa+pb-1));}
 
@@ -484,7 +521,7 @@ function evRenderDetected(){
   Object.keys(byPitcher).forEach(function(p){
     var inDB=!!D.pitchers[p];
     html+='<div style="background:var(--s2);border:1px solid var(--b1);border-radius:6px;padding:8px 10px"><div style="font-size:12px;font-weight:600;margin-bottom:3px">'+p+(inDB?' <span style="font-size:9px;color:var(--ac);font-family:Space Mono,monospace">[DB]</span>':'')+'</div>';
-    byPitcher[p].forEach(function(l){var cls=l.leg.startsWith('Over')?'ov':'un';html+='<div style="margin-top:2px"><span class="leg '+cls+'" style="font-size:10px">'+l.leg+'</span> <span style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">('+fmtAm(l.avg_fv)+')</span></div>';});
+    byPitcher[p].forEach(function(l){var cls=l.leg.startsWith('Over')?'ov':'un';var warn=l._fv_suspicious?' <span title="OCR may have mis-extracted fair value for this leg — verify against source sheet" style="color:var(--ac2);font-size:11px;cursor:help">&#9888;</span>':'';html+='<div style="margin-top:2px"><span class="leg '+cls+'" style="font-size:10px">'+l.leg+'</span> <span style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">('+fmtAm(l.avg_fv)+')</span>'+warn+'</div>';});
     html+='</div>';
   });
   html+='</div></div>';
@@ -512,7 +549,7 @@ function evComputeCombo(pitcher,pd,matchedLegs,indices,dkDecimal){
      - pairwise correlations from pd.combos_2 / D.global_2
      - log-correction on pairwise joint probs
      Then: evPct = (fvProb * dkDecimal - 1) * 100 */
-  var legs=indices.map(function(i){var m=matchedLegs[i];return{leg:m.leg,fv:m.avg_fv,p:americanToProb(m.avg_fv)};});
+  var legs=indices.map(function(i){var m=matchedLegs[i];return{leg:m.leg,fv:m.avg_fv,fvSuspicious:!!m._fv_suspicious,p:americanToProb(m.avg_fv)};});
   if(legs.some(function(l){return l.p===null;}))return null;
 
   var logIndep=0;legs.forEach(function(x){logIndep+=Math.log(x.p);});
@@ -529,7 +566,7 @@ function evComputeCombo(pitcher,pd,matchedLegs,indices,dkDecimal){
       var pab=Math.max(1e-6,Math.min(0.999999,jointFrechet(pa,pb,r)));
       corrSum+=Math.log(pab)-Math.log(pa*pb);
       usedPairs++;
-      pairDetails.push({a:legs[i].leg,b:legs[j].leg,r:r,source:res.source,rPlayer:res.rPlayer,rGlobal:res.rGlobal,wPlayer:res.wPlayer,wGlobal:res.wGlobal,n:res.n});
+      pairDetails.push({a:legs[i].leg,b:legs[j].leg,r:r,source:res.source,rPlayer:res.rPlayer,rGlobal:res.rGlobal,wPlayer:res.wPlayer,wGlobal:res.wGlobal,n:res.n,k:res.k});
     }
   }
   var pIndep=Math.exp(logIndep);
@@ -662,7 +699,7 @@ function evRenderResults(){
 
     /* Leg list */
     html+='<div style="background:var(--s2);border-radius:6px;padding:7px 9px;margin-bottom:8px">';
-    c.calc.legs.forEach(function(l,legIdx){var lcls=l.leg.startsWith('Over')?'ov':'un';var legPct=_legHitRate(pdC,l.leg);var legHitStr=legPct!=null?(nStarts?Math.round(legPct/100*nStarts)+'/'+nStarts:legPct.toFixed(0)+'%'):null;html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0"><span class="leg '+lcls+'" style="font-size:10px">'+l.leg+'</span><div style="display:flex;align-items:center;gap:6px"><span style="font-size:10px;font-family:Space Mono,monospace;color:var(--mu)">'+fmtAm(l.fv)+'</span>'+(legHitStr?'<span style="font-size:9px;font-family:Space Mono,monospace;color:var(--ac2)">'+legHitStr+'</span>':'')+'</div></div>';});
+    c.calc.legs.forEach(function(l,legIdx){var lcls=l.leg.startsWith('Over')?'ov':'un';var legPct=_legHitRate(pdC,l.leg);var legHitStr=legPct!=null?(nStarts?Math.round(legPct/100*nStarts)+'/'+nStarts:legPct.toFixed(0)+'%'):null;var fvWarn=l.fvSuspicious?'<span title="OCR may have mis-extracted fair value for this leg — verify against source sheet. EV for this SGP is unreliable until confirmed." style="color:var(--ac2);font-size:11px;cursor:help;margin-right:2px">&#9888;</span>':'';html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0"><span class="leg '+lcls+'" style="font-size:10px">'+l.leg+'</span><div style="display:flex;align-items:center;gap:6px">'+fvWarn+'<span style="font-size:10px;font-family:Space Mono,monospace;color:'+(l.fvSuspicious?'var(--ac2)':'var(--mu)')+'">'+fmtAm(l.fv)+'</span>'+(legHitStr?'<span style="font-size:9px;font-family:Space Mono,monospace;color:var(--ac2)">'+legHitStr+'</span>':'')+'</div></div>';});
     if(hr&&hr.both!=null){var bothPct=hr.both;var bothStr=nStarts?Math.round(bothPct/100*nStarts)+'/'+nStarts+' starts':bothPct.toFixed(0)+'% hit';html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-top:5px;padding-top:5px;border-top:1px solid rgba(255,255,255,0.07)"><span style="font-size:9px;color:var(--mu);font-family:Space Mono,monospace">Combined</span><span style="font-size:9px;font-family:Space Mono,monospace;color:var(--ac)">'+bothStr+'</span></div>';}
     html+='</div>';
 
@@ -680,9 +717,11 @@ function evRenderResults(){
     html+='<div class="hi"><div class="hv" style="color:var(--mu);font-size:13px">'+c.calc.qkPct.toFixed(2)+'u</div><div class="hl">QK</div></div>';
     html+='</div>';
 
-    /* Blended correlation transparency: show effective r, weights, n_eff.
-       Uses n_starts_eff so a pitcher with 80 raw starts but most weight on
-       2023 (deweighted) still hits the shrinkage threshold as a small sample. */
+    /* Blended correlation transparency: show effective r, weights, n_eff, k.
+       Weights are per-pair (different stat pairs have different k), so we
+       average the actual wPlayer values used in EV. k is shown when all pairs
+       share the same value; "varies" for mixed SGPs so the user can tell why
+       the weighted average looks the way it does. */
     if(CORR_MODE==='blended'&&rAvg!==null){
       var bn=(c.inDB&&pdC&&pdC.n_starts_eff)?pdC.n_starts_eff:0;
       var bnRaw=(c.inDB&&pdC&&pdC.n_starts)?pdC.n_starts:0;
@@ -692,8 +731,16 @@ function evRenderResults(){
       }else if(bn<BLEND_MIN_STARTS){
         blendStr='n_eff='+bn.toFixed(1)+' (raw '+bnRaw+') · insufficient sample for blending, using 100% global';
       }else{
-        var bw=_blendWeights(bn);
-        blendStr='blended: '+Math.round(bw.wPlayer*100)+'% player / '+Math.round(bw.wGlobal*100)+'% global, n_eff='+bn.toFixed(1)+' (raw '+bnRaw+')';
+        var _blPairs=rPairs.filter(function(p){return p.wPlayer!=null;});
+        var avgWp=_blPairs.length?_blPairs.reduce(function(s,p){return s+p.wPlayer;},0)/_blPairs.length:0;
+        var _ks=_blPairs.map(function(p){return p.k;}).filter(function(v){return v!=null;});
+        var kStr;
+        if(!_ks.length)kStr='';
+        else{
+          var _allEq=_ks.every(function(v){return v===_ks[0];});
+          kStr=', k='+(_allEq?_ks[0]:(Math.min.apply(null,_ks)+'-'+Math.max.apply(null,_ks)));
+        }
+        blendStr='blended: '+Math.round(avgWp*100)+'% player / '+Math.round((1-avgWp)*100)+'% global, n_eff='+bn.toFixed(1)+' (raw '+bnRaw+')'+kStr;
       }
       html+='<div style="margin-top:6px;font-size:10px;color:var(--mu);font-family:Space Mono,monospace">Correlation: '+rText+' ('+blendStr+')</div>';
     }
@@ -1021,13 +1068,25 @@ function buildBlendedD(data, pooled){
               || basePitcher;
     if (!src) continue;
 
+    var nStartsRaw = src.n_starts_raw != null ? src.n_starts_raw : src.n_starts;
+    var yrs = (src.years || []).slice();
+    /* n_starts_eff is the *effective* sample size used by the shrinkage blend,
+       NOT a year-weighted rollup. The pooled files ship a year-weighted
+       n_starts_eff (sum of norm_w[y] * n_year[y]) which matches the legacy
+       behavior, but main (commit 014a5e9) switched the UI to AR(1): pitcher
+       game logs exhibit lag-1 autocorrelation ≈ 0.10 (so n_eff ≈ 0.82 * n_raw)
+       with a mild multi-season non-stationarity trim. Compute it here so the
+       shrinkage prior sees the veteran-friendly value, while the pooled file's
+       weighted r values still drive correlation blending. */
+    var nStartsEff = computeNEff(nStartsRaw, 0.10, yrs.length);
+
     pitchers[name] = {
-      n_starts:     src.n_starts,
-      n_starts_raw: src.n_starts_raw != null ? src.n_starts_raw : src.n_starts,
-      n_starts_eff: src.n_starts_eff != null ? src.n_starts_eff : src.n_starts,
-      years:        (src.years || []).slice(),
+      n_starts:       src.n_starts,
+      n_starts_raw:   nStartsRaw,
+      n_starts_eff:   nStartsEff,
+      years:          yrs,
       starts_by_year: src.starts_by_year || null,
-      scheme:       schemeKey,
+      scheme:         schemeKey,
       avg_SO:       src.avg_SO   == null ? null : +(+src.avg_SO).toFixed(2),
       avg_ER:       src.avg_ER   == null ? null : +(+src.avg_ER).toFixed(2),
       avg_BB:       src.avg_BB   == null ? null : +(+src.avg_BB).toFixed(2),
