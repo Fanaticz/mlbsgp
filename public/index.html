@@ -605,15 +605,18 @@ function evComputeCombo(pitcher,pd,matchedLegs,indices,dkDecimal){
   for(var i=0;i<legs.length;i++){
     for(var j=i+1;j<legs.length;j++){
       /* resolveR carries provenance so the EV card label reflects the source
-         actually used (e.g. "blended → global" when low sample triggered fallback). */
+         actually used (e.g. "blended → global" when low sample triggered fallback).
+         resolveRMargin runs alongside purely for read-path enrichment (EV card
+         Margin readout, AI Insights prompt context); EV math stays on binary r. */
       var res=resolveR(pd,legs[i].leg,legs[j].leg);
+      var rmRes=resolveRMargin(pd,legs[i].leg,legs[j].leg);
       var r=res.r;
       var pa=legs[i].p,pb=legs[j].p;
-      if(r==null){missingPairs++;pairDetails.push({a:legs[i].leg,b:legs[j].leg,r:null,source:res.source});continue;}
+      if(r==null){missingPairs++;pairDetails.push({a:legs[i].leg,b:legs[j].leg,r:null,source:res.source,rMargin:rmRes.r,rMarginPlayer:rmRes.rPlayer,rMarginGlobal:rmRes.rGlobal,rMarginSource:rmRes.source});continue;}
       var pab=Math.max(1e-6,Math.min(0.999999,jointFrechet(pa,pb,r)));
       corrSum+=Math.log(pab)-Math.log(pa*pb);
       usedPairs++;
-      pairDetails.push({a:legs[i].leg,b:legs[j].leg,r:r,source:res.source,rPlayer:res.rPlayer,rGlobal:res.rGlobal,wPlayer:res.wPlayer,wGlobal:res.wGlobal,n:res.n,k:res.k});
+      pairDetails.push({a:legs[i].leg,b:legs[j].leg,r:r,source:res.source,rPlayer:res.rPlayer,rGlobal:res.rGlobal,wPlayer:res.wPlayer,wGlobal:res.wGlobal,n:res.n,k:res.k,rMargin:rmRes.r,rMarginPlayer:rmRes.rPlayer,rMarginGlobal:rmRes.rGlobal,rMarginSource:rmRes.source});
     }
   }
   var pIndep=Math.exp(logIndep);
