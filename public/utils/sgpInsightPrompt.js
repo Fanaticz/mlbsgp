@@ -7,7 +7,7 @@
      fvCorr     number  (American odds, corr-adjusted FV)
      evPct      number  (e.g. 7.3)
      fvP        number  (0–1 decimal probability)
-     correlation { pairs:[{a,b,r}], missingPairs, usedPairs, starts }
+     correlation { pairs:[{a,b,r,rMargin,rMarginSource,source,...}], missingPairs, usedPairs, starts }
      hitRates   { leg1, leg2, both, givenLeg1toLeg2 } | null
 */
 function buildSGPInsightPrompt(sgp) {
@@ -36,11 +36,10 @@ function buildSGPInsightPrompt(sgp) {
   var corr = sgp.correlation || {};
   if (corr.pairs && corr.pairs.length) {
     corr.pairs.forEach(function(p) {
-      if (p.r !== null && p.r !== undefined) {
-        lines.push('  ' + p.a + '  ↔  ' + p.b + ':  r = ' + p.r.toFixed(4));
-      } else {
-        lines.push('  ' + p.a + '  ↔  ' + p.b + ':  r = missing (treated as 0)');
-      }
+      var rStr = (p.r !== null && p.r !== undefined) ? p.r.toFixed(4) : 'missing (treated as 0)';
+      var hasMargin = (p.rMargin !== null && p.rMargin !== undefined && !isNaN(p.rMargin));
+      var mStr = hasMargin ? p.rMargin.toFixed(4) : 'n/a';
+      lines.push('  ' + p.a + '  \u2194  ' + p.b + ':  binary r = ' + rStr + ',  margin r = ' + mStr);
     });
   } else {
     lines.push('  No pair correlations available');
@@ -51,6 +50,15 @@ function buildSGPInsightPrompt(sgp) {
   if (corr.starts !== null && corr.starts !== undefined) {
     lines.push('  Sample size: ' + corr.starts + ' pitcher starts');
   }
+  lines.push('');
+  lines.push('For each leg pair, you have two correlation measures:');
+  lines.push('  - R (binary phi): how often the two leg outcomes co-occur at their specific thresholds (the actual parlay lines).');
+  lines.push('  - Margin (continuous): how the underlying raw stats move together, independent of the chosen thresholds.');
+  lines.push('Interpret divergence between them:');
+  lines.push('  - Same sign, similar magnitude: stable relationship, high confidence in the correlation signal.');
+  lines.push('  - Same sign, margin much stronger than binary: the raw-stat relationship is real but the specific line thresholds don\u2019t capture it well \u2014 edge may be weaker than binary suggests.');
+  lines.push('  - Opposite signs: the line thresholds are carving the data differently than the underlying relationship \u2014 the parlay at these specific lines fights the pitcher\u2019s actual tendencies (usually a weak or negative edge).');
+  lines.push('  - Both near zero: outcomes are effectively independent; any EV is coming from leg pricing errors, not correlation arbitrage.');
   lines.push('');
 
   lines.push('=== HISTORICAL HIT RATES ===');
@@ -68,9 +76,14 @@ function buildSGPInsightPrompt(sgp) {
   lines.push('');
 
   lines.push('=== INSTRUCTIONS ===');
-  lines.push('Evaluate this SGP using EV%, the correlation between legs, sample size, and historical hit rates.');
-  lines.push('A positive correlation means the legs tend to hit together — this boosts real fair value above the independent product.');
+  lines.push('Evaluate this SGP using EV%, the correlation between legs (both binary r and margin r), sample size, and historical hit rates.');
+  lines.push('A positive correlation means the legs tend to hit together \u2014 this boosts real fair value above the independent product.');
   lines.push('Missing correlations or small samples increase uncertainty.');
+  lines.push('Compare binary r vs margin r for each pair and work the interpretation into the commentary:');
+  lines.push('  - When binary and margin agree directionally (same sign, similar magnitude), say so briefly \u2014 it reinforces confidence in the edge.');
+  lines.push('  - When they disagree (opposite signs, or same sign with very different magnitudes), flag it and explain what the disagreement suggests about this specific pitcher + these specific line thresholds.');
+  lines.push('  - Do not simply restate both numbers. Interpret the relationship for the specific pitcher and combo (e.g. an all-or-nothing pitcher whose raw stats trend together but whose line thresholds carve the outcomes oppositely).');
+  lines.push('Keep the correlation discussion concise \u2014 one paragraph mentioning the r/margin behavior is enough; do not turn every insight into a statistics lecture.');
   lines.push('');
   lines.push('Respond with ONLY this JSON (no markdown, no backticks):');
   lines.push('{"verdict":"PLAY","headline":"Short takeaway here","explanation":"2-3 sentences.","edge":"1 sentence on what gives this value.","risk":"1 sentence on the main risk.","confidence":8}');
