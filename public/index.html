@@ -281,10 +281,13 @@ function flipDir(leg){if(leg.startsWith('Over '))return 'Under '+leg.slice(5);if
 /* r vs r_margin in combos_2:
      r        = binary phi (Pearson on 0/1 leg-hit indicators). Flipping one leg's
                 direction (Over↔Under) flips its indicator, which flips phi's sign.
-                Flipping BOTH legs leaves phi unchanged.
+                Flipping BOTH legs leaves phi unchanged. Because phi IS the dichotomy,
+                _findRIn MUST multiply by sign=-1 when exactly one leg is flipped.
      r_margin = continuous Pearson on the raw stat columns (e.g. ER vs OUTS).
                 This is a property of the underlying raw stats, NOT of the dichotomy,
-                so it is INVARIANT to Over/Under direction on either leg.
+                so it is INVARIANT to Over/Under direction on either leg. _findRMarginIn
+                therefore returns the stored value WITHOUT a sign flip — negating it
+                for a one-leg flip would invert a direction-invariant quantity.
    _findRIn synthesizes a requested (a,b) pair from whichever direction combination
    happens to be stored. When sign=+1 (direct hit, or both legs flipped) either r or
    r_margin is valid; prefer r_margin since it's the higher-resolution continuous
@@ -292,6 +295,13 @@ function flipDir(leg){if(leg.startsWith('Over '))return 'Under '+leg.slice(5);if
    multiplying r_margin by -1 would invert a direction-invariant quantity and
    produce a wrong-sign correlation, which inverts downstream EV math. */
 function _findRIn(arr,a,b){if(!arr)return _NF;var fa=flipDir(a),fb=flipDir(b);function tryArr(x,y,sign){for(var i=0;i<arr.length;i++){var c=arr[i];if((c.leg1===x&&c.leg2===y)||(c.leg1===y&&c.leg2===x)){var rm;if(sign===-1){rm=c.r;}else{rm=(c.r_margin!==null&&c.r_margin!==undefined)?c.r_margin:c.r;}if(rm===null||rm===undefined)return null;return rm*sign;}}return _NF;}var r;if((r=tryArr(a,b,1))!==_NF)return r;if((r=tryArr(fa,fb,1))!==_NF)return r;if((r=tryArr(fa,b,-1))!==_NF)return r;if((r=tryArr(a,fb,-1))!==_NF)return r;return _NF;}
+/* Mirror of _findRIn but returns r_margin only — the continuous Pearson
+   correlation between the raw stat columns. r_margin is a property of the
+   underlying stats, not of the Over/Under dichotomy, so it is direction-
+   INVARIANT: every cell return is the stored c.r_margin with NO sign flip,
+   regardless of how many legs were flipped to match the stored row. Display-
+   only; EV math keeps flowing through resolveR / binary phi as before. */
+function _findRMarginIn(arr,a,b){if(!arr)return _NF;var fa=flipDir(a),fb=flipDir(b);function tryArr(x,y){for(var i=0;i<arr.length;i++){var c=arr[i];if((c.leg1===x&&c.leg2===y)||(c.leg1===y&&c.leg2===x)){if(c.r_margin===null||c.r_margin===undefined)return null;return c.r_margin;}}return _NF;}var r;if((r=tryArr(a,b))!==_NF)return r;if((r=tryArr(fa,fb))!==_NF)return r;if((r=tryArr(fa,b))!==_NF)return r;if((r=tryArr(a,fb))!==_NF)return r;return _NF;}
 function _blendWeights(n,k){if(k==null)k=DEFAULT_K;if(n<BLEND_MIN_STARTS)return{wPlayer:0,wGlobal:1,insufficient:true,n:n,k:k};var wp=n/(n+k);return{wPlayer:wp,wGlobal:1-wp,insufficient:false,n:n,k:k};}
 
 /* Single source of truth for correlation resolution under the active mode.
@@ -329,6 +339,43 @@ function resolveR(pd,a,b){
   return Object.assign({r:w.wPlayer*playerR+w.wGlobal*globalR,source:'blended',wPlayer:w.wPlayer,wGlobal:w.wGlobal},base);
 }
 function findR(pd,a,b){return resolveR(pd,a,b).r;}
+
+/* Display-only parallel to resolveR for the continuous r_margin. Uses the
+   SAME shrinkage pipeline (n_eff, k, player/global split) so the EV card's
+   "Margin" value is comparable to its binary "R". Player r_margin is read
+   from pd.combos_2 via _findRMarginIn (no sign flip — direction-invariant).
+   Global r_margin at combo level isn't propagated into D.global_2, but is
+   mathematically identical to the stat-pair entry in D.global_raw_corr
+   (r_margin depends only on the underlying raw-stat pair, not the threshold
+   or Over/Under choice), so we use that as the global prior. EV math is not
+   touched; this resolver's output is display-only. */
+function resolveRMargin(pd,a,b){
+  if(a===b)return{r:1,source:'identity',wPlayer:1,wGlobal:0,n:0,k:0,rPlayer:1,rGlobal:1};
+  var mode=CORR_MODE;
+  var playerR=pd?_findRMarginIn(pd.combos_2,a,b):_NF;
+  if(playerR===_NF)playerR=null;
+  var s1=statCat(a),s2=statCat(b);
+  var globalR=null;
+  if(s1&&s2&&D&&D.global_raw_corr){
+    var gv=D.global_raw_corr[s1+'_'+s2];
+    if(gv==null||isNaN(gv))gv=D.global_raw_corr[s2+'_'+s1];
+    if(gv!=null&&!isNaN(gv))globalR=gv;
+  }
+  var nEff=(pd&&pd.n_starts_eff)||0;
+  var k=getKForLegs(a,b);
+  var base={rPlayer:playerR,rGlobal:globalR,n:nEff,k:k};
+  if(mode==='global')return Object.assign({r:globalR,source:'global',wPlayer:0,wGlobal:1},base);
+  if(mode==='player'){
+    if(playerR!=null)return Object.assign({r:playerR,source:'player',wPlayer:1,wGlobal:0},base);
+    return Object.assign({r:globalR,source:'player(fallback)',wPlayer:0,wGlobal:1},base);
+  }
+  /* blended */
+  if(playerR==null)return Object.assign({r:globalR,source:'blended(no-player)',wPlayer:0,wGlobal:1},base);
+  if(globalR==null)return Object.assign({r:playerR,source:'blended(no-global)',wPlayer:1,wGlobal:0},base);
+  if(nEff<BLEND_MIN_STARTS)return Object.assign({r:globalR,source:'blended(low-sample)',wPlayer:0,wGlobal:1},base);
+  var w=_blendWeights(nEff,k);
+  return Object.assign({r:w.wPlayer*playerR+w.wGlobal*globalR,source:'blended',wPlayer:w.wPlayer,wGlobal:w.wGlobal},base);
+}
 
 /* raw_corr (stat x stat) shrinkage mirrors resolveR but pulls from
    pd.raw_corr / D.global_raw_corr. Used by the pitcher page's "MARGIN r
@@ -710,10 +757,32 @@ function evRenderResults(){
     var rText=rAvg===null?'N/A':((rAvg>=0?'+':'')+rAvg.toFixed(2));
     var rLabel=rPairs.length>1?'R AVG':'R';
     var rTitle=rPairs.map(function(p){return p.a+' \u00d7 '+p.b+': '+(p.r>=0?'+':'')+p.r.toFixed(3);}).join('\n').replace(/"/g,'&quot;');
-    html+='<div class="hr4" style="grid-template-columns:repeat(4,1fr)">';
+    /* Margin r: parallel display-only readout through the same shrinkage
+       pipeline. Resolved at render time so it follows CORR_MODE switches
+       without mutating c.calc.pairDetails (which feeds the EV math). */
+    var rmPairs=[];
+    for(var rmi=0;rmi<c.calc.legs.length;rmi++){
+      for(var rmj=rmi+1;rmj<c.calc.legs.length;rmj++){
+        var rmRes=resolveRMargin(pdC,c.calc.legs[rmi].leg,c.calc.legs[rmj].leg);
+        if(rmRes.r!=null&&!isNaN(rmRes.r)){
+          rmPairs.push({a:c.calc.legs[rmi].leg,b:c.calc.legs[rmj].leg,r:rmRes.r,rPlayer:rmRes.rPlayer,rGlobal:rmRes.rGlobal,wPlayer:rmRes.wPlayer,wGlobal:rmRes.wGlobal,n:rmRes.n,source:rmRes.source});
+        }
+      }
+    }
+    var rmAvg=rmPairs.length?rmPairs.reduce(function(s,p){return s+p.r;},0)/rmPairs.length:null;
+    var rmColor=rmAvg===null?'var(--mu)':(rmAvg>=0.3?'var(--ac)':(rmAvg<0?'var(--red)':'var(--mu)'));
+    var rmText=rmAvg===null?null:((rmAvg>=0?'+':'')+rmAvg.toFixed(2));
+    var rmLabel=rmPairs.length>1?'MARGIN AVG':'MARGIN';
+    var rmTitle=rmPairs.map(function(p){return p.a+' \u00d7 '+p.b+': '+(p.r>=0?'+':'')+p.r.toFixed(3);}).join('\n').replace(/"/g,'&quot;');
+    var hasMargin=rmText!==null;
+    var nCols=hasMargin?5:4;
+    html+='<div class="hr4" style="grid-template-columns:repeat('+nCols+',1fr)">';
     html+='<div class="hi"><div class="hv" style="color:var(--cyan);font-size:15px">'+c.dkOdds+'</div><div class="hl">DK SGP</div></div>';
     html+='<div class="hi"><div class="hv" style="color:var(--ac);font-size:15px">'+fmtAm(c.calc.fvCorrOdds)+'</div><div class="hl">FV CORR</div></div>';
     html+='<div class="hi" title="'+rTitle+'"><div class="hv" style="color:'+rColor+';font-size:15px">'+rText+'</div><div class="hl">'+rLabel+'</div></div>';
+    if(hasMargin){
+      html+='<div class="hi" title="'+rmTitle+'"><div class="hv" style="color:'+rmColor+';font-size:15px">'+rmText+'</div><div class="hl">'+rmLabel+'</div></div>';
+    }
     html+='<div class="hi"><div class="hv" style="color:var(--mu);font-size:13px">'+c.calc.qkPct.toFixed(2)+'u</div><div class="hl">QK</div></div>';
     html+='</div>';
 
