@@ -660,14 +660,220 @@ def compute_slot_baselines(
     }
 
 
+def _materialize_pair_observations(
+    games_by_year: dict[int, dict[str, dict[str, list[dict]]]],
+) -> dict[tuple, list[dict]]:
+    """Walk every team-game, emit one observation per ORDERED pair of
+    batters on the same team in the same game. Returns pairs keyed on
+    (p1_name, p2_name, team_name) — ordered so (A, B) and (B, A) are
+    distinct. Traded players get separate pair entries by team (Torres
+    on NYY and Torres on DET are distinct teammates from other players'
+    perspective).
+
+    Each observation holds year, both slots, and both players' raw stat
+    values for the 9 tracked stats. One-time materialization — all five
+    weight schemes can iterate this structure without re-walking the
+    xlsx-derived rows.
+    """
+    pairs: dict[tuple, list[dict]] = {}
+    for year in YEARS:
+        for _gid, by_team in games_by_year[year].items():
+            for team, rows in by_team.items():
+                # Keep only rows with a slot — pinch hitters with null
+                # BO# were already dropped upstream, but be defensive.
+                valid = [r for r in rows if r.get("bo")]
+                n = len(valid)
+                if n < 2:
+                    continue
+                for i in range(n):
+                    r1 = valid[i]
+                    for j in range(n):
+                        if i == j:
+                            continue
+                        r2 = valid[j]
+                        key = (r1["p"], r2["p"], team)
+                        obs = {
+                            "year":  year,
+                            "slot1": r1["bo"],
+                            "slot2": r2["bo"],
+                        }
+                        for s in STATS:
+                            obs[f"{s}_1"] = r1[s]
+                            obs[f"{s}_2"] = r2[s]
+                        pairs.setdefault(key, []).append(obs)
+    return pairs
+
+
+def _pair_metadata(games: list[dict]) -> dict:
+    """Compute the once-per-pair metadata fields (slot_usage histogram,
+    slot_gap stats, adjacency, most_common_slots) shared across all
+    schemes. n_by_year / n_total are also included here."""
+    from collections import Counter
+
+    year_counts: Counter = Counter(g["year"] for g in games)
+    n_total = len(games)
+
+    slot_pair_counts: Counter = Counter(
+        (g["slot1"], g["slot2"]) for g in games
+    )
+    slot_usage = {f"{s1}_{s2}": cnt for (s1, s2), cnt in slot_pair_counts.items()}
+    top_slot_pair, top_slot_pair_n = slot_pair_counts.most_common(1)[0]
+
+    gaps = [abs(g["slot1"] - g["slot2"]) for g in games]
+    slot_gap_mean = sum(gaps) / n_total
+    slot_gap_mode = Counter(gaps).most_common(1)[0][0]
+    adjacency = sum(1 for gp in gaps if gp == 1) / n_total
+
+    p1_slot_counts: Counter = Counter(g["slot1"] for g in games)
+    p2_slot_counts: Counter = Counter(g["slot2"] for g in games)
+    most_common_slots = [
+        p1_slot_counts.most_common(1)[0][0],
+        p2_slot_counts.most_common(1)[0][0],
+    ]
+
+    return {
+        "n_by_year":        {str(y): year_counts.get(y, 0) for y in YEARS},
+        "n_total":          n_total,
+        "n_2026":           year_counts.get(CURRENT_YEAR, 0),
+        "slot_gap_mean":    round(slot_gap_mean, 2),
+        "slot_gap_mode":    int(slot_gap_mode),
+        "adjacency":        round(adjacency, 3),
+        "most_common_slots": most_common_slots,
+        "slot_usage":       slot_usage,
+        "_top_slot_pair":   f"{top_slot_pair[0]}_{top_slot_pair[1]}",
+        "_top_slot_pair_n": top_slot_pair_n,
+    }
+
+
+def _passes_pair_threshold(n_total: int, n_2026: int) -> bool:
+    """Emission rule: pair survives if n_total >= 30, OR n_total >= 20
+    when the pair has meaningful 2026 presence (n_2026 >= 10)."""
+    if n_2026 >= PAIR_WARM_2026:
+        return n_total >= PAIR_MIN_TOTAL_WARM
+    return n_total >= PAIR_MIN_TOTAL_COLD
+
+
 def compute_pair_aggregates(
     games_by_year: dict[int, dict[str, dict[str, list[dict]]]],
     scheme_name: str,
     scheme_weights: dict[int, float],
+    pairs_raw: dict[tuple, list[dict]] | None = None,
 ) -> dict:
-    """TODO (step 2.3): per-(p1, p2, team) pair aggregation with weighted
-    phi + weighted Pearson for each combo in COMBO_SPEC."""
-    raise NotImplementedError("pair aggregation lands in step 2.3")
+    """Per-(p1, p2, team) pair aggregation with weighted phi / weighted
+    Pearson for every combo in COMBO_SPEC.
+
+    pairs_raw (optional) is the output of _materialize_pair_observations
+    — passed in to avoid re-walking team-games for each of the 5 schemes.
+    """
+    if pairs_raw is None:
+        pairs_raw = _materialize_pair_observations(games_by_year)
+
+    pairs_out: dict[str, dict] = {}
+
+    for (p1, p2, team), games in pairs_raw.items():
+        meta = _pair_metadata(games)
+        if not _passes_pair_threshold(meta["n_total"], meta["n_2026"]):
+            continue
+
+        years = np.asarray([g["year"] for g in games], dtype=np.int64)
+        weights = np.asarray(
+            [float(scheme_weights.get(int(y), 0.0)) for y in years],
+            dtype=np.float64,
+        )
+        p1_arrs = {
+            s: np.asarray([g[f"{s}_1"] for g in games], dtype=np.float64)
+            for s in STATS
+        }
+        p2_arrs = {
+            s: np.asarray([g[f"{s}_2"] for g in games], dtype=np.float64)
+            for s in STATS
+        }
+
+        # Each combo entry is a positional 5-tuple [rb, rm, h1, h2, b]
+        # indexed by COMBO_SPEC position. Drops redundant fields that UI
+        # can derive (neither = 1-h1-h2+b, given1 = b/h1, given2 = b/h2)
+        # or that are constant within a pair (n_this_combo = pair.n_total,
+        # most_common_slot_pair_for_this_combo = pair.top_slot_pair).
+        # Output file shrinks from ~240MB to ~25MB; still sub-5MB gzipped.
+        combos_arr: list[list] = []
+        any_valid = False
+        for leg1, leg2 in COMBO_SPEC:
+            d1, t1, stat1 = parse_leg(leg1)
+            d2, t2, stat2 = parse_leg(leg2)
+            v1 = p1_arrs[stat1]
+            v2 = p2_arrs[stat2]
+            h1 = (v1 > t1).astype(np.float64) if d1 == "Over" else (v1 < t1).astype(np.float64)
+            h2 = (v2 > t2).astype(np.float64) if d2 == "Over" else (v2 < t2).astype(np.float64)
+
+            r_binary = weighted_pearson(h1, h2, weights)
+            r_margin = weighted_pearson(v1, v2, weights)
+
+            if (r_binary is None and r_margin is None) or meta["n_total"] < COMBO_MIN_N:
+                combos_arr.append(None)
+                continue
+
+            any_valid = True
+            hit1 = weighted_mean(h1, weights)
+            hit2 = weighted_mean(h2, weights)
+            both = weighted_mean(h1 * h2, weights)
+            combos_arr.append([
+                _round_r(r_binary),
+                _round_r(r_margin),
+                _round_p(hit1),
+                _round_p(hit2),
+                _round_p(both),
+            ])
+
+        if not any_valid:
+            continue
+
+        key_str = f"{p1}||{p2}||{team}"
+        pairs_out[key_str] = {
+            "p1":               p1,
+            "p2":               p2,
+            "t":                team,
+            "n_by_year":        meta["n_by_year"],
+            "n_total":          meta["n_total"],
+            "slot_gap_mean":    meta["slot_gap_mean"],
+            "slot_gap_mode":    meta["slot_gap_mode"],
+            "adjacency":        meta["adjacency"],
+            "most_common_slots": meta["most_common_slots"],
+            "slot_usage":       meta["slot_usage"],
+            # Pair-level shortcut: the (slot1, slot2) config this pair
+            # batted together at most often. Phase 2 uses this to decide
+            # whether tonight's actual slots match history or trigger a
+            # slot-baseline re-blend. Same value used to be duplicated on
+            # every combo entry; moved here to save ~60 bytes × 78 combos
+            # × 10k pairs = ~47 MB per scheme file.
+            "top_slot_pair":    meta["_top_slot_pair"],
+            "top_slot_pair_n":  meta["_top_slot_pair_n"],
+            "combos_2":         combos_arr,
+        }
+
+    # combo_spec is emitted once at the top of each file — per-pair
+    # combos_2 arrays are positional over this list so UI can read
+    # combo_spec[i] for legs while combos_2[i] carries the values. Keeps
+    # per-pair output compact without losing self-description.
+    combo_spec_out = [list(c) for c in COMBO_SPEC]
+
+    return {
+        "scheme":       scheme_name,
+        "weights":      {str(y): float(scheme_weights.get(y, 0.0)) for y in YEARS},
+        "current_year": CURRENT_YEAR,
+        "k_pair":       K_PAIR,
+        "blend_min_games_pair": BLEND_MIN_GAMES_PAIR,
+        "pair_min_total_cold":  PAIR_MIN_TOTAL_COLD,
+        "pair_min_total_warm":  PAIR_MIN_TOTAL_WARM,
+        "pair_warm_2026":       PAIR_WARM_2026,
+        # Shape of each combos_2[i] entry (positional):
+        #   [r_binary, r_margin, hit1, hit2, both]
+        # r_* rounded to 4 decimals; hit rates to 3 decimals; null entry
+        # means that combo was skipped (zero variance or below COMBO_MIN_N).
+        "combos_2_schema": ["r_binary", "r_margin", "hit1", "hit2", "both"],
+        "combo_spec":   combo_spec_out,
+        "n_pairs":      len(pairs_out),
+        "pairs":        pairs_out,
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -707,8 +913,29 @@ def main() -> int:
         f"{slot_baselines['total_games_sampled']} team-games sampled, "
         f"{size_mb:.2f} MB  -> {out_path.relative_to(ROOT).as_posix()}"
     )
+
+    # Materialize pair-observation dict once, re-use across all schemes.
     print()
-    print("Pair aggregation lands in step 2.3.")
+    print("Materializing pair observations ...")
+    pairs_raw = _materialize_pair_observations(games_by_year)
+    print(f"  {len(pairs_raw):,} raw (p1, p2, team) groups before threshold")
+
+    print()
+    print("Pair aggregate build summary (pool-and-weight, one file per scheme)")
+    print("-" * 64)
+    for scheme_name, scheme_weights in WEIGHT_SCHEMES.items():
+        agg = compute_pair_aggregates(
+            games_by_year, scheme_name, scheme_weights, pairs_raw=pairs_raw,
+        )
+        fname = f"teammate_aggregates_pooled_{scheme_name}.json"
+        path = DATA_DIR / fname
+        with path.open("w", encoding="utf-8") as f:
+            json.dump(agg, f, ensure_ascii=False, separators=(",", ":"))
+        size_mb = path.stat().st_size / (1024 * 1024)
+        print(
+            f"  {scheme_name:>11}: {agg['n_pairs']:>5} pairs  "
+            f"{size_mb:6.2f} MB  -> {path.relative_to(ROOT).as_posix()}"
+        )
     return 0
 
 
