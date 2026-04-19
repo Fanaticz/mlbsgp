@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Convert MLB player box score xlsx files into slim pitcher JSON files.
 
-Reads the four xlsx files (2023, 2024, 2025, 2026), filters to pitcher rows
-(IP > 0), renames columns to short keys, and writes compact JSON files to
-data/pitchers_YYYY.json plus a data/manifest.json summary.
+Reads the four xlsx files (2023, 2024, 2025, 2026), filters to STARTING
+pitcher rows (STARTING\\nPITCHER == "YES" AND IP > 0), renames columns to
+short keys, and writes compact JSON files to data/pitchers_YYYY.json plus
+a data/manifest.json summary.
 
 Idempotent: rerunning overwrites outputs cleanly.
 """
@@ -104,8 +105,28 @@ def build_year(year: int, filename: str, sheet: str) -> tuple[list[dict], dict]:
     if missing:
         raise KeyError(f"{year}: expected columns missing: {missing}")
 
-    # Filter to pitcher rows: IP not null AND IP > 0.
-    mask = df["IP"].notna() & (df["IP"] > 0)
+    # Filter to STARTING pitcher rows only. The xlsx has one row per
+    # (game, player) for every pitcher who recorded an out, so IP > 0 alone
+    # would pull relief appearances (openers, long relief, closers). The
+    # starter aggregates and correlations assume full-game starts; mixing
+    # relievers in would compress SO/ER/OUTS distributions and break the
+    # existing correlation baselines. The "STARTING\nPITCHER" column is
+    # "YES" for the starting pitcher of each side, blank otherwise.
+    sp_col = "STARTING\nPITCHER"
+    if sp_col not in df.columns:
+        raise KeyError(f"{year}: missing required column {sp_col!r}")
+    sp_mask = df[sp_col].notna() & (df[sp_col].astype(str).str.strip().str.upper() == "YES")
+    mask = sp_mask & df["IP"].notna() & (df["IP"] > 0)
+    # Regression guard: starter rows should be roughly 2 per game, ~25-30%
+    # of IP>0 rows (the rest are relievers). If a future edit drops this
+    # filter, the starter share jumps to 100% and this assertion trips.
+    ip_rows = int((df["IP"].notna() & (df["IP"] > 0)).sum())
+    starter_rows = int(mask.sum())
+    assert starter_rows < ip_rows * 0.35, (
+        f"{year}: starter filter looks broken — {starter_rows} starter rows "
+        f"out of {ip_rows} IP>0 rows ({starter_rows / max(ip_rows, 1):.0%}); "
+        f"expected <35% (starters are ~2 per game, relievers fill the rest)."
+    )
     pitchers = df.loc[mask, list(COLUMN_MAP.keys())].copy()
     pitchers = pitchers.rename(columns=COLUMN_MAP)
 
