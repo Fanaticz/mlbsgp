@@ -1,4 +1,24 @@
 #!/usr/bin/env python3
+# Methodology note — read before changing how correlations are computed:
+#
+# The slot-pair and specific-pair correlations emitted here include BOTH
+# causal flow (e.g., slot 2 scores when slot 3 drives him in) AND game-level
+# common variance (high-scoring team-days elevate every slot's R and RBI
+# hit rates together). This is INTENTIONAL for the betting use case.
+#
+# DraftKings prices teammate SGP legs as independent events and multiplies
+# them. That independence assumption ignores BOTH components, so the full
+# empirical correlation captures the full DK mispricing — not just the
+# causal part. Partialing out game-level variance here would produce
+# "cleaner" causal numbers but would systematically UNDERESTIMATE the joint
+# probability DK is actually paying off at, and therefore underestimate EV
+# for correlated SGPs.
+#
+# The `combo_game_variance_floors` field in slot_pair_baselines.json lets
+# the UI distinguish "this correlation is purely game variance" from "this
+# correlation has causal lift above the game-variance floor" as a diagnostic
+# overlay — but the primary r values stay as the full empirical correlation
+# that the betting math downstream needs.
 """Build teammate-pair correlation aggregates from raw batter game logs.
 
 Reads the four xlsx files (2023, 2024, 2025, 2026), filters to batter rows
@@ -39,6 +59,7 @@ import json
 import math
 import sys
 from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -337,14 +358,306 @@ def index_games(
 
 
 # --------------------------------------------------------------------------- #
-# slot baselines + pair aggregation — added in follow-up commits              #
+# correlation helpers (weighted phi / Pearson / mean)                         #
 # --------------------------------------------------------------------------- #
+
+def weighted_pearson(
+    x: np.ndarray, y: np.ndarray, w: np.ndarray
+) -> float | None:
+    """Weighted Pearson r on equal-length 1D arrays. Returns None for
+    degenerate samples (fewer than 2 positive-weight rows or zero variance
+    on either side). For binary 0/1 inputs this is the weighted phi.
+
+    Mirrors build_aggregates.py's helper so teammate and pitcher sides
+    share the same numeric convention (including the [-1, 1] FP clamp and
+    4-decimal rounding done by the caller).
+    """
+    x = np.asarray(x, dtype=np.float64)
+    y = np.asarray(y, dtype=np.float64)
+    w = np.asarray(w, dtype=np.float64)
+    if x.size != y.size or x.size != w.size:
+        return None
+    m = np.isfinite(x) & np.isfinite(y) & np.isfinite(w) & (w > 0)
+    if m.sum() < 2:
+        return None
+    x, y, w = x[m], y[m], w[m]
+    ws = float(w.sum())
+    if ws <= 0.0:
+        return None
+    mx = float((w * x).sum() / ws)
+    my = float((w * y).sum() / ws)
+    dx = x - mx
+    dy = y - my
+    vx = float((w * dx * dx).sum() / ws)
+    vy = float((w * dy * dy).sum() / ws)
+    if vx <= 0.0 or vy <= 0.0:
+        return None
+    cov = float((w * dx * dy).sum() / ws)
+    den = math.sqrt(vx * vy)
+    if den == 0.0:
+        return None
+    r = cov / den
+    if r > 1.0:
+        r = 1.0
+    elif r < -1.0:
+        r = -1.0
+    return r
+
+
+def weighted_mean(values: np.ndarray, w: np.ndarray) -> float | None:
+    """Weighted mean; None if no positive weight mass. Used for hit rates
+    (on 0/1 arrays) and for continuous stat means."""
+    values = np.asarray(values, dtype=np.float64)
+    w = np.asarray(w, dtype=np.float64)
+    m = np.isfinite(values) & np.isfinite(w) & (w > 0)
+    if not m.any():
+        return None
+    values, w = values[m], w[m]
+    ws = float(w.sum())
+    if ws <= 0.0:
+        return None
+    return float((w * values).sum() / ws)
+
+
+def _round_r(v: float | None) -> float | None:
+    if v is None:
+        return None
+    return round(float(v), 4)
+
+
+def _round_p(v: float | None) -> float | None:
+    if v is None:
+        return None
+    return round(float(v), 3)
+
+
+# --------------------------------------------------------------------------- #
+# slot-stat aggregation per team-game                                         #
+# --------------------------------------------------------------------------- #
+
+def _slot_stats_for_team_game(team_rows: list[dict]) -> dict[int, dict[str, int]]:
+    """For one team's roster in one game, return {slot: {stat: sum_value}}.
+
+    When two players share a BO# (double-switch / in-game lineup shuffle,
+    ~60 cases per season), their stats are summed into the slot's totals.
+    This matches what the slot itself did offensively that game — which is
+    the right unit for slot-level baselines, since identity of the player
+    in the slot is immaterial for slot-to-slot correlations.
+    """
+    by_slot: dict[int, dict[str, int]] = {}
+    for r in team_rows:
+        slot = r.get("bo")
+        if slot is None or slot < 1 or slot > 9:
+            continue
+        d = by_slot.setdefault(slot, {s: 0 for s in STATS})
+        for s in STATS:
+            d[s] += int(r.get(s, 0) or 0)
+    return by_slot
+
+
+# --------------------------------------------------------------------------- #
+# slot-pair baselines                                                         #
+# --------------------------------------------------------------------------- #
+
+def _compute_combo_game_variance_floors(
+    team_game_obs: list[tuple[dict[int, dict[str, int]], float]],
+) -> dict[str, dict]:
+    """Per-combo "typical slot pair" floor — pooled across ALL 72 ordered
+    slot pairs in every team-game.
+
+    For each team-game, each ordered slot pair (i, j) with i != j and both
+    slots present contributes one observation: (slot_i's stat1, slot_j's
+    stat2). Pooling across all ordered pairs and all team-games gives the
+    correlation a RANDOM ordered slot pair would exhibit for this combo —
+    a genuine floor for comparing specific slot pairs against.
+
+    Interpretation:
+      * Specific slot-pair r_binary ≈ floor: pair is unremarkable, r is
+        driven by the same within-game co-occurrence every slot pair
+        experiences (good offensive day lifts all slots together).
+      * Specific slot-pair r_binary >> floor: causal lift above the
+        typical slot pair — e.g., slot 2 R × slot 3 RBI picks up direct
+        same-inning flow on top of the shared-game-context baseline.
+      * Specific slot-pair r_binary << floor: anti-correlation specific
+        to this pair beyond the typical lift.
+
+    Returned dict is keyed on "leg1||leg2" so the UI can do an O(1)
+    lookup per combo without re-scanning the per-slot-pair list.
+    """
+    # Pre-size the pooled arrays. For each team-game with P present slots,
+    # we emit P*(P-1) ordered pairs. In practice P=9 → 72 per team-game.
+    n_pool = 0
+    for by_slot, _w in team_game_obs:
+        p = len(by_slot)
+        if p >= 2:
+            n_pool += p * (p - 1)
+
+    # One parallel (p1, p2) pair of arrays per stat, filled by one pass
+    # through team-games. Memory: 9 stats × 2 sides × 8B × ~1.1M ≈ 160MB
+    # peak — well within the aggregator's budget.
+    p1_stats = {s: np.empty(n_pool, dtype=np.float64) for s in STATS}
+    p2_stats = {s: np.empty(n_pool, dtype=np.float64) for s in STATS}
+    w_pool = np.empty(n_pool, dtype=np.float64)
+
+    idx = 0
+    for by_slot, w in team_game_obs:
+        slots_present = [s for s in range(1, 10) if s in by_slot]
+        if len(slots_present) < 2:
+            continue
+        for i in slots_present:
+            si = by_slot[i]
+            for j in slots_present:
+                if i == j:
+                    continue
+                sj = by_slot[j]
+                for s in STATS:
+                    p1_stats[s][idx] = si[s]
+                    p2_stats[s][idx] = sj[s]
+                w_pool[idx] = w
+                idx += 1
+    assert idx == n_pool, f"pool size mismatch: {idx} vs {n_pool}"
+
+    out: dict[str, dict] = {}
+    for leg1, leg2 in COMBO_SPEC:
+        d1, t1, stat1 = parse_leg(leg1)
+        d2, t2, stat2 = parse_leg(leg2)
+        v1 = p1_stats[stat1]
+        v2 = p2_stats[stat2]
+        h1 = (v1 > t1).astype(np.float64) if d1 == "Over" else (v1 < t1).astype(np.float64)
+        h2 = (v2 > t2).astype(np.float64) if d2 == "Over" else (v2 < t2).astype(np.float64)
+        r_floor_binary = weighted_pearson(h1, h2, w_pool)
+        r_floor_margin = weighted_pearson(v1, v2, w_pool)
+        key = f"{leg1}||{leg2}"
+        out[key] = {
+            "leg1":            leg1,
+            "leg2":            leg2,
+            "r_floor_binary":  _round_r(r_floor_binary),
+            "r_floor_margin":  _round_r(r_floor_margin),
+            "n_pool":          n_pool,
+        }
+    return out
+
 
 def compute_slot_baselines(
     games_by_year: dict[int, dict[str, dict[str, list[dict]]]],
 ) -> dict:
-    """TODO (step 2.2): league-wide slot-pair correlations."""
-    raise NotImplementedError("slot baseline aggregation lands in step 2.2")
+    """League-wide baseline correlations per ordered (slot_i, slot_j).
+
+    For each team-game we collapse the lineup to {slot: stats}. Then for
+    every ordered slot pair (i, j) with i != j we emit one observation
+    per team-game where both slots have entries. Weighted Pearson across
+    all observations, with each year weighted by SLOT_BASELINE_SCHEME.
+
+    Output mirrors the per-pair combos_2 structure so the UI can shrink
+    specific pairs toward the matching slot baseline without re-shaping.
+    """
+    scheme_weights = WEIGHT_SCHEMES[SLOT_BASELINE_SCHEME]
+
+    # Materialize team-game observations once. Each carries every slot's
+    # summed stats plus the year weight we'll apply when building arrays.
+    team_game_obs: list[tuple[dict[int, dict[str, int]], float]] = []
+    for year in YEARS:
+        year_w = float(scheme_weights.get(year, 0.0))
+        if year_w <= 0.0:
+            continue
+        for gid, by_team in games_by_year[year].items():
+            for _team, rows in by_team.items():
+                by_slot = _slot_stats_for_team_game(rows)
+                if len(by_slot) < 2:
+                    continue
+                team_game_obs.append((by_slot, year_w))
+
+    total_games_sampled = len(team_game_obs)
+
+    slot_pairs_out: dict[str, dict] = {}
+    for i in range(1, 10):
+        for j in range(1, 10):
+            if i == j:
+                continue
+
+            # Collect parallel stat arrays + weight vector across every
+            # team-game where both slots had entries.
+            p1_arrs: dict[str, list[int]] = {s: [] for s in STATS}
+            p2_arrs: dict[str, list[int]] = {s: [] for s in STATS}
+            w_list: list[float] = []
+            for by_slot, w in team_game_obs:
+                si = by_slot.get(i)
+                sj = by_slot.get(j)
+                if si is None or sj is None:
+                    continue
+                for s in STATS:
+                    p1_arrs[s].append(si[s])
+                    p2_arrs[s].append(sj[s])
+                w_list.append(w)
+
+            n_dyad = len(w_list)
+            if n_dyad < 2:
+                slot_pairs_out[f"{i}_{j}"] = {
+                    "n_dyad_games_total": n_dyad,
+                    "combos_2": [],
+                }
+                continue
+
+            p1_np = {s: np.asarray(p1_arrs[s], dtype=np.float64) for s in STATS}
+            p2_np = {s: np.asarray(p2_arrs[s], dtype=np.float64) for s in STATS}
+            w_np = np.asarray(w_list, dtype=np.float64)
+
+            combos_out: list[dict] = []
+            for leg1, leg2 in COMBO_SPEC:
+                d1, t1, stat1 = parse_leg(leg1)
+                d2, t2, stat2 = parse_leg(leg2)
+                v1 = p1_np[stat1]
+                v2 = p2_np[stat2]
+                h1 = (v1 > t1).astype(np.float64) if d1 == "Over" else (v1 < t1).astype(np.float64)
+                h2 = (v2 > t2).astype(np.float64) if d2 == "Over" else (v2 < t2).astype(np.float64)
+
+                r_binary = weighted_pearson(h1, h2, w_np)
+                # r_margin is direction-invariant: weighted Pearson on the
+                # raw stat columns, regardless of how legs are dichotomized.
+                r_margin = weighted_pearson(v1, v2, w_np)
+                if r_binary is None and r_margin is None:
+                    continue
+
+                hit1 = weighted_mean(h1, w_np)
+                hit2 = weighted_mean(h2, w_np)
+                both = weighted_mean(h1 * h2, w_np)
+                neither = weighted_mean((1.0 - h1) * (1.0 - h2), w_np)
+
+                combos_out.append({
+                    "leg1":         leg1,
+                    "leg2":         leg2,
+                    "stat1":        stat1,
+                    "stat2":        stat2,
+                    "thresh1":      t1,
+                    "thresh2":      t2,
+                    "r_binary":     _round_r(r_binary),
+                    "r_margin":     _round_r(r_margin),
+                    "n_this_combo": n_dyad,
+                    "hit1_rate":    _round_p(hit1),
+                    "hit2_rate":    _round_p(hit2),
+                    "both_rate":    _round_p(both),
+                    "neither_rate": _round_p(neither),
+                })
+
+            slot_pairs_out[f"{i}_{j}"] = {
+                "n_dyad_games_total": n_dyad,
+                "combos_2": combos_out,
+            }
+
+    combo_floors = _compute_combo_game_variance_floors(team_game_obs)
+
+    return {
+        "generated":           datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "scheme":              SLOT_BASELINE_SCHEME,
+        "weights":             {str(y): scheme_weights[y] for y in YEARS},
+        "total_games_sampled": total_games_sampled,
+        # Per-combo game-variance floor: correlation of team-level hit-
+        # fractions (leg1 vs leg2) across all team-games. Keyed on
+        # "leg1||leg2". Compare any slot_pair's combo r_binary against the
+        # matching combo_floor to gauge causal lift above game variance.
+        "combo_game_variance_floors": combo_floors,
+        "slot_pairs":          slot_pairs_out,
+    }
 
 
 def compute_pair_aggregates(
@@ -370,7 +683,7 @@ def main() -> int:
 
     games_by_year = index_games(rows_by_year)
 
-    print("Teammate dataset — skeleton load summary")
+    print("Teammate dataset — load summary")
     print("-" * 64)
     for year in YEARS:
         rows = rows_by_year[year]
@@ -381,15 +694,21 @@ def main() -> int:
             f"{len(gbg):>5} games  "
             f"{team_games:>5} team-lineups"
         )
+
+    # Slot-pair baselines — league-wide, static weights, always large sample.
+    slot_baselines = compute_slot_baselines(games_by_year)
+    out_path = DATA_DIR / "slot_pair_baselines.json"
+    with out_path.open("w", encoding="utf-8") as f:
+        json.dump(slot_baselines, f, ensure_ascii=False, separators=(",", ":"))
+    size_mb = out_path.stat().st_size / (1024 * 1024)
     print("-" * 64)
-    print(f"  stats tracked:       {STATS}")
-    print(f"  combos per pair:     {len(COMBO_SPEC)}")
-    print(f"  weighting schemes:   {sorted(WEIGHT_SCHEMES.keys())}")
-    print(f"  K_PAIR:              {K_PAIR} (prior strength in shrinkage blend)")
-    print(f"  pair min n (cold):   {PAIR_MIN_TOTAL_COLD}")
-    print(f"  pair min n (warm):   {PAIR_MIN_TOTAL_WARM} when n_2026 >= {PAIR_WARM_2026}")
+    print(
+        f"  slot baselines: {len(slot_baselines['slot_pairs'])} ordered pairs, "
+        f"{slot_baselines['total_games_sampled']} team-games sampled, "
+        f"{size_mb:.2f} MB  -> {out_path.relative_to(ROOT).as_posix()}"
+    )
     print()
-    print("Slot baselines and pair aggregates land in follow-up commits.")
+    print("Pair aggregation lands in step 2.3.")
     return 0
 
 
