@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>MLB Cross-Player SGP Correlations — EV Collective</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<style>
+:root{--bg:#080c16;--s:#0d1220;--s2:#111827;--bd:rgba(255,255,255,.06);--t:#e2e8f0;--t2:#94a3b8;--t3:#475569;--g:#22c55e;--r:#ef4444;--bl:#3b82f6;--am:#f59e0b;--m:'JetBrains Mono',monospace;--f:'Outfit',system-ui,sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}body{background:var(--bg);color:var(--t);font-family:var(--f);min-height:100vh}
+::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-thumb{background:#1e293b;border-radius:3px}
+input,select,textarea{outline:none}
+@keyframes fi{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+.fi{animation:fi .2s ease forwards}
+.inp{padding:7px 10px;border-radius:6px;background:var(--s);border:1px solid var(--bd);color:var(--t);font-size:12px;font-family:var(--m);width:100%}.inp:focus{border-color:rgba(59,130,246,.4)}
+.cd{padding:14px;background:var(--s);border:1px solid var(--bd);border-radius:10px;margin-bottom:10px}
+.tb{padding:7px 16px;border-radius:7px;font-size:11px;font-weight:700;cursor:pointer;font-family:var(--m);letter-spacing:.5px;border:1px solid var(--bd);background:var(--s);color:var(--t2);transition:all .15s}
+.tb.a{background:rgba(59,130,246,.12);border-color:rgba(59,130,246,.3);color:#3b82f6}
+.badge{font-size:9px;font-weight:700;padding:1px 6px;border-radius:99px;font-family:var(--m)}
+table{width:100%;border-collapse:collapse}th{padding:6px 4px;text-align:center;color:var(--t3);font-size:9px;font-family:var(--m);font-weight:700;cursor:pointer;user-select:none}
+th:hover{color:var(--t2)}td{padding:5px 4px;text-align:center;font-size:10px;font-family:var(--m)}
+tr.row:hover{background:rgba(255,255,255,.03)!important;cursor:pointer}
+.sel{padding:6px 8px;border-radius:6px;background:var(--s);border:1px solid var(--bd);color:var(--t);font-size:11px;font-family:var(--m);cursor:pointer;appearance:none;-webkit-appearance:none;
+background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2394a3b8'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center;padding-right:24px}
+.hdr{padding:20px 24px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.hdr h1{font-size:18px;font-weight:800;letter-spacing:-.3px;display:flex;align-items:center;gap:8px}
+.hdr h1 span{font-size:10px;background:rgba(59,130,246,.15);color:var(--bl);padding:2px 8px;border-radius:4px;font-family:var(--m);font-weight:700}
+.main{max-width:1400px;margin:0 auto;padding:16px 20px}
+.filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.stat-pill{padding:4px 10px;border-radius:5px;font-size:10px;font-weight:600;cursor:pointer;font-family:var(--m);border:1px solid var(--bd);background:var(--s);color:var(--t2);transition:all .15s}
+.stat-pill.a{background:rgba(59,130,246,.12);border-color:rgba(59,130,246,.3);color:#3b82f6}
+.stat-pill:hover{border-color:rgba(59,130,246,.2)}
+.toggle{display:flex;gap:0;border:1px solid var(--bd);border-radius:6px;overflow:hidden}
+.toggle button{padding:5px 12px;font-size:10px;font-weight:700;cursor:pointer;font-family:var(--m);border:none;background:var(--s);color:var(--t3);transition:all .15s}
+.toggle button.a{background:rgba(59,130,246,.12);color:#3b82f6}
+.corr-cell{min-width:42px;display:inline-block;padding:2px 4px;border-radius:3px;font-weight:600}
+.gap-bar{width:60px;height:4px;background:var(--s2);border-radius:2px;display:inline-block;position:relative;vertical-align:middle}
+.gap-fill{height:100%;border-radius:2px;position:absolute;left:0;top:0}
+.adj-bar{width:50px;height:4px;background:var(--s2);border-radius:2px;display:inline-block;position:relative;vertical-align:middle}
+.adj-fill{height:100%;border-radius:2px;position:absolute;left:0;top:0;background:var(--bl)}
+.detail-panel{position:fixed;right:0;top:0;width:420px;height:100vh;background:var(--bg);border-left:1px solid var(--bd);z-index:100;overflow-y:auto;padding:20px;transform:translateX(100%);transition:transform .2s ease}
+.detail-panel.open{transform:translateX(0)}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:99;opacity:0;pointer-events:none;transition:opacity .2s}
+.overlay.open{opacity:1;pointer-events:auto}
+.matrix-grid{display:grid;grid-template-columns:auto repeat(var(--cols),1fr);gap:1px}
+.matrix-header{font-size:9px;font-family:var(--m);font-weight:700;color:var(--t3);padding:4px 6px;text-align:center}
+.matrix-label{font-size:9px;font-family:var(--m);font-weight:700;color:var(--t2);padding:4px 6px;text-align:right;white-space:nowrap}
+.matrix-cell{font-size:10px;font-family:var(--m);font-weight:600;padding:4px 6px;text-align:center;border-radius:3px;cursor:default}
+.summary-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:14px}
+.summary-card{padding:12px 14px;background:var(--s);border:1px solid var(--bd);border-radius:8px}
+.summary-card .label{font-size:10px;color:var(--t3);font-family:var(--m);font-weight:600;margin-bottom:4px}
+.summary-card .value{font-size:20px;font-weight:800;font-family:var(--m)}
+.bo-dist{display:flex;gap:2px;align-items:flex-end;height:24px}
+.bo-bar{width:8px;background:rgba(59,130,246,.3);border-radius:2px 2px 0 0;transition:all .15s}
+.legend{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;font-size:10px;color:var(--t3);font-family:var(--m)}
+.legend-dot{width:8px;height:8px;border-radius:2px;display:inline-block;vertical-align:middle;margin-right:4px}
+.close-btn{position:absolute;right:12px;top:12px;width:28px;height:28px;border-radius:6px;border:1px solid var(--bd);background:var(--s);color:var(--t2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px}
+.close-btn:hover{border-color:rgba(255,255,255,.12);color:var(--t)}
+.year-chip{font-size:9px;font-family:var(--m);padding:1px 5px;border-radius:3px;font-weight:600}
+.loading-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:16px}
+.loading-screen .spinner{width:40px;height:40px;border:3px solid var(--bd);border-top-color:var(--bl);border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(max-width:768px){.detail-panel{width:100%}.main{padding:10px 12px}.hdr{padding:14px 16px}.filters{gap:6px}}
+</style>
+</head>
+<body>
+<div class="hdr">
+<h1>⚾ MLB Cross-Player SGP Correlations <span>EV COLLECTIVE</span></h1>
+<div style="margin-left:auto;font-size:10px;color:var(--t3);font-family:var(--m)">2024-2025 DATA · <span id="pairCount">...</span> PAIRS · <span id="playerCount">...</span> PLAYERS · <span id="rosterStatus" style="color:#22c55e">✓ CURRENT ROSTERS</span></div>
+</div>
+<div class="main" id="app">
+<div class="loading-screen"><div class="spinner"></div><div style="font-size:12px;color:var(--t2);font-family:var(--m)">Loading correlation data...</div></div>
+</div>
+<div class="overlay" id="overlay" onclick="closePanel()"></div>
+<div class="detail-panel" id="panel"></div>
+
+<script>
+// ─── DATA (loaded from JSON) ───
+let PAIRS = [];
+let PLAYERS = {};
+const BSTATS = ['H','R','RBI','HR','TB','BB','SB','SO','HRR'];
+
+// Team abbreviations
+const TA = {"Arizona Diamondbacks":"ARI","Athletics":"OAK","Atlanta Braves":"ATL","Baltimore Orioles":"BAL","Boston Red Sox":"BOS","Chicago Cubs":"CHC","Chicago White Sox":"CWS","Cincinnati Reds":"CIN","Cleveland Guardians":"CLE","Colorado Rockies":"COL","Detroit Tigers":"DET","Houston Astros":"HOU","Kansas City Royals":"KC","Los Angeles Angels":"LAA","Los Angeles Dodgers":"LAD","Miami Marlins":"MIA","Milwaukee Brewers":"MIL","Minnesota Twins":"MIN","New York Mets":"NYM","New York Yankees":"NYY","Philadelphia Phillies":"PHI","Pittsburgh Pirates":"PIT","San Diego Padres":"SD","San Francisco Giants":"SF","Seattle Mariners":"SEA","St. Louis Cardinals":"STL","Tampa Bay Rays":"TB","Texas Rangers":"TEX","Toronto Blue Jays":"TOR","Washington Nationals":"WSH"};
+const TC = {"ARI":"#a71930","OAK":"#003831","ATL":"#ce1141","BAL":"#df4601","BOS":"#bd3039","CHC":"#0e3386","CWS":"#27251f","CIN":"#c6011f","CLE":"#00385d","COL":"#33006f","DET":"#0c2340","HOU":"#002d62","KC":"#004687","LAA":"#ba0021","LAD":"#005a9c","MIA":"#00a3e0","MIL":"#12284b","MIN":"#002b5c","NYM":"#002d72","NYY":"#003087","PHI":"#e81828","PIT":"#27251f","SD":"#2f241d","SF":"#fd5a1e","SEA":"#0c2c56","STL":"#c41e3a","TB":"#092c5c","TEX":"#003278","TOR":"#134a8e","WSH":"#ab0003"};
+
+let TEAMS = [];
+
+// ─── STATE ───
+let teamF = "ALL", search = "", dataMode = "all", statF = "ALL", sortCol = "maxC", sortDir = -1;
+let minGames = 50, minAdj = 0, selectedPair = null;
+
+// Debounced search
+let _searchTimer = null;
+function handleSearch(el) {
+  search = el.value;
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(() => {
+    const tableWrap = document.getElementById("corrTable");
+    if(tableWrap) {
+      tableWrap.innerHTML = buildTable();
+      const pc = document.getElementById("pairCountInline");
+      if(pc) pc.textContent = getFilteredPairs().length + " pairs";
+    }
+  }, 250);
+}
+
+function getCorr(pair, mode) {
+  if(mode === "adj") return pair.ca || {};
+  if(mode === "2025") return pair.c25 || {};
+  return pair.c || {};
+}
+
+function maxCorr(pair, mode) {
+  const c = getCorr(pair, mode);
+  let mx = 0;
+  for(const k in c) if(Math.abs(c[k]) > Math.abs(mx)) mx = c[k];
+  return mx;
+}
+
+function bestCombo(pair, mode) {
+  const c = getCorr(pair, mode);
+  let bk = "", bv = 0;
+  for(const k in c) if(Math.abs(c[k]) > Math.abs(bv)) { bv = c[k]; bk = k; }
+  return [bk, bv];
+}
+
+function ccl(v) {
+  const a = Math.abs(v);
+  if(a >= .5) return v > 0 ? "#22c55e" : "#ef4444";
+  if(a >= .3) return v > 0 ? "#4ade80" : "#f87171";
+  if(a >= .1) return v > 0 ? "#60a5fa" : "#fb923c";
+  return "#64748b";
+}
+
+function cbg(v) {
+  const a = Math.abs(v);
+  if(a >= .5) return v > 0 ? "rgba(34,197,94,.12)" : "rgba(239,68,68,.12)";
+  if(a >= .3) return v > 0 ? "rgba(74,222,128,.06)" : "rgba(248,113,113,.06)";
+  return "transparent";
+}
+
+function sl(v) {
+  const a = Math.abs(v);
+  if(a >= .5) return "STRONG";
+  if(a >= .3) return "MOD";
+  if(a >= .1) return "WEAK";
+  return "—";
+}
+
+function bdg(v) {
+  const l = sl(v);
+  const c = {"STRONG":"#22c55e","MOD":"#fbbf24","WEAK":"#94a3b8","—":"#475569"}[l];
+  return `<span class="badge" style="background:${c}22;color:${c}">${l}</span>`;
+}
+
+function escH(s) { return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+function getFilteredPairs() {
+  let pairs = PAIRS;
+  if(teamF !== "ALL") pairs = pairs.filter(r => r.t === teamF);
+  if(search) {
+    const s = search.toLowerCase();
+    pairs = pairs.filter(r => r.p1.toLowerCase().includes(s) || r.p2.toLowerCase().includes(s));
+  }
+  if(minGames > 0) pairs = pairs.filter(r => r.n >= minGames);
+  if(minAdj > 0) pairs = pairs.filter(r => r.a >= minAdj/100);
+  if(statF !== "ALL") pairs = pairs.filter(r => {
+    const c = getCorr(r, dataMode);
+    return c[statF] !== undefined;
+  });
+  
+  pairs = [...pairs];
+  pairs.sort((a, b) => {
+    let va, vb;
+    if(sortCol === "maxC") { va = Math.abs(maxCorr(a, dataMode)); vb = Math.abs(maxCorr(b, dataMode)); }
+    else if(sortCol === "n") { va = a.n; vb = b.n; }
+    else if(sortCol === "adj") { va = a.a; vb = b.a; }
+    else if(sortCol === "gap") { va = a.g; vb = b.g; }
+    else if(sortCol === "p1") { va = a.p1; vb = b.p1; }
+    else if(sortCol === "stat") {
+      if(statF !== "ALL") { va = Math.abs((getCorr(a,dataMode)[statF])||0); vb = Math.abs((getCorr(b,dataMode)[statF])||0); }
+      else { va = Math.abs(maxCorr(a,dataMode)); vb = Math.abs(maxCorr(b,dataMode)); }
+    }
+    else { va = Math.abs(maxCorr(a,dataMode)); vb = Math.abs(maxCorr(b,dataMode)); }
+    if(typeof va === "string") return sortDir * va.localeCompare(vb);
+    return sortDir * (va - vb);
+  });
+  return pairs;
+}
+
+function setSort(col) {
+  if(sortCol === col) sortDir *= -1;
+  else { sortCol = col; sortDir = -1; }
+  render();
+}
+
+// ─── RENDER ───
+function render() {
+  if(!PAIRS.length) return;
+  const pairs = getFilteredPairs();
+  const app = document.getElementById("app");
+  
+  let html = "";
+  
+  // Tabs
+  html += `<div style="display:flex;gap:6px;margin-bottom:14px">
+    <button class="tb ${!todayTab ? "a" : ""}" onclick="todayTab=false;render()">📊 CORRELATIONS</button>
+    <button class="tb ${todayTab ? "a" : ""}" onclick="todayTab=true;if(!todayData&&!todayLoading)fetchTodayGames();else render()">⚾ TODAY'S GAMES</button>
+  </div>`;
+  
+  if(todayTab) {
+    html += renderToday();
+    app.innerHTML = html;
+    return;
+  }
+  
+  // Filters
+  html += `<div class="filters">
+    <select class="sel" onchange="teamF=this.value;render()" style="min-width:180px">
+      <option value="ALL" ${teamF==="ALL"?"selected":""}>All Teams</option>
+      ${TEAMS.map(t=>`<option value="${escH(t)}" ${teamF===t?"selected":""}>${TA[t]||t}</option>`).join("")}
+    </select>
+    <input class="inp" id="searchInput" style="max-width:220px" placeholder="Search players..." value="${escH(search)}" oninput="handleSearch(this)"/>
+    <div class="toggle">
+      <button class="${dataMode==="all"?"a":""}" onclick="dataMode='all';render()">ALL DATA</button>
+      <button class="${dataMode==="adj"?"a":""}" onclick="dataMode='adj';render()">ADJACENT</button>
+      <button class="${dataMode==="2025"?"a":""}" onclick="dataMode='2025';render()">2025</button>
+    </div>
+    <span id="pairCountInline" style="font-size:10px;color:var(--t3);font-family:var(--m);margin-left:auto">${pairs.length} pairs</span>
+  </div>`;
+  
+  // Stat filter row
+  html += `<div class="filters" style="margin-bottom:6px">
+    <span style="font-size:10px;color:var(--t3);font-family:var(--m);font-weight:600">STAT PAIR:</span>
+    <span class="stat-pill ${statF==="ALL"?"a":""}" onclick="statF='ALL';render()">ALL</span>`;
+  
+  const popCombos = ["R-RBI","H-R","RBI-R","H-RBI","HR-RBI","R-H","TB-R","R-TB","BB-R","HR-R","HRR-HRR"];
+  for(const c of popCombos) {
+    const [s1,s2] = c.split("-");
+    html += `<span class="stat-pill ${statF===c?"a":""}" onclick="statF='${c}';render()">${s1}→${s2}</span>`;
+  }
+  html += `</div>`;
+  
+  // Additional filters
+  html += `<div class="filters" style="margin-bottom:14px">
+    <span style="font-size:10px;color:var(--t3);font-family:var(--m)">MIN GAMES:</span>
+    <input class="inp" type="number" style="width:60px" value="${minGames}" min="0" step="10" onchange="minGames=+this.value;render()"/>
+    <span style="font-size:10px;color:var(--t3);font-family:var(--m);margin-left:8px">MIN ADJ %:</span>
+    <input class="inp" type="number" style="width:60px" value="${minAdj}" min="0" max="100" step="5" onchange="minAdj=+this.value;render()"/>
+  </div>`;
+  
+  // Legend
+  html += `<div class="legend">
+    <span><span class="legend-dot" style="background:#22c55e"></span>Strong (≥0.5)</span>
+    <span><span class="legend-dot" style="background:#fbbf24"></span>Moderate (0.3-0.5)</span>
+    <span><span class="legend-dot" style="background:#94a3b8"></span>Weak (0.1-0.3)</span>
+    <span style="margin-left:auto;font-style:italic">Click any row for full matrix →</span>
+  </div>`;
+  
+  html += `<div id="corrTable">${buildTable()}</div>`;
+  app.innerHTML = html;
+}
+
+function buildTable() {
+  const pairs = getFilteredPairs();
+  let html = "";
+  
+  const sortIcon = (col) => sortCol === col ? (sortDir > 0 ? " ↑" : " ↓") : "";
+  html += `<div class="cd" style="padding:0;overflow-x:auto"><table>
+    <thead><tr>
+      <th style="text-align:left;padding-left:12px;min-width:120px" onclick="setSort('p1')">PLAYER 1${sortIcon("p1")}</th>
+      <th style="text-align:left;min-width:120px">PLAYER 2</th>
+      <th style="min-width:60px">TEAM</th>
+      <th onclick="setSort('n')" style="min-width:50px">GAMES${sortIcon("n")}</th>
+      <th onclick="setSort('gap')" style="min-width:55px">BO GAP${sortIcon("gap")}</th>
+      <th onclick="setSort('adj')" style="min-width:55px">ADJ %${sortIcon("adj")}</th>
+      <th onclick="setSort('maxC')" style="min-width:55px">BEST r${sortIcon("maxC")}</th>
+      <th style="min-width:60px">COMBO</th>
+      <th style="min-width:50px">LEVEL</th>
+      ${statF !== "ALL" ? `<th onclick="setSort('stat')" style="min-width:50px">${statF} r${sortIcon("stat")}</th>` : ""}
+      <th style="min-width:50px">YEARS</th>
+    </tr></thead><tbody>`;
+  
+  const shown = pairs.slice(0, 200);
+  for(const p of shown) {
+    const [bk, bv] = bestCombo(p, dataMode);
+    const tc = TA[p.t] || "???";
+    const teamColor = TC[tc] || "#475569";
+    const statVal = statF !== "ALL" ? (getCorr(p,dataMode)[statF] || 0) : 0;
+    
+    const yrs = p.y || {};
+    let yrHtml = "";
+    for(const y of ["2024","2025"]) {
+      if(yrs[y]) yrHtml += `<span class="year-chip" style="background:rgba(59,130,246,${y==="2025"?.15:.06});color:${y==="2025"?"#60a5fa":"#475569"}">${y.slice(2)}</span> `;
+    }
+    
+    html += `<tr class="row" onclick="openPanel('${escH(p.p1).replace(/'/g,"\\'")}','${escH(p.p2).replace(/'/g,"\\'")}','${escH(p.t).replace(/'/g,"\\'")}')" style="border-bottom:1px solid var(--bd)">
+      <td style="text-align:left;padding-left:12px;font-weight:600;color:var(--t)">${escH(p.p1)}</td>
+      <td style="text-align:left;font-weight:600;color:var(--t)">${escH(p.p2)}</td>
+      <td><span style="color:${teamColor};font-weight:700">${tc}</span></td>
+      <td>${p.n}</td>
+      <td>${p.g}</td>
+      <td><span class="adj-bar"><span class="adj-fill" style="width:${Math.min(p.a*100,100)}%"></span></span> <span style="font-size:9px">${(p.a*100).toFixed(0)}%</span></td>
+      <td><span class="corr-cell" style="background:${cbg(bv)};color:${ccl(bv)}">${bv.toFixed(3)}</span></td>
+      <td style="font-size:9px;color:var(--t2)">${bk.replace("-","→")}</td>
+      <td>${bdg(bv)}</td>
+      ${statF !== "ALL" ? `<td><span class="corr-cell" style="background:${cbg(statVal)};color:${ccl(statVal)}">${statVal?statVal.toFixed(3):"—"}</span></td>` : ""}
+      <td style="font-size:9px">${yrHtml}</td>
+    </tr>`;
+  }
+  
+  html += `</tbody></table></div>`;
+  if(pairs.length > 200) html += `<div style="text-align:center;padding:10px;font-size:11px;color:var(--t3);font-family:var(--m)">Showing 200 of ${pairs.length} pairs. Use filters to narrow.</div>`;
+  
+  return html;
+}
+
+// ─── DETAIL PANEL ───
+function openPanel(p1, p2, team) {
+  const pair = PAIRS.find(r => r.p1 === p1 && r.p2 === p2 && r.t === team);
+  if(!pair) return;
+  selectedPair = pair;
+  
+  const panel = document.getElementById("panel");
+  const pl1 = PLAYERS[p1] || {};
+  const pl2 = PLAYERS[p2] || {};
+  const tc = TA[team] || "???";
+  const teamColor = TC[tc] || "#475569";
+  
+  let html = `<button class="close-btn" onclick="closePanel()">✕</button>`;
+  html += `<div style="margin-bottom:16px">
+    <div style="font-size:14px;font-weight:800;margin-bottom:4px">${escH(p1)} <span style="color:var(--t3)">+</span> ${escH(p2)}</div>
+    <div style="font-size:11px;color:${teamColor};font-weight:700;font-family:var(--m)">${escH(team)}</div>
+  </div>`;
+  
+  // Player cards
+  html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">`;
+  for(const [pn, pl] of [[p1,pl1],[p2,pl2]]) {
+    html += `<div class="cd" style="margin:0">
+      <div style="font-size:11px;font-weight:700;margin-bottom:6px">${escH(pn)}</div>
+      <div style="font-size:9px;color:var(--t3);font-family:var(--m);margin-bottom:4px">${pl.g||"?"} games · BO #${pl.bo||"?"}</div>`;
+    if(pl.a) {
+      html += `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:2px;font-size:9px;font-family:var(--m)">`;
+      for(const s of BSTATS) {
+        if(pl.a[s] !== undefined) html += `<div style="text-align:center"><span style="color:var(--t3)">${s}</span><br/><span style="font-weight:600">${pl.a[s].toFixed(2)}</span></div>`;
+      }
+      html += `</div>`;
+    }
+    html += `</div>`;
+  }
+  html += `</div>`;
+  
+  // Pair stats
+  html += `<div class="cd" style="margin-bottom:10px">
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center;font-family:var(--m)">
+      <div><div style="font-size:9px;color:var(--t3)">GAMES</div><div style="font-size:16px;font-weight:800">${pair.n}</div></div>
+      <div><div style="font-size:9px;color:var(--t3)">AVG BO GAP</div><div style="font-size:16px;font-weight:800">${pair.g}</div></div>
+      <div><div style="font-size:9px;color:var(--t3)">ADJACENT %</div><div style="font-size:16px;font-weight:800;color:var(--bl)">${(pair.a*100).toFixed(0)}%</div></div>
+    </div>
+  </div>`;
+  
+  // Correlation matrices
+  for(const [mode, label, nKey] of [["all","ALL DATA ("+pair.n+" games)","n"],["adj","ADJACENT ONLY","na"],["2025","2025 ONLY ("+(pair.n25||0)+" games)","n25"]]) {
+    const corrs = getCorr(pair, mode);
+    if(!Object.keys(corrs).length) continue;
+    
+    html += `<div class="cd" style="margin-bottom:8px">
+      <div style="font-size:10px;font-weight:700;font-family:var(--m);color:var(--t2);margin-bottom:8px">${label}</div>
+      <div class="matrix-grid" style="--cols:${BSTATS.length}">
+        <div class="matrix-header" style="color:var(--bl);font-size:8px">${escH(p1)}→<br/>${escH(p2)}↓</div>`;
+    for(const s of BSTATS) html += `<div class="matrix-header">${s}</div>`;
+    
+    for(const s2 of BSTATS) {
+      html += `<div class="matrix-label">${s2}</div>`;
+      for(const s1 of BSTATS) {
+        const k = s1+"-"+s2;
+        const v = corrs[k];
+        if(v !== undefined) {
+          html += `<div class="matrix-cell" style="background:${cbg(v)};color:${ccl(v)}" title="${k}: ${v}">${v.toFixed(2)}</div>`;
+        } else {
+          html += `<div class="matrix-cell" style="color:var(--t3)">—</div>`;
+        }
+      }
+    }
+    html += `</div></div>`;
+  }
+  
+  // Year breakdown
+  if(pair.y) {
+    html += `<div class="cd"><div style="font-size:10px;font-weight:700;font-family:var(--m);color:var(--t2);margin-bottom:6px">YEAR BREAKDOWN</div>
+      <div style="display:flex;gap:12px;font-family:var(--m);font-size:11px">`;
+    for(const y of ["2024","2025"]) {
+      const cnt = pair.y[y] || 0;
+      html += `<div><span style="color:var(--t3)">'${y.slice(2)}</span> <span style="font-weight:700">${cnt}</span> games</div>`;
+    }
+    html += `</div></div>`;
+  }
+  
+  // SGP insight
+  const [bk, bv] = bestCombo(pair, "all");
+  if(bv > 0.25) {
+    const [s1,s2] = bk.split("-");
+    html += `<div class="cd" style="border-color:rgba(59,130,246,.2);background:rgba(59,130,246,.04)">
+      <div style="font-size:10px;font-weight:700;color:var(--bl);font-family:var(--m);margin-bottom:4px">💡 SGP INSIGHT</div>
+      <div style="font-size:11px;color:var(--t2);line-height:1.5">
+        When <strong style="color:var(--t)">${escH(p1)}</strong> gets more <strong>${s1}</strong>,
+        <strong style="color:var(--t)">${escH(p2)}</strong> tends to get more <strong>${s2}</strong>
+        (r=${bv.toFixed(3)}). ${pair.a > 0.5 ? "They bat adjacent "+((pair.a*100).toFixed(0))+"% of the time, strengthening this effect." : "However they only bat adjacent "+((pair.a*100).toFixed(0))+"% of games — lineup check is important."}
+      </div>
+    </div>`;
+  }
+  
+  panel.innerHTML = html;
+  panel.classList.add("open");
+  document.getElementById("overlay").classList.add("open");
+}
+
+function closePanel() {
+  document.getElementById("panel").classList.remove("open");
+  document.getElementById("overlay").classList.remove("open");
+  selectedPair = null;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TODAY'S GAMES
+// ═══════════════════════════════════════════════════════════════
+
+let todayTab = false;
+let todayData = null;
+let todayLoading = false;
+let todayError = "";
+let todayDate = "";
+let todayGapFilter = 2;
+let todaySortBy = "actionable";
+
+const MLB_TEAM_MAP = {
+  "Arizona Diamondbacks":"Arizona Diamondbacks","Atlanta Braves":"Atlanta Braves","Baltimore Orioles":"Baltimore Orioles","Boston Red Sox":"Boston Red Sox","Chicago Cubs":"Chicago Cubs","Chicago White Sox":"Chicago White Sox","Cincinnati Reds":"Cincinnati Reds","Cleveland Guardians":"Cleveland Guardians","Colorado Rockies":"Colorado Rockies","Detroit Tigers":"Detroit Tigers","Houston Astros":"Houston Astros","Kansas City Royals":"Kansas City Royals","Los Angeles Angels":"Los Angeles Angels","Los Angeles Dodgers":"Los Angeles Dodgers","Miami Marlins":"Miami Marlins","Milwaukee Brewers":"Milwaukee Brewers","Minnesota Twins":"Minnesota Twins","New York Mets":"New York Mets","New York Yankees":"New York Yankees","Oakland Athletics":"Athletics","Athletics":"Athletics","Philadelphia Phillies":"Philadelphia Phillies","Pittsburgh Pirates":"Pittsburgh Pirates","San Diego Padres":"San Diego Padres","San Francisco Giants":"San Francisco Giants","Seattle Mariners":"Seattle Mariners","St. Louis Cardinals":"St. Louis Cardinals","Tampa Bay Rays":"Tampa Bay Rays","Texas Rangers":"Texas Rangers","Toronto Blue Jays":"Toronto Blue Jays","Washington Nationals":"Washington Nationals"
+};
+
+const API_TO_DATA = {};
+for(const [dk, ak] of Object.entries(MLB_TEAM_MAP)) API_TO_DATA[ak] = dk;
+
+function getToday() {
+  const d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+}
+
+function formatTime(isoStr) {
+  try { const d = new Date(isoStr); return d.toLocaleTimeString("en-US", {hour:"numeric",minute:"2-digit",timeZoneName:"short"}); }
+  catch(e) { return isoStr; }
+}
+
+function matchTeamName(apiName) {
+  if(API_TO_DATA[apiName]) return API_TO_DATA[apiName];
+  for(const t of TEAMS) {
+    if(t.includes(apiName) || apiName.includes(t)) return t;
+    const apiLast = apiName.split(" ").pop();
+    const tLast = t.split(" ").pop();
+    if(apiLast === tLast) return t;
+  }
+  return apiName;
+}
+
+async function fetchTodayGames(dateOverride) {
+  todayLoading = true;
+  todayError = "";
+  todayDate = dateOverride || getToday();
+  render();
+  
+  try {
+    const baseUrls = [
+      `/api/mlb/schedule?date=${todayDate}&gameType=S`,
+      `/api/mlb/schedule?date=${todayDate}&gameType=E`,
+      `/api/mlb/schedule?date=${todayDate}&gameType=R`,
+      `/api/mlb/schedule?date=${todayDate}`,
+    ];
+    
+    let schedData = null;
+    let allGamesFromAllTypes = [];
+    let lastError = "";
+    let apiReachable = false;
+    
+    for(const url of baseUrls) {
+      try {
+        const resp = await fetch(url);
+        apiReachable = true;
+        if(!resp.ok) { lastError = `HTTP ${resp.status}`; continue; }
+        const data = await resp.json();
+        if(data.dates && data.dates.length > 0) {
+          for(const d of data.dates) {
+            for(const g of (d.games || [])) {
+              if(!allGamesFromAllTypes.find(x => x.gamePk === g.gamePk)) {
+                allGamesFromAllTypes.push(g);
+              }
+            }
+          }
+        }
+        if(!schedData && data.copyright) schedData = data;
+      } catch(e) { lastError = e.message; continue; }
+    }
+    
+    if(!apiReachable) throw new Error("Cannot reach MLB Stats API. Error: " + lastError);
+    if(!schedData) schedData = { dates: [] };
+    
+    const games = [];
+    const rawGames = allGamesFromAllTypes;
+    
+    for(const game of rawGames) {
+      const homeTeam = game.teams?.home?.team?.name || "Unknown";
+      const awayTeam = game.teams?.away?.team?.name || "Unknown";
+      let homeLineup = [], awayLineup = [], hasLineups = false;
+      
+      if(game.lineups) {
+        if(game.lineups.homePlayers) { homeLineup = game.lineups.homePlayers.map((p,i) => ({name:p.fullName,id:p.id,bo:i+1})); hasLineups = true; }
+        if(game.lineups.awayPlayers) { awayLineup = game.lineups.awayPlayers.map((p,i) => ({name:p.fullName,id:p.id,bo:i+1})); hasLineups = true; }
+      }
+      
+      const status = game.status?.detailedState || "Unknown";
+      let lStatus = "none";
+      if(hasLineups) lStatus = (status === "In Progress" || status === "Final" || status === "Game Over") ? "confirmed" : "projected";
+      
+      games.push({
+        gamePk: game.gamePk, homeTeam, awayTeam,
+        homeName: matchTeamName(homeTeam), awayName: matchTeamName(awayTeam),
+        gameTime: game.gameDate, status,
+        homeLineup, awayLineup, lineupStatus: lStatus,
+        homePitcher: game.teams?.home?.probablePitcher?.fullName || "TBD",
+        awayPitcher: game.teams?.away?.probablePitcher?.fullName || "TBD"
+      });
+    }
+    
+    // Cross-reference with correlation data
+    const todayPairs = [];
+    for(const g of games) {
+      for(const [lineup, teamName, side] of [[g.homeLineup,g.homeName,"home"],[g.awayLineup,g.awayName,"away"]]) {
+        if(!lineup.length) continue;
+        const lineupNames = lineup.map(p => p.name);
+        const lineupBO = {};
+        for(const p of lineup) lineupBO[p.name] = p.bo;
+        
+        for(const pair of PAIRS) {
+          if(pair.t !== teamName) continue;
+          const p1Match = findLineupMatch(pair.p1, lineupNames);
+          const p2Match = findLineupMatch(pair.p2, lineupNames);
+          if(p1Match && p2Match) {
+            const bo1 = lineupBO[p1Match], bo2 = lineupBO[p2Match];
+            const gap = Math.abs(bo1 - bo2);
+            const [bk, bv] = bestCombo(pair, "all");
+            const [adjBk, adjBv] = pair.ca ? bestCombo(pair, "adj") : ["", 0];
+            todayPairs.push({...pair, gamePk:g.gamePk, gameTime:g.gameTime, opponent:side==="home"?g.awayTeam:g.homeTeam, side, bo1, bo2, gap, bk, bv, adjBk, adjBv, lineupStatus:g.lineupStatus, p1Matched:p1Match, p2Matched:p2Match});
+          }
+        }
+      }
+    }
+    todayPairs.sort((a, b) => Math.abs(b.bv) - Math.abs(a.bv));
+    todayData = { games, pairs: todayPairs };
+  } catch(e) {
+    todayError = "Error: " + e.message;
+    todayData = null;
+  }
+  todayLoading = false;
+  render();
+}
+
+function findLineupMatch(corrName, lineupNames) {
+  if(lineupNames.includes(corrName)) return corrName;
+  const corrLast = corrName.split(" ").pop().replace(/[.]/g,"");
+  for(const ln of lineupNames) { const lnLast = ln.split(" ").pop().replace(/[.]/g,""); if(corrLast.toLowerCase() === lnLast.toLowerCase()) return ln; }
+  const corrParts = corrName.toLowerCase().split(" ");
+  for(const ln of lineupNames) { const lnParts = ln.toLowerCase().split(" "); if(corrParts.length>=2 && lnParts.length>=2 && corrParts[0]===lnParts[0] && corrParts[corrParts.length-1]===lnParts[lnParts.length-1]) return ln; }
+  const corrClean = corrName.replace(/ Jr\.?| III| II| Sr\.?/gi,"").trim().toLowerCase();
+  for(const ln of lineupNames) { const lnClean = ln.replace(/ Jr\.?| III| II| Sr\.?/gi,"").trim().toLowerCase(); if(corrClean===lnClean) return ln; }
+  return null;
+}
+
+function renderToday() {
+  let html = "";
+  html += `<div class="filters" style="margin-bottom:14px">
+    <input type="date" class="inp" style="max-width:160px" value="${todayDate || getToday()}" onchange="fetchTodayGames(this.value)"/>
+    <button class="tb" onclick="fetchTodayGames()" style="display:flex;align-items:center;gap:4px"><span style="font-size:14px">↻</span> REFRESH</button>
+    <span style="font-size:10px;color:var(--t3);font-family:var(--m);margin-left:auto">
+      ${todayDate ? "Showing: "+todayDate : ""} ${todayData ? " · "+todayData.games.length+" games · "+todayData.pairs.length+" correlated pairs" : ""}
+    </span>
+  </div>`;
+  
+  if(todayLoading) { html += `<div class="cd" style="text-align:center;padding:40px"><div style="font-size:13px;color:var(--t2)">Loading today's schedule and lineups...</div><div style="margin-top:10px;font-size:24px">⚾</div></div>`; return html; }
+  if(todayError) { html += `<div class="cd" style="padding:20px;border-color:rgba(239,68,68,.2)"><div style="color:var(--r);font-size:12px;font-family:var(--m)">${escH(todayError)}</div><button class="tb" onclick="fetchTodayGames()" style="margin-top:8px">↻ RETRY</button></div>`; }
+  
+  if(!todayData) {
+    html += `<div class="cd" style="text-align:center;padding:40px">
+      <div style="font-size:13px;color:var(--t2);margin-bottom:12px">Load today's games to find correlated pairs in lineups</div>
+      <button class="tb a" onclick="fetchTodayGames()" style="font-size:12px;padding:10px 24px">⚾ LOAD GAMES</button>
+    </div>`;
+    return html;
+  }
+  
+  const { games, pairs } = todayData;
+  const confirmedGames = games.filter(g => g.lineupStatus==="confirmed").length;
+  const projectedGames = games.filter(g => g.lineupStatus==="projected").length;
+  const noLineupGames = games.filter(g => g.lineupStatus==="none").length;
+  const strongPairs = pairs.filter(p => Math.abs(p.bv) >= 0.3).length;
+  
+  html += `<div class="summary-cards">
+    <div class="summary-card"><div class="label">GAMES TODAY</div><div class="value" style="color:var(--bl)">${games.length}</div></div>
+    <div class="summary-card"><div class="label">LINEUPS</div><div class="value">
+      <span style="color:var(--g)">${confirmedGames}</span><span style="font-size:10px;color:var(--t3)"> conf</span>
+      <span style="color:var(--am);margin-left:6px">${projectedGames}</span><span style="font-size:10px;color:var(--t3)"> proj</span>
+      ${noLineupGames?`<span style="color:var(--t3);margin-left:6px">${noLineupGames}</span><span style="font-size:10px;color:var(--t3)"> tbd</span>`:""}
+    </div></div>
+    <div class="summary-card"><div class="label">CORRELATED PAIRS</div><div class="value">${pairs.length}</div></div>
+    <div class="summary-card"><div class="label">STRONG (r≥0.3)</div><div class="value" style="color:var(--g)">${strongPairs}</div></div>
+  </div>`;
+  
+  if(pairs.length > 0) {
+    let filteredPairs = todayGapFilter > 0 ? pairs.filter(p => p.gap <= todayGapFilter) : pairs;
+    filteredPairs = [...filteredPairs];
+    if(todaySortBy==="actionable") filteredPairs.sort((a,b) => { const aA=a.gap<=2?1:0, bA=b.gap<=2?1:0; if(aA!==bA) return bA-aA; return Math.abs(b.bv)-Math.abs(a.bv); });
+    else if(todaySortBy==="corr") filteredPairs.sort((a,b) => Math.abs(b.bv)-Math.abs(a.bv));
+    else if(todaySortBy==="gap") filteredPairs.sort((a,b) => a.gap-b.gap || Math.abs(b.bv)-Math.abs(a.bv));
+    else if(todaySortBy==="time") filteredPairs.sort((a,b) => new Date(a.gameTime)-new Date(b.gameTime));
+    
+    html += `<div class="cd" style="margin-bottom:14px"><div style="font-size:11px;font-weight:800;margin-bottom:10px">🎯 TODAY'S CORRELATED PAIRS</div>
+    <div class="filters" style="margin-bottom:10px">
+      <span style="font-size:10px;color:var(--t3);font-family:var(--m);font-weight:600">MAX GAP:</span>
+      <div class="toggle">
+        <button class="${todayGapFilter===1?"a":""}" onclick="todayGapFilter=1;render()">1</button>
+        <button class="${todayGapFilter===2?"a":""}" onclick="todayGapFilter=2;render()">≤2</button>
+        <button class="${todayGapFilter===3?"a":""}" onclick="todayGapFilter=3;render()">≤3</button>
+        <button class="${todayGapFilter===0?"a":""}" onclick="todayGapFilter=0;render()">ALL</button>
+      </div>
+      <span style="font-size:10px;color:var(--t3);font-family:var(--m);font-weight:600;margin-left:10px">SORT:</span>
+      <div class="toggle">
+        <button class="${todaySortBy==="actionable"?"a":""}" onclick="todaySortBy='actionable';render()">BEST BETS</button>
+        <button class="${todaySortBy==="corr"?"a":""}" onclick="todaySortBy='corr';render()">CORR</button>
+        <button class="${todaySortBy==="gap"?"a":""}" onclick="todaySortBy='gap';render()">GAP</button>
+        <button class="${todaySortBy==="time"?"a":""}" onclick="todaySortBy='time';render()">TIME</button>
+      </div>
+      <span style="font-size:10px;color:var(--t3);font-family:var(--m);margin-left:auto">${filteredPairs.length} pairs</span>
+    </div>`;
+    
+    if(filteredPairs.length > 0) {
+      html += `<table><thead><tr>
+        <th style="text-align:left;padding-left:8px">PLAYER 1</th><th style="text-align:left">PLAYER 2</th>
+        <th>TEAM</th><th>VS</th><th>TIME</th><th>BO</th><th>GAP</th><th>BEST r</th><th>ADJ r</th><th>COMBO</th><th>LEVEL</th><th>STATUS</th>
+      </tr></thead><tbody>`;
+      
+      for(const p of filteredPairs) {
+        const tc = TA[p.t]||"???";
+        const teamColor = TC[tc]||"#475569";
+        const statusColor = p.lineupStatus==="confirmed"?"var(--g)":p.lineupStatus==="projected"?"var(--am)":"var(--t3)";
+        const statusLabel = p.lineupStatus==="confirmed"?"✓":p.lineupStatus==="projected"?"~":"?";
+        const oppAbbr = TA[matchTeamName(p.opponent)]||p.opponent.split(" ").pop().substring(0,3).toUpperCase();
+        const adjCorr = p.adjBv || 0;
+        
+        html += `<tr class="row" onclick="openPanel('${escH(p.p1).replace(/'/g,"\\'")}','${escH(p.p2).replace(/'/g,"\\'")}','${escH(p.t).replace(/'/g,"\\'")}')" style="border-bottom:1px solid var(--bd)">
+          <td style="text-align:left;padding-left:8px;font-weight:600;font-size:11px">${escH(p.p1)}</td>
+          <td style="text-align:left;font-weight:600;font-size:11px">${escH(p.p2)}</td>
+          <td><span style="color:${teamColor};font-weight:700;font-size:10px">${tc}</span></td>
+          <td style="font-size:10px;color:var(--t2)">${oppAbbr}</td>
+          <td style="font-size:9px;color:var(--t3)">${formatTime(p.gameTime)}</td>
+          <td style="font-family:var(--m);font-size:10px"><span style="color:var(--bl)">#${p.bo1}</span>/<span style="color:var(--bl)">#${p.bo2}</span></td>
+          <td style="font-family:var(--m);font-size:10px;font-weight:700;color:${p.gap<=1?"var(--g)":p.gap<=2?"var(--am)":"var(--t2)"}">${p.gap}</td>
+          <td><span class="corr-cell" style="background:${cbg(p.bv)};color:${ccl(p.bv)}">${p.bv.toFixed(3)}</span></td>
+          <td>${adjCorr?`<span class="corr-cell" style="background:${cbg(adjCorr)};color:${ccl(adjCorr)}">${adjCorr.toFixed(3)}</span>`:`<span style="color:var(--t3)">—</span>`}</td>
+          <td style="font-size:9px;color:var(--t2)">${p.bk.replace("-","→")}</td>
+          <td>${bdg(p.bv)}</td>
+          <td><span style="color:${statusColor};font-weight:700;font-size:11px">${statusLabel}</span></td>
+        </tr>`;
+      }
+      html += `</tbody></table>`;
+    }
+    html += `</div>`;
+  }
+  
+  // Games schedule
+  html += `<div style="font-size:11px;font-weight:800;margin:14px 0 8px">TODAY'S SCHEDULE</div>`;
+  for(const g of games) {
+    const homeAbbr = TA[g.homeName]||g.homeTeam.split(" ").pop().substring(0,3).toUpperCase();
+    const awayAbbr = TA[g.awayName]||g.awayTeam.split(" ").pop().substring(0,3).toUpperCase();
+    const homeColor = TC[homeAbbr]||"#475569";
+    const awayColor = TC[awayAbbr]||"#475569";
+    const statusColor = g.lineupStatus==="confirmed"?"var(--g)":g.lineupStatus==="projected"?"var(--am)":"var(--t3)";
+    const pairsInGame = (todayData?.pairs||[]).filter(p => p.gamePk===g.gamePk);
+    
+    html += `<div class="cd" style="margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+        <span style="font-weight:800;color:${awayColor};font-family:var(--m)">${awayAbbr}</span>
+        <span style="color:var(--t3);font-size:11px">@</span>
+        <span style="font-weight:800;color:${homeColor};font-family:var(--m)">${homeAbbr}</span>
+        <span style="font-size:10px;color:var(--t3);font-family:var(--m)">${formatTime(g.gameTime)}</span>
+        <span class="badge" style="background:${statusColor}22;color:${statusColor}">${g.lineupStatus.toUpperCase()}</span>
+        ${pairsInGame.length?`<span class="badge" style="background:rgba(59,130,246,.12);color:var(--bl)">${pairsInGame.length} PAIRS</span>`:""}
+        <span style="font-size:10px;color:var(--t3);margin-left:auto">${g.status}</span>
+      </div>`;
+    
+    if(g.awayLineup.length || g.homeLineup.length) {
+      html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:10px;font-family:var(--m)">`;
+      for(const [lineup, team, pitcher] of [[g.awayLineup,awayAbbr,g.awayPitcher],[g.homeLineup,homeAbbr,g.homePitcher]]) {
+        html += `<div><div style="font-size:9px;color:var(--t3);margin-bottom:4px">${team} ${pitcher?"(SP: "+escH(pitcher)+")":""}</div>`;
+        if(lineup.length) {
+          for(const p of lineup) {
+            const inPair = pairsInGame.some(pp => pp.p1Matched===p.name || pp.p2Matched===p.name);
+            html += `<div style="padding:1px 0;${inPair?"color:var(--bl);font-weight:600":"color:var(--t2)"}">${p.bo}. ${escH(p.name)} ${inPair?"★":""}</div>`;
+          }
+        } else html += `<div style="color:var(--t3);font-style:italic">Lineup TBD</div>`;
+        html += `</div>`;
+      }
+      html += `</div>`;
+    }
+    html += `</div>`;
+  }
+  
+  if(games.length === 0) {
+    html += `<div class="cd" style="text-align:center;padding:24px;color:var(--t2);font-size:12px">No games found for ${todayDate}.</div>`;
+  }
+  
+  return html;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// LOAD DATA FROM JSON
+// ═══════════════════════════════════════════════════════════════
+
+async function init() {
+  try {
+    const resp = await fetch('mlb_sgp_data.json');
+    if(!resp.ok) throw new Error('Failed to load data: ' + resp.status);
+    const data = await resp.json();
+    
+    PAIRS = data.pairs;
+    PLAYERS = data.players;
+    TEAMS = [...new Set(PAIRS.map(r => r.t))].sort();
+    
+    // Update header counts
+    document.getElementById("pairCount").textContent = PAIRS.length.toLocaleString();
+    document.getElementById("playerCount").textContent = Object.keys(PLAYERS).length;
+    
+    render();
+  } catch(e) {
+    document.getElementById("app").innerHTML = `<div class="cd" style="padding:24px;border-color:rgba(239,68,68,.2)">
+      <div style="color:var(--r);font-size:14px;font-weight:700;margin-bottom:8px">Failed to load data</div>
+      <div style="color:var(--t2);font-size:12px;font-family:var(--m)">${e.message}</div>
+      <div style="color:var(--t3);font-size:11px;margin-top:8px">Make sure mlb_sgp_data.json is in the same directory as this HTML file.</div>
+    </div>`;
+  }
+}
+
+init();
+</script>
+</body>
+</html>
