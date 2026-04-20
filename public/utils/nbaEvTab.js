@@ -760,6 +760,14 @@
     var dkHint = (f.enumerated > 0 && f.dk_priced === 0)
       ? ' <span style="color:var(--red)">← DK not wired (run DEV:SIM or wait for live pipeline)</span>' : '';
     var rendered = Math.min(state.pageShown || state.pageSize || 30, (state.candidates || []).length);
+    /* Exact/approx split surfaced inline so the user sees how much
+       candidate volume comes from line approximation vs exact match.
+       In exact-only mode, the "Rendered" denominator switches to
+       exact_match (since approx are post-filtered out). */
+    var exactN = (f.exact_match != null) ? f.exact_match : 0;
+    var approxN = (f.approx_match != null) ? f.approx_match : 0;
+    var renderedDenom = state.exactLineOnly ? exactN : f.enumerated;
+    var checked = state.exactLineOnly ? ' checked' : '';
     panel.innerHTML =
       '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px">' +
         '<span style="font-size:11px;color:var(--cyan);font-weight:700;letter-spacing:.5px">PIPELINE FUNNEL</span>' +
@@ -769,9 +777,15 @@
         '<div style="color:var(--mu)">FV players parsed</div><div>' + f.fv_count + '</div>' +
         '<div style="color:var(--mu)">FV ∩ Correlations match</div><div>' + f.matched.length + ' <span style="color:var(--b2)">/ ' + f.fv_count + '</span></div>' +
         '<div style="color:var(--mu)">Pairs enumerated</div><div>' + f.enumerated + '</div>' +
+        '<div style="color:var(--mu);padding-left:14px">&middot; Exact line match</div><div>' + exactN + '</div>' +
+        '<div style="color:var(--mu);padding-left:14px">&middot; Approximate line match</div><div>' + approxN + '</div>' +
         '<div style="color:var(--mu)">DK priced</div><div>' + f.dk_priced + dkHint + '</div>' +
-        '<div style="color:var(--mu)">Rendered</div><div>' + rendered + ' <span style="color:var(--b2)">/ ' + f.enumerated + ' enumerated</span></div>' +
+        '<div style="color:var(--mu)">Rendered</div><div>' + rendered + ' <span style="color:var(--b2)">/ ' + renderedDenom + (state.exactLineOnly ? ' exact' : ' enumerated') + '</span></div>' +
       '</div>' +
+      '<label style="display:inline-flex;align-items:center;gap:8px;margin-top:12px;font-size:11px;color:var(--tx);cursor:pointer">' +
+        '<input type="checkbox" id="nbaExactLineOnly"' + checked + ' onchange="window.nbaTab&amp;&amp;window.nbaTab.onExactLineToggle(this.checked)" style="cursor:pointer">' +
+        '<span>Exact line match only <span style="color:var(--mu)">(hide ' + approxN + ' approximate-match candidate' + (approxN === 1 ? '' : 's') + ')</span></span>' +
+      '</label>' +
       unmatchedList;
   }
 
@@ -884,9 +898,13 @@
     funnel.approx_match = all.length - funnel.exact_match;
     state.funnel = funnel;
     state.candidatesAll = all;
-    /* FIRST-LOOK MODE: no applyEvFilter — render everything. Sort + page
-       limits happen in renderResults. */
-    state.candidates = all;
+    /* FIRST-LOOK MODE: no applyEvFilter — render every enumerated pair
+       (sort + page limits happen in renderResults). The exact-line-only
+       toggle post-filters candidatesAll without re-enumerating; onExact-
+       LineToggle short-circuits runPipeline for cheap re-renders. */
+    state.candidates = state.exactLineOnly
+      ? all.filter(function (c) { return c.exact_line_match === true; })
+      : all;
     if (typeof renderResults === 'function') renderResults();
   }
 
@@ -904,6 +922,11 @@
     props: { 'Points': true, 'Rebounds': true, 'Assists': true, '3-Pointers Made': true },
     confirmedOnly: true,
   };
+  /* Exact-line-match post-filter. Orthogonal to state.filters — those are
+     bypassed entirely in first-look mode, but this toggle is always
+     meaningful (even in first-look) because it's about match quality,
+     not edge/volume tuning. Default OFF so all enumerated pairs render. */
+  state.exactLineOnly = false;
 
   function readFilterDom() {
     var f = state.filters;
@@ -933,6 +956,20 @@
     readFilterDom();
     renderFilterLabels();
     if (typeof runPipeline === 'function') runPipeline({ filtersOnly: true });
+  }
+
+  /* Exact-line-only toggle. Fires from the checkbox inside #nbaDiag.
+     Post-filters state.candidatesAll without re-running enumeration
+     (enumeration already produced per-candidate exact_line_match
+     flags). Resets pagination so toggling doesn't leave stale pages. */
+  function onExactLineToggle(checked) {
+    state.exactLineOnly = !!checked;
+    var all = state.candidatesAll || [];
+    state.candidates = state.exactLineOnly
+      ? all.filter(function (c) { return c.exact_line_match === true; })
+      : all;
+    state.pageShown = state.pageSize;
+    if (typeof renderResults === 'function') renderResults();
   }
 
   function onPropBtn(btn) {
@@ -1056,6 +1093,7 @@
     _computeBadges: computeBadges,
     _sortCandidates: sortCandidates,
     onLoadMore: onLoadMore,
+    onExactLineToggle: onExactLineToggle,
     devSimulate: devSimulate,
     _state: state,
   };
