@@ -138,8 +138,22 @@
       combos_so_skip:      0,
       combos_hrr_skip:     0,
       combos_other_skip:   0,
-      combos_no_fv_leg1:   0,
-      combos_no_fv_leg2:   0,
+      /* Hybrid-mode counter split.
+           combos_no_fv_both — both legs missing FV → skipped (cannot
+             compute any edge; no anchor on either side).
+           combos_emitted_full_fv — both legs had FV → full-FV candidate
+             emitted; edge claim is marginal + correlation.
+           combos_hybrid_p1_missing / _p2_missing — exactly one side
+             missing FV → hybrid candidate emitted; the missing side's
+             probability is derived from DK no-vig at finalize time; edge
+             claim is correlation-only.
+         Pre-hybrid counters combos_no_fv_leg1 / combos_no_fv_leg2 are
+         intentionally retired — they used to mean "dropped because" and
+         would be misleading now that those combos actually emit. */
+      combos_no_fv_both:          0,
+      combos_emitted_full_fv:     0,
+      combos_hybrid_p1_missing:   0,
+      combos_hybrid_p2_missing:   0,
       combos_emitted:      0,
     };
 
@@ -207,9 +221,33 @@
               }
 
               var fv1 = lookupFv(fvByPlayer, p1, t1.statFull, t1.threshold, t1.direction);
-              if (fv1 == null) { diag.combos_no_fv_leg1++; continue; }
               var fv2 = lookupFv(fvByPlayer, p2, t2.statFull, t2.threshold, t2.direction);
-              if (fv2 == null) { diag.combos_no_fv_leg2++; continue; }
+
+              /* Hybrid mode (see commits A-C on claude/teammate-hybrid-plus-fixes).
+                 If BOTH legs have FV: full-FV candidate (unchanged
+                 behavior). If exactly ONE leg has FV: hybrid candidate —
+                 the missing side gets DK no-vig fair computed at
+                 finalizeCandidate time once per-leg DK prices are in
+                 hand. If neither has FV: no anchor, skip. */
+              if (fv1 == null && fv2 == null) {
+                diag.combos_no_fv_both++;
+                continue;
+              }
+
+              var candType, missingLeg;
+              if (fv1 != null && fv2 != null) {
+                candType = 'full_fv';
+                missingLeg = null;
+                diag.combos_emitted_full_fv++;
+              } else if (fv1 == null) {
+                candType = 'hybrid';
+                missingLeg = 'p1';
+                diag.combos_hybrid_p1_missing++;
+              } else {
+                candType = 'hybrid';
+                missingLeg = 'p2';
+                diag.combos_hybrid_p2_missing++;
+              }
 
               var res = tp.resolvePairR(pair, combo, {
                 mode: mode,
@@ -244,10 +282,14 @@
                 thresh1:    t1.threshold, thresh2:   t2.threshold,
                 // Hit rates from Phase 1
                 hit1: combo.hit1, hit2: combo.hit2, both_hit: combo.both,
-                // FV
+                // FV (null entries indicate the leg needs no-vig at finalize)
                 fv_p1: fv1, fv_p2: fv2,
-                p_leg1: tm.americanToProb(fv1),
-                p_leg2: tm.americanToProb(fv2),
+                p_leg1: fv1 != null ? tm.americanToProb(fv1) : null,
+                p_leg2: fv2 != null ? tm.americanToProb(fv2) : null,
+                // Hybrid fields — populated downstream in finalizeCandidate
+                type: candType,
+                missing_leg: missingLeg,  // null | 'p1' | 'p2'
+                novig_source: null,       // populated by finalize when type='hybrid'
                 // Correlation (mode-resolved)
                 mode: mode,
                 r_binary: res.r_binary,
@@ -276,13 +318,74 @@
      Returns a NEW object (shallow-copied from cand + bundle fields).
      If dkAmericanOdds is null/undefined, bundle fields are FV-only
      (no EV%, no Kelly). */
-  function finalizeCandidate(cand, dkAmericanOdds) {
+  /* DK two-way no-vig fair probability for one leg. Returns null when
+     no-vig can't be computed (one side missing on DK, implausible
+     round-trip bounds, etc.) — caller's hybrid path should skip the
+     candidate in that case. */
+  function computeNoVigFair(americanOver, americanUnder, direction) {
+    if (americanOver == null || americanUnder == null) return null;
+    var pOver  = tm.americanToProb(americanOver);
+    var pUnder = tm.americanToProb(americanUnder);
+    if (pOver == null || pUnder == null) return null;
+    var total = pOver + pUnder;
+    if (!isFinite(total) || total <= 0) return null;
+    var pOverFair = pOver / total;
+    /* Sanity bounds: DK occasionally quotes extreme long-tails (e.g.
+       Over 2.5 Hits at +3300) where the over/under pair's no-vig
+       doesn't reflect a real market-consensus probability. Drop those
+       rather than propagate a number we don't trust into jointFrechet. */
+    if (pOverFair < 0.02 || pOverFair > 0.98) return null;
+    return (direction === 'Over') ? pOverFair : (1 - pOverFair);
+  }
+
+  function finalizeCandidate(cand, dkAmericanOdds, dkLegPrices) {
+    /* Two entry modes:
+       1. Full-FV candidate (cand.type === 'full_fv'): both p_leg1 and
+          p_leg2 are already populated from the FV sheet. Existing
+          path — no-vig is ignored even if dkLegPrices is provided.
+       2. Hybrid candidate (cand.type === 'hybrid'): exactly one of
+          p_leg1 / p_leg2 is null. Compute no-vig on the missing side
+          from DK's Over/Under pair on that leg. If no-vig fails (no
+          opposite-direction DK price, or implausible bounds), return
+          null so the caller can skip the candidate. */
+    var p_leg1 = cand.p_leg1;
+    var p_leg2 = cand.p_leg2;
+    var novig_source = null;
+
+    if (cand.type === 'hybrid') {
+      if (!dkLegPrices) return null;
+      var missing = cand.missing_leg;  // 'p1' or 'p2'
+      var side = (missing === 'p1') ? 'a' : 'b';
+      var over  = dkLegPrices['leg_' + side + '_over_american'];
+      var under = dkLegPrices['leg_' + side + '_under_american'];
+      var dir   = (missing === 'p1') ? cand.direction1 : cand.direction2;
+      var pFair = computeNoVigFair(over, under, dir);
+      if (pFair == null) return null;
+      if (missing === 'p1') p_leg1 = pFair; else p_leg2 = pFair;
+      novig_source = {
+        missing:      missing,
+        leg_over_american:  over,
+        leg_under_american: under,
+        direction:    dir,
+        novig_fair_prob: pFair,
+      };
+    }
+
     var dkDec = (dkAmericanOdds == null) ? null : tm.americanToDecimal(dkAmericanOdds);
-    var bundle = tm.ivBundle(cand.p_leg1, cand.p_leg2, cand.r_binary, dkDec);
+    var bundle = tm.ivBundle(p_leg1, p_leg2, cand.r_binary, dkDec);
     var out = {};
     for (var k in cand) if (Object.prototype.hasOwnProperty.call(cand, k)) out[k] = cand[k];
     out.dk_american = (dkAmericanOdds == null) ? null : Number(dkAmericanOdds);
     out.dk_decimal  = dkDec;
+    out.novig_source = novig_source;
+    /* For hybrid, surface the no-vig-filled probability back onto
+       p_leg1 / p_leg2 so downstream consumers (card renderer, AI
+       Insights prompt) see the actual probability the Fréchet join
+       used, not the original null. The raw FV American odds
+       (cand.fv_p1 / cand.fv_p2) stay null on the missing side so the
+       card can render "—" for FV and "X%" for the no-vig. */
+    out.p_leg1 = p_leg1;
+    out.p_leg2 = p_leg2;
     if (bundle) {
       out.p_joint         = bundle.pJoint;
       out.fv_corr_american = bundle.fvCorrAmerican;

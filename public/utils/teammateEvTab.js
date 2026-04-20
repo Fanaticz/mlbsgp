@@ -380,15 +380,32 @@
       S.dkMissing = (dkResp.results || []).filter(function (r) { return !r.matched; });
 
       var finalized = [];
+      var hybridDropped = 0;  // hybrid candidates that couldn't resolve no-vig
       for (var i = 0; i < batch.length; i++) {
         var cand = batch[i], dk = priceByCid['c' + i];
         if (!dk) continue;
         var dkAm = Number(String(dk.dk_odds).replace(/^\+/, ''));
         if (!isFinite(dkAm)) continue;
-        finalized.push(TE.finalizeCandidate(cand, dkAm));
+        /* Per-leg DK prices for hybrid mode's no-vig. find-sgps-teammate
+           returns these unconditionally — finalizeCandidate ignores them
+           for full-FV candidates and consumes them for hybrid. */
+        var legPrices = {
+          leg_a_over_american:  dk.leg_a_over_american,
+          leg_a_under_american: dk.leg_a_under_american,
+          leg_b_over_american:  dk.leg_b_over_american,
+          leg_b_under_american: dk.leg_b_under_american,
+        };
+        var fin = TE.finalizeCandidate(cand, dkAm, legPrices);
+        if (fin == null) { hybridDropped++; continue; }
+        finalized.push(fin);
       }
       S.candidatesFull = finalized;
-      setStatus('Priced ' + finalized.length + ' / ' + batch.length + ' candidates.' +
+      S.hybridDroppedCount = hybridDropped;
+      var fullCount = finalized.filter(function(c){return c.type==='full_fv';}).length;
+      var hybridCount = finalized.length - fullCount;
+      setStatus('Priced ' + finalized.length + ' / ' + batch.length + ' candidates' +
+        ' (' + fullCount + ' full-FV, ' + hybridCount + ' hybrid' +
+        (hybridDropped ? ', ' + hybridDropped + ' hybrid dropped no no-vig' : '') + ').' +
         (dkResp.truncated ? ' DK deadline hit — partial results.' : ''), 'ok');
       render();
     } catch (e) {
