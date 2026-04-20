@@ -2220,8 +2220,31 @@ function card3EV(c,idx){
     html+='<div style="font-size:9px;color:var(--mu);font-family:Space Mono,monospace;margin-bottom:6px" title="DK SGP implied vs product of DK\'s per-leg vigged implied probs. Positive = DK prices this triplet as more likely than independent (correlation priced in). Negative = SGP shorter than independent.">DK corr premium: '+holdStr+'</div>';
   }
 
-  /* Badges + AI Insights land in Edit 4. */
-  html+='<div style="font-size:10px;color:var(--mu);margin-top:4px">(badges + AI Insights in final Edit)</div>';
+  /* Bottom bar: sample/confidence tier, sparsity warning badge, outlier
+     warning, and AI Insights button. Tier thresholds match 2-leg-style
+     reads: HIGH when n_eff ≥ 25 AND not sparse, MEDIUM 15-25 or mild
+     sparsity, LOW below 15 or with active sparsity flag. OUTLIER appears
+     when EV% > 100 (mirror of existing 2-leg rule). */
+  var tier,tierColor;
+  if(nEff>=25&&!calc.sparsityWarn){tier='HIGH';tierColor='var(--ac)';}
+  else if(nEff>=BLEND_MIN_STARTS_3WAY&&!calc.sparsityWarn){tier='MEDIUM';tierColor='var(--ac2)';}
+  else{tier='LOW';tierColor='var(--red)';}
+  var sampleStr='n='+nRaw+' raw · n_eff='+nEff.toFixed(1);
+  html+='<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px;padding-top:6px;border-top:1px solid var(--b1)">';
+  html+='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">';
+  html+='<span style="font-size:9px;font-family:Space Mono,monospace;color:'+tierColor+';border:1px solid '+tierColor+';padding:2px 6px;border-radius:3px;letter-spacing:.4px">'+tier+'</span>';
+  html+='<span style="font-size:9px;color:var(--mu);font-family:Space Mono,monospace">'+sampleStr+'</span>';
+  if(calc.sparsityWarn){
+    var wpStr=calc.weakestLegProxy!=null?calc.weakestLegProxy.toFixed(0):'?';
+    html+='<span style="font-size:9px;font-family:Space Mono,monospace;color:var(--ac2);border:1px solid var(--ac2);padding:2px 6px;border-radius:3px" title="Weakest leg direction has approx n<30 effective overlap; pair r values for this triplet may be unreliable.">&#9888; SPARSE n~'+wpStr+'</span>';
+  }
+  if(ev>100){
+    html+='<span style="font-size:9px;font-family:Space Mono,monospace;color:var(--red);border:1px solid var(--red);padding:2px 6px;border-radius:3px" title="EV>100% is almost always model error, not a real edge. Triple-check shrinkage, sample size, and DK pricing.">&#9888; OUTLIER</span>';
+  }
+  html+='</div>';
+  html+='<button class="insight-btn" onclick="loadSGPInsight('+idx+')" style="margin:0">✦ AI Insights</button>';
+  html+='</div>';
+  html+='<div class="insight-panel-wrap"></div>';
   html+='</div>';
   return html;
 }
