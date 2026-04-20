@@ -407,8 +407,113 @@
     return cands.filter(function (c) { return c.ev_pct != null && c.ev_pct >= min; });
   }
 
-  /* Forward-declared renderer; defined in Edit 6. */
-  var renderResults;
+  /* ---------- Card renderer (Edit 6) ---------- */
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function fmtPct(p, digits) {
+    if (p == null || !isFinite(p)) return '--';
+    return (p * 100).toFixed(digits == null ? 1 : digits) + '%';
+  }
+  function fmtAm(a) {
+    if (a == null || !isFinite(a)) return '--';
+    return (a > 0 ? '+' : '') + Math.round(a);
+  }
+  function fmtEvSigned(ev) {
+    if (ev == null || !isFinite(ev)) return '--';
+    var pct = ev * 100;
+    var sign = pct >= 0 ? '+' : '';
+    return sign + pct.toFixed(1) + '%';
+  }
+  function sideLabel(side) { return side === 'over' ? 'Over' : side === 'under' ? 'Under' : side; }
+
+  /* Render a single leg row inside a card. FV price, DK pair, base rate
+     from correlation data. DK pair is informational — the sgp price is
+     what drives EV. Missing DK single-leg prices render as "--" to keep
+     alignment. */
+  function renderLegRow(leg) {
+    var dkPair = '';
+    if (leg.dk_over_american != null || leg.dk_under_american != null) {
+      dkPair = '[DK O' + fmtAm(leg.dk_over_american) + ' U' + fmtAm(leg.dk_under_american) + ']';
+    } else {
+      dkPair = '[DK --]';
+    }
+    return '<div class="nc-leg">' +
+      '<span class="nc-lbl">' + esc(sideLabel(leg.side)) + ' ' + esc(leg.line) + ' ' + esc(leg.prop) + '</span>' +
+      '<span class="nc-fv">FV ' + fmtAm(leg.fv_american) + '</span>' +
+      '<span class="nc-dk">' + esc(dkPair) + '</span>' +
+      '<span class="nc-base">' + fmtPct(leg.base_rate, 1) + '</span>' +
+      '</div>';
+  }
+
+  function renderJointRow(c) {
+    return '<div class="nc-joint">' +
+      '<div class="nc-cell"><div class="nc-cval">' + fmtPct(c.model_joint, 1) + '</div><div class="nc-clbl">MODEL JOINT</div></div>' +
+      '<div class="nc-cell"><div class="nc-cval">' + fmtPct(c.dk_implied, 1) + '</div><div class="nc-clbl">DK IMPLIED</div></div>' +
+      '<div class="nc-cell"><div class="nc-cval" style="color:' + (c.edge_pp != null && c.edge_pp >= 0 ? 'var(--ac)' : 'var(--red)') + '">' + (c.edge_pp == null ? '--' : ((c.edge_pp >= 0 ? '+' : '') + c.edge_pp.toFixed(1) + 'pp')) + '</div><div class="nc-clbl">EDGE</div></div>' +
+      '</div>';
+  }
+
+  function renderPricesRow(c) {
+    return '<div class="nc-prices">' +
+      '<span>DK SGP <span class="nc-pv">' + fmtAm(c.dk_sgp_american) + '</span></span>' +
+      '<span>FV CORR <span class="nc-pv">' + fmtAm(c.fv_corr_american) + '</span></span>' +
+      '</div>';
+  }
+
+  function renderStatsLine(c) {
+    var e = c.entry || {};
+    var parts = [];
+    if (e.r_adj != null) parts.push('r ' + (e.r_adj >= 0 ? '+' : '') + e.r_adj.toFixed(2) + ' (adj)');
+    if (e.p_value != null) parts.push('p=' + e.p_value.toFixed(2));
+    if (e.n_games != null) parts.push('n=' + e.n_games);
+    /* Surface the muted "rest-context" caveat from the NBA v1 hazards list
+       once per card so the user carries the caveat into their bet decision. */
+    var ctx = parts.join(' · ');
+    return '<div class="nc-stats">' + esc(ctx) + '  <span style="color:var(--b2)">&middot; n=' + (e.n_games || '?') + ' doesn\'t distinguish rest contexts</span></div>';
+  }
+
+  function renderCard(c) {
+    var ctx = [];
+    if (c.team) ctx.push(c.team);
+    if (c.game) ctx.push(c.game);
+    var ctxLine = ctx.length ? ctx.join(' &middot; ') : '';
+    var evColor = c.ev_pct != null && c.ev_pct >= 0 ? 'var(--ac)' : 'var(--red)';
+    return '<div class="nba-card" id="nba-card-' + esc(c.id) + '">' +
+      '<div class="nc-head">' +
+        '<div><div class="nc-player">' + esc(c.player) + '</div><div class="nc-ctx">' + ctxLine + '</div></div>' +
+        '<div class="nc-ev"><div class="v" style="color:' + evColor + '">' + fmtEvSigned(c.ev_pct) + '</div><div class="l">EV%</div></div>' +
+      '</div>' +
+      renderLegRow(c.leg1) +
+      renderLegRow(c.leg2) +
+      renderJointRow(c) +
+      renderPricesRow(c) +
+      renderStatsLine(c) +
+      '<div class="nc-badges" data-nba-badges="' + esc(c.id) + '"></div>' +
+      '</div>';
+  }
+
+  function renderResults() {
+    var body = document.getElementById('nbaBody');
+    var count = document.getElementById('nbaCandCount');
+    if (!body) return;
+    var cands = state.candidates || [];
+    if (count) count.textContent = cands.length + ' candidate' + (cands.length === 1 ? '' : 's');
+    if (!state.correlations || state.correlations.status === 'empty') {
+      body.innerHTML = '<div class="nba-empty">No NBA correlations data uploaded yet. Drop your xlsx above to begin.</div>';
+      return;
+    }
+    if (!state.fv) {
+      body.innerHTML = '<div class="nba-empty">Correlations loaded &middot; ' + (state.correlations.entries.length) + ' entries, ' + Object.keys(state.correlations.by_player).length + ' players.<br>Upload an NBA FV sheet above to see candidates.</div>';
+      return;
+    }
+    if (!cands.length) {
+      body.innerHTML = '<div class="nba-empty">No candidates matched the current filters. Loosen MIN EV%, MIN GAMES, or MAX P_VALUE to see more.</div>';
+      return;
+    }
+    body.innerHTML = '<div class="nba-cards">' + cands.map(renderCard).join('') + '</div>';
+  }
 
   /* Main pipeline entry. Rebuilds state.candidates from the current inputs.
      Cheap enough to call on every filter change — the FV + DK fetches are
@@ -499,6 +604,7 @@
     /* Exposed for the dev harness (Edit 8) + ad-hoc testing from DevTools. */
     _math: { amToDec: amToDec, decToAm: decToAm, jointFromPhi: jointFromPhi, enumerateCandidates: enumerateCandidates, applyEvFilter: applyEvFilter },
     _runPipeline: runPipeline,
+    _renderCard: renderCard,
     _state: state,
   };
 })();

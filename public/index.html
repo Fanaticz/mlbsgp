@@ -110,6 +110,36 @@ h1 em{color:var(--ac);font-style:normal;}
 .lgd{width:8px;height:8px;border-radius:2px;}
 .divl{font-size:9px;color:var(--b2);font-family:'Space Mono',monospace;margin:3px 0 5px;}
 .empty{text-align:center;padding:40px;color:var(--mu);font-family:'Space Mono',monospace;font-size:12px;}
+/* NBA EV card styling. Shares the MLB pitcher-card visual vocabulary
+   (rounded, s1 background, accent-cyan "EV%" corner) but uses Space
+   Mono throughout the body for tabular odds alignment. */
+.nba-cards{display:flex;flex-direction:column;gap:12px;margin-top:12px;}
+.nba-card{background:var(--s1);border:1px solid var(--b1);border-radius:10px;padding:14px 16px;font-family:'Inter',sans-serif;}
+.nba-card .nc-head{display:flex;align-items:baseline;gap:10px;margin-bottom:8px;}
+.nba-card .nc-player{font-size:14px;font-weight:700;color:var(--tx);letter-spacing:-.2px;}
+.nba-card .nc-ctx{font-size:10px;color:var(--mu);font-family:'Space Mono',monospace;margin-top:2px;}
+.nba-card .nc-ev{margin-left:auto;text-align:right;}
+.nba-card .nc-ev .v{font-size:18px;font-weight:700;font-family:'Space Mono',monospace;}
+.nba-card .nc-ev .l{font-size:9px;color:var(--mu);font-family:'Space Mono',monospace;letter-spacing:.6px;}
+.nba-card .nc-leg{display:grid;grid-template-columns:1fr auto auto auto;gap:12px;padding:6px 0;border-top:1px solid var(--b1);font-family:'Space Mono',monospace;font-size:12px;}
+.nba-card .nc-leg .nc-lbl{color:var(--tx);font-weight:600;}
+.nba-card .nc-leg .nc-fv{color:var(--ac3);}
+.nba-card .nc-leg .nc-dk{color:var(--mu);font-size:11px;}
+.nba-card .nc-leg .nc-base{color:var(--tx);text-align:right;min-width:52px;}
+.nba-card .nc-joint{margin-top:8px;padding:8px 10px;background:var(--s2);border-radius:6px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;font-family:'Space Mono',monospace;font-size:11px;}
+.nba-card .nc-joint .nc-cell{display:flex;flex-direction:column;gap:2px;}
+.nba-card .nc-joint .nc-cell .nc-cval{font-size:14px;font-weight:700;color:var(--tx);}
+.nba-card .nc-joint .nc-cell .nc-clbl{font-size:9px;color:var(--mu);letter-spacing:.6px;}
+.nba-card .nc-prices{margin-top:6px;font-size:11px;color:var(--mu);font-family:'Space Mono',monospace;display:flex;gap:14px;flex-wrap:wrap;}
+.nba-card .nc-prices .nc-pv{color:var(--tx);}
+.nba-card .nc-stats{margin-top:6px;font-size:10px;color:var(--mu);font-family:'Space Mono',monospace;letter-spacing:.3px;}
+.nba-card .nc-badges{display:inline-flex;gap:6px;margin-top:8px;flex-wrap:wrap;}
+.nba-card .nc-bdg{font-size:9px;padding:2px 7px;border-radius:10px;font-family:'Space Mono',monospace;letter-spacing:.5px;font-weight:600;}
+.nba-card .nc-bdg.info{background:rgba(96,165,250,.12);color:var(--ac3);}
+.nba-card .nc-bdg.warn{background:rgba(245,158,11,.15);color:var(--ac2);}
+.nba-card .nc-bdg.danger{background:rgba(248,113,113,.15);color:var(--red);}
+.nba-card .nc-bdg.muted{background:var(--s2);color:var(--mu);}
+.nba-empty{padding:36px 20px;text-align:center;color:var(--mu);font-family:'Space Mono',monospace;font-size:11px;border:1px dashed var(--b1);border-radius:9px;margin-top:12px;line-height:1.7;}
 @media(max-width:600px){.nav{padding:0 8px;}.page{padding:12px 10px;}.grid{grid-template-columns:1fr;}.srch{width:100%;margin-left:0;}}
 .insight-btn{width:100%;margin-top:10px;padding:7px 12px;font-size:12px;font-weight:600;border:1px solid var(--b2);border-radius:6px;background:var(--s2);color:var(--tx);cursor:pointer;font-family:'Inter',sans-serif;transition:border-color .15s,color .15s;letter-spacing:.3px;}
 .insight-btn:hover:not(:disabled){border-color:var(--ac3);color:var(--ac3);}
