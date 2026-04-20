@@ -742,8 +742,91 @@ app.post('/api/extract-batter', async (req, res) => {
 // validation — enough to unblock the client's 404 and let us iterate
 // the prompt on real sheets.
 
-/* Placeholder prompt — swapped for the real NBA_FV_PROMPT in Edit 2. */
-const NBA_FV_PROMPT_PLACEHOLDER = 'Respond with {"rows":[]} for now. NBA FV prompt lands in Phase 4 Edit 2.';
+/* NBA canonical prop vocabulary. Order matters — combo markets are
+   listed FIRST so patterns like "Points + Rebounds + Assists" don't
+   collide with a later single-stat "Points" regex. Unsupported markets
+   (Steals / Blocks / Turnovers / combos) are extracted and flagged with
+   supported:false so the UI can show the user which FV-sheet rows
+   weren't usable for correlation enumeration. Supported set is strictly
+   the 4 props with correlation data per the Phase 1 NBA v1 schema. */
+const NBA_STAT_FROM_MARKET = [
+  /* Combo markets first — "Triple-Double" / "Double-Double" / "PRA" /
+     "PR" / "PA" / "RA". These are tracked for diagnostic visibility
+     (user knows they uploaded them) but produce no candidates. */
+  { re: /triple[-\s]*double/i,                                   stat: 'Triple-Double', supported: false },
+  { re: /double[-\s]*double/i,                                   stat: 'Double-Double', supported: false },
+  { re: /points?\s*\+\s*rebounds?\s*\+\s*assists?|\bpra\b/i,     stat: 'PRA',           supported: false },
+  { re: /points?\s*\+\s*rebounds?/i,                             stat: 'PR',            supported: false },
+  { re: /points?\s*\+\s*assists?/i,                              stat: 'PA',            supported: false },
+  { re: /rebounds?\s*\+\s*assists?/i,                            stat: 'RA',            supported: false },
+  /* Supported single-stat markets (have correlation data). */
+  { re: /(3[-\s]?(?:pointers?|pts?)\s*made|threes?\s*made|\b3pm\b)/i, stat: '3-Pointers Made', supported: true },
+  { re: /\brebounds?\b/i,                                         stat: 'Rebounds',       supported: true },
+  { re: /\bassists?\b/i,                                          stat: 'Assists',        supported: true },
+  { re: /\bpoints?\b/i,                                           stat: 'Points',         supported: true },
+  /* Unsupported singles — no correlation data. */
+  { re: /\bsteals?\b/i,                                           stat: 'Steals',         supported: false },
+  { re: /\bblocks?\b/i,                                           stat: 'Blocks',         supported: false },
+  { re: /\bturnovers?\b/i,                                        stat: 'Turnovers',      supported: false },
+];
+
+/* Normalize a raw market string to { stat, supported } or null if
+   unrecognized. Shared by the OCR normalizer and the unit tests in
+   Edit 4 — keep this pure, no DOM/network. */
+function matchNbaMarket(market) {
+  if (!market) return null;
+  const s = String(market);
+  for (const m of NBA_STAT_FROM_MARKET) {
+    if (m.re.test(s)) return { stat: m.stat, supported: m.supported };
+  }
+  return null;
+}
+
+const NBA_FV_PROMPT = `You are extracting NBA player prop bets from a screenshot of a spreadsheet. Return ONLY valid JSON, no prose, no markdown fences.
+
+The table header row contains columns like: league, date, time, game, team, market, bet_name, L/U, book, L, M, odds, limit, books_count, avg_odds, avg_fv, avg_hold, fbc, ev, qk.
+
+The "L/U" narrow column (single letter L or U, often colored) sits between bet_name and book. EVERY column to its right is shifted one slot, so you MUST read by header text, not by counting positions from the left edge.
+
+YOUR TASK: For each data row, return ONE JSON object with cell values from that single row. Do NOT normalize, do NOT combine columns, do NOT infer from other rows.
+
+═══ FIELDS TO RETURN (per row) ═══
+- L: integer in the "L" column (the small row index)
+- player: player name (everything in bet_name BEFORE the word "Over"/"Under")
+- team: short code from the "team" column (e.g. "BOS", "LAL"). If no team column, return ""
+- game: text from the "game" column (e.g. "CLE@BOS"). If no game column, return ""
+- market: EXACT "market" column text. Examples: "Player Points", "Player Rebounds", "Player Assists", "Player 3-Pointers Made", "Player 3-Pt Made", "Player Steals", "Player Blocks", "Player Turnovers", "Player Points + Rebounds + Assists", "Player PRA", "Player Double-Double", "Player Triple-Double"
+- bet_name: EXACT "bet_name" column text. Examples: "Donovan Mitchell Over 27.5", "Jayson Tatum Under 8.5"
+- direction: "Over" or "Under" — read literally from this row's bet_name
+- line: numeric line from bet_name (e.g. 27.5, 8.5, 1.5) as a number
+- avg_odds: EXACT "avg_odds" text as a STRING, a signed pair like "+135 / -170", "-140 / +120". Empty → ""
+- avg_fv: SINGLE signed integer under "avg_fv". ONE number, not a pair.
+- books_count: unsigned integer under "books_count". 0 if empty/non-numeric.
+
+═══ MANDATORY SELF-CHECK BEFORE EMITTING EACH ROW ═══
+(a) avg_fv is a SINGLE integer — NO "/" character, NO second number.
+(b) avg_fv is NOT equal to either half of avg_odds for this row.
+(c) avg_fv is NEVER a word like "DraftKings"/"FanDuel" (that's the book column).
+(d) avg_fv is NEVER "L"/"U" (that's the L/U column).
+(e) market, bet_name, direction, avg_odds, avg_fv all come from the SAME row as L.
+
+═══ OVER vs UNDER ═══
+For each row independently, read the exact word after the player name in bet_name. Do NOT infer from avg_fv sign. The same player often has many rows — one for each (stat, threshold, direction).
+
+═══ WORKED EXAMPLES ═══
+CORRECT:
+{"L":1,"player":"Donovan Mitchell","team":"CLE","game":"CLE@BOS","market":"Player Points","bet_name":"Donovan Mitchell Over 27.5","direction":"Over","line":27.5,"avg_odds":"+135 / -170","avg_fv":120,"books_count":7}
+
+CORRECT (combo market, extracted but flagged downstream):
+{"L":14,"player":"Jayson Tatum","team":"BOS","game":"CLE@BOS","market":"Player Points + Rebounds + Assists","bet_name":"Jayson Tatum Over 40.5","direction":"Over","line":40.5,"avg_odds":"-115 / -105","avg_fv":-108,"books_count":6}
+
+WRONG — avg_fv copied from avg_odds pair:
+{"L":1,"player":"Donovan Mitchell","bet_name":"Donovan Mitchell Over 27.5","avg_odds":"+135 / -170","avg_fv":-170,"books_count":7}
+  — avg_fv was the second half of avg_odds. ALWAYS WRONG.
+
+═══ OUTPUT ═══
+Return exactly this JSON shape, nothing else:
+{"rows":[{"L":1,"player":"...","team":"...","game":"...","market":"...","bet_name":"...","direction":"Over","line":27.5,"avg_odds":"+X / -Y","avg_fv":123,"books_count":7}, ...]}`;
 
 app.post('/api/extract-nba', async (req, res) => {
   try {
@@ -753,8 +836,6 @@ app.post('/api/extract-nba', async (req, res) => {
     const { image, mime } = req.body || {};
     if (!image) return res.status(400).json({ error: 'Missing image (base64) in body' });
 
-    const prompt = (typeof NBA_FV_PROMPT !== 'undefined') ? NBA_FV_PROMPT : NBA_FV_PROMPT_PLACEHOLDER;
-
     const body = {
       model: 'claude-opus-4-6',
       max_tokens: 4000,
@@ -762,7 +843,7 @@ app.post('/api/extract-nba', async (req, res) => {
         role: 'user',
         content: [
           { type: 'image', source: { type: 'base64', media_type: mime || 'image/png', data: image } },
-          { type: 'text', text: prompt }
+          { type: 'text', text: NBA_FV_PROMPT }
         ]
       }]
     };
@@ -790,8 +871,7 @@ app.post('/api/extract-nba', async (req, res) => {
       /* Edit 3 replaces this passthrough with normalizeNbaRows +
          groupNbaPlayers. For now we emit an empty players array and
          surface the raw rows so the client can still handle a 200
-         response; the 404 that nbaEvTab.js handled specifically for the
-         pre-deploy state is gone. */
+         response. */
       if (typeof normalizeNbaRows === 'function') {
         const { rows: normRows, unmatched } = normalizeNbaRows(parsed.rows);
         const players = (typeof groupNbaPlayers === 'function') ? groupNbaPlayers(normRows) : [];
