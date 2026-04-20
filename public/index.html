@@ -312,7 +312,7 @@ h1 em{color:var(--ac);font-style:normal;}
     </div>
     <div id="tmevDrop" style="border:2px dashed var(--b2);border-radius:9px;padding:22px 16px;text-align:center;cursor:pointer;transition:all .15s;background:var(--s2)">
       <div style="font-size:13px;color:var(--tx);font-weight:600;margin-bottom:4px">Drag &amp; drop your batter FV sheet screenshot</div>
-      <div style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace">or paste with Ctrl+V &middot; or click to pick a file &middot; <a href="#" id="tmevSynthLink" style="color:var(--ac3);text-decoration:underline">use synthetic FV</a></div>
+      <div style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace">or paste with Ctrl+V &middot; or click to pick a file<span id="tmevSynthWrap" style="display:none"> &middot; <a href="#" id="tmevSynthLink" style="color:var(--ac3);text-decoration:underline">use synthetic FV</a></span></div>
       <input type="file" id="tmevFile" accept="image/*" style="display:none" onchange="window.teammateEvTab&amp;&amp;window.teammateEvTab.handleUpload(event)">
     </div>
     <div id="tmevStatus" style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace;min-height:16px"></div>

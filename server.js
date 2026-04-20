@@ -515,7 +515,14 @@ function groupBatterPlayers(normRows) {
 
 const BATTER_OCR_PROMPT = `You are extracting MLB BATTER prop bets from a screenshot of a spreadsheet. Return ONLY valid JSON, no prose, no markdown fences.
 
-The table header row contains these column names (left to right, may include some optional columns like team or game): league, date, time, game, team, market, bet_name, book, L, M, odds, limit, books_count, avg_odds, avg_fv, avg_hold, fbc, ev, qk.
+The table header row contains these column names (left to right): league, date, time, game, market, bet_name, L/U, book, L, M, odds, limit, books_count, avg_odds, avg_fv, avg_hold, fbc, ev, qk.
+
+Optional columns that may also appear: "team" (short code like "KC", "BOS") between game and market.
+
+═══ CRITICAL SCHEMA NOTE — the L/U column ═══
+Between "bet_name" and "book" there is a narrow column labeled "L/U" whose cells contain a single letter — either "L" or "U" — often on a colored background. DO NOT confuse "L/U" with the later "L" column (which is a small integer row index). Do NOT treat "DraftKings" in the "book" column as if it were an L/U value. Use the column HEADERS to orient yourself, not cell counts from neighbors.
+
+The presence of "L/U" means EVERY column to its right is shifted one position compared to sheets that lack it. You MUST read values by column HEADER TEXT, never by counting positions from the left edge.
 
 YOUR TASK: For each data row, return ONE JSON object with cell values from that single row. Do NOT normalize, do NOT combine columns, do NOT infer values from other rows. Each row of JSON must come from exactly ONE row of the table. Emit one object per row — do NOT skip rows, do NOT merge rows.
 
@@ -540,13 +547,15 @@ Do NOT count columns. Do NOT infer column position from neighbors. Do NOT use ad
 3. The "avg_odds" header sits immediately to the LEFT of "avg_fv". Its cells contain TWO numbers separated by "/". That column is NOT avg_fv. Never substitute one for the other.
 
 ═══ MANDATORY SELF-CHECK BEFORE EMITTING EACH ROW ═══
-For every row, verify these three conditions. If ANY fail, you are reading the wrong column — re-locate the "avg_fv" header and re-read.
+For every row, verify these FIVE conditions. If ANY fail, you are reading the wrong column — re-locate the "avg_fv" header and re-read.
 
-(a) avg_fv is a SINGLE integer. It contains NO "/" character and NO space-separated second number.
+(a) avg_fv is a SINGLE signed INTEGER (e.g. +120, -180, +225). It contains NO "/" character and NO space-separated second number.
 (b) avg_fv is NOT numerically equal to either half of this row's avg_odds pair.
     If avg_odds is "-280 / +220" and you think avg_fv is +220, that's impossible — you copied from the wrong column.
     If avg_odds is "+135 / -155" and you think avg_fv is -155, that's impossible — same mistake.
 (c) avg_fv is the value directly under the "avg_fv" header text, not under "avg_odds" or "avg_hold".
+(d) avg_fv is NEVER a word like "DraftKings" or "FanDuel". If you're about to emit a word instead of a number for avg_fv, you are reading the BOOK column instead of avg_fv — go back to the header row and recount columns from "avg_fv" directly.
+(e) avg_fv is NEVER a letter like "L" or "U" or "L/U" on a colored background. That's the L/U column located BETWEEN bet_name and book — it is NOT avg_fv.
 
 ═══ ROW DISCIPLINE ═══
 market, bet_name, direction, avg_odds, and avg_fv MUST all come from the SAME row. Use L as a positional anchor. Before emitting JSON for a row, ask: "Am I reading every field from the row whose L = X?" If not, re-align.
@@ -633,9 +642,51 @@ app.post('/api/extract-batter', async (req, res) => {
 
     try {
       const parsed = JSON.parse(m[0]);
+      const rawRowCount = Array.isArray(parsed.rows) ? parsed.rows.length : 0;
       const { rows: normRows, unmatched } = normalizeBatterRows(parsed.rows);
+
+      /* Schema-drift guard: the 2026-04-20 real-sheet test surfaced a
+         Vision column-shift bug (L/U column between bet_name and book
+         wasn't in the prompt schema; every avg_fv was read from the
+         book column and came back as the string "DraftKings"). The
+         numeric-avg_fv guard inside normalizeBatterRows already
+         catches each bad row individually, but if MOST of the sheet
+         is bad we should refuse the result entirely rather than
+         surface a dozen phantom candidates with garbage FV values. */
+      const badFvCount = unmatched.filter(u => u.reason === 'avg_fv not numeric').length;
+      const badFvPct = rawRowCount > 0 ? badFvCount / rawRowCount : 0;
+      if (rawRowCount >= 10 && badFvPct > 0.20) {
+        /* Sample a few specific rows so the client can show the user
+           exactly what the OCR thought avg_fv was. Helps distinguish
+           "column shift" (avg_fv = "DraftKings") from "genuinely blank
+           column in the source sheet" (avg_fv = ""). */
+        const samples = unmatched
+          .filter(u => u.reason === 'avg_fv not numeric')
+          .slice(0, 5)
+          .map(u => ({ L: u.L, batter: u.batter, bet_name: u.bet_name, market: u.market }));
+        return res.status(422).json({
+          error: 'OCR misread the sheet column layout — ' + badFvCount +
+                 ' of ' + rawRowCount + ' rows (' + (badFvPct * 100).toFixed(0) +
+                 '%) had non-numeric avg_fv values. This usually means your sheet has a column the prompt does not know about. Check the FV column position and compare to the schema in server.js:BATTER_OCR_PROMPT.',
+          bad_fv_count: badFvCount,
+          total_row_count: rawRowCount,
+          bad_fv_pct: badFvPct,
+          sample_bad_rows: samples,
+        });
+      }
+
       const players = groupBatterPlayers(normRows);
-      return res.json({ players, unmatched_markets: unmatched });
+      return res.json({
+        players,
+        unmatched_markets: unmatched,
+        /* Always echo validation stats so the client can log them via
+           TMEV_DIAG checkpoint 1 without making a separate call. */
+        ocr_stats: {
+          raw_row_count: rawRowCount,
+          bad_fv_count: badFvCount,
+          normalized_row_count: normRows.length,
+        },
+      });
     } catch (e) {
       return res.status(500).json({ error: 'JSON parse error: ' + e.message, raw: m[0] });
     }
