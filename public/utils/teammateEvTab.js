@@ -305,6 +305,15 @@
 
   /* ---------------- card renderer ---------------- */
   function fmtAm(n) { if (n == null || isNaN(n)) return '--'; return (n > 0 ? '+' : '') + n; }
+  /* fmtPct accepts a 0..1 decimal probability and renders "34.2%" — or a
+     dash when the value is missing / non-numeric. Callers should pass the
+     raw Phase-1 stored value (hit1, hit2, both_hit) which may legitimately
+     be null for sparse combos. Previously rendered as "NaN%"; now stays
+     visually clean so users don't read it as a broken card. */
+  function fmtPct(x) {
+    if (x == null || x === '' || isNaN(Number(x))) return '--';
+    return (Number(x) * 100).toFixed(1) + '%';
+  }
   function confColor(level) {
     return level === 'high'   ? 'var(--ac)'
          : level === 'medium' ? 'var(--ac2)'
@@ -318,6 +327,17 @@
     if (r == null || isNaN(r)) return 'var(--mu)';
     return r >= 0.3 ? 'var(--ac)' : r < 0 ? 'var(--red)' : 'var(--ac2)';
   }
+
+  /* Outlier threshold: above 100% EV, DK's returned SGP price has almost
+     certainly diverged from a sane FV-implied joint. Common causes:
+       - DK mispriced a long-tail same-stat parlay (e.g. O 2.5 H x O 2.5 H)
+       - DK applied a promotional correlation boost we can't distinguish from
+         their base price
+       - Our FV sheet's implied probs are off (OCR mis-read, stale line)
+     In every one of those cases the right user action is "go verify on DK
+     before betting" — badge nudges that behavior without touching the math. */
+  var EV_OUTLIER_THRESHOLD = 100;
+  function isOutlier(ev) { return ev != null && !isNaN(ev) && ev > EV_OUTLIER_THRESHOLD; }
 
   function _pct(x) { return x == null || isNaN(x) ? '--' : (x * 100).toFixed(1) + '%'; }
 
@@ -347,10 +367,16 @@
        badge, tonight-vs-historical slot row. */
     var dkStr  = fmtAm(c.dk_american);
     var fvStr  = fmtAm(c.fv_corr_american);
-    var hr1 = c.hit1 != null ? _pct(c.hit1) : '--';
-    var hr2 = c.hit2 != null ? _pct(c.hit2) : '--';
-    var bothHr = c.both_hit != null ? _pct(c.both_hit) : null;
+    var hr1 = fmtPct(c.hit1);
+    var hr2 = fmtPct(c.hit2);
+    /* Both-hit row appears only when we have a real numeric value. Sparse
+       Phase-1 combos (null `both`) hide the row entirely rather than
+       printing a dash — the row's purpose is to quantify joint historical
+       performance, and a dash there would look like a broken stat. */
+    var bothHasVal = c.both_hit != null && !isNaN(Number(c.both_hit));
+    var bothHr = bothHasVal ? fmtPct(c.both_hit) : null;
     var n = c.n_total;
+    var outlier = isOutlier(c.ev_pct);
     var conf = c.slot_match_confidence || { level: 'none', n: 0 };
     var slotStr = c.tonight_slots[0] + '_' + c.tonight_slots[1];
     var histStr = c.most_common_slots ? c.most_common_slots.join('_') : '?';
@@ -362,7 +388,22 @@
     var rProv = shrinkageProv(c).replace(/"/g, '&quot;');
 
     var h = '';
-    h += '<div class="card ' + evCls(c.ev_pct) + '" id="tmev-card-' + idx + '">';
+    /* Outlier cards override their border color (inline style wins over
+       the class-level border) so they're distinguishable at a glance even
+       when the grid is scrolled past — the +1483% Raleigh × Young kind of
+       case would otherwise sit visually next to a legit +28% card. */
+    var cardStyle = outlier
+      ? ' style="border:1px solid var(--ac2);border-left:4px solid var(--ac2);box-shadow:0 0 0 1px rgba(245,158,11,.25) inset"'
+      : '';
+    h += '<div class="card ' + evCls(c.ev_pct) + '" id="tmev-card-' + idx + '"' + cardStyle + '>';
+    /* Outlier banner — above the header so it reads first. Orange (--ac2)
+       rather than red so it doesn't scream "BAD"; the candidate MAY be
+       a genuine edge, the badge just says "go check DK first". */
+    if (outlier) {
+      h += '<div style="margin:-14px -14px 8px;padding:5px 10px;background:rgba(245,158,11,.14);border-bottom:1px solid var(--ac2);font-family:Space Mono,monospace;font-size:10px;color:var(--ac2);font-weight:600;letter-spacing:.3px">' +
+             '&#9888; OUTLIER &middot; EV > 100% &middot; verify DK price before betting' +
+           '</div>';
+    }
     /* Header: pair × EV% */
     h += '<div style="display:flex;justify-content:space-between;align-items:start;gap:8px;margin-bottom:8px">';
     h += '<div>' +
