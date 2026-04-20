@@ -638,19 +638,40 @@
        Hovering the HYBRID badge surfaces the full tooltip the
        user speced — keeps the caveat one tap away even when the
        card body is scrolled. */
-    var isHybrid = c.type === 'hybrid';
-    var badgeBg = isHybrid ? 'rgba(245,158,11,.18)' : 'rgba(34,211,238,.14)';
-    var badgeBorder = isHybrid ? 'var(--ac2)' : 'var(--cyan)';
-    var badgeColor = isHybrid ? 'var(--ac2)' : 'var(--cyan)';
-    var badgeText = isHybrid ? 'HYBRID' : 'FULL FV';
-    var badgeTooltip = isHybrid
-      ? _escAttr('Hybrid candidate: one leg uses your FV sheet, the other uses DK\'s no-vig price as the "fair" value. Edge claim is correlation-only (your pair-correlation data vs DK\'s generic SGP boost), not marginal probability. Treat with appropriately less conviction than Full FV cards.')
-      : _escAttr('Full FV candidate: both legs\' fair values come from your FV sheet. Edge claim is marginal + correlation — the strongest signal the tool produces.');
+    var isHybrid   = c.type === 'hybrid';
+    var isCorrOnly = c.type === 'corr_only';
+    /* Three-way badge with escalating "trust less" signal:
+         FULL FV   cyan   — marginal + correlation edge
+         HYBRID    amber  — correlation-only, one-leg FV anchor
+         CORR-ONLY slate  — correlation-only, NO FV anchor (both
+           legs from DK no-vig; always externally validate FV)
+       Slate-blue chosen for CORR-ONLY so it's visually distinct from
+       the amber HYBRID (related signal, but weaker claim) and the
+       cyan FULL FV. */
+    var badgeBg, badgeBorder, badgeColor, badgeText, badgeTooltip;
+    if (isCorrOnly) {
+      badgeBg = 'rgba(100,116,139,.22)';
+      badgeBorder = '#64748b';
+      badgeColor = '#cbd5e1';
+      badgeText = 'CORR-ONLY';
+      badgeTooltip = _escAttr('CORR-ONLY: No FV sheet used. Both legs use DK\'s no-vig marginal prices as "fair". Edge claim is purely correlation — your pair-correlation data vs DK\'s implied SGP boost. Always validate FV externally before betting.');
+    } else if (isHybrid) {
+      badgeBg = 'rgba(245,158,11,.18)';
+      badgeBorder = 'var(--ac2)';
+      badgeColor = 'var(--ac2)';
+      badgeText = 'HYBRID';
+      badgeTooltip = _escAttr('Hybrid candidate: one leg uses your FV sheet, the other uses DK\'s no-vig price as the "fair" value. Edge claim is correlation-only (your pair-correlation data vs DK\'s generic SGP boost), not marginal probability. Treat with appropriately less conviction than Full FV cards.');
+    } else {
+      badgeBg = 'rgba(34,211,238,.14)';
+      badgeBorder = 'var(--cyan)';
+      badgeColor = 'var(--cyan)';
+      badgeText = 'FULL FV';
+      badgeTooltip = _escAttr('Full FV candidate: both legs\' fair values come from your FV sheet. Edge claim is marginal + correlation — the strongest signal the tool produces.');
+    }
     var badgeHtml = '<span title="' + badgeTooltip + '" style="font-family:Space Mono,monospace;font-size:9px;font-weight:700;letter-spacing:.4px;padding:2px 7px;border-radius:10px;background:' + badgeBg + ';border:1px solid ' + badgeBorder + ';color:' + badgeColor + '">' + badgeText + '</span>';
-    /* Hybrid cards use "CORR EV%" as the inline label under the EV%
-       number — a visual cue that the edge claim is correlation-only.
-       Full-FV cards keep the existing "EV" label. Font sizes match. */
-    var evLabelText = isHybrid ? 'CORR EV%' : 'EV';
+    /* EV label: hybrid and corr_only both show "CORR EV%" to signal
+       correlation-only edge claim. Full-FV stays "EV". */
+    var evLabelText = (isHybrid || isCorrOnly) ? 'CORR EV%' : 'EV';
     h += '<div>' +
            '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
              '<div style="font-size:12px;font-weight:700">' + p1Show + ' &times; ' + p2Show + '</div>' +
@@ -673,8 +694,11 @@
        candidates, the FV side of the missing-FV leg renders "FV —"
        with a secondary "DK-novig X.X%" underneath, so the user sees
        exactly what probability was consumed for that leg. */
-    var leg1IsHybridMiss = isHybrid && c.missing_leg === 'p1';
-    var leg2IsHybridMiss = isHybrid && c.missing_leg === 'p2';
+    /* corr_only forces no-vig display on BOTH legs; hybrid on exactly
+       one. Full-FV shows FV American on both. Any "missing FV" cell
+       renders "FV —" plus a DK-novig pill carrying the probability. */
+    var leg1NoVig = isCorrOnly || (isHybrid && c.missing_leg === 'p1');
+    var leg2NoVig = isCorrOnly || (isHybrid && c.missing_leg === 'p2');
     function _hybridFvCell(isHybridMiss, fvRaw, pFilled) {
       if (!isHybridMiss) {
         return '<span style="font-size:10px;font-family:Space Mono,monospace;color:var(--mu)">FV ' + fmtAm(fvRaw) + '</span>';
@@ -690,14 +714,14 @@
     h += '<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0">' +
            '<span class="leg ' + legSideCls(c.leg1_full) + '" style="font-size:10px">' + c.leg1_full + ' &middot; ' + p1Show + '</span>' +
            '<div style="display:flex;align-items:center;gap:6px">' +
-             _hybridFvCell(leg1IsHybridMiss, c.fv_p1, c.p_leg1) +
+             _hybridFvCell(leg1NoVig, c.fv_p1, c.p_leg1) +
              '<span style="font-size:9px;font-family:Space Mono,monospace;color:var(--ac2)">' + hr1 + '</span>' +
            '</div>' +
          '</div>';
     h += '<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0">' +
            '<span class="leg ' + legSideCls(c.leg2_full) + '" style="font-size:10px">' + c.leg2_full + ' &middot; ' + p2Show + '</span>' +
            '<div style="display:flex;align-items:center;gap:6px">' +
-             _hybridFvCell(leg2IsHybridMiss, c.fv_p2, c.p_leg2) +
+             _hybridFvCell(leg2NoVig, c.fv_p2, c.p_leg2) +
              '<span style="font-size:9px;font-family:Space Mono,monospace;color:var(--ac2)">' + hr2 + '</span>' +
            '</div>' +
          '</div>';
@@ -712,19 +736,36 @@
        the Over/Under DK prices that produced the no-vig, and the
        resulting fair probability. Placed inside the legs box to
        group with the leg the substitution applies to. */
-    if (isHybrid && c.novig_source) {
+    function _fmtAmNum(n) { return n == null ? '—' : ((n > 0 ? '+' : '') + n); }
+    if ((isHybrid || isCorrOnly) && c.novig_source) {
       var ns = c.novig_source;
-      var legLabel = (ns.missing === 'p1') ? (c.leg1_full + ' · ' + p1Show)
-                                           : (c.leg2_full + ' · ' + p2Show);
-      var oStr = ns.leg_over_american  != null ? ((ns.leg_over_american  > 0 ? '+' : '') + ns.leg_over_american)  : '—';
-      var uStr = ns.leg_under_american != null ? ((ns.leg_under_american > 0 ? '+' : '') + ns.leg_under_american) : '—';
-      var fairStr = (ns.novig_fair_prob * 100).toFixed(1) + '%';
       h += '<div style="margin-top:5px;padding-top:5px;border-top:1px solid rgba(255,255,255,0.07);display:flex;flex-direction:column;gap:2px">' +
-             '<div style="font-size:9px;color:var(--ac2);font-family:Space Mono,monospace">DK-implied fair (no-vig):</div>' +
-             '<div style="font-size:9px;color:var(--tx);font-family:Space Mono,monospace;word-break:break-word">' +
-               legLabel + ' &nbsp;·&nbsp; DK O=' + oStr + ' U=' + uStr + ' &nbsp;→&nbsp; ' + fairStr +
-             '</div>' +
-           '</div>';
+             '<div style="font-size:9px;color:var(--ac2);font-family:Space Mono,monospace">DK-implied fair (no-vig):</div>';
+      if (isCorrOnly) {
+        /* Two lines — one per leg — since corr_only has leg_a AND leg_b. */
+        var a = ns.leg_a, b = ns.leg_b;
+        if (a) {
+          var aFair = (a.novig_fair_prob * 100).toFixed(1) + '%';
+          h += '<div style="font-size:9px;color:var(--tx);font-family:Space Mono,monospace;word-break:break-word">' +
+                 c.leg1_full + ' &middot; ' + p1Show + ' &nbsp;&middot;&nbsp; DK O=' + _fmtAmNum(a.over_american) + ' U=' + _fmtAmNum(a.under_american) + ' &nbsp;&rarr;&nbsp; ' + aFair +
+               '</div>';
+        }
+        if (b) {
+          var bFair = (b.novig_fair_prob * 100).toFixed(1) + '%';
+          h += '<div style="font-size:9px;color:var(--tx);font-family:Space Mono,monospace;word-break:break-word">' +
+                 c.leg2_full + ' &middot; ' + p2Show + ' &nbsp;&middot;&nbsp; DK O=' + _fmtAmNum(b.over_american) + ' U=' + _fmtAmNum(b.under_american) + ' &nbsp;&rarr;&nbsp; ' + bFair +
+               '</div>';
+        }
+      } else {
+        /* Hybrid — single line for the one missing leg. */
+        var legLabel = (ns.missing === 'p1') ? (c.leg1_full + ' · ' + p1Show)
+                                             : (c.leg2_full + ' · ' + p2Show);
+        var fairStr = (ns.novig_fair_prob * 100).toFixed(1) + '%';
+        h += '<div style="font-size:9px;color:var(--tx);font-family:Space Mono,monospace;word-break:break-word">' +
+               legLabel + ' &nbsp;&middot;&nbsp; DK O=' + _fmtAmNum(ns.leg_over_american) + ' U=' + _fmtAmNum(ns.leg_under_american) + ' &nbsp;&rarr;&nbsp; ' + fairStr +
+             '</div>';
+      }
+      h += '</div>';
     }
     h += '</div>';
 
@@ -739,6 +780,21 @@
          (rmText == null ? 'N/A' : rmText) + '</div><div class="hl">MARGIN</div></div>';
     h += '<div class="hi"><div class="hv" style="color:var(--mu);font-size:13px">' + c.qk_pct.toFixed(2) + 'u</div><div class="hl">QK</div></div>';
     h += '</div>';
+
+    /* Joint-probability side-by-side:
+         MODEL JOINT   = Fréchet(p_leg1, p_leg2, r_binary) — our view
+         DK IMPLIED    = 1 / dk_decimal                   — what DK's SGP price implies
+       Gap between them IS the edge. User-spec'd for CORR-ONLY cards
+       but cheap + informative on every type, so always show. */
+    var pJointModel = c.p_joint;
+    var pJointDk = (c.dk_decimal != null && c.dk_decimal > 0) ? (1 / c.dk_decimal) : null;
+    var pJointGap = (pJointModel != null && pJointDk != null) ? (pJointModel - pJointDk) : null;
+    var gapColor = pJointGap == null ? 'var(--mu)' : (pJointGap >= 0 ? 'var(--ac)' : 'var(--red)');
+    h += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:6px;padding:6px 8px;background:rgba(0,0,0,.15);border-radius:5px;font-family:Space Mono,monospace">' +
+           '<div><div style="font-size:10px;color:var(--mu)">MODEL JOINT</div><div style="font-size:12px;font-weight:700;color:var(--tx)">' + (pJointModel != null ? (pJointModel*100).toFixed(1)+'%' : '—') + '</div></div>' +
+           '<div><div style="font-size:10px;color:var(--mu)">DK IMPLIED</div><div style="font-size:12px;font-weight:700;color:var(--tx)">' + (pJointDk != null ? (pJointDk*100).toFixed(1)+'%' : '—') + '</div></div>' +
+           '<div><div style="font-size:10px;color:var(--mu)">EDGE (gap)</div><div style="font-size:12px;font-weight:700;color:' + gapColor + '">' + (pJointGap != null ? ((pJointGap >= 0 ? '+' : '') + (pJointGap*100).toFixed(1)+'pp') : '—') + '</div></div>' +
+         '</div>';
 
     /* Slot-match confidence row + shrinkage provenance + AI Insights button */
     h += '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">';
