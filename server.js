@@ -726,6 +726,96 @@ app.post('/api/extract-batter', async (req, res) => {
   }
 });
 
+// ===== NBA FV sheet OCR =====
+// Mirrors /api/extract-batter. Client sends { image: base64, mime } and
+// gets back { players, unmatched_markets, ocr_stats, sample_rows } — same
+// shape nbaEvTab.js already expects. Supported props (from the Phase 1
+// correlations data): Points, Rebounds, Assists, 3-Pointers Made. The
+// other NBA prop markets (Steals, Blocks, Turnovers, PRA, PR, PA,
+// Double-Double, Triple-Double) are extracted but flagged as
+// "no correlation data" so the user knows why they don't produce cards.
+//
+// Edit 1 (this commit): endpoint shell + Anthropic Vision call. Prompt
+// and NBA market table land in Edit 2; normalization/grouping in Edit 3;
+// synthetic tests in Edit 4. Until Edit 2 ships a real prompt, the
+// endpoint will return the Vision model's raw rows without NBA-specific
+// validation — enough to unblock the client's 404 and let us iterate
+// the prompt on real sheets.
+
+/* Placeholder prompt — swapped for the real NBA_FV_PROMPT in Edit 2. */
+const NBA_FV_PROMPT_PLACEHOLDER = 'Respond with {"rows":[]} for now. NBA FV prompt lands in Phase 4 Edit 2.';
+
+app.post('/api/extract-nba', async (req, res) => {
+  try {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not set on server' });
+
+    const { image, mime } = req.body || {};
+    if (!image) return res.status(400).json({ error: 'Missing image (base64) in body' });
+
+    const prompt = (typeof NBA_FV_PROMPT !== 'undefined') ? NBA_FV_PROMPT : NBA_FV_PROMPT_PLACEHOLDER;
+
+    const body = {
+      model: 'claude-opus-4-6',
+      max_tokens: 4000,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: mime || 'image/png', data: image } },
+          { type: 'text', text: prompt }
+        ]
+      }]
+    };
+
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify(body)
+    });
+
+    const j = await r.json();
+    if (j.error) return res.status(500).json({ error: j.error.message || 'Anthropic API error', detail: j.error });
+
+    const txt = j.content && j.content[0] && j.content[0].text || '';
+    const m = txt.match(/\{[\s\S]*\}/);
+    if (!m) return res.status(500).json({ error: 'Could not parse JSON from model output', raw: txt });
+
+    try {
+      const parsed = JSON.parse(m[0]);
+      const rawRowCount = Array.isArray(parsed.rows) ? parsed.rows.length : 0;
+      /* Edit 3 replaces this passthrough with normalizeNbaRows +
+         groupNbaPlayers. For now we emit an empty players array and
+         surface the raw rows so the client can still handle a 200
+         response; the 404 that nbaEvTab.js handled specifically for the
+         pre-deploy state is gone. */
+      if (typeof normalizeNbaRows === 'function') {
+        const { rows: normRows, unmatched } = normalizeNbaRows(parsed.rows);
+        const players = (typeof groupNbaPlayers === 'function') ? groupNbaPlayers(normRows) : [];
+        return res.json({
+          players,
+          unmatched_markets: unmatched,
+          ocr_stats: { raw_row_count: rawRowCount, normalized_row_count: normRows.length },
+          sample_rows: (parsed.rows || []).slice(0, 3),
+        });
+      }
+      return res.json({
+        players: [],
+        unmatched_markets: [],
+        ocr_stats: { raw_row_count: rawRowCount, normalized_row_count: 0, note: 'endpoint shell — prompt + normalization land in Phase 4 Edit 2-3' },
+        sample_rows: (parsed.rows || []).slice(0, 3),
+      });
+    } catch (e) {
+      return res.status(500).json({ error: 'JSON parse error: ' + e.message, raw: m[0] });
+    }
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
 // ===== SGP AI Insight =====
 app.post('/api/sgp-insight', async (req, res) => {
   try {
