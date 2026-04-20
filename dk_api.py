@@ -1097,11 +1097,23 @@ def find_sgps_teammate(payload):
     return response
 
 
-def find_sgps(legs):
-    """Given OCR'd legs, auto-match them to DK selections, enumerate 2-leg combos,
-    and return DK-priced SGPs. Frontend computes FV and EV."""
+def find_sgps(legs, enum_size=2):
+    """Given OCR'd legs, auto-match them to DK selections, enumerate combos
+    of the requested size, and return DK-priced SGPs. Frontend computes FV
+    and EV.
+
+    enum_size=2 (default, back-compat) enumerates pairs; enum_size=3 enumerates
+    triplets. DK's calculateBets endpoint is N-leg native, so the pricing call
+    itself is unchanged — only the combination generator and the per-pitcher
+    worst-case price-call budget differ. A pitcher with k matched legs yields
+    C(k,2) pairs or C(k,3) triplets; the 110s soft deadline still bounds total
+    pricing. Any combos not priced before the deadline surface truncated=True
+    and the caller should retry or narrow the leg list."""
     from itertools import combinations
     import concurrent.futures
+
+    if enum_size not in (2, 3):
+        return {"error": f"enum_size must be 2 or 3, got {enum_size}"}
 
     # Soft deadline: return partial results before Node's spawn timeout SIGTERMs us.
     pricing_deadline = _time.monotonic() + 110.0
@@ -1194,47 +1206,51 @@ def find_sgps(legs):
             "unmatched_legs": unmatched,
         }
 
-        if len(matched) < 2:
-            results[pitcher] = {**base, "combos_2": [],
-                               "warning": f"Need 2+ matched legs ({len(matched)}/{len(plegs)} matched to DK)"}
+        min_legs = enum_size
+        combos_key = f"combos_{enum_size}"
+        if len(matched) < min_legs:
+            results[pitcher] = {**base, combos_key: [],
+                               "warning": f"Need {min_legs}+ matched legs ({len(matched)}/{len(plegs)} matched to DK)"}
             continue
 
         if _time.monotonic() >= pricing_deadline:
             truncated = True
-            results[pitcher] = {**base, "combos_2": [],
+            results[pitcher] = {**base, combos_key: [],
                                "warning": "Skipped: pricing time budget exceeded. Try again."}
             continue
 
-        # Enumerate 2-leg combos (indices into matched[]).
-        # combinations() gives canonical (i,j) with i<j but matched[] order
-        # follows the OCR row order, so the same logical combo can render
-        # "ER x Outs" on one sheet and "Outs x ER" on another. Canonicalize
-        # by stat category (alphabetical) so the leg pair is stable.
-        combos_by_size = {2: []}
-        for combo in combinations(range(len(matched)), 2):
-            a, b = combo
-            if _stat_cat(matched[a].get("leg")) > _stat_cat(matched[b].get("leg")):
-                a, b = b, a
-            combos_by_size[2].append([a, b])
+        # Enumerate combos of the requested size (indices into matched[]).
+        # combinations() returns canonical ascending indices, but matched[]
+        # order follows OCR row order, so the same logical combo can render
+        # with legs in different positions across sheets. Sort each combo's
+        # indices by the leg's stat category (alphabetical) so the tuple is
+        # stable regardless of OCR order — downstream (frontend card render,
+        # correlation lookup) relies on a consistent orientation.
+        combo_indices = []
+        for combo in combinations(range(len(matched)), enum_size):
+            ordered = sorted(combo, key=lambda i: _stat_cat(matched[i].get("leg")) or "")
+            combo_indices.append(list(ordered))
 
-        # Price every combo in parallel
-        all_combos_flat = [(2, idx, indices) for idx, indices in enumerate(combos_by_size[2])]
-
-        def price_one(size, idx, indices):
+        # DK 3-leg pricing also rejects some triplets as incompatible (e.g.
+        # all-same-stat combos that can't legally parlay in an SGP — "Over 4+ K"
+        # with "5+ K" etc.). _price_combo returns None for those; they're
+        # simply omitted from the returned combos list rather than surfaced
+        # as errors, matching the 2-leg contract.
+        def price_one(idx, indices):
             sel_ids = [matched[i]["dk_selection_id"] for i in indices]
             price = _price_combo(sel_ids)
-            return size, idx, indices, price
+            return idx, indices, price
 
-        priced_combos = {2: {}}
+        priced = {}
         with ThreadPoolExecutor(max_workers=8) as ex:
-            futs = [ex.submit(price_one, *c) for c in all_combos_flat]
+            futs = [ex.submit(price_one, i, idx) for i, idx in enumerate(combo_indices)]
             remaining = max(0.5, pricing_deadline - _time.monotonic())
             try:
                 for f in as_completed(futs, timeout=remaining):
                     try:
-                        size, idx, indices, price = f.result()
+                        _i, indices, price = f.result()
                         if price:
-                            priced_combos[size][tuple(indices)] = price
+                            priced[tuple(indices)] = price
                     except Exception:
                         pass
             except concurrent.futures.TimeoutError:
@@ -1242,18 +1258,24 @@ def find_sgps(legs):
                 for f in futs:
                     f.cancel()
 
-        combos_2 = []
-        for indices in combos_by_size[2]:
-            price = priced_combos[2].get(tuple(indices))
+        priced_combos_out = []
+        for indices in combo_indices:
+            price = priced.get(tuple(indices))
             if not price:
                 continue
-            combos_2.append({
+            entry = {
                 "leg_indices": indices,
                 "dk_odds": price["sgpOdds"],
                 "dk_decimal": price["sgpDecimal"],
-            })
+            }
+            # Per-leg DK pricing (trueOdds = vigged decimal per leg) is needed
+            # for the DK-hold / correlation-price sanity line on 3-leg cards.
+            # Kept out of the 2-leg shape to stay byte-for-byte back-compat.
+            if enum_size == 3:
+                entry["leg_true_odds"] = [lg.get("trueOdds") for lg in price.get("legs", [])]
+            priced_combos_out.append(entry)
 
-        results[pitcher] = {**base, "combos_2": combos_2}
+        results[pitcher] = {**base, combos_key: priced_combos_out}
 
     out = {"pitchers": results}
     if truncated:
@@ -1319,8 +1341,17 @@ if __name__ == "__main__":
             result = get_featured(sys.argv[2])
         elif cmd == "find-sgps":
             stdin_data = sys.stdin.read().strip()
-            legs = json.loads(stdin_data) if stdin_data else []
-            result = find_sgps(legs)
+            parsed = json.loads(stdin_data) if stdin_data else []
+            # Back-compat: bare array payload means legs only, enum_size=2.
+            # Richer {legs, enumSize} object enables 3-leg enumeration without
+            # breaking older callers.
+            if isinstance(parsed, dict):
+                legs = parsed.get("legs", [])
+                enum_size = int(parsed.get("enumSize", 2))
+            else:
+                legs = parsed
+                enum_size = 2
+            result = find_sgps(legs, enum_size=enum_size)
         elif cmd == "find-sgps-teammate":
             stdin_data = sys.stdin.read().strip()
             payload = json.loads(stdin_data) if stdin_data else {}
