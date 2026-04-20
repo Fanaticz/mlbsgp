@@ -828,6 +828,134 @@ WRONG — avg_fv copied from avg_odds pair:
 Return exactly this JSON shape, nothing else:
 {"rows":[{"L":1,"player":"...","team":"...","game":"...","market":"...","bet_name":"...","direction":"Over","line":27.5,"avg_odds":"+X / -Y","avg_fv":123,"books_count":7}, ...]}`;
 
+/* normalizeNbaRows: takes the raw OCR rows array, validates each row,
+   canonicalizes the market via matchNbaMarket, and returns the
+   collapsed per-(player, leg) list + an unmatched diagnostic array.
+   Mirrors normalizeBatterRows in structure so the Edit 1 handler can
+   swap between the two without shape changes. Fallthrough logic:
+     - missing player/market/direction/line/avg_fv → drop, counted reason
+     - unsupported market (Steals, PRA, etc.) → drop, reason=unsupported_prop
+     - avg_fv equals either half of avg_odds pair → flagged as suspicious
+       but kept (user sees a warning on the card)
+     - duplicate (player, L) → second occurrence dropped
+     - duplicate (player, leg) after first-pass → collapsed by
+       (books_count desc, L desc), same tiebreak as pitcher/batter paths. */
+function normalizeNbaRows(rows) {
+  if (!Array.isArray(rows)) return { rows: [], unmatched: [] };
+  const out = [];
+  const unmatched = [];
+  const seen = new Set();
+  rows.forEach((r, idx) => {
+    if (!r || typeof r !== 'object') return;
+    let direction = canonDirection(r.direction);
+    let line = (r.line !== undefined && r.line !== null && r.line !== '') ? Number(r.line) : NaN;
+    if (!direction || !isFinite(line)) {
+      const parsed = parseBetNameDirection(r.bet_name);
+      if (parsed) {
+        if (!direction) direction = parsed.direction;
+        if (!isFinite(line)) line = parsed.line;
+      }
+    }
+    const player = (r.player || r.batter || r.pitcher || '').trim();
+    if (!player) { unmatched.push({ L: r.L, bet_name: r.bet_name, market: r.market, reason: 'no player name' }); return; }
+    const market = (r.market || '').trim();
+    const cls = matchNbaMarket(market);
+    if (!cls) { unmatched.push({ L: r.L, player, bet_name: r.bet_name, market, reason: 'unknown NBA market' }); return; }
+    if (!cls.supported) { unmatched.push({ L: r.L, player, bet_name: r.bet_name, market, stat: cls.stat, reason: 'unsupported_prop (no correlation data)' }); return; }
+    if (!direction || !isFinite(line)) { unmatched.push({ L: r.L, player, bet_name: r.bet_name, market, reason: 'missing direction/line' }); return; }
+    const fv = Number(r.avg_fv);
+    if (!isFinite(fv)) { unmatched.push({ L: r.L, player, bet_name: r.bet_name, market, reason: 'avg_fv not numeric' }); return; }
+    /* Column-drift guard: avg_fv shouldn't equal either half of
+       avg_odds. Same check the batter path uses to catch the
+       "DraftKings" / -309 bugs. */
+    const avgOddsRaw = String(r.avg_odds == null ? '' : r.avg_odds);
+    const oddsPair = avgOddsRaw.match(/([+-]?\d+)\s*\/\s*([+-]?\d+)/);
+    let fvSuspicious = false;
+    if (oddsPair) {
+      const oa = Number(oddsPair[1]); const ob = Number(oddsPair[2]);
+      if (fv === oa || fv === ob) {
+        fvSuspicious = true;
+        console.warn('[nba suspicious_fv] L=' + (r.L != null ? r.L : '?') + ' ' + (r.bet_name || player) + ': avg_fv=' + fv + ' matches avg_odds pair (' + oa + '/' + ob + ')');
+      }
+    }
+    const rowIdRaw = (r.L !== undefined && r.L !== null && r.L !== '') ? r.L : ('idx' + idx);
+    const key = player + '|' + String(rowIdRaw);
+    if (seen.has(key)) return;
+    seen.add(key);
+    const L = Number.isFinite(Number(rowIdRaw)) ? Number(rowIdRaw) : -1;
+    const booksCount = Number(r.books_count);
+    out.push({
+      player,
+      team: (r.team || '').trim() || null,
+      game: (r.game || '').trim() || null,
+      stat: cls.stat,
+      threshold: line,
+      direction,
+      leg: direction + ' ' + line + ' ' + cls.stat,
+      avg_fv: fv,
+      avg_odds: avgOddsRaw || null,
+      _fv_suspicious: fvSuspicious,
+      _L: L,
+      _books: Number.isFinite(booksCount) ? booksCount : 0,
+    });
+  });
+  /* Collapse duplicate (player, leg) by (books desc, L desc) — prefer
+     the row with more books (sharper FV) and newer L (sheet usually
+     appended). Averaging would mix potentially-wrong values; pick one. */
+  const groups = new Map();
+  for (const r of out) {
+    const k = r.player + '|' + r.leg;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(r);
+  }
+  const collapsed = [];
+  for (const [, rs] of groups) {
+    if (rs.length === 1) { collapsed.push(rs[0]); continue; }
+    rs.sort((a, b) => (b._books - a._books) || (b._L - a._L));
+    collapsed.push(rs[0]);
+  }
+  return { rows: collapsed, unmatched };
+}
+
+/* groupNbaPlayers: merge Over+Under rows for the same (player, stat,
+   threshold) into one prop record, nest by player. Same output shape
+   as groupBatterPlayers so nbaEvTab.js's indexFvPlayers handles it
+   without a sport-specific branch. Sparse sides are OK — if only Over
+   is on the sheet, Under fields stay null. */
+function groupNbaPlayers(normRows) {
+  const players = new Map();
+  for (const r of normRows) {
+    if (!players.has(r.player)) {
+      players.set(r.player, { player: r.player, team: r.team || null, game: r.game || null, propsByKey: new Map() });
+    }
+    const p = players.get(r.player);
+    if (!p.team && r.team) p.team = r.team;
+    if (!p.game && r.game) p.game = r.game;
+    const propKey = r.stat + '|' + r.threshold;
+    if (!p.propsByKey.has(propKey)) {
+      p.propsByKey.set(propKey, {
+        stat: r.stat, threshold: r.threshold,
+        over_fv: null, over_avg_odds: null, over_books_count: null, over_L: null, over_fv_suspicious: false,
+        under_fv: null, under_avg_odds: null, under_books_count: null, under_L: null, under_fv_suspicious: false,
+      });
+    }
+    const prop = p.propsByKey.get(propKey);
+    const side = r.direction === 'Over' ? 'over' : 'under';
+    prop[side + '_fv'] = r.avg_fv;
+    prop[side + '_avg_odds'] = r.avg_odds;
+    prop[side + '_books_count'] = r._books;
+    prop[side + '_L'] = r._L;
+    prop[side + '_fv_suspicious'] = r._fv_suspicious;
+  }
+  const out = [];
+  for (const p of players.values()) {
+    const props = [...p.propsByKey.values()].sort((a, b) => (a.stat < b.stat ? -1 : a.stat > b.stat ? 1 : a.threshold - b.threshold));
+    out.push({ player: p.player, team: p.team, game: p.game, props });
+  }
+  out.sort((a, b) => a.player.localeCompare(b.player));
+  return out;
+}
+
 app.post('/api/extract-nba', async (req, res) => {
   try {
     const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -868,24 +996,33 @@ app.post('/api/extract-nba', async (req, res) => {
     try {
       const parsed = JSON.parse(m[0]);
       const rawRowCount = Array.isArray(parsed.rows) ? parsed.rows.length : 0;
-      /* Edit 3 replaces this passthrough with normalizeNbaRows +
-         groupNbaPlayers. For now we emit an empty players array and
-         surface the raw rows so the client can still handle a 200
-         response. */
-      if (typeof normalizeNbaRows === 'function') {
-        const { rows: normRows, unmatched } = normalizeNbaRows(parsed.rows);
-        const players = (typeof groupNbaPlayers === 'function') ? groupNbaPlayers(normRows) : [];
-        return res.json({
-          players,
-          unmatched_markets: unmatched,
-          ocr_stats: { raw_row_count: rawRowCount, normalized_row_count: normRows.length },
-          sample_rows: (parsed.rows || []).slice(0, 3),
+      const { rows: normRows, unmatched } = normalizeNbaRows(parsed.rows);
+      /* Schema-drift guard: if >20% of rows had non-numeric avg_fv the
+         OCR probably misread the column layout (same bug class the
+         batter endpoint guards against). Refuse to return a poisoned
+         set; surface a sample for client-side diagnosis. */
+      const badFvCount = unmatched.filter(u => u.reason === 'avg_fv not numeric').length;
+      const badFvPct = rawRowCount > 0 ? badFvCount / rawRowCount : 0;
+      if (rawRowCount >= 10 && badFvPct > 0.20) {
+        return res.status(422).json({
+          error: 'OCR misread the NBA sheet column layout — ' + badFvCount +
+                 ' of ' + rawRowCount + ' rows (' + (badFvPct * 100).toFixed(0) +
+                 '%) had non-numeric avg_fv. Check the FV column position vs NBA_FV_PROMPT.',
+          bad_fv_count: badFvCount,
+          total_row_count: rawRowCount,
+          sample_bad_rows: unmatched.filter(u => u.reason === 'avg_fv not numeric').slice(0, 5),
         });
       }
+      const players = groupNbaPlayers(normRows);
       return res.json({
-        players: [],
-        unmatched_markets: [],
-        ocr_stats: { raw_row_count: rawRowCount, normalized_row_count: 0, note: 'endpoint shell — prompt + normalization land in Phase 4 Edit 2-3' },
+        players,
+        unmatched_markets: unmatched,
+        ocr_stats: {
+          raw_row_count: rawRowCount,
+          normalized_row_count: normRows.length,
+          bad_fv_count: badFvCount,
+          unsupported_prop_count: unmatched.filter(u => u.reason && u.reason.indexOf('unsupported_prop') === 0).length,
+        },
         sample_rows: (parsed.rows || []).slice(0, 3),
       });
     } catch (e) {
