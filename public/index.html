@@ -253,6 +253,10 @@ h1 em{color:var(--ac);font-style:normal;}
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <span style="font-size:13px;color:var(--cyan);font-family:Syne,sans-serif;font-weight:700">+EV SGP FINDER</span>
       <span style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace">Upload your FV sheet &rarr; auto-match to DK &rarr; find the biggest edges</span>
+      <div id="evLegSizeTG" style="margin-left:auto;display:inline-flex;border:1px solid var(--b1);border-radius:6px;overflow:hidden;font-family:Space Mono,monospace">
+        <button id="evLegSize2" class="active" onclick="evSetLegSize(2)" title="Pair SGPs. Default. Existing 2-leg enumeration over matched legs." style="padding:6px 12px;font-size:11px;font-weight:600;border:none;background:rgba(34,197,94,.12);color:var(--ac);cursor:pointer;letter-spacing:.5px">2-LEG</button>
+        <button id="evLegSize3" onclick="evSetLegSize(3)" title="Triplet SGPs. Iterates C(matched,3) combos; uses empirical 3-way joint from pitcher aggregates blended toward global baseline. Heavier shrinkage than 2-leg." style="padding:6px 12px;font-size:11px;font-weight:600;border:none;border-left:1px solid var(--b1);background:transparent;color:var(--mu);cursor:pointer;letter-spacing:.5px">3-LEG</button>
+      </div>
     </div>
     <div id="evDrop" style="border:2px dashed var(--b2);border-radius:9px;padding:28px 16px;text-align:center;cursor:pointer;transition:all .15s;background:var(--s2)">
       <div style="font-size:13px;color:var(--tx);font-weight:600;margin-bottom:4px">Drag &amp; drop your FV sheet screenshot</div>
@@ -260,6 +264,11 @@ h1 em{color:var(--ac);font-style:normal;}
       <input type="file" id="evFile" accept="image/*" style="display:none" onchange="evUpload(event)">
     </div>
     <div id="evStatus" style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace;min-height:16px"></div>
+    <div id="evFilters3" style="display:none;gap:14px;flex-wrap:wrap;align-items:center;padding:8px 10px;background:var(--s2);border-radius:7px;font-size:10px;font-family:Space Mono,monospace;color:var(--mu)">
+      <div style="display:flex;align-items:center;gap:6px"><span>MIN EV%</span><input type="range" id="evMinEV3" min="0" max="50" step="1" value="10" oninput="evMinEV3Change()" style="width:100px"><span id="evMinEV3V" style="color:var(--ac);min-width:28px">10%</span></div>
+      <div style="display:flex;align-items:center;gap:6px"><span>MIN STARTS</span><input type="range" id="evMinN3" min="15" max="150" step="5" value="75" oninput="evMinN3Change()" style="width:100px"><span id="evMinN3V" style="color:var(--ac);min-width:28px">75</span></div>
+      <span style="margin-left:auto;color:var(--ac2);font-size:9px;letter-spacing:.4px" title="3-leg empirical joint rates can look inflated on aces because pitcher quality drives all three legs at once. Aggressive shrinkage is on: below n_eff=15 legs fall back to 100% global. If median EDGE across cards runs >+5pp, shrinkage is loose — filter harder or drop MIN STARTS.">&#9888; CALIBRATION ON — SEE TOOLTIP</span>
+    </div>
   </div>
   <div id="evDetected"></div>
   <div id="evResults"></div>
@@ -1079,6 +1088,32 @@ function tmClose(){
 */
 var EV_DETECTED=null;
 var EV_RESULTS=null;
+/* Per-size result cache. Toggling 2↔3 re-requests if the other size hasn't
+   been priced yet on the current EV_DETECTED; a cached result replays
+   without another DK round-trip. */
+var EV_RESULTS_BY_SIZE={2:null,3:null};
+
+/* Leg-count mode: 2 or 3. Default 2. 3-leg is opt-in because (a) it triples
+   the per-pitcher DK pricing load (C(k,3) calls) and (b) empirical 3-way
+   joints are higher variance than pairwise — requires heavier shrinkage and
+   tighter filters. Toggle in the +EV Finder header; state persists for the
+   current session. */
+var EV_LEG_SIZE=2;
+/* 3-leg filter defaults.
+   MIN EV% starts at +10% (not 5%) while the empirical 3-way joint is being
+   calibrated — aces produce high all3 because pitcher quality drives all
+   three legs simultaneously, so the early distribution skews optimistic.
+   Users can drop these sliders once we've observed a few slates. */
+var EV_MIN_EV_PCT_3=10;
+var EV_MIN_STARTS_3=75;
+/* 3-way shrinkage. 15 effective starts is the floor for any player weight
+   at all; below that a pitcher's empirical triplet rate is essentially noise
+   (one hot streak flips 20pp) and must route entirely to the global
+   triplet baseline. Above 15, weight follows n_eff/(n_eff+K_3WAY) with
+   K_3WAY=80 — stiffer than pairwise K=50 because joint frequency variance
+   is higher than marginal or pairwise frequency variance. */
+var BLEND_MIN_STARTS_3WAY=15;
+var K_3WAY=80;
 
 /* Correlation mode: 'global' | 'blended' | 'player'.
    Default 'blended' — Bayesian shrinkage of player r toward the global prior,
@@ -1140,6 +1175,43 @@ function evSetCorrMode(m){
      its card r values depend on CORR_MODE too, so re-render when active. */
   var pp=document.getElementById('page-pitcher');
   if(pp&&pp.classList.contains('active')&&typeof applyPF==='function')applyPF();
+}
+
+/* 2↔3 leg toggle. Re-uses the already-OCR'd EV_DETECTED legs — flipping
+   doesn't re-upload, just re-enumerates against DK. The per-size cache lets
+   users bounce between modes without hitting DK again once both have been
+   priced. Toggle visibility of the 3-leg filter bar follows the mode. */
+function evSetLegSize(n){
+  if(n!==2&&n!==3)return;
+  if(EV_LEG_SIZE===n)return;
+  EV_LEG_SIZE=n;
+  var btn2=document.getElementById('evLegSize2'),btn3=document.getElementById('evLegSize3');
+  if(btn2){btn2.className=n===2?'active':'';btn2.style.background=n===2?'rgba(34,197,94,.12)':'transparent';btn2.style.color=n===2?'var(--ac)':'var(--mu)';}
+  if(btn3){btn3.className=n===3?'active':'';btn3.style.background=n===3?'rgba(34,197,94,.12)':'transparent';btn3.style.color=n===3?'var(--ac)':'var(--mu)';}
+  var fb=document.getElementById('evFilters3');
+  if(fb)fb.style.display=n===3?'flex':'none';
+  /* If we already have an OCR'd leg set, re-request pricing at the new size
+     (cached replay when available). No OCR in flight means nothing to do —
+     the toggle will take effect on the next upload. */
+  if(!EV_DETECTED||!EV_DETECTED.length)return;
+  if(EV_RESULTS_BY_SIZE[n]){
+    EV_RESULTS=EV_RESULTS_BY_SIZE[n];
+    evRenderResults();
+  }else{
+    evFindSgps(n);
+  }
+}
+function evMinEV3Change(){
+  var el=document.getElementById('evMinEV3');if(!el)return;
+  EV_MIN_EV_PCT_3=+el.value;
+  var v=document.getElementById('evMinEV3V');if(v)v.textContent=EV_MIN_EV_PCT_3+'%';
+  if(EV_LEG_SIZE===3)evRenderResults();
+}
+function evMinN3Change(){
+  var el=document.getElementById('evMinN3');if(!el)return;
+  EV_MIN_STARTS_3=+el.value;
+  var v=document.getElementById('evMinN3V');if(v)v.textContent=EV_MIN_STARTS_3;
+  if(EV_LEG_SIZE===3)evRenderResults();
 }
 
 /* ---------- shared helpers (American↔Probability, stat category, correlation) ---------- */
@@ -1475,6 +1547,7 @@ function evCallClaude(b64,mime){
     .then(function(j){
       if(j.error){status.innerHTML='<span style="color:var(--red)">Extract error: '+j.error+'</span>';return;}
       EV_DETECTED=j.rows||[];
+      EV_RESULTS_BY_SIZE={2:null,3:null};  /* new OCR = fresh legs = fresh prices at both sizes */
       if(!EV_DETECTED.length){status.innerHTML='<span style="color:var(--red)">No legs extracted from image</span>';return;}
       var pitcherCount=Object.keys(EV_DETECTED.reduce(function(a,l){a[l.pitcher]=1;return a;},{})).length;
       status.innerHTML='<span style="color:var(--ac)">Extracted '+EV_DETECTED.length+' legs across '+pitcherCount+' pitcher(s). Fetching DK SGP prices...</span>';
@@ -1498,14 +1571,20 @@ function evRenderDetected(){
   document.getElementById('evDetected').innerHTML=html;
 }
 
-function evFindSgps(){
+function evFindSgps(size){
+  /* Defaults to the active EV_LEG_SIZE when called from the upload flow;
+     explicit size arg (from evSetLegSize) bypasses that so the toggle can
+     request the *other* size without mutating state first. */
+  var wantSize=(size===2||size===3)?size:EV_LEG_SIZE;
   var status=document.getElementById('evStatus');
-  document.getElementById('evResults').innerHTML='<div style="padding:24px;text-align:center;color:var(--cyan);font-family:Space Mono,monospace;font-size:12px;background:var(--s1);border:1px solid var(--b1);border-radius:10px;margin-top:10px">Step 2/2 &middot; Matching to DraftKings and pricing all combos...<br><span style="color:var(--mu);font-size:10px">This takes ~10-30 seconds depending on leg count</span></div>';
-  fetch('/api/dk/find-sgps',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({legs:EV_DETECTED})})
+  var slowNote=wantSize===3?' C(k,3) combos add ~1s per triplet against DK.':'';
+  document.getElementById('evResults').innerHTML='<div style="padding:24px;text-align:center;color:var(--cyan);font-family:Space Mono,monospace;font-size:12px;background:var(--s1);border:1px solid var(--b1);border-radius:10px;margin-top:10px">Step 2/2 &middot; Matching to DraftKings and pricing all '+wantSize+'-leg combos...<br><span style="color:var(--mu);font-size:10px">This takes ~10-30 seconds depending on leg count.'+slowNote+'</span></div>';
+  fetch('/api/dk/find-sgps',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({legs:EV_DETECTED,enumSize:wantSize})})
     .then(function(r){return r.json();})
     .then(function(j){
       if(j.error&&!j.pitchers){document.getElementById('evResults').innerHTML='<div class="note" style="border-left-color:var(--red)">'+j.error+'</div>';return;}
       EV_RESULTS=j;
+      EV_RESULTS_BY_SIZE[wantSize]=j;
       status.innerHTML='<span style="color:var(--ac)">Done! Scroll down to see all +EV SGPs ranked.</span>';
       evRenderResults();
     })
@@ -1568,6 +1647,11 @@ function evComputeCombo(pitcher,pd,matchedLegs,indices,dkDecimal){
 
 function evRenderResults(){
   if(!EV_RESULTS){document.getElementById('evResults').innerHTML='';return;}
+  /* 3-leg mode takes its own render path — different card layout, different
+     filters (MIN EV% / MIN STARTS), different data source (combos_3/all3
+     from aggregates rather than combos_2/pairwise r). 2-leg path below
+     unchanged. */
+  if(EV_LEG_SIZE===3){return evRenderResults3Leg();}
   _SGP_DATA=[];
   var html='';
   var pitchers=EV_RESULTS.pitchers||{};
@@ -1757,6 +1841,412 @@ function evRenderResults(){
 
   document.getElementById('evResults').innerHTML=html;
   window.scrollTo({top:document.getElementById('evResults').offsetTop-20,behavior:'smooth'});
+}
+
+/* ============ 3-leg compute helpers ============
+   Resolves the empirical 3-way joint hit rate (all3) for a specific
+   triplet of legs and blends it with the global triplet baseline under
+   heavier shrinkage than 2-leg. Returns the blended joint probability
+   used directly as the model joint in EV — the pairwise-corrected path
+   is retained only for display as "FV CORR" on the card. */
+
+/* Permutation-tolerant combo_3 lookup. Aggregates store triplets in a
+   canonical stat-category order (K→ER→BB→H→OUTS) from combo_spec.json.
+   Matched legs from DK come through dk_api.py stat-sorted the same way,
+   so the common case matches by position. We still try all 6 permutations
+   as a belt-and-suspenders guard against OCR ordering quirks that could
+   reorder the request. Returns the combo row or null. */
+function _findCombo3In(arr,a,b,c){
+  if(!arr||!arr.length)return null;
+  var perms=[[a,b,c],[a,c,b],[b,a,c],[b,c,a],[c,a,b],[c,b,a]];
+  for(var i=0;i<arr.length;i++){
+    var r=arr[i];
+    for(var p=0;p<6;p++){
+      var t=perms[p];
+      if(r.leg1===t[0]&&r.leg2===t[1]&&r.leg3===t[2])return r;
+    }
+  }
+  return null;
+}
+
+/* Shrinkage blend of player all3 toward global all3 for a specific triplet.
+   Below n_eff=15 (BLEND_MIN_STARTS_3WAY) route entirely to global — player
+   empirical at that sample is noise. At and above: player weight =
+   n_eff / (n_eff + K_3WAY), K_3WAY=80. Stiffer than pairwise K because
+   joint-frequency variance is higher than pairwise-frequency variance.
+
+   Returns {pBlend, pPlayer, pGlobal, wPlayer, wGlobal, nEff, nRaw, source}
+   where p* values are in [0,1] decimal probability (NOT the 0-100 %
+   representation stored in the aggregates — caller does not need to divide). */
+function resolveAll3(pd,a,b,c){
+  var nEff=(pd&&pd.n_starts_eff)||0;
+  var nRaw=(pd&&pd.n_starts_raw)||(pd&&pd.n_starts)||0;
+  var playerCombo=pd?_findCombo3In(pd.combos_3,a,b,c):null;
+  var globalCombo=D?_findCombo3In(D.global_3,a,b,c):null;
+  var pPlayer=(playerCombo&&playerCombo.all3!=null)?playerCombo.all3/100:null;
+  var pGlobal=(globalCombo&&globalCombo.all3!=null)?globalCombo.all3/100:null;
+  var base={pPlayer:pPlayer,pGlobal:pGlobal,nEff:nEff,nRaw:nRaw,playerCombo:playerCombo,globalCombo:globalCombo};
+  /* 100% global fallbacks */
+  if(pPlayer==null){
+    return Object.assign({pBlend:pGlobal,wPlayer:0,wGlobal:1,source:'global(no-player)'},base);
+  }
+  if(pGlobal==null){
+    /* No global baseline available — player-only is the best we have.
+       Flag source so the card can mark this as "no shrinkage applied". */
+    return Object.assign({pBlend:pPlayer,wPlayer:1,wGlobal:0,source:'player(no-global)'},base);
+  }
+  if(nEff<BLEND_MIN_STARTS_3WAY){
+    return Object.assign({pBlend:pGlobal,wPlayer:0,wGlobal:1,source:'blended(low-sample)'},base);
+  }
+  var wp=nEff/(nEff+K_3WAY);
+  var pBlend=wp*pPlayer+(1-wp)*pGlobal;
+  return Object.assign({pBlend:pBlend,wPlayer:wp,wGlobal:1-wp,source:'blended'},base);
+}
+
+/* Per-leg marginal hit rate from the triplet row itself (hit1/hit2/hit3),
+   with flipDir fallbacks for canonical vs requested direction. Returns
+   percent (0-100) to stay consistent with how the aggregates store them,
+   since _sgpHitRates etc. also return 0-100.  */
+function _legMarginalFrom3(combo,leg,slot){
+  if(!combo)return null;
+  var map={leg1:'hit1',leg2:'hit2',leg3:'hit3'};
+  var hitKey=map[slot];
+  if(combo[slot]===leg)return combo[hitKey];
+  /* direction flip: if the stored row's slot leg is the flipped form of
+     the requested leg, complement the hit rate */
+  if(combo[slot]===flipDir(leg))return combo[hitKey]!=null?100-combo[hitKey]:null;
+  return null;
+}
+
+/* Core 3-leg EV compute. Produces everything the card needs:
+   - legs[] with FV prob + base rate (from pd.combos_3)
+   - pairwise r values via resolveR (same blend pipeline as 2-leg cards)
+   - pPlayer / pGlobal / pBlend empirical 3-way joint (shrunk)
+   - pairwise-corrected FV joint (for "FV CORR" display column)
+   - DK implied joint, EDGE, EV, Kelly sizing
+   - DK hold / correlation premium (per-leg trueOdds product vs SGP decimal)
+   - sparsity flags for the warning badge */
+function evCompute3Leg(pitcher,pd,matched,indices,dkDecimal,legTrueOdds){
+  if(!indices||indices.length!==3)return null;
+  var rawLegs=indices.map(function(i){return matched[i];});
+  var legs=rawLegs.map(function(m){return{leg:m.leg,fv:m.avg_fv,fvSuspicious:!!m._fv_suspicious,p:americanToProb(m.avg_fv)};});
+  if(legs.some(function(l){return l.p===null;}))return null;
+
+  var a=legs[0].leg,b=legs[1].leg,c=legs[2].leg;
+  var all3Res=resolveAll3(pd,a,b,c);
+  /* Player combo row (if present) carries the best marginal hit rates for
+     the specific thresholds; fall back to global row, then to _legHitRate
+     (pairwise-derived marginals from combos_2/global_2). */
+  var pCombo=all3Res.playerCombo,gCombo=all3Res.globalCombo;
+  legs.forEach(function(l,idx){
+    var slot='leg'+(idx+1);
+    var pct=_legMarginalFrom3(pCombo,l.leg,slot);
+    if(pct==null)pct=_legMarginalFrom3(gCombo,l.leg,slot);
+    if(pct==null)pct=_legHitRate(pd,l.leg);
+    l.baseRate=pct;
+  });
+
+  /* Pairwise correlations for display + FV CORR secondary. Same resolveR
+     pipeline as 2-leg — routes through blend-aware logic and CORR_MODE.
+     We use binary r for the joint correction (consistent with 2-leg EV),
+     but the CARD shows the pairwise values with their tooltips. */
+  var pairDetails=[];
+  var logIndep=0;legs.forEach(function(x){logIndep+=Math.log(x.p);});
+  var corrSum=0;var missingPairs=0;var usedPairs=0;
+  for(var i=0;i<legs.length;i++){
+    for(var j=i+1;j<legs.length;j++){
+      var res=resolveR(pd,legs[i].leg,legs[j].leg);
+      var r=res.r;
+      var pa=legs[i].p,pb=legs[j].p;
+      if(r==null){missingPairs++;pairDetails.push({a:legs[i].leg,b:legs[j].leg,r:null,source:res.source});continue;}
+      var pab=Math.max(1e-6,Math.min(0.999999,jointFrechet(pa,pb,r)));
+      corrSum+=Math.log(pab)-Math.log(pa*pb);
+      usedPairs++;
+      pairDetails.push({a:legs[i].leg,b:legs[j].leg,r:r,source:res.source,rPlayer:res.rPlayer,rGlobal:res.rGlobal,wPlayer:res.wPlayer,wGlobal:res.wGlobal,n:res.n,k:res.k});
+    }
+  }
+  var pIndep=Math.exp(logIndep);
+  var pJointPairwise=Math.max(1e-6,Math.min(0.999999,Math.exp(logIndep+corrSum)));
+
+  /* Model joint = shrunk empirical all3. Falls back to pairwise-corrected
+     joint only if the triplet isn't in the aggregates at all (pBlend null). */
+  var pModel=(all3Res.pBlend!=null)?all3Res.pBlend:pJointPairwise;
+  var pDK=1/dkDecimal;
+  var evPct=(pModel*dkDecimal-1)*100;
+  var kelly=(pModel*dkDecimal-1)/(dkDecimal-1);
+
+  /* DK correlation premium: compare DK's combined SGP implied prob against
+     the product of DK's own per-leg vigged implied probs. Positive = DK
+     prices the SGP MORE likely than independent (it agrees the legs are
+     positively correlated); negative = SGP implied less likely (negative
+     corr or uncorrelated). Informational — helps user distinguish "model
+     sees correlation that DK hasn't priced" from "DK has already absorbed
+     the correlation signal". */
+  var dkHoldPct=null;
+  if(legTrueOdds&&legTrueOdds.length===3&&legTrueOdds.every(function(v){return v>0;})){
+    var pIndepDK=(1/legTrueOdds[0])*(1/legTrueOdds[1])*(1/legTrueOdds[2]);
+    if(pIndepDK>0)dkHoldPct=(pDK/pIndepDK-1)*100;
+  }
+
+  /* Sparsity proxy. Per spec: flag if any single pair would have n<30 in
+     the weaker-marginal direction, even when the triplet n looks ok. We
+     don't store per-pair overlap counts, so approximate via
+     min(baseRate, 100-baseRate) × n_raw for each leg — the legs' own
+     weakest direction is a lower bound on pair overlap. */
+  var nRaw=(pd&&pd.n_starts_raw)||(pd&&pd.n_starts)||0;
+  var weakestLegProxy=null;
+  legs.forEach(function(l){
+    if(l.baseRate==null)return;
+    var side=Math.min(l.baseRate,100-l.baseRate)/100*nRaw;
+    if(weakestLegProxy==null||side<weakestLegProxy)weakestLegProxy=side;
+  });
+  var sparsityWarn=(weakestLegProxy!=null&&weakestLegProxy<30);
+
+  return{
+    legs:legs,
+    pairDetails:pairDetails,
+    missingPairs:missingPairs,
+    usedPairs:usedPairs,
+    pIndep:pIndep,
+    pJointPairwise:pJointPairwise,
+    fvIndepOdds:probToAmerican(pIndep),
+    fvCorrOdds:probToAmerican(pJointPairwise),
+    all3:all3Res,
+    pModel:pModel,
+    pDK:pDK,
+    edgePp:(pModel-pDK)*100,
+    evPct:evPct,
+    kellyPct:Math.max(0,kelly)*100,
+    qkPct:Math.max(0,kelly*0.25)*100,
+    dkHoldPct:dkHoldPct,
+    sparsityWarn:sparsityWarn,
+    weakestLegProxy:weakestLegProxy,
+    nRaw:nRaw,
+  };
+}
+
+/* ============ 3-leg render pipeline ============
+   Mirrors the 2-leg evRenderResults iteration shape: collect all priced
+   combos across pitchers, compute EV, filter, sort by EV desc, emit one
+   card per survivor. Separate filters from 2-leg (MIN EV% / MIN STARTS)
+   apply here; correlation mode toggle is shared. card3EV renders each
+   card in its own function so iteration shell and layout evolve
+   independently. */
+function evRenderResults3Leg(){
+  _SGP_DATA=[];
+  var html='';
+  var pitchers=EV_RESULTS.pitchers||{};
+  var allCombos=[];
+  var pitcherWarnings=[];
+  var skippedLowN=0,skippedBelowEV=0,skippedNoData=0;
+  Object.keys(pitchers).forEach(function(pitcher){
+    var pr=pitchers[pitcher];
+    if(pr.error){pitcherWarnings.push({pitcher:pitcher,msg:pr.error,type:'error'});return;}
+    if(pr.warning){pitcherWarnings.push({pitcher:pitcher,msg:pr.warning,type:'warn'});}
+    if(pr.unmatched_legs&&pr.unmatched_legs.length){pitcherWarnings.push({pitcher:pitcher,msg:'Unmatched: '+pr.unmatched_legs.join(' · '),type:'warn'});}
+    var pd=D.pitchers[pitcher]||null;
+    var matched=pr.matched_legs||[];
+    var nRaw=(pd&&(pd.n_starts_raw||pd.n_starts))||0;
+    (pr.combos_3||[]).forEach(function(c){
+      if(!pd||nRaw<EV_MIN_STARTS_3){skippedLowN++;return;}
+      var calc=evCompute3Leg(pitcher,pd,matched,c.leg_indices,c.dk_decimal,c.leg_true_odds);
+      if(!calc||calc.all3.pBlend==null){skippedNoData++;return;}
+      if(calc.evPct<EV_MIN_EV_PCT_3){skippedBelowEV++;return;}
+      allCombos.push({pitcher:pitcher,inDB:!!pd,game:pr.game_name,size:3,dkOdds:c.dk_odds,dkDecimal:c.dk_decimal,calc:calc,rawLegs:c.leg_indices.map(function(i){return matched[i];})});
+    });
+  });
+  allCombos.sort(function(a,b){return b.calc.evPct-a.calc.evPct;});
+
+  var pitcherList=Object.keys(pitchers);
+  var totalPriced=allCombos.length+skippedLowN+skippedBelowEV+skippedNoData;
+  var medianEdgePp=null;
+  if(allCombos.length){var eds=allCombos.map(function(c){return c.calc.edgePp;}).sort(function(a,b){return a-b;});medianEdgePp=eds[Math.floor(eds.length/2)];}
+
+  html+='<div class="ctrl" style="margin-top:14px;flex-direction:column;align-items:stretch;gap:6px">';
+  html+='<div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center">';
+  html+='<div><span style="font-size:22px;font-weight:700;font-family:Space Mono,monospace;color:var(--cyan)">'+allCombos.length+'</span> <span style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">3-LEG SGPs</span></div>';
+  html+='<div><span style="font-size:22px;font-weight:700;font-family:Space Mono,monospace;color:var(--ac3)">'+pitcherList.length+'</span> <span style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">PITCHERS</span></div>';
+  if(medianEdgePp!=null){var medColor=Math.abs(medianEdgePp)>5?'var(--ac2)':'var(--mu)';html+='<div><span style="font-size:15px;font-weight:700;font-family:Space Mono,monospace;color:'+medColor+'">'+(medianEdgePp>=0?'+':'')+medianEdgePp.toFixed(1)+'pp</span> <span style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace" title="Median MODEL−DK edge across rendered cards. If > +5pp, shrinkage is loose — raise MIN STARTS or MIN EV%.">MEDIAN EDGE</span></div>';}
+  var corrModes=[{k:'global',label:'GLOBAL'},{k:'blended',label:'BLENDED'},{k:'player',label:'PLAYER'}];
+  html+='<div style="margin-left:auto;display:inline-flex;border:1px solid var(--b1);border-radius:6px;overflow:hidden;font-family:Space Mono,monospace">';
+  corrModes.forEach(function(m,mi){var active=CORR_MODE===m.k;var bg=active?'rgba(34,197,94,.12)':'transparent';var color=active?'var(--ac)':'var(--mu)';var bl=mi>0?'1px solid var(--b1)':'none';html+='<button onclick="evSetCorrMode(\''+m.k+'\')" style="padding:6px 12px;font-size:11px;font-weight:600;border:none;border-left:'+bl+';background:'+bg+';color:'+color+';cursor:pointer;letter-spacing:.5px">'+m.label+'</button>';});
+  html+='</div></div>';
+  var skipBits=[];if(skippedLowN)skipBits.push(skippedLowN+' n<'+EV_MIN_STARTS_3);if(skippedBelowEV)skipBits.push(skippedBelowEV+' EV<'+EV_MIN_EV_PCT_3+'%');if(skippedNoData)skipBits.push(skippedNoData+' no combo_3 data');
+  if(skipBits.length)html+='<div style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">Filtered '+(totalPriced-allCombos.length)+' of '+totalPriced+' priced combos ('+skipBits.join(' · ')+')</div>';
+  pitcherWarnings.forEach(function(w){var color=w.type==='error'?'var(--red)':'var(--ac2)';html+='<div style="font-size:11px;color:'+color+';font-family:Space Mono,monospace">'+w.pitcher+': '+w.msg+'</div>';});
+  html+='</div>';
+
+  if(!allCombos.length){html+='<div class="empty">No 3-leg SGPs survived filters. Try lowering MIN EV% or MIN STARTS sliders, or check that detected legs span at least 3 stat categories per pitcher.</div>';document.getElementById('evResults').innerHTML=html;return;}
+  html+='<div style="margin-top:14px;font-size:11px;color:var(--ac);font-family:Space Mono,monospace;font-weight:600">TOP 3-LEG SGPs BY EV% (highest edge first)</div>';
+  html+='<div class="grid" style="margin-top:8px;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:10px">';
+  allCombos.forEach(function(c,idx){_SGP_DATA.push(_build3LegSgpData(c));html+=card3EV(c,idx);});
+  html+='</div>';
+  document.getElementById('evResults').innerHTML=html;
+  window.scrollTo({top:document.getElementById('evResults').offsetTop-20,behavior:'smooth'});
+}
+
+/* AI-Insights payload shape for 3-leg. Mirrors the 2-leg _SGP_DATA entry
+   shape so loadSGPInsight works unchanged; extra 3-leg fields are read by
+   the prompt builder's _buildSGP3InsightPrompt branch. */
+function _build3LegSgpData(c){
+  var calc=c.calc;
+  return{
+    size:3,
+    pitcher:c.pitcher,
+    game:c.game,
+    legs:calc.legs.map(function(l){return{label:l.leg,fv:l.fv,baseRate:l.baseRate};}),
+    dkSGP:c.dkOdds,
+    dkDecimal:c.dkDecimal,
+    fvCorr:calc.fvCorrOdds,
+    evPct:calc.evPct,
+    fvP:calc.pJointPairwise,
+    all3:{pPlayer:calc.all3.pPlayer,pGlobal:calc.all3.pGlobal,pBlend:calc.all3.pBlend,wPlayer:calc.all3.wPlayer,wGlobal:calc.all3.wGlobal,nEff:calc.all3.nEff,nRaw:calc.all3.nRaw,source:calc.all3.source},
+    pModel:calc.pModel,pDK:calc.pDK,edgePp:calc.edgePp,
+    dkHoldPct:calc.dkHoldPct,
+    pairDetails:calc.pairDetails,
+    sparsityWarn:calc.sparsityWarn,
+    weakestLegProxy:calc.weakestLegProxy,
+  };
+}
+
+/* Card renderer — shell. Header + legs + math + badges land in follow-up
+   Edits. This skeleton keeps the toggle non-broken end-to-end by emitting
+   a minimal placeholder per combo; each subsequent Edit replaces one
+   section of the HTML output. */
+function card3EV(c,idx){
+  var calc=c.calc;
+  var ev=calc.evPct;
+  var evColor=ev>=10?'var(--ac)':ev>=0?'var(--ac2)':'var(--red)';
+  var cls=ev>=10?'str':ev>=0?'mod':'neg';
+  var pdC=D.pitchers[c.pitcher]||null;
+  var all3src=calc.all3.source;
+  /* Source label reflects the resolved shrinkage path, not just CORR_MODE —
+     e.g. "blended→global" on low-sample triplets, "player(no-global)" when
+     the global baseline is missing. Gives users a one-glance read on
+     whether the pBlend on this card is a real blend or a fallback. */
+  var srcLabel=all3src==='blended'?'BLENDED':all3src==='global(no-player)'?'GLOBAL (no player data)':all3src==='player(no-global)'?'PLAYER (no global data)':all3src==='blended(low-sample)'?'BLENDED → GLOBAL (n_eff<'+BLEND_MIN_STARTS_3WAY+')':all3src.toUpperCase();
+
+  var html='<div class="card '+cls+'" id="sgp-card-'+idx+'">';
+
+  /* Header: pitcher name, game, size + source tag, big EV% on right. */
+  html+='<div style="display:flex;justify-content:space-between;align-items:start;gap:8px;margin-bottom:8px">';
+  html+='<div>';
+  html+='<div style="font-size:12px;font-weight:700">'+c.pitcher+' <span style="font-size:9px;color:var(--cyan);font-family:Space Mono,monospace;margin-left:4px">[3-LEG]</span></div>';
+  html+='<div style="font-size:9px;color:var(--mu);font-family:Space Mono,monospace">'+(c.game||'')+' · '+srcLabel+'</div>';
+  html+='</div>';
+  html+='<div style="text-align:right"><div style="font-size:20px;font-weight:800;font-family:Space Mono,monospace;color:'+evColor+'">'+(ev>=0?'+':'')+ev.toFixed(1)+'%</div><div style="font-size:8px;color:var(--mu);font-family:Space Mono,monospace">EV</div></div>';
+  html+='</div>';
+
+  /* Leg list: one row per leg with FV odds + base-rate chip. Base rate
+     comes from the triplet row's own hit1/hit2/hit3 (direction-flipped
+     if needed), not the pairwise combos_2 — keeps the card's marginal
+     numbers consistent with the joint number below. */
+  html+='<div style="background:var(--s2);border-radius:6px;padding:7px 9px;margin-bottom:8px">';
+  calc.legs.forEach(function(l){
+    var lcls=l.leg.indexOf('Over')===0?'ov':'un';
+    var fvWarn=l.fvSuspicious?'<span title="OCR may have mis-extracted FV — verify" style="color:var(--ac2);font-size:11px;cursor:help;margin-right:2px">&#9888;</span>':'';
+    var baseStr=l.baseRate!=null?l.baseRate.toFixed(1)+'%':'—';
+    html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0">';
+    html+='<span class="leg '+lcls+'" style="font-size:10px">'+l.leg+'</span>';
+    html+='<div style="display:flex;align-items:center;gap:8px">';
+    html+=fvWarn;
+    html+='<span style="font-size:10px;font-family:Space Mono,monospace;color:'+(l.fvSuspicious?'var(--ac2)':'var(--mu)')+'">FV '+fmtAm(l.fv)+'</span>';
+    html+='<span style="font-size:9px;font-family:Space Mono,monospace;color:var(--ac2);background:rgba(250,204,21,.08);padding:1px 6px;border-radius:3px">base '+baseStr+'</span>';
+    html+='</div></div>';
+  });
+  html+='</div>';
+
+  /* "All three hit" empirical joint — primary model number. Format:
+        All three hit (J/N starts · n_eff=X)        57.3%
+     J = round(all3 × n_raw), N = n_raw. n_eff shown secondarily because
+     it's the statistically honest sample size that drives the shrinkage
+     but raw is the intuitive "starts observed" number. If shrinkage
+     heavily pulled toward global, the rendered pBlend% will diverge from
+     the empirical — that's signalled by the source label in the header. */
+  var pEmp=calc.all3.pPlayer;
+  var pBlend=calc.all3.pBlend;
+  var nRaw=calc.all3.nRaw||calc.nRaw||0;
+  var nEff=calc.all3.nEff||0;
+  var jointNumerStr='';
+  if(pEmp!=null&&nRaw){jointNumerStr=Math.round(pEmp*nRaw)+'/'+nRaw+' starts';}else if(nRaw){jointNumerStr=nRaw+' starts';}else{jointNumerStr='no data';}
+  var nEffStr=nEff?' · n_eff='+nEff.toFixed(1):'';
+  var pBlendStr=pBlend!=null?(pBlend*100).toFixed(1)+'%':'—';
+  var pEmpStr=pEmp!=null?(pEmp*100).toFixed(1)+'%':'—';
+  html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 9px;background:rgba(34,197,94,.06);border-radius:6px;margin-bottom:6px">';
+  html+='<div style="font-size:10px"><span style="color:var(--tx);font-weight:600">All three hit</span> <span style="color:var(--mu);font-family:Space Mono,monospace">('+jointNumerStr+nEffStr+')</span></div>';
+  html+='<div style="text-align:right"><div style="font-size:14px;font-weight:700;font-family:Space Mono,monospace;color:var(--ac)">'+pBlendStr+'</div>';
+  if(pEmp!=null&&pBlend!=null&&Math.abs(pEmp-pBlend)>0.005){html+='<div style="font-size:8px;color:var(--mu);font-family:Space Mono,monospace">emp '+pEmpStr+'</div>';}
+  html+='</div></div>';
+
+  /* DK SGP + FV CORR (pairwise-corrected) side by side. */
+  html+='<div class="hr4" style="grid-template-columns:repeat(4,1fr);margin-bottom:6px">';
+  html+='<div class="hi"><div class="hv" style="color:var(--cyan);font-size:15px">'+c.dkOdds+'</div><div class="hl">DK SGP</div></div>';
+  html+='<div class="hi"><div class="hv" style="color:var(--ac);font-size:15px">'+fmtAm(calc.fvCorrOdds)+'</div><div class="hl">FV CORR</div></div>';
+  html+='<div class="hi"><div class="hv" style="color:var(--mu);font-size:13px">'+calc.qkPct.toFixed(2)+'u</div><div class="hl">QK</div></div>';
+  html+='<div class="hi"><div class="hv" style="color:var(--mu);font-size:13px">'+calc.kellyPct.toFixed(1)+'%</div><div class="hl">KELLY</div></div>';
+  html+='</div>';
+
+  /* Pairwise r summary: K×ER +0.26, K×Outs +0.16, Outs×ER +0.44 (avg +0.29).
+     Uses the shorter stat-category abbreviations (SO→K, ER, Outs) so the
+     line fits on one row. */
+  var statAbbr=function(leg){var s=statCat(leg);return s==='SO'?'K':s==='OUTS'?'Outs':s;};
+  var pairLine='';var valid=calc.pairDetails.filter(function(p){return p.r!=null;});
+  if(valid.length){
+    pairLine=valid.map(function(p){return statAbbr(p.a)+'×'+statAbbr(p.b)+' '+(p.r>=0?'+':'')+p.r.toFixed(2);}).join(', ');
+    var avg=valid.reduce(function(s,p){return s+p.r;},0)/valid.length;
+    pairLine+=' (avg '+(avg>=0?'+':'')+avg.toFixed(2)+')';
+  }else{pairLine='no pairwise r available';}
+  html+='<div style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace;margin-bottom:6px">Pairwise r: '+pairLine+'</div>';
+
+  /* MODEL / DK / EDGE row. pp = percentage points (not %). This is the
+     key sanity check — if MODEL and DK are near-identical, the EV is
+     pure odds amplification and fragile. Large edges (|pp|>8) get an
+     accent color as the "look twice" cue. */
+  var edgePp=calc.edgePp;
+  var edgeColor=Math.abs(edgePp)>=8?'var(--ac2)':edgePp>=0?'var(--ac)':'var(--red)';
+  html+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:6px;background:var(--s2);border-radius:6px;margin-bottom:6px">';
+  html+='<div style="text-align:center"><div style="font-size:13px;font-weight:700;font-family:Space Mono,monospace;color:var(--ac)">'+(calc.pModel*100).toFixed(1)+'%</div><div style="font-size:8px;color:var(--mu);font-family:Space Mono,monospace">MODEL JOINT</div></div>';
+  html+='<div style="text-align:center"><div style="font-size:13px;font-weight:700;font-family:Space Mono,monospace;color:var(--cyan)">'+(calc.pDK*100).toFixed(1)+'%</div><div style="font-size:8px;color:var(--mu);font-family:Space Mono,monospace">DK IMPLIED</div></div>';
+  html+='<div style="text-align:center"><div style="font-size:13px;font-weight:700;font-family:Space Mono,monospace;color:'+edgeColor+'">'+(edgePp>=0?'+':'')+edgePp.toFixed(1)+'pp</div><div style="font-size:8px;color:var(--mu);font-family:Space Mono,monospace">EDGE</div></div>';
+  html+='</div>';
+
+  /* DK correlation premium — per-leg vigged implied prob product vs SGP
+     combined implied. Positive = DK priced as positively correlated;
+     negative = shorter than independent. Labeled "DK corr" to avoid
+     confusing users who expect "hold" to mean book overround on a single
+     market. Muted one-line display below the math block. */
+  if(calc.dkHoldPct!=null){
+    var holdStr=(calc.dkHoldPct>=0?'+':'')+calc.dkHoldPct.toFixed(1)+'%';
+    html+='<div style="font-size:9px;color:var(--mu);font-family:Space Mono,monospace;margin-bottom:6px" title="DK SGP implied vs product of DK\'s per-leg vigged implied probs. Positive = DK prices this triplet as more likely than independent (correlation priced in). Negative = SGP shorter than independent.">DK corr premium: '+holdStr+'</div>';
+  }
+
+  /* Bottom bar: sample/confidence tier, sparsity warning badge, outlier
+     warning, and AI Insights button. Tier thresholds match 2-leg-style
+     reads: HIGH when n_eff ≥ 25 AND not sparse, MEDIUM 15-25 or mild
+     sparsity, LOW below 15 or with active sparsity flag. OUTLIER appears
+     when EV% > 100 (mirror of existing 2-leg rule). */
+  var tier,tierColor;
+  if(nEff>=25&&!calc.sparsityWarn){tier='HIGH';tierColor='var(--ac)';}
+  else if(nEff>=BLEND_MIN_STARTS_3WAY&&!calc.sparsityWarn){tier='MEDIUM';tierColor='var(--ac2)';}
+  else{tier='LOW';tierColor='var(--red)';}
+  var sampleStr='n='+nRaw+' raw · n_eff='+nEff.toFixed(1);
+  html+='<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px;padding-top:6px;border-top:1px solid var(--b1)">';
+  html+='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">';
+  html+='<span style="font-size:9px;font-family:Space Mono,monospace;color:'+tierColor+';border:1px solid '+tierColor+';padding:2px 6px;border-radius:3px;letter-spacing:.4px">'+tier+'</span>';
+  html+='<span style="font-size:9px;color:var(--mu);font-family:Space Mono,monospace">'+sampleStr+'</span>';
+  if(calc.sparsityWarn){
+    var wpStr=calc.weakestLegProxy!=null?calc.weakestLegProxy.toFixed(0):'?';
+    html+='<span style="font-size:9px;font-family:Space Mono,monospace;color:var(--ac2);border:1px solid var(--ac2);padding:2px 6px;border-radius:3px" title="Weakest leg direction has approx n<30 effective overlap; pair r values for this triplet may be unreliable.">&#9888; SPARSE n~'+wpStr+'</span>';
+  }
+  if(ev>100){
+    html+='<span style="font-size:9px;font-family:Space Mono,monospace;color:var(--red);border:1px solid var(--red);padding:2px 6px;border-radius:3px" title="EV>100% is almost always model error, not a real edge. Triple-check shrinkage, sample size, and DK pricing.">&#9888; OUTLIER</span>';
+  }
+  html+='</div>';
+  html+='<button class="insight-btn" onclick="loadSGPInsight('+idx+')" style="margin:0">✦ AI Insights</button>';
+  html+='</div>';
+  html+='<div class="insight-panel-wrap"></div>';
+  html+='</div>';
+  return html;
 }
 </script>
 <script>
