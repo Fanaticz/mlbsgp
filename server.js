@@ -1162,6 +1162,168 @@ app.get('/api/lineups', async (req, res) => {
   }
 });
 
+// ===== NBA correlations: daily xlsx upload + persistence =====
+// Railway Volume is mounted at /data; our bucket is /data/nba/. The dir
+// is created on first upload if missing. For local dev the path is
+// overridable via NBA_DATA_DIR so tests/CI don't need /data access.
+//
+// Cold start (empty volume): /api/nba/correlations and /meta return a
+// placeholder with status='empty' + a 200 code so the UI can render a
+// "no data yet" card without pretending there's an error. We refuse to
+// bundle a default xlsx — staleness ambiguity is worse than an empty state.
+//
+// Upload path runs the Python parser as a subprocess. It receives the
+// xlsx bytes on stdin, validates the 18-column schema, rejects non-same-
+// player rows, and writes both the parsed JSON and a meta sidecar. Same
+// subprocess pattern as dk_api.py; reuse the python3 invocation style.
+
+const multer = require('multer');
+const fs = require('fs');
+const NBA_DATA_DIR = process.env.NBA_DATA_DIR || '/data/nba';
+const NBA_PARSE_PY = path.join(__dirname, 'scripts', 'nba_parse_correlations.py');
+const NBA_CURRENT_FILE = 'correlations_current.json.gz';
+const NBA_META_FILE = 'correlations_meta.json';
+/* 10 MB cap is for the upload bytes on the wire. matches the spec + the
+   Python-side MAX_BYTES guard. Raising this would require bumping the
+   Python guard in lockstep. */
+const NBA_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
+
+/* Multer memoryStorage: keeps the xlsx bytes in-process so we can pipe them
+   to the Python parser on stdin. No temp file on disk, no race with
+   concurrent uploads. We never accept more than one file per request and
+   reject any request whose declared multipart field isn't named 'file'. */
+const nbaUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: NBA_UPLOAD_MAX_BYTES, files: 1, fields: 4 },
+});
+
+function nbaRunPython(args, stdinBuf) {
+  return new Promise((resolve, reject) => {
+    const proc = require('child_process').spawn('python3', [NBA_PARSE_PY, ...args], {
+      timeout: 60000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, NBA_DATA_DIR },
+    });
+    let stdout = '', stderr = '';
+    proc.stdout.on('data', d => { stdout += d; });
+    proc.stderr.on('data', d => { stderr += d; });
+    proc.on('error', err => reject(err));
+    proc.on('close', code => {
+      if (code !== 0) {
+        return reject(new Error(stderr || ('nba_parse_correlations.py exited ' + code)));
+      }
+      const line = stdout.trim().split('\n').pop() || '';
+      try { resolve(JSON.parse(line)); }
+      catch (e) { reject(new Error('parser emitted unparseable JSON: ' + line.slice(0, 300))); }
+    });
+    if (stdinBuf) proc.stdin.write(stdinBuf);
+    proc.stdin.end();
+  });
+}
+
+function nbaEmptyMeta() {
+  return {
+    status: 'empty',
+    uploaded_at: null,
+    season: null,
+    source_filename: null,
+    row_count: 0,
+    distinct_players: 0,
+  };
+}
+
+/* POST /api/nba/upload-correlations
+   Body: multipart/form-data with field `file` (xlsx, <=10MB).
+   On success: 200 { ok:true, uploaded_at, row_count, distinct_players, ... }
+   On client error (bad file / schema / size): 400 { ok:false, error }
+   On server error (python fails hard): 500 { error }. Existing data stays
+   untouched because the parser only writes after validation passes. */
+app.post('/api/nba/upload-correlations', (req, res, next) => {
+  nbaUpload.single('file')(req, res, function (err) {
+    if (err) {
+      const status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+      return res.status(status).json({ ok: false, error: 'Upload rejected: ' + err.message });
+    }
+    next();
+  });
+}, async (req, res) => {
+  try {
+    if (!req.file || !req.file.buffer || !req.file.buffer.length) {
+      return res.status(400).json({ ok: false, error: 'No file received (expected multipart field name "file")' });
+    }
+    const fname = req.file.originalname || 'uploaded.xlsx';
+    if (!fname.toLowerCase().endsWith('.xlsx')) {
+      return res.status(400).json({ ok: false, error: 'File must be .xlsx (got ' + fname + ')' });
+    }
+    const result = await nbaRunPython(
+      ['--out-dir', NBA_DATA_DIR, '--source-filename', fname],
+      req.file.buffer,
+    );
+    if (!result.ok) {
+      return res.status(422).json(result);
+    }
+    return res.json(result);
+  } catch (e) {
+    return res.status(500).json({ error: 'nba upload failed: ' + e.message });
+  }
+});
+
+/* GET /api/nba/correlations
+   Serves the gzipped parsed dataset. Sets Content-Encoding:gzip so the
+   browser inflates transparently. On cold-start (no file yet) responds
+   200 with {status:'empty', entries:[], by_player:{}} — UI renders an
+   "upload your xlsx" card rather than an error. */
+app.get('/api/nba/correlations', (req, res) => {
+  const p = path.join(NBA_DATA_DIR, NBA_CURRENT_FILE);
+  fs.stat(p, (err, st) => {
+    if (err || !st.isFile()) {
+      return res.json({
+        schema_version: 1,
+        status: 'empty',
+        season: null,
+        uploaded_at: null,
+        entries: [],
+        by_player: {},
+      });
+    }
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Encoding', 'gzip');
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    fs.createReadStream(p).pipe(res);
+  });
+});
+
+/* GET /api/nba/correlations/meta
+   Serves the sidecar meta (small, uncompressed JSON). Cold start returns
+   a placeholder with status='empty'. UI binds to this for the "Last
+   updated" line above the upload card. */
+app.get('/api/nba/correlations/meta', (req, res) => {
+  const p = path.join(NBA_DATA_DIR, NBA_META_FILE);
+  fs.readFile(p, 'utf8', (err, buf) => {
+    if (err) return res.json(nbaEmptyMeta());
+    try {
+      const meta = JSON.parse(buf);
+      meta.status = 'ok';
+      return res.json(meta);
+    } catch (_) {
+      return res.json(nbaEmptyMeta());
+    }
+  });
+});
+
+/* POST /api/nba/correlations/rollback
+   Restores the most recent file from correlations_history/. The UI wraps
+   this in a confirmation prompt — no additional guard here. */
+app.post('/api/nba/correlations/rollback', async (_req, res) => {
+  try {
+    const result = await nbaRunPython(['--action', 'rollback', '--out-dir', NBA_DATA_DIR]);
+    if (!result.ok) return res.status(400).json(result);
+    return res.json(result);
+  } catch (e) {
+    return res.status(500).json({ error: 'nba rollback failed: ' + e.message });
+  }
+});
+
 app.get('/healthz', (_req, res) => res.send('ok'));
 
 app.listen(PORT, '0.0.0.0', () => console.log('Listening on 0.0.0.0:' + PORT));
