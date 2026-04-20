@@ -95,11 +95,13 @@ function fixtureCorrelations() {
     source_filename: 'fixture.xlsx', row_count: 2, distinct_players: 1,
     rejected_rows: 0,
   };
-  /* Permissive filters so the synthetic edge (which lands anywhere from
-     ~-2% to +13% depending on the jittered DK vig) shows up in the
-     render. Production defaults stay +3 / 30 / 0.10 — this is a render
-     sanity check, not a filter test. */
-  window.nbaTab._state.filters.minEvPct = -10;
+  /* Permissive filters so both fixture entries render. The EV formula
+     now uses FV-derived joint (fixed post-Phase-3), which diverges
+     sharply from p_joint-based EV — entry 1's FV-derived joint (using
+     jointFromPhi(r_adj, hit_rates)) lands ~5pp below its p_joint, so
+     under realistic DK vig that entry reads -15% EV not +2%. Floor the
+     filter at -50% so both cards stay visible for the screenshot. */
+  window.nbaTab._state.filters.minEvPct = -50;
   window.nbaTab._state.filters.minGames = 10;
   window.nbaTab._state.filters.maxPValue = 1.0;
   window.nbaTab.devSimulate();

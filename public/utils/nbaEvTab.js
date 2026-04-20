@@ -381,7 +381,18 @@
     var dkSgpAm = entry.dk_sgp_american != null ? entry.dk_sgp_american : null;
     var dkSgpDec = dkSgpAm != null ? amToDec(dkSgpAm) : null;
     var dkImplied = dkSgpDec ? 1 / dkSgpDec : null;
-    var evPct = (dkSgpDec != null) ? (modelJoint * dkSgpDec - 1) : null;
+    /* CRITICAL: EV% at the top of the card reflects the FV-DERIVED joint,
+       NOT the correlation-data p_joint. This mirrors the MLB fix:
+       scoring a bet as "+EV" means our best estimate of the true
+       probability (FV marginals + correlation) beats DK's implied price.
+       p_joint stays visible on the card in the MODEL JOINT / EDGE row
+       as diagnostic context ("what does the historical correlation data
+       say?"), but the headline EV% is what tells the user to bet or skip.
+       DO NOT revert to evPct = modelJoint * dkSgpDec − 1 — that is the
+       bug that was just fixed on the MLB side. If fv_corr_prob is null
+       (r_adj missing, degenerate FV), EV% is null and the card renders
+       as '--' rather than silently falling back to the model path. */
+    var evPct = (dkSgpDec != null && fvCorrProb != null) ? (fvCorrProb * dkSgpDec - 1) : null;
     var edgePp = (dkImplied != null) ? (modelJoint - dkImplied) * 100 : null;
     return {
       id: player + '|' + entry.leg1.prop + entry.leg1.line + entry.leg1.side + '|' + entry.leg2.prop + entry.leg2.line + entry.leg2.side,
