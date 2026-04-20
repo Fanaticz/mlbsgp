@@ -391,6 +391,258 @@ async function teammateLazyLoad(){
     window.TEAMMATE_LOADING = false;
   }
 }
+
+/* --- Filter/UI state defaults. Kept on window so tab switches don't
+       reset the user's current view. Slider readouts use the real IDs
+       present in the markup: #tmMinN/#tmMinNV (value 20..250 raw games)
+       and #tmMinR/#tmMinRV (slider value 0..80 -> r in 0..0.80). */
+if(window.TM_MODE       === undefined) window.TM_MODE       = 'blended';
+if(window.TM_MIN_N      === undefined) window.TM_MIN_N      = 30;
+if(window.TM_MIN_R      === undefined) window.TM_MIN_R      = 0.20;
+if(window.TM_ACTIVE_ONLY=== undefined) window.TM_ACTIVE_ONLY= false;
+
+function _tmEscAttr(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,"&#39;");}
+
+/* --- Player typeahead. Collects unique names from p1 and p2 across
+       all pairs, filters case-insensitive, shows top 8 in the dropdown.
+       onmousedown fires before blur, so the 200ms setTimeout in
+       tm-search's onblur still allows the click to register. */
+function tmSearchInput(){
+  var inp = document.getElementById('tmSearch');
+  var dd  = document.getElementById('tmSearchDD');
+  if(!inp || !dd) return;
+  var q = (inp.value || '').trim().toLowerCase();
+  if(!q || !window.TEAMMATE_DATA){ dd.classList.remove('open'); dd.innerHTML=''; tmRender(); return; }
+  var seen = {};
+  var pairs = window.TEAMMATE_DATA.pairs || {};
+  for(var k in pairs){
+    var p = pairs[k];
+    if(p.p1 && p.p1.toLowerCase().indexOf(q)>=0) seen[p.p1]=true;
+    if(p.p2 && p.p2.toLowerCase().indexOf(q)>=0) seen[p.p2]=true;
+  }
+  var names = Object.keys(seen).sort().slice(0,8);
+  if(!names.length){
+    dd.innerHTML = '<div class="tm-pdd-item" style="color:var(--mu)">No players found</div>';
+  }else{
+    dd.innerHTML = names.map(function(n){
+      return '<div class="tm-pdd-item" onmousedown="tmSearchPick(\''+_tmEscAttr(n).replace(/\\/g,'\\\\')+'\')">'+_tmEscAttr(n)+'</div>';
+    }).join('');
+  }
+  dd.classList.add('open');
+  tmRender();
+}
+function tmSearchFocus(){
+  var inp = document.getElementById('tmSearch');
+  if(inp && inp.value) tmSearchInput();
+}
+function tmSearchBlur(){
+  var dd = document.getElementById('tmSearchDD');
+  if(dd) dd.classList.remove('open');
+}
+function tmSearchPick(name){
+  var inp = document.getElementById('tmSearch');
+  var dd  = document.getElementById('tmSearchDD');
+  if(inp) inp.value = name;
+  if(dd){ dd.classList.remove('open'); dd.innerHTML=''; }
+  tmRender();
+}
+
+/* --- Mode toggle. BLENDED is the committed default; shrinkage math
+       lands in chunk 3 so for chunk 2 BLENDED still displays the raw
+       pair r (same as PLAYER). GLOBAL swaps to the pair's slot-pair
+       baseline using pair.most_common_slots. */
+function tmSetMode(mode){
+  if(mode!=='player' && mode!=='blended' && mode!=='global') return;
+  window.TM_MODE = mode;
+  var ids = {player:'tmModePlayer', blended:'tmModeBlended', global:'tmModeGlobal'};
+  for(var k in ids){
+    var el = document.getElementById(ids[k]);
+    if(el) el.classList.toggle('active', k===mode);
+  }
+  tmRender();
+}
+
+function tmMinNChange(){
+  var inp = document.getElementById('tmMinN');
+  var out = document.getElementById('tmMinNV');
+  if(!inp) return;
+  window.TM_MIN_N = parseInt(inp.value, 10) || 30;
+  if(out) out.textContent = String(window.TM_MIN_N);
+  tmRender();
+}
+function tmMinRChange(){
+  var inp = document.getElementById('tmMinR');
+  var out = document.getElementById('tmMinRV');
+  if(!inp) return;
+  window.TM_MIN_R = (parseInt(inp.value, 10) || 0) / 100;
+  if(out) out.textContent = window.TM_MIN_R.toFixed(2);
+  tmRender();
+}
+/* The 2026-active checkbox is wired to tmRender() inline, but expose a
+   named handler in case the spec's id-based wiring is reintroduced. */
+function tmActiveOnlyChange(){
+  var cb = document.getElementById('tm2026Only');
+  window.TM_ACTIVE_ONLY = !!(cb && cb.checked);
+  tmRender();
+}
+
+/* --- Best-combo resolver for a pair under the current mode.
+       Returns {leg1, leg2, r} of the |r|-maximum combo, or null.
+       PLAYER/BLENDED (chunk 2): scan pair.combos_2 (positional list
+         aligned to window.TEAMMATE_DATA.combo_spec).
+       GLOBAL: scan the slot baseline for pair.most_common_slots.
+       Chunk 3 will rewrite BLENDED to run through resolvePairR. */
+function _tmSlotBaselineCombos(pair){
+  if(!window.SLOT_BASELINES || !pair.most_common_slots) return null;
+  var key = pair.most_common_slots[0]+'_'+pair.most_common_slots[1];
+  var sp = window.SLOT_BASELINES.slot_pairs && window.SLOT_BASELINES.slot_pairs[key];
+  return sp ? sp.combos_2 : null;
+}
+function _tmBestCombo(pair, mode){
+  if(mode==='global'){
+    var base = _tmSlotBaselineCombos(pair);
+    if(!base || !base.length) return null;
+    var best = null;
+    for(var i=0;i<base.length;i++){
+      var c = base[i];
+      if(!c || c.r_binary===null || c.r_binary===undefined) continue;
+      if(!best || Math.abs(c.r_binary) > Math.abs(best.r)){
+        best = {leg1:c.leg1, leg2:c.leg2, r:c.r_binary};
+      }
+    }
+    return best;
+  }
+  /* player / blended (chunk 2 behaviour) */
+  var spec = (window.TEAMMATE_DATA && window.TEAMMATE_DATA.combo_spec) || [];
+  var combos = pair.combos_2 || [];
+  var bestP = null;
+  for(var j=0;j<combos.length;j++){
+    var ent = combos[j];
+    if(!ent) continue;
+    var rb = ent[0];
+    if(rb===null || rb===undefined) continue;
+    if(!bestP || Math.abs(rb) > Math.abs(bestP.r)){
+      var legs = spec[j] || [null, null];
+      bestP = {leg1: legs[0], leg2: legs[1], r: rb};
+    }
+  }
+  return bestP;
+}
+
+/* --- Main table render. Reads inputs, applies filters, sorts, then
+       draws the top-100 pairs. Falls back to a clear empty-state if no
+       rows match. Row onclick refers to tmOpenDrawer which lands in
+       chunk 3 — clicking before chunk 3 will throw, but the table is
+       visible and scrollable on its own. */
+function tmRender(){
+  var body = document.getElementById('tmBody');
+  if(!body) return;
+  if(!window.TEAMMATE_LOADED || !window.TEAMMATE_DATA){
+    if(!window.TEAMMATE_LOADING){
+      body.innerHTML = '<div class="tm-loadmsg">Data not loaded.</div>';
+    }
+    return;
+  }
+  var teamSel = document.getElementById('tmTeam');
+  var sortSel = document.getElementById('tmSort');
+  var activeCb= document.getElementById('tm2026Only');
+  var srch    = document.getElementById('tmSearch');
+  var teamF   = teamSel ? teamSel.value : '';
+  var sortBy  = sortSel ? sortSel.value : 'r';
+  window.TM_ACTIVE_ONLY = !!(activeCb && activeCb.checked);
+  var q       = (srch && srch.value ? srch.value.trim().toLowerCase() : '');
+  var mode    = window.TM_MODE;
+  var minN    = window.TM_MIN_N;
+  var minR    = window.TM_MIN_R;
+
+  var pairs = window.TEAMMATE_DATA.pairs || {};
+  var pairKeys = Object.keys(pairs);
+  var rows = [];
+  var uniquePlayers = {};
+  for(var i=0;i<pairKeys.length;i++){
+    var p = pairs[pairKeys[i]];
+    if(!p) continue;
+    if(teamF && p.t !== teamF) continue;
+    if(q){
+      var hit = (p.p1 && p.p1.toLowerCase().indexOf(q)>=0) ||
+                (p.p2 && p.p2.toLowerCase().indexOf(q)>=0);
+      if(!hit) continue;
+    }
+    if((p.n_total||0) < minN) continue;
+    if(window.TM_ACTIVE_ONLY){
+      var n26 = p.n_by_year ? (p.n_by_year['2026']||0) : 0;
+      if(n26 <= 0) continue;
+    }
+    var best = _tmBestCombo(p, mode);
+    if(!best || best.r===null || best.r===undefined) continue;
+    if(Math.abs(best.r) < minR) continue;
+    rows.push({p:p, best:best});
+    uniquePlayers[p.p1] = true;
+    uniquePlayers[p.p2] = true;
+  }
+
+  /* Sort */
+  if(sortBy==='n')        rows.sort(function(a,b){return (b.p.n_total||0)-(a.p.n_total||0);});
+  else if(sortBy==='adj') rows.sort(function(a,b){return (b.p.adjacency||0)-(a.p.adjacency||0);});
+  else                    rows.sort(function(a,b){return Math.abs(b.best.r)-Math.abs(a.best.r);});
+
+  /* Counters */
+  var countEl   = document.getElementById('tmCount');
+  var totalEl   = document.getElementById('tmTotal');
+  var playersEl = document.getElementById('tmPlayers');
+  if(countEl)   countEl.textContent   = rows.length;
+  if(totalEl)   totalEl.textContent   = pairKeys.length;
+  if(playersEl) playersEl.textContent = Object.keys(uniquePlayers).length;
+
+  if(!rows.length){
+    body.innerHTML = '<div class="tm-loadmsg">No pairs match the current filters. Loosen MIN GAMES, MIN |r|, or clear the player/team filters.</div>';
+    return;
+  }
+
+  /* Top N cap. Table is already sorted by the chosen column, so slicing
+     preserves the user's expected ranking. Pagination/virtual scroll
+     is a future optimization. */
+  var TOP = 200;
+  var shown = rows.slice(0, TOP);
+
+  var html = '<div class="tm-table-wrap"><table class="tm-table">';
+  html += '<thead><tr>'
+        + '<th>PLAYER 1</th>'
+        + '<th>PLAYER 2</th>'
+        + '<th>TEAM</th>'
+        + '<th>n</th>'
+        + '<th>SLOT GAP</th>'
+        + '<th>ADJ</th>'
+        + '<th>BEST COMBO</th>'
+        + '<th>BEST r</th>'
+        + '</tr></thead><tbody>';
+  for(var r=0;r<shown.length;r++){
+    var row = shown[r];
+    var pr  = row.p;
+    var bc  = row.best;
+    var labP1 = _tmEscAttr(pr.p1);
+    var labP2 = _tmEscAttr(pr.p2);
+    var labT  = _tmEscAttr(pr.t);
+    var combo = (bc.leg1||'?')+' \u00d7 '+(bc.leg2||'?');
+    var rTxt  = (bc.r>=0?'+':'')+bc.r.toFixed(3);
+    var adjPct= Math.round((pr.adjacency||0)*100);
+    html += '<tr class="r" onclick="tmOpenDrawer(\''+labP1.replace(/\\/g,'\\\\')+'\',\''+labP2.replace(/\\/g,'\\\\')+'\',\''+labT.replace(/\\/g,'\\\\')+'\')">'
+         + '<td style="font-weight:600;color:var(--tx)">'+labP1+'</td>'
+         + '<td style="font-weight:600;color:var(--tx)">'+labP2+'</td>'
+         + '<td style="color:var(--mu)">'+labT+'</td>'
+         + '<td>'+(pr.n_total||0)+'</td>'
+         + '<td>'+(pr.slot_gap_mean!=null?pr.slot_gap_mean.toFixed(1):'--')+'</td>'
+         + '<td><span class="tm-badge'+(adjPct>=50?' adj':'')+'">'+adjPct+'%</span></td>'
+         + '<td style="color:var(--mu);font-size:10px">'+_tmEscAttr(combo)+'</td>'
+         + '<td><span class="tm-rcell" style="background:'+tmRBg(bc.r)+';color:'+tmRColor(bc.r)+'">'+rTxt+'</span></td>'
+         + '</tr>';
+  }
+  html += '</tbody></table></div>';
+  if(rows.length > TOP){
+    html += '<div style="text-align:center;padding:10px;font-size:11px;color:var(--mu);font-family:Space Mono,monospace">Showing top '+TOP+' of '+rows.length+' matching pairs. Narrow filters to see more.</div>';
+  }
+  body.innerHTML = html;
+}
 </script>
 /* ===== +EV Finder: unified flow =====
    1. Upload FV sheet → OCR extract legs (existing /api/extract)
