@@ -1186,6 +1186,14 @@ function _findRIn(arr,a,b){if(!arr)return _NF;var fa=flipDir(a),fb=flipDir(b);fu
    regardless of how many legs were flipped to match the stored row. Display-
    only; EV math keeps flowing through resolveR / binary phi as before. */
 function _findRMarginIn(arr,a,b){if(!arr)return _NF;var fa=flipDir(a),fb=flipDir(b);function tryArr(x,y){for(var i=0;i<arr.length;i++){var c=arr[i];if((c.leg1===x&&c.leg2===y)||(c.leg1===y&&c.leg2===x)){if(c.r_margin===null||c.r_margin===undefined)return null;return c.r_margin;}}return _NF;}var r;if((r=tryArr(a,b))!==_NF)return r;if((r=tryArr(fa,fb))!==_NF)return r;if((r=tryArr(fa,b))!==_NF)return r;if((r=tryArr(a,fb))!==_NF)return r;return _NF;}
+/* Strict binary-phi reader. Always returns c.r (indicator-variable Pearson)
+   with a sign flip on one-leg direction flips — never substitutes c.r_margin.
+   Phase 1 ground-truth validation showed phi and r_margin diverge materially
+   per pitcher (e.g. Cavalli +0.04 vs -0.60), so the "prefer r_margin when
+   sign=+1" path inside _findRIn conflates two distinct quantities on the card.
+   The EV pipeline stays on _findRIn / resolveR to preserve its current output;
+   the "R" column on EV cards reads through here so it shows true binary phi. */
+function _findRBinaryIn(arr,a,b){if(!arr)return _NF;var fa=flipDir(a),fb=flipDir(b);function tryArr(x,y,sign){for(var i=0;i<arr.length;i++){var c=arr[i];if((c.leg1===x&&c.leg2===y)||(c.leg1===y&&c.leg2===x)){if(c.r===null||c.r===undefined)return null;return c.r*sign;}}return _NF;}var r;if((r=tryArr(a,b,1))!==_NF)return r;if((r=tryArr(fa,fb,1))!==_NF)return r;if((r=tryArr(fa,b,-1))!==_NF)return r;if((r=tryArr(a,fb,-1))!==_NF)return r;return _NF;}
 function _blendWeights(n,k){if(k==null)k=DEFAULT_K;if(n<BLEND_MIN_STARTS)return{wPlayer:0,wGlobal:1,insufficient:true,n:n,k:k};var wp=n/(n+k);return{wPlayer:wp,wGlobal:1-wp,insufficient:false,n:n,k:k};}
 
 /* Single source of truth for correlation resolution under the active mode.
@@ -1245,6 +1253,35 @@ function resolveRMargin(pd,a,b){
     if(gv==null||isNaN(gv))gv=D.global_raw_corr[s2+'_'+s1];
     if(gv!=null&&!isNaN(gv))globalR=gv;
   }
+  var nEff=(pd&&pd.n_starts_eff)||0;
+  var k=getKForLegs(a,b);
+  var base={rPlayer:playerR,rGlobal:globalR,n:nEff,k:k};
+  if(mode==='global')return Object.assign({r:globalR,source:'global',wPlayer:0,wGlobal:1},base);
+  if(mode==='player'){
+    if(playerR!=null)return Object.assign({r:playerR,source:'player',wPlayer:1,wGlobal:0},base);
+    return Object.assign({r:globalR,source:'player(fallback)',wPlayer:0,wGlobal:1},base);
+  }
+  /* blended */
+  if(playerR==null)return Object.assign({r:globalR,source:'blended(no-player)',wPlayer:0,wGlobal:1},base);
+  if(globalR==null)return Object.assign({r:playerR,source:'blended(no-global)',wPlayer:1,wGlobal:0},base);
+  if(nEff<BLEND_MIN_STARTS)return Object.assign({r:globalR,source:'blended(low-sample)',wPlayer:0,wGlobal:1},base);
+  var w=_blendWeights(nEff,k);
+  return Object.assign({r:w.wPlayer*playerR+w.wGlobal*globalR,source:'blended',wPlayer:w.wPlayer,wGlobal:w.wGlobal},base);
+}
+
+/* Display-only parallel to resolveR that strictly reads c.r (binary phi).
+   Uses the same shrinkage pipeline (n_eff, k, player/global split) as
+   resolveR, but routes through _findRBinaryIn so r_margin is never
+   substituted in on sign=+1 matches. Feeds the EV card's "R" column so
+   that binary R and continuous Margin stay distinguishable on cards where
+   resolveR happened to resolve via the r_margin-preferred path. */
+function resolveRBinary(pd,a,b){
+  if(a===b)return{r:1,source:'identity',wPlayer:1,wGlobal:0,n:0,k:0,rPlayer:1,rGlobal:1};
+  var mode=CORR_MODE;
+  var playerR=pd?_findRBinaryIn(pd.combos_2,a,b):_NF;
+  var globalR=_findRBinaryIn(D.global_2,a,b);
+  if(playerR===_NF)playerR=null;
+  if(globalR===_NF)globalR=null;
   var nEff=(pd&&pd.n_starts_eff)||0;
   var k=getKForLegs(a,b);
   var base={rPlayer:playerR,rGlobal:globalR,n:nEff,k:k};
@@ -1492,17 +1529,20 @@ function evComputeCombo(pitcher,pd,matchedLegs,indices,dkDecimal){
     for(var j=i+1;j<legs.length;j++){
       /* resolveR carries provenance so the EV card label reflects the source
          actually used (e.g. "blended → global" when low sample triggered fallback).
-         resolveRMargin runs alongside purely for read-path enrichment (EV card
-         Margin readout, AI Insights prompt context); EV math stays on binary r. */
+         resolveRMargin and resolveRBinary run alongside purely for read-path
+         enrichment (EV card R + Margin readouts, AI Insights prompt context).
+         EV math stays on resolveR's r, which preserves the historic behavior
+         of preferring r_margin when the stored combo matches directly. */
       var res=resolveR(pd,legs[i].leg,legs[j].leg);
       var rmRes=resolveRMargin(pd,legs[i].leg,legs[j].leg);
+      var rbRes=resolveRBinary(pd,legs[i].leg,legs[j].leg);
       var r=res.r;
       var pa=legs[i].p,pb=legs[j].p;
-      if(r==null){missingPairs++;pairDetails.push({a:legs[i].leg,b:legs[j].leg,r:null,source:res.source,rMargin:rmRes.r,rMarginPlayer:rmRes.rPlayer,rMarginGlobal:rmRes.rGlobal,rMarginSource:rmRes.source});continue;}
+      if(r==null){missingPairs++;pairDetails.push({a:legs[i].leg,b:legs[j].leg,r:null,source:res.source,rMargin:rmRes.r,rMarginPlayer:rmRes.rPlayer,rMarginGlobal:rmRes.rGlobal,rMarginSource:rmRes.source,rBinary:rbRes.r,rBinaryPlayer:rbRes.rPlayer,rBinaryGlobal:rbRes.rGlobal,rBinarySource:rbRes.source});continue;}
       var pab=Math.max(1e-6,Math.min(0.999999,jointFrechet(pa,pb,r)));
       corrSum+=Math.log(pab)-Math.log(pa*pb);
       usedPairs++;
-      pairDetails.push({a:legs[i].leg,b:legs[j].leg,r:r,source:res.source,rPlayer:res.rPlayer,rGlobal:res.rGlobal,wPlayer:res.wPlayer,wGlobal:res.wGlobal,n:res.n,k:res.k,rMargin:rmRes.r,rMarginPlayer:rmRes.rPlayer,rMarginGlobal:rmRes.rGlobal,rMarginSource:rmRes.source});
+      pairDetails.push({a:legs[i].leg,b:legs[j].leg,r:r,source:res.source,rPlayer:res.rPlayer,rGlobal:res.rGlobal,wPlayer:res.wPlayer,wGlobal:res.wGlobal,n:res.n,k:res.k,rMargin:rmRes.r,rMarginPlayer:rmRes.rPlayer,rMarginGlobal:rmRes.rGlobal,rMarginSource:rmRes.source,rBinary:rbRes.r,rBinaryPlayer:rbRes.rPlayer,rBinaryGlobal:rbRes.rGlobal,rBinarySource:rbRes.source});
     }
   }
   var pIndep=Math.exp(logIndep);
@@ -1639,13 +1679,17 @@ function evRenderResults(){
     if(hr&&hr.both!=null){var bothPct=hr.both;var bothStr=nStarts?Math.round(bothPct/100*nStarts)+'/'+nStarts+' starts':bothPct.toFixed(0)+'% hit';html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-top:5px;padding-top:5px;border-top:1px solid rgba(255,255,255,0.07)"><span style="font-size:9px;color:var(--mu);font-family:Space Mono,monospace">Combined</span><span style="font-size:9px;font-family:Space Mono,monospace;color:var(--ac)">'+bothStr+'</span></div>';}
     html+='</div>';
 
-    /* Price comparison */
-    var rPairs=(c.calc.pairDetails||[]).filter(function(pd){return pd.r!==null&&pd.r!==undefined&&!isNaN(pd.r);});
-    var rAvg=rPairs.length?rPairs.reduce(function(s,p){return s+p.r;},0)/rPairs.length:null;
+    /* Price comparison.
+       The "R" column is the binary-phi correlation (indicator-variable
+       Pearson), rendered from pd.rBinary so it stays distinguishable from
+       the continuous "Margin" column even on pairs where resolveR prefers
+       r_margin internally. EV math upstream keeps using pd.r unchanged. */
+    var rPairs=(c.calc.pairDetails||[]).filter(function(pd){return pd.rBinary!==null&&pd.rBinary!==undefined&&!isNaN(pd.rBinary);});
+    var rAvg=rPairs.length?rPairs.reduce(function(s,p){return s+p.rBinary;},0)/rPairs.length:null;
     var rColor=rAvg===null?'var(--mu)':(rAvg>=0.3?'var(--ac)':(rAvg<0?'var(--red)':'var(--mu)'));
     var rText=rAvg===null?'N/A':((rAvg>=0?'+':'')+rAvg.toFixed(2));
     var rLabel=rPairs.length>1?'R AVG':'R';
-    var rTitle=rPairs.map(function(p){return p.a+' \u00d7 '+p.b+': '+(p.r>=0?'+':'')+p.r.toFixed(3);}).join('\n').replace(/"/g,'&quot;');
+    var rTitle=rPairs.map(function(p){return p.a+' \u00d7 '+p.b+': '+(p.rBinary>=0?'+':'')+p.rBinary.toFixed(3);}).join('\n').replace(/"/g,'&quot;');
     /* Margin r: parallel display-only readout through the same shrinkage
        pipeline. Resolved at render time so it follows CORR_MODE switches
        without mutating c.calc.pairDetails (which feeds the EV math). */
