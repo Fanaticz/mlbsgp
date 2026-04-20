@@ -1972,8 +1972,17 @@ function evCompute3Leg(pitcher,pd,matched,indices,dkDecimal,legTrueOdds){
      joint only if the triplet isn't in the aggregates at all (pBlend null). */
   var pModel=(all3Res.pBlend!=null)?all3Res.pBlend:pJointPairwise;
   var pDK=1/dkDecimal;
-  var evPct=(pModel*dkDecimal-1)*100;
-  var kelly=(pModel*dkDecimal-1)/(dkDecimal-1);
+  /* Primary EV uses the FV-correlated joint (pJointPairwise) — same as
+     2-leg cards, same pJoint as the card's FV CORR display. Swapping in
+     pModel here (as the original Phase 1 spec read) makes EV inconsistent
+     with the "FV CORR" field on the card and ignores the FV sheet the
+     user uploaded, so FV feeds both the display and the primary EV.
+     Model-based EV (using aggregate all3) is computed separately and
+     surfaced as a secondary diagnostic — useful when FV is absent or
+     known-wrong, but not the number the bet decision reads from. */
+  var evPct=(pJointPairwise*dkDecimal-1)*100;
+  var kelly=(pJointPairwise*dkDecimal-1)/(dkDecimal-1);
+  var evPctModel=(pModel*dkDecimal-1)*100;
 
   /* DK correlation premium: compare DK's combined SGP implied prob against
      the product of DK's own per-leg vigged implied probs. Positive = DK
@@ -2016,6 +2025,7 @@ function evCompute3Leg(pitcher,pd,matched,indices,dkDecimal,legTrueOdds){
     pDK:pDK,
     edgePp:(pModel-pDK)*100,
     evPct:evPct,
+    evPctModel:evPctModel,
     kellyPct:Math.max(0,kelly)*100,
     qkPct:Math.max(0,kelly*0.25)*100,
     dkHoldPct:dkHoldPct,
@@ -2099,6 +2109,7 @@ function _build3LegSgpData(c){
     dkDecimal:c.dkDecimal,
     fvCorr:calc.fvCorrOdds,
     evPct:calc.evPct,
+    evPctModel:calc.evPctModel,
     fvP:calc.pJointPairwise,
     all3:{pPlayer:calc.all3.pPlayer,pGlobal:calc.all3.pGlobal,pBlend:calc.all3.pBlend,wPlayer:calc.all3.wPlayer,wGlobal:calc.all3.wGlobal,nEff:calc.all3.nEff,nRaw:calc.all3.nRaw,source:calc.all3.source},
     pModel:calc.pModel,pDK:calc.pDK,edgePp:calc.edgePp,
@@ -2134,7 +2145,7 @@ function card3EV(c,idx){
   html+='<div style="font-size:12px;font-weight:700">'+c.pitcher+' <span style="font-size:9px;color:var(--cyan);font-family:Space Mono,monospace;margin-left:4px">[3-LEG]</span></div>';
   html+='<div style="font-size:9px;color:var(--mu);font-family:Space Mono,monospace">'+(c.game||'')+' · '+srcLabel+'</div>';
   html+='</div>';
-  html+='<div style="text-align:right"><div style="font-size:20px;font-weight:800;font-family:Space Mono,monospace;color:'+evColor+'">'+(ev>=0?'+':'')+ev.toFixed(1)+'%</div><div style="font-size:8px;color:var(--mu);font-family:Space Mono,monospace">EV</div></div>';
+  html+='<div style="text-align:right"><div style="font-size:20px;font-weight:800;font-family:Space Mono,monospace;color:'+evColor+'">'+(ev>=0?'+':'')+ev.toFixed(1)+'%</div><div style="font-size:8px;color:var(--mu);font-family:Space Mono,monospace" title="Computed from FV-correlated joint (FV marginals × pairwise r Fréchet). Matches the FV CORR value to the left of the top math row. Use the EV vs model line below for the aggregates-only view.">EV vs FV</div></div>';
   html+='</div>';
 
   /* Leg list: one row per leg with FV odds + base-rate chip. Base rate
@@ -2209,6 +2220,18 @@ function card3EV(c,idx){
   html+='<div style="text-align:center"><div style="font-size:13px;font-weight:700;font-family:Space Mono,monospace;color:var(--cyan)">'+(calc.pDK*100).toFixed(1)+'%</div><div style="font-size:8px;color:var(--mu);font-family:Space Mono,monospace">DK IMPLIED</div></div>';
   html+='<div style="text-align:center"><div style="font-size:13px;font-weight:700;font-family:Space Mono,monospace;color:'+edgeColor+'">'+(edgePp>=0?'+':'')+edgePp.toFixed(1)+'pp</div><div style="font-size:8px;color:var(--mu);font-family:Space Mono,monospace">EDGE</div></div>';
   html+='</div>';
+
+  /* Secondary "EV vs model" line — diagnostic only. Primary EV at the
+     top of the card reads from FV (the decision number); this one
+     surfaces what the aggregate data alone would say. When the two
+     diverge materially it's a signal that FV and the historical
+     data disagree — either FV is sharper than the aggregates (typical
+     for informed users) or the combo is unusually correlated in a way
+     the aggregates captured but DK/FV didn't price in. */
+  if(calc.evPctModel!=null&&isFinite(calc.evPctModel)){
+    var evMcolor=calc.evPctModel>=0?'var(--ac2)':'var(--mu)';
+    html+='<div style="font-size:9px;color:var(--mu);font-family:Space Mono,monospace;margin-bottom:4px" title="EV if you treat the blended empirical 3-way joint (MODEL JOINT above) as fair. Compare to the primary EV% (FV-driven) at the top of the card: large divergence = your FV and the aggregates disagree.">EV vs model: <span style="color:'+evMcolor+'">'+(calc.evPctModel>=0?'+':'')+calc.evPctModel.toFixed(1)+'%</span></div>';
+  }
 
   /* DK correlation premium — per-leg vigged implied prob product vs SGP
      combined implied. Positive = DK priced as positively correlated;
