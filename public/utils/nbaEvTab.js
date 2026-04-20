@@ -651,11 +651,94 @@
     onFilter();
   }
 
+  /* ---------- Dev synthetic harness (Edit 8) ----------
+     Gated behind ?nbaDev=1 so it doesn't clutter the production UI. When
+     clicked, invents FV prices for every (player, prop, line) mentioned
+     in the uploaded correlations data + attaches a DK SGP American price
+     to every correlation entry using a deterministic bump from model
+     joint so the cards render with coherent numbers (edge_pp in a
+     plausible −5pp…+15pp band). Used to produce the Phase 3 screenshot
+     and to verify the render pipeline end-to-end before Phase 4 OCR +
+     real DK wiring land. */
+  function _devFvForPlayer(player, entries) {
+    var props = {};
+    for (var i = 0; i < entries.length; i++) {
+      var e = entries[i];
+      [e.leg1, e.leg2].forEach(function (leg) {
+        if (!props[leg.prop]) props[leg.prop] = {};
+        if (props[leg.prop][leg.line]) return;
+        /* Synthesize symmetric FV around the base rate: if empirical hit
+           rate ≈ 50%, FV should be near +100/-100. Skew slightly to keep
+           numbers interesting. */
+        var hr = leg === e.leg1 ? e.hit_rate_1 : e.hit_rate_2;
+        var p = (hr == null) ? 0.5 : Math.max(0.1, Math.min(0.9, hr));
+        var pOver = leg.side === 'over' ? p : 1 - p;
+        var overAm = Math.round(pOver >= 0.5 ? -100 * pOver / (1 - pOver) : 100 * (1 - pOver) / pOver);
+        var underAm = Math.round((1 - pOver) >= 0.5 ? -100 * (1 - pOver) / pOver : 100 * pOver / (1 - pOver));
+        /* DK shades ~5% off FV on each side to model vig. */
+        var shade = function (a, pct) { return a > 0 ? Math.round(a * (1 - pct)) : Math.round(a * (1 + pct)); };
+        props[leg.prop][leg.line] = {
+          stat: leg.prop,
+          threshold: leg.line,
+          over_fv: overAm,
+          under_fv: underAm,
+          over_dk_american: shade(overAm, 0.05),
+          under_dk_american: shade(underAm, 0.05),
+        };
+      });
+    }
+    return { player: player, team: 'DEV', game: 'DEV vs SYN', props: props };
+  }
+  function _devBuildFvIndex(corr) {
+    var idx = {};
+    Object.keys(corr.by_player).forEach(function (player) {
+      var entryIdxs = corr.by_player[player];
+      var entries = entryIdxs.map(function (i) { return corr.entries[i]; });
+      var p = _devFvForPlayer(player, entries);
+      /* indexFvPlayers expects p.props as a nested map already — our
+         _devFvForPlayer already emits the right shape, so pass it
+         through the indexer to stay consistent with the OCR path. */
+      idx[player] = { player: player, team: p.team, game: p.game, props: p.props };
+    });
+    return idx;
+  }
+  function _devAttachDkToEntries(corr) {
+    corr.entries.forEach(function (e) {
+      /* Set DK SGP ~5% worse than what model joint would price fairly,
+         with some per-entry jitter so not every card shows identical
+         edge. Scale by entry index hash to keep it deterministic. */
+      if (!e.p_joint || e.p_joint <= 0) return;
+      var fair = 1 / e.p_joint;
+      var hash = 0;
+      for (var i = 0; i < e.player.length; i++) hash = (hash * 31 + e.player.charCodeAt(i)) | 0;
+      var jitter = ((hash & 0xff) / 255 - 0.5) * 0.15;  // ±7.5%
+      var dkDec = fair * (1 + 0.06 + jitter);  // ~6% vig + jitter
+      e.dk_sgp_american = decToAm(dkDec);
+    });
+  }
+  function devSimulate() {
+    if (!state.correlations || !state.correlations.entries || !state.correlations.entries.length) {
+      setStatus('<span style="color:var(--red)">DEV: upload correlations xlsx first</span>');
+      return;
+    }
+    _devAttachDkToEntries(state.correlations);
+    state.fv = _devBuildFvIndex(state.correlations);
+    setFvStatus('<span style="color:var(--ac2)">DEV: synthesized FV + DK for ' + Object.keys(state.fv).length + ' players</span>');
+    runPipeline();
+  }
+
   function onActivate() {
     wireDom();
     renderHeaderStats();
     renderCorrMeta();
     renderFilterLabels();
+    /* Reveal the DEV harness button when the URL flag is set. Idempotent. */
+    try {
+      var u = new URL(window.location.href);
+      if (u.searchParams.get('nbaDev') === '1') {
+        var b = document.getElementById('nbaDevSimBtn'); if (b) b.style.display = '';
+      }
+    } catch (_) {}
     if (!state._activated) { state._activated = true; reload().then(renderCorrMeta); return; }
     reload().then(renderCorrMeta);
   }
@@ -676,6 +759,7 @@
     _computeBadges: computeBadges,
     _sortCandidates: sortCandidates,
     onLoadMore: onLoadMore,
+    devSimulate: devSimulate,
     _state: state,
   };
 })();

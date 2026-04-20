@@ -1,0 +1,274 @@
+<!doctype html><html><head><meta charset="utf-8"><title>NBA Phase 3 synthetic card</title><style>
+:root{--bg:#0d0f14;--s1:#161920;--s2:#1e2230;--b1:#2a2f3f;--b2:#363d52;--tx:#dde1f0;--mu:#6b7490;--ac:#4ade80;--ac2:#f59e0b;--ac3:#60a5fa;--red:#f87171;--cyan:#22d3ee;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--tx);font-family:'Inter',sans-serif;min-height:100vh;}
+/* Sport toggle bar — sits above the per-sport nav. Uses a pill-button
+   style (same Space Mono + subtle border as existing badges) so it reads
+   as "mode switcher" rather than "tab". Active sport gets the accent-
+   green treatment that MLB nav-tabs already use. */
+.sport-bar{display:flex;gap:6px;padding:8px 22px 8px 24px;background:var(--bg);border-bottom:1px solid var(--b1);align-items:center;}
+.sport-bar .sport-label{font-size:10px;color:var(--mu);font-family:'Space Mono',monospace;letter-spacing:.8px;margin-right:4px;}
+.sport-btn{display:inline-flex;align-items:center;gap:7px;padding:5px 14px;font-size:11px;font-weight:600;font-family:'Space Mono',monospace;letter-spacing:.6px;background:transparent;border:1px solid var(--b1);border-radius:16px;color:var(--mu);cursor:pointer;transition:border-color .15s,color .15s,background .15s;}
+.sport-btn:hover{border-color:var(--b2);color:var(--tx);}
+.sport-btn.active{color:var(--ac);border-color:var(--ac);background:rgba(74,222,128,.08);}
+.sport-btn .sport-dot{width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.35;}
+.sport-btn.active .sport-dot{opacity:1;}
+.nav{display:flex;background:var(--s1);border-bottom:1px solid var(--b1);padding:0 24px;position:sticky;top:0;z-index:100;}
+.nav-tab{padding:13px 18px;font-size:13px;font-weight:500;cursor:pointer;border:none;background:transparent;color:var(--mu);border-bottom:2px solid transparent;font-family:'Inter',sans-serif;}
+.nav-tab.active{color:var(--ac);border-bottom-color:var(--ac);}
+.nav-tab:hover{color:var(--tx);}
+.header{padding:32px 24px 20px;border-bottom:1px solid var(--b1);background:var(--s1);}
+.badge{display:inline-flex;align-items:center;gap:6px;background:var(--s2);border:1px solid var(--b1);border-radius:20px;padding:3px 11px;font-size:11px;font-family:'Space Mono',monospace;color:var(--mu);margin-bottom:12px;}
+.dot{width:6px;height:6px;background:var(--ac);border-radius:50%;animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+h1{font-family:'Syne',sans-serif;font-size:clamp(22px,3vw,40px);font-weight:800;letter-spacing:-1px;line-height:1.1;}
+h1 em{color:var(--ac);font-style:normal;}
+.stats-row{display:flex;gap:24px;margin-top:14px;flex-wrap:wrap;}
+.stat .n{font-family:'Space Mono',monospace;font-size:18px;font-weight:700;color:var(--ac3);}
+.stat .l{font-size:9px;color:var(--mu);font-family:'Space Mono',monospace;margin-top:2px;}
+.page{display:none;padding:18px 22px;}
+.page.active{display:block;}
+.ctrl{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px;padding:12px 14px;background:var(--s1);border-radius:9px;border:1px solid var(--b1);}
+.tg{display:flex;background:var(--bg);border:1px solid var(--b1);border-radius:6px;overflow:hidden;}
+.tb{padding:6px 14px;font-size:12px;font-weight:500;cursor:pointer;border:none;background:transparent;color:var(--mu);font-family:'Inter',sans-serif;}
+.tb.active{background:var(--ac);color:#000;font-weight:600;}
+.fb-wrap{display:flex;gap:5px;flex-wrap:wrap;}
+.fb{padding:4px 11px;font-size:11px;border:1px solid var(--b1);border-radius:4px;background:transparent;color:var(--mu);cursor:pointer;font-family:'Inter',sans-serif;}
+.fb.active{border-color:var(--ac3);color:var(--ac3);background:rgba(96,165,250,.1);}
+.ssel{background:var(--bg);border:1px solid var(--b1);border-radius:6px;padding:6px 9px;font-size:11px;color:var(--mu);font-family:'Space Mono',monospace;cursor:pointer;outline:none;}
+.srch{background:var(--bg);border:1px solid var(--b1);border-radius:6px;padding:6px 11px;font-size:12px;color:var(--tx);font-family:'Inter',sans-serif;width:180px;outline:none;margin-left:auto;}
+.srch:focus{border-color:var(--ac3);}
+.srch::placeholder{color:var(--mu);}
+.psw{position:relative;margin-bottom:16px;}
+.psi{width:100%;background:var(--s1);border:1px solid var(--b1);border-radius:9px;padding:13px 16px;font-size:14px;color:var(--tx);font-family:'Inter',sans-serif;outline:none;}
+.psi:focus{border-color:var(--ac3);}
+.psi::placeholder{color:var(--mu);}
+.pdd{position:absolute;top:100%;left:0;right:0;background:var(--s1);border:1px solid var(--b2);border-radius:9px;z-index:50;max-height:250px;overflow-y:auto;margin-top:3px;display:none;}
+.pdd.open{display:block;}
+.pit{padding:9px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--b1);}
+.pit:hover{background:var(--s2);color:var(--ac3);}
+.pit .py{font-size:10px;color:var(--mu);font-family:'Space Mono',monospace;margin-left:7px;}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px;}
+.card{background:var(--s1);border:1px solid var(--b1);border-radius:10px;padding:14px;}
+.card:hover{border-color:var(--b2);}
+.card.str{border-left:3px solid var(--ac);}
+.card.mod{border-left:3px solid var(--ac2);}
+.card.wk{border-left:3px solid var(--b2);}
+.card.neg{border-left:3px solid var(--red);}
+.legs{display:flex;flex-direction:column;gap:4px;margin-bottom:10px;}
+.leg{display:inline-flex;align-items:center;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:500;width:fit-content;}
+.leg.ov{background:rgba(74,222,128,.1);color:var(--ac);border:1px solid rgba(74,222,128,.2);}
+.leg.un{background:rgba(248,113,113,.1);color:var(--red);border:1px solid rgba(248,113,113,.2);}
+.conn{font-size:9px;color:var(--mu);padding-left:2px;font-family:'Space Mono',monospace;}
+.rbox{display:grid;gap:5px;margin-bottom:10px;}
+.rbox.r1{grid-template-columns:1fr;}
+.rbox.r2{grid-template-columns:1fr 1fr;}
+.rbox.r3{grid-template-columns:1fr 1fr 1fr;}
+.ri{background:var(--s2);border-radius:6px;padding:7px 9px;}
+.rl{font-size:9px;color:var(--mu);font-family:'Space Mono',monospace;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.rv{font-size:19px;font-weight:700;font-family:'Space Mono',monospace;}
+.rs{font-size:9px;color:var(--mu);margin-top:1px;}
+.rp{color:var(--ac);}
+.rn{color:var(--red);}
+.ru{color:var(--mu);}
+.hr4{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:9px;}
+.hi{text-align:center;}
+.hv{font-size:12px;font-weight:700;font-family:'Space Mono',monospace;}
+.hl{font-size:8px;color:var(--mu);margin-top:1px;}
+.hboth{color:var(--ac);}
+.hn{color:var(--mu);}
+.h1c{color:var(--ac3);}
+.h2c{color:var(--ac2);}
+.bw{margin-top:7px;}
+.bl{display:flex;justify-content:space-between;font-size:9px;color:var(--mu);margin-bottom:2px;font-family:'Space Mono',monospace;}
+.bt{height:3px;background:var(--s2);border-radius:2px;overflow:hidden;}
+.bf{height:100%;border-radius:2px;background:var(--ac);}
+.pw3{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:10px;}
+.pwi{background:var(--s2);border-radius:5px;padding:5px;text-align:center;}
+.pwl{font-size:8px;color:var(--mu);font-family:'Space Mono',monospace;margin-bottom:2px;}
+.pwv{font-size:11px;font-weight:700;font-family:'Space Mono',monospace;}
+.pw3a{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:4px;}
+.th3{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px;}
+.t3i{flex:1;min-width:48px;background:var(--s2);border-radius:5px;padding:6px;text-align:center;}
+.t3v{font-size:12px;font-weight:700;font-family:'Space Mono',monospace;}
+.t3l{font-size:8px;color:var(--mu);margin-top:2px;}
+.pprof{background:var(--s1);border:1px solid var(--b1);border-radius:10px;padding:16px;margin-bottom:14px;}
+.pname{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;margin-bottom:3px;}
+.pmeta{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px;}
+.pmi .pmn{font-size:15px;font-weight:700;font-family:'Space Mono',monospace;color:var(--ac3);}
+.pmi .pml{font-size:9px;color:var(--mu);font-family:'Space Mono',monospace;margin-top:1px;}
+.note{font-size:11px;color:var(--mu);font-family:'Space Mono',monospace;padding:7px 11px;background:var(--s2);border-radius:5px;border-left:3px solid var(--ac2);}
+.lgw{display:flex;gap:14px;margin-bottom:14px;flex-wrap:wrap;}
+.lgi{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--mu);}
+.lgd{width:8px;height:8px;border-radius:2px;}
+.divl{font-size:9px;color:var(--b2);font-family:'Space Mono',monospace;margin:3px 0 5px;}
+.empty{text-align:center;padding:40px;color:var(--mu);font-family:'Space Mono',monospace;font-size:12px;}
+/* NBA EV card styling. Shares the MLB pitcher-card visual vocabulary
+   (rounded, s1 background, accent-cyan "EV%" corner) but uses Space
+   Mono throughout the body for tabular odds alignment. */
+.nba-cards{display:flex;flex-direction:column;gap:12px;margin-top:12px;}
+.nba-card{background:var(--s1);border:1px solid var(--b1);border-radius:10px;padding:14px 16px;font-family:'Inter',sans-serif;}
+.nba-card .nc-head{display:flex;align-items:baseline;gap:10px;margin-bottom:8px;}
+.nba-card .nc-player{font-size:14px;font-weight:700;color:var(--tx);letter-spacing:-.2px;}
+.nba-card .nc-ctx{font-size:10px;color:var(--mu);font-family:'Space Mono',monospace;margin-top:2px;}
+.nba-card .nc-ev{margin-left:auto;text-align:right;}
+.nba-card .nc-ev .v{font-size:18px;font-weight:700;font-family:'Space Mono',monospace;}
+.nba-card .nc-ev .l{font-size:9px;color:var(--mu);font-family:'Space Mono',monospace;letter-spacing:.6px;}
+.nba-card .nc-leg{display:grid;grid-template-columns:1fr auto auto auto;gap:12px;padding:6px 0;border-top:1px solid var(--b1);font-family:'Space Mono',monospace;font-size:12px;}
+.nba-card .nc-leg .nc-lbl{color:var(--tx);font-weight:600;}
+.nba-card .nc-leg .nc-fv{color:var(--ac3);}
+.nba-card .nc-leg .nc-dk{color:var(--mu);font-size:11px;}
+.nba-card .nc-leg .nc-base{color:var(--tx);text-align:right;min-width:52px;}
+.nba-card .nc-joint{margin-top:8px;padding:8px 10px;background:var(--s2);border-radius:6px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;font-family:'Space Mono',monospace;font-size:11px;}
+.nba-card .nc-joint .nc-cell{display:flex;flex-direction:column;gap:2px;}
+.nba-card .nc-joint .nc-cell .nc-cval{font-size:14px;font-weight:700;color:var(--tx);}
+.nba-card .nc-joint .nc-cell .nc-clbl{font-size:9px;color:var(--mu);letter-spacing:.6px;}
+.nba-card .nc-prices{margin-top:6px;font-size:11px;color:var(--mu);font-family:'Space Mono',monospace;display:flex;gap:14px;flex-wrap:wrap;}
+.nba-card .nc-prices .nc-pv{color:var(--tx);}
+.nba-card .nc-stats{margin-top:6px;font-size:10px;color:var(--mu);font-family:'Space Mono',monospace;letter-spacing:.3px;}
+.nba-card .nc-badges{display:inline-flex;gap:6px;margin-top:8px;flex-wrap:wrap;}
+.nba-card .nc-bdg{font-size:9px;padding:2px 7px;border-radius:10px;font-family:'Space Mono',monospace;letter-spacing:.5px;font-weight:600;}
+.nba-card .nc-bdg.info{background:rgba(96,165,250,.12);color:var(--ac3);}
+.nba-card .nc-bdg.warn{background:rgba(245,158,11,.15);color:var(--ac2);}
+.nba-card .nc-bdg.danger{background:rgba(248,113,113,.15);color:var(--red);}
+.nba-card .nc-bdg.muted{background:var(--s2);color:var(--mu);}
+.nba-empty{padding:36px 20px;text-align:center;color:var(--mu);font-family:'Space Mono',monospace;font-size:11px;border:1px dashed var(--b1);border-radius:9px;margin-top:12px;line-height:1.7;}
+@media(max-width:600px){.nav{padding:0 8px;}.page{padding:12px 10px;}.grid{grid-template-columns:1fr;}.srch{width:100%;margin-left:0;}}
+.insight-btn{width:100%;margin-top:10px;padding:7px 12px;font-size:12px;font-weight:600;border:1px solid var(--b2);border-radius:6px;background:var(--s2);color:var(--tx);cursor:pointer;font-family:'Inter',sans-serif;transition:border-color .15s,color .15s;letter-spacing:.3px;}
+.insight-btn:hover:not(:disabled){border-color:var(--ac3);color:var(--ac3);}
+.insight-btn:disabled{opacity:.5;cursor:not-allowed;}
+.ins-panel{border-radius:8px;padding:12px 14px;margin-top:8px;border:0 solid transparent;border-left-width:3px;}
+.ins-panel.play{background:rgba(74,222,128,.07);border-color:var(--ac);}
+.ins-panel.marginal{background:rgba(245,158,11,.07);border-color:var(--ac2);}
+.ins-panel.skip{background:rgba(248,113,113,.07);border-color:var(--red);}
+.ins-vbadge{display:inline-flex;align-items:center;border-radius:4px;padding:2px 9px;font-size:10px;font-weight:700;font-family:'Space Mono',monospace;}
+.ins-vbadge.play{background:rgba(74,222,128,.15);color:var(--ac);}
+.ins-vbadge.marginal{background:rgba(245,158,11,.15);color:var(--ac2);}
+.ins-vbadge.skip{background:rgba(248,113,113,.15);color:var(--red);}
+/* ===== Teammate Lookup tab ===== */
+.tm-ctrl{display:flex;flex-direction:column;gap:10px;padding:12px 14px;background:var(--s1);border:1px solid var(--b1);border-radius:9px;margin-bottom:14px;}
+.tm-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+.tm-label{font-size:10px;color:var(--mu);font-family:'Space Mono',monospace;letter-spacing:.3px;}
+.tm-modes{display:inline-flex;border:1px solid var(--b1);border-radius:6px;overflow:hidden;font-family:'Space Mono',monospace;}
+.tm-modes button{padding:6px 12px;font-size:11px;font-weight:600;border:none;background:transparent;color:var(--mu);cursor:pointer;letter-spacing:.4px;}
+.tm-modes button.active{background:rgba(34,211,238,.12);color:var(--cyan);}
+.tm-modes button+button{border-left:1px solid var(--b1);}
+.tm-slider{display:flex;align-items:center;gap:6px;font-family:'Space Mono',monospace;font-size:10px;color:var(--mu);}
+.tm-slider input[type=range]{width:100px;accent-color:var(--ac3);}
+.tm-slider .v{color:var(--ac3);font-weight:600;min-width:24px;text-align:right;}
+.tm-toggle{display:inline-flex;align-items:center;gap:6px;font-family:'Space Mono',monospace;font-size:10px;color:var(--mu);cursor:pointer;user-select:none;}
+.tm-toggle input{appearance:none;width:26px;height:14px;background:var(--bg);border:1px solid var(--b1);border-radius:7px;position:relative;cursor:pointer;transition:background .15s;}
+.tm-toggle input:checked{background:rgba(34,211,238,.18);border-color:var(--cyan);}
+.tm-toggle input::after{content:'';position:absolute;left:2px;top:1px;width:9px;height:9px;border-radius:50%;background:var(--mu);transition:transform .15s;}
+.tm-toggle input:checked::after{transform:translateX(11px);background:var(--cyan);}
+.tm-pdd{position:absolute;top:100%;left:0;right:0;background:var(--s1);border:1px solid var(--b2);border-radius:6px;margin-top:2px;max-height:220px;overflow-y:auto;z-index:50;display:none;}
+.tm-pdd.open{display:block;}
+.tm-pdd-item{padding:6px 10px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--b1);font-family:'Inter',sans-serif;}
+.tm-pdd-item:hover{background:var(--s2);color:var(--ac3);}
+.tm-search-wrap{position:relative;flex:1;min-width:160px;}
+.tm-search{width:100%;background:var(--bg);border:1px solid var(--b1);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--tx);font-family:'Inter',sans-serif;outline:none;}
+.tm-search:focus{border-color:var(--ac3);}
+.tm-stats{display:flex;gap:20px;flex-wrap:wrap;font-family:'Space Mono',monospace;font-size:11px;color:var(--mu);padding:6px 2px;}
+.tm-stats .n{font-size:14px;font-weight:700;color:var(--ac3);}
+.tm-table-wrap{background:var(--s1);border:1px solid var(--b1);border-radius:9px;overflow-x:auto;}
+.tm-table{width:100%;border-collapse:collapse;font-family:'Space Mono',monospace;}
+.tm-table th{padding:8px 8px;text-align:left;font-size:9px;font-weight:700;color:var(--mu);letter-spacing:.5px;cursor:pointer;user-select:none;white-space:nowrap;background:var(--s2);border-bottom:1px solid var(--b1);}
+.tm-table th:hover{color:var(--tx);}
+.tm-table td{padding:7px 8px;font-size:11px;border-bottom:1px solid var(--b1);}
+.tm-table tr.r{cursor:pointer;}
+.tm-table tr.r:hover{background:var(--s2);}
+.tm-rcell{display:inline-block;padding:2px 6px;border-radius:4px;font-weight:700;font-size:11px;min-width:48px;text-align:center;}
+.tm-rmcell{font-size:10px;color:var(--mu);margin-left:4px;}
+.tm-badge{font-size:9px;padding:1px 5px;border-radius:3px;font-weight:700;background:var(--s2);color:var(--mu);}
+.tm-badge.adj{background:rgba(96,165,250,.15);color:var(--ac3);}
+.tm-drawer{position:fixed;right:0;top:0;width:520px;max-width:100vw;height:100vh;background:var(--bg);border-left:1px solid var(--b1);z-index:200;overflow-y:auto;padding:18px 20px 40px;transform:translateX(100%);transition:transform .2s ease;box-shadow:-12px 0 32px rgba(0,0,0,.35);}
+.tm-drawer.open{transform:translateX(0);}
+.tm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:199;opacity:0;pointer-events:none;transition:opacity .2s;}
+.tm-overlay.open{opacity:1;pointer-events:auto;}
+.tm-close{position:absolute;top:10px;right:10px;width:28px;height:28px;border-radius:6px;border:1px solid var(--b1);background:var(--s1);color:var(--mu);font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.tm-close:hover{border-color:var(--b2);color:var(--tx);}
+.tm-drawer h3{font-family:'Syne',sans-serif;font-size:17px;font-weight:800;margin-bottom:2px;letter-spacing:-.3px;}
+.tm-drawer .sub{font-size:11px;color:var(--mu);font-family:'Space Mono',monospace;margin-bottom:14px;}
+.tm-sec{background:var(--s1);border:1px solid var(--b1);border-radius:8px;padding:11px 13px;margin-bottom:10px;}
+.tm-sec .title{font-size:10px;font-weight:700;font-family:'Space Mono',monospace;color:var(--mu);letter-spacing:.5px;margin-bottom:8px;}
+.tm-kv{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center;font-family:'Space Mono',monospace;}
+.tm-kv .k{font-size:9px;color:var(--mu);margin-bottom:2px;}
+.tm-kv .v{font-size:16px;font-weight:700;color:var(--ac3);}
+.tm-matrix{display:grid;gap:1px;}
+.tm-mh{font-size:9px;font-family:'Space Mono',monospace;color:var(--mu);font-weight:700;padding:3px 4px;text-align:center;}
+.tm-ml{font-size:9px;font-family:'Space Mono',monospace;color:var(--tx);font-weight:600;padding:3px 4px;text-align:right;white-space:nowrap;}
+.tm-mc{font-size:10px;font-family:'Space Mono',monospace;font-weight:700;padding:3px 4px;text-align:center;border-radius:3px;cursor:default;line-height:1.1;}
+.tm-mc .rm{font-size:8px;opacity:.75;display:block;font-weight:500;}
+.tm-slotgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:4px;}
+.tm-slotcell{background:var(--s2);padding:5px 4px;border-radius:5px;text-align:center;font-family:'Space Mono',monospace;}
+.tm-slotcell .slots{font-size:11px;font-weight:700;color:var(--tx);}
+.tm-slotcell .n{font-size:9px;color:var(--mu);margin-top:1px;}
+.tm-slotcell.top{background:rgba(34,211,238,.12);}
+.tm-slotcell.top .slots{color:var(--cyan);}
+.tm-context{background:var(--s2);padding:8px 10px;border-radius:6px;font-size:11px;color:var(--tx);font-family:'Inter',sans-serif;line-height:1.5;}
+.tm-context strong{color:var(--cyan);}
+.tm-years{display:flex;gap:14px;font-family:'Space Mono',monospace;font-size:11px;color:var(--tx);}
+.tm-years .y{color:var(--mu);margin-right:3px;}
+.tm-loadmsg{padding:40px 20px;text-align:center;color:var(--mu);font-family:'Space Mono',monospace;font-size:12px;}
+.tm-loadmsg .pulse{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--ac);margin-right:8px;vertical-align:middle;animation:pulse 1.2s infinite;}
+@media(max-width:768px){.tm-drawer{width:100%;}.tm-kv{grid-template-columns:repeat(3,1fr);}.tm-mh,.tm-mc,.tm-ml{font-size:8px;padding:2px 3px;}.tm-mc .rm{font-size:7px;}}
+</style></head><body style="background:#0d0f14;padding:24px"><div id="page-nba-evfinder" class="page nba-page active">
+  <div class="ctrl" style="flex-direction:column;align-items:stretch;gap:10px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span style="font-size:13px;color:var(--cyan);font-family:Syne,sans-serif;font-weight:700">NBA CORRELATIONS DATA</span>
+      <span style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace">drop today's correlations xlsx → persists server-side</span>
+    </div>
+    <div id="nbaCorrDrop" style="border:2px dashed var(--b2);border-radius:9px;padding:22px 16px;text-align:center;cursor:pointer;transition:all .15s;background:var(--s2)">
+      <div style="font-size:13px;color:var(--tx);font-weight:600;margin-bottom:4px">Drag &amp; drop today's correlations xlsx</div>
+      <div style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace">or click to pick a file · .xlsx only, max 10 MB</div>
+      <input type="file" id="nbaCorrFile" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none" onchange="window.nbaTab&amp;&amp;window.nbaTab.onCorrUpload(event)">
+    </div>
+    <div id="nbaCorrMeta" style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+      <span id="nbaCorrMetaLine"><span style="color:var(--mu)">No correlations data uploaded yet — drop your xlsx above to get started.</span></span>
+      <span style="margin-left:auto;display:inline-flex;gap:6px">
+        <button id="nbaCorrRollback" type="button" onclick="window.nbaTab&amp;&amp;window.nbaTab.onRollback()" style="padding: 4px 10px; font-size: 10px; border: 1px solid var(--b1); color: var(--mu); border-radius: 5px; cursor: pointer; font-family: &quot;Space Mono&quot;, monospace; opacity: 0.5;">ROLL BACK</button>
+      </span>
+    </div>
+    <div id="nbaCorrStatus" style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace;min-height:16px"></div>
+  </div>
+  <!-- FV sheet upload. Mirrors the MLB batter +EV drop zone pattern but
+       POSTs to /api/extract-nba which lands in Phase 4 (NBA OCR). Until
+       then the error surface is a clean "endpoint not yet deployed"
+       message rather than a silent failure. -->
+  <div class="ctrl" style="flex-direction:column;align-items:stretch;gap:10px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span style="font-size:13px;color:var(--cyan);font-family:Syne,sans-serif;font-weight:700">NBA FV SHEET</span>
+      <span style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace">upload per slate → OCR extracts prop legs → candidates render below</span>
+    </div>
+    <div id="nbaFvDrop" style="border:2px dashed var(--b2);border-radius:9px;padding:22px 16px;text-align:center;cursor:pointer;transition:all .15s;background:var(--s2)">
+      <div style="font-size:13px;color:var(--tx);font-weight:600;margin-bottom:4px">Drag &amp; drop your NBA FV sheet screenshot</div>
+      <div style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace">or paste with Ctrl+V · or click to pick a file</div>
+      <input type="file" id="nbaFvFile" accept="image/*" style="display:none" onchange="window.nbaTab&amp;&amp;window.nbaTab.onFvUpload(event)">
+    </div>
+    <div id="nbaFvStatus" style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace;min-height:16px"><span style="color:var(--ac2)">DEV: synthesized FV + DK for 1 players</span></div>
+  </div>
+  <!-- Filter bar. NO mode toggle — NBA is player-only per spec.
+       Defaults: MIN EV% +3%, MIN GAMES 30, MAX P_VALUE 0.10,
+       props all-on, confirmed-starter ON. Changes re-run the
+       client-side filter over the current candidate set, not the
+       enumeration (OCR + DK calls are the expensive legs). -->
+  <div class="ctrl" id="nbaFilterBar" style="flex-wrap:wrap;gap:10px;align-items:center">
+    <div class="tm-slider"><span class="tm-label">MIN EV%</span><input type="range" id="nbaMinEv" min="-10" max="30" step="1" value="3" oninput="window.nbaTab&amp;&amp;window.nbaTab.onFilter()"><span class="v" id="nbaMinEvV">+3%</span></div>
+    <div class="tm-slider"><span class="tm-label">MIN GAMES</span><input type="range" id="nbaMinGames" min="10" max="82" step="1" value="30" oninput="window.nbaTab&amp;&amp;window.nbaTab.onFilter()"><span class="v" id="nbaMinGamesV">30</span></div>
+    <div class="tm-slider"><span class="tm-label">MAX P_VALUE</span><input type="range" id="nbaMaxP" min="1" max="100" step="1" value="10" oninput="window.nbaTab&amp;&amp;window.nbaTab.onFilter()"><span class="v" id="nbaMaxPV">0.10</span></div>
+    <div id="nbaPropBtns" style="display:inline-flex;gap:4px;flex-wrap:wrap">
+      <button class="fb active" data-nba-prop="Points" type="button" onclick="window.nbaTab&amp;&amp;window.nbaTab.onPropBtn(this)">PTS</button>
+      <button class="fb active" data-nba-prop="Rebounds" type="button" onclick="window.nbaTab&amp;&amp;window.nbaTab.onPropBtn(this)">REB</button>
+      <button class="fb active" data-nba-prop="Assists" type="button" onclick="window.nbaTab&amp;&amp;window.nbaTab.onPropBtn(this)">AST</button>
+      <button class="fb active" data-nba-prop="3-Pointers Made" type="button" onclick="window.nbaTab&amp;&amp;window.nbaTab.onPropBtn(this)">3PM</button>
+    </div>
+    <label class="tm-toggle"><input type="checkbox" id="nbaConfirmedOnly" checked="" onchange="window.nbaTab&amp;&amp;window.nbaTab.onFilter()"><span>CONFIRMED STARTER</span></label>
+    <!-- DEV-only synthetic harness button. Hidden by default; revealed
+         via ?nbaDev=1. Generates fake FV + DK prices for every player in
+         the uploaded correlations data so the full render pipeline is
+         exercisable before Phase 4 (OCR) + DK wiring land. -->
+    <button id="nbaDevSimBtn" type="button" onclick="window.nbaTab&amp;&amp;window.nbaTab.devSimulate()" style="padding: 6px 12px; font-size: 10px; font-weight: 600; border: 1px dashed var(--ac2); background: rgba(245, 158, 11, 0.08); color: var(--ac2); border-radius: 5px; cursor: pointer; font-family: &quot;Space Mono&quot;, monospace; letter-spacing: 0.4px;">DEV: SIMULATE FV+DK</button>
+    <span id="nbaCandCount" style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace;margin-left:auto">2 candidates</span>
+  </div>
+  <div id="nbaBody"><div class="nba-cards"><div class="nba-card" id="nba-card-Donovan Test|Assists5.5over|Points24.5over"><div class="nc-head"><div><div class="nc-player">Donovan Test</div><div class="nc-ctx">DEV · DEV vs SYN</div></div><div class="nc-ev"><div class="v" style="color:var(--ac)">+2.1%</div><div class="l">EV%</div></div></div><div class="nc-leg"><span class="nc-lbl">Over 5.5 Assists</span><span class="nc-fv">FV -163</span><span class="nc-dk">[DK O-171 U+155]</span><span class="nc-base">62.0%</span></div><div class="nc-leg"><span class="nc-lbl">Over 24.5 Points</span><span class="nc-fv">FV -122</span><span class="nc-dk">[DK O-128 U+116]</span><span class="nc-base">55.0%</span></div><div class="nc-joint"><div class="nc-cell"><div class="nc-cval">42.0%</div><div class="nc-clbl">MODEL JOINT</div></div><div class="nc-cell"><div class="nc-cval">41.2%</div><div class="nc-clbl">DK IMPLIED</div></div><div class="nc-cell"><div class="nc-cval" style="color:var(--ac)">+0.8pp</div><div class="nc-clbl">EDGE</div></div></div><div class="nc-prices"><span>DK SGP <span class="nc-pv">+143</span></span><span>FV CORR <span class="nc-pv">+138</span></span></div><div class="nc-stats">r +0.33 (adj) · p=0.04 · n=48  <span style="color:var(--b2)">· n=48 doesn't distinguish rest contexts</span></div><div class="nc-badges"><span class="nc-bdg info">NBA</span></div></div><div class="nba-card" id="nba-card-Donovan Test|Points27.5over|Rebounds4.5over"><div class="nc-head"><div><div class="nc-player">Donovan Test</div><div class="nc-ctx">DEV · DEV vs SYN</div></div><div class="nc-ev"><div class="v" style="color:var(--ac)">+2.0%</div><div class="l">EV%</div></div></div><div class="nc-leg"><span class="nc-lbl">Over 27.5 Points</span><span class="nc-fv">FV -124</span><span class="nc-dk">[DK O-130 U+118]</span><span class="nc-base">55.4%</span></div><div class="nc-leg"><span class="nc-lbl">Over 4.5 Rebounds</span><span class="nc-fv">FV +135</span><span class="nc-dk">[DK O+128 U-142]</span><span class="nc-base">42.6%</span></div><div class="nc-joint"><div class="nc-cell"><div class="nc-cval">34.0%</div><div class="nc-clbl">MODEL JOINT</div></div><div class="nc-cell"><div class="nc-cval">33.3%</div><div class="nc-clbl">DK IMPLIED</div></div><div class="nc-cell"><div class="nc-cval" style="color:var(--ac)">+0.7pp</div><div class="nc-clbl">EDGE</div></div></div><div class="nc-prices"><span>DK SGP <span class="nc-pv">+200</span></span><span>FV CORR <span class="nc-pv">+248</span></span></div><div class="nc-stats">r +0.21 (adj) · p=0.29 · n=28  <span style="color:var(--b2)">· n=28 doesn't distinguish rest contexts</span></div><div class="nc-badges"><span class="nc-bdg info">NBA</span><span class="nc-bdg danger">LOW p-val</span></div></div></div></div>
+</div></body></html>
