@@ -466,22 +466,130 @@
     h += '<div style="font-size:9px;font-family:Space Mono,monospace;padding:2px 8px;border-radius:10px;background:rgba(0,0,0,.2);color:' + confColor(conf.level) + ';border:1px solid ' + confColor(conf.level) + '">' +
            conf.level.toUpperCase() + ' · n=' + conf.n +
          '</div>';
-    h += '<button onclick="window.teammateEvTab._aiInsight(' + idx + ')" title="Coming in chunk 6" style="margin-left:auto;padding:4px 10px;font-size:10px;border:1px solid var(--ac3);background:transparent;color:var(--ac3);border-radius:5px;cursor:pointer;font-family:Space Mono,monospace">AI INSIGHTS</button>';
+    h += '<button class="tmev-insight-btn" onclick="window.teammateEvTab._aiInsight(' + idx + ')" title="Fetch AI analysis of this candidate" style="margin-left:auto;padding:4px 10px;font-size:10px;border:1px solid var(--ac3);background:transparent;color:var(--ac3);border-radius:5px;cursor:pointer;font-family:Space Mono,monospace">&#10022; AI INSIGHTS</button>';
     h += '</div>';
     /* Shrinkage provenance line (always visible, matches what the
        tooltip on R BINARY would have shown so keyboard/mobile users
        aren't locked out of that information). */
     h += '<div style="margin-top:6px;font-size:9px;color:var(--mu);font-family:Space Mono,monospace;line-height:1.4;word-break:break-word">' +
          shrinkageProv(c) + '</div>';
+    /* Insight panel mount point — populated when the AI INSIGHTS button
+       fires. Same pattern as the pitcher EV card (class names match so
+       the pitcher side's CSS for .ins-panel / .ins-vbadge / verdict
+       variants just works here too). */
+    h += '<div class="tmev-insight-wrap"></div>';
 
     h += '</div>';
     return h;
   }
 
-  function aiInsightPlaceholder(idx) {
-    /* Chunk 6 will replace this with a real /api/sgp-insight call. */
-    alert('AI Insights for teammate cards land in Phase 2 chunk 6.\n\n' +
-          'Candidate idx: ' + idx + ' (see window.teammateEvTab._state.candidatesFull for the record).');
+  /* Project a candidate record (chunk 4 enumerator output) into the sgp
+     shape buildTeammateInsightPrompt expects. Names kept compact so the
+     prompt itself reads cleanly — the raw candidate has 45+ fields. */
+  function projectCandidateForInsight(c) {
+    return {
+      p1: c.p1, p2: c.p2,
+      team: c.team, gameLabel: c.game_label,
+      mode: c.mode, fallback: c.fallback,
+      leg1Full: c.leg1_full, leg2Full: c.leg2_full,
+      fv1: c.fv_p1, fv2: c.fv_p2,
+      pLeg1: c.p_leg1, pLeg2: c.p_leg2,
+      dkAmerican: c.dk_american, fvCorrAmerican: c.fv_corr_american,
+      pJoint: c.p_joint, evPct: c.ev_pct, qkPct: c.qk_pct,
+      rBinary: c.r_binary, rMargin: c.r_margin,
+      rBinaryPlayer: c.r_binary_player, rBinaryGlobal: c.r_binary_global,
+      wPlayer: c.w_player,
+      hit1: c.hit1, hit2: c.hit2, bothHit: c.both_hit, nTotal: c.n_total,
+      tonightSlots: c.tonight_slots, historicalSlots: c.most_common_slots,
+      slotMatchConfidence: c.slot_match_confidence,
+    };
+  }
+
+  /* Render one insight panel inline under the card's metric row. HTML
+     structure + class names match the pitcher-side .ins-panel pattern
+     so the existing index.html CSS applies without a new rule set. */
+  function renderInsightPanel(wrap, ins) {
+    var vc = ins.verdict === 'PLAY' ? 'play' : ins.verdict === 'MARGINAL' ? 'marginal' : 'skip';
+    var conf = parseInt(ins.confidence, 10) || 0;
+    var h = '<div class="ins-panel ' + vc + '" style="margin-top:8px;padding:10px;border-radius:6px;border:1px solid var(--b1);background:var(--s2)">';
+    h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
+    h += '<span class="ins-vbadge ' + vc + '" style="font-family:Space Mono,monospace;font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:' +
+         (vc === 'play' ? 'rgba(74,222,128,.2);color:var(--ac)'
+        : vc === 'marginal' ? 'rgba(245,158,11,.2);color:var(--ac2)'
+        : 'rgba(248,113,113,.2);color:var(--red)') + '">' + ins.verdict + '</span>';
+    h += '<span style="display:flex;align-items:center;gap:10px">';
+    h += '<span style="font-size:10px;font-family:Space Mono,monospace;color:var(--mu)">' + conf + '/10</span>';
+    h += '</span></div>';
+    h += '<div style="font-size:12px;font-weight:600;margin-bottom:6px;line-height:1.4">' + ins.headline + '</div>';
+    h += '<div style="font-size:11px;color:var(--tx);line-height:1.55;margin-bottom:8px">' + ins.explanation + '</div>';
+    h += '<div style="font-size:10px;color:var(--ac);font-family:Space Mono,monospace;margin-bottom:4px">EDGE &nbsp; ' + ins.edge + '</div>';
+    h += '<div style="font-size:10px;color:var(--red);font-family:Space Mono,monospace">RISK &nbsp; ' + ins.risk + '</div>';
+    h += '</div>';
+    wrap.innerHTML = h;
+  }
+
+  function loadAiInsight(idx) {
+    var card = document.getElementById('tmev-card-' + idx);
+    if (!card) return;
+    var btn  = card.querySelector('.tmev-insight-btn');
+    var wrap = card.querySelector('.tmev-insight-wrap');
+    if (!btn || !wrap) return;
+    var c = (S.candidatesFull && S.candidatesFull[idx]) || null;
+    /* Candidates rendered in the filtered view map to post-sort indices
+       that don't align to S.candidatesFull's insertion order. Look up by
+       pair_key/combo_idx instead when we can't assume positional identity. */
+    if (!c) {
+      /* Fallback: find via the id embedded in the card — idx is the
+         post-filter render position, so use the filtered list. */
+      var filtered = applyFilters(S.candidatesFull);
+      c = filtered[idx];
+    }
+    if (!c) {
+      wrap.innerHTML = '<div style="margin-top:8px;font-size:11px;color:var(--red);font-family:Space Mono,monospace">No candidate data for idx=' + idx + '</div>';
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = '⟳ Analyzing…';
+    wrap.innerHTML = '';
+
+    var builder = window.buildTeammateInsightPrompt;
+    if (typeof builder !== 'function') {
+      wrap.innerHTML = '<div style="margin-top:8px;font-size:11px;color:var(--red);font-family:Space Mono,monospace">teammateInsightPrompt.js not loaded</div>';
+      btn.disabled = false; btn.textContent = '✦ AI INSIGHTS';
+      return;
+    }
+    var prompt = builder(projectCandidateForInsight(c));
+
+    fetch('/api/sgp-insight', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ prompt: prompt }),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        btn.disabled = false; btn.textContent = '✦ AI INSIGHTS';
+        if (j.error) {
+          wrap.innerHTML = '<div style="margin-top:8px;font-size:11px;color:var(--red);font-family:Space Mono,monospace">' + j.error + '</div>';
+          return;
+        }
+        /* Claude sometimes wraps JSON in ```json fences despite the "no
+           markdown" instruction. Strip them defensively — matches the
+           pitcher side's approach at index.html:1339. */
+        var txt = (j.text || '').replace(/```json\s*/g, '').replace(/```/g, '').trim();
+        try {
+          var ins = JSON.parse(txt);
+          renderInsightPanel(wrap, ins);
+        } catch (e) {
+          wrap.innerHTML = '<div style="margin-top:8px;font-size:11px;color:var(--red);font-family:Space Mono,monospace">Parse error: ' +
+            e.message + '<br><span style="color:var(--mu);font-size:10px">Raw: ' +
+            txt.slice(0, 200).replace(/</g, '&lt;') + '…</span></div>';
+        }
+      })
+      .catch(function (e) {
+        btn.disabled = false; btn.textContent = '✦ AI INSIGHTS';
+        wrap.innerHTML = '<div style="margin-top:8px;font-size:11px;color:var(--red);font-family:Space Mono,monospace">Network error: ' + e.message + '</div>';
+      });
   }
 
   function render() {
@@ -580,7 +688,8 @@
     setMode:         setMode,
     onFilter:        onFilter,
     useSyntheticFv:  useSyntheticFv,
-    _aiInsight:      aiInsightPlaceholder, // chunk 6 replaces this
+    _aiInsight:      loadAiInsight,
+    _projectForInsight: projectCandidateForInsight,
     _render:         render,
     _cardHtml:       cardHtml,
     _state:          S,  // for debugging from the browser console
