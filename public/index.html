@@ -253,6 +253,10 @@ h1 em{color:var(--ac);font-style:normal;}
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <span style="font-size:13px;color:var(--cyan);font-family:Syne,sans-serif;font-weight:700">+EV SGP FINDER</span>
       <span style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace">Upload your FV sheet &rarr; auto-match to DK &rarr; find the biggest edges</span>
+      <div id="evLegSizeTG" style="margin-left:auto;display:inline-flex;border:1px solid var(--b1);border-radius:6px;overflow:hidden;font-family:Space Mono,monospace">
+        <button id="evLegSize2" class="active" onclick="evSetLegSize(2)" title="Pair SGPs. Default. Existing 2-leg enumeration over matched legs." style="padding:6px 12px;font-size:11px;font-weight:600;border:none;background:rgba(34,197,94,.12);color:var(--ac);cursor:pointer;letter-spacing:.5px">2-LEG</button>
+        <button id="evLegSize3" onclick="evSetLegSize(3)" title="Triplet SGPs. Iterates C(matched,3) combos; uses empirical 3-way joint from pitcher aggregates blended toward global baseline. Heavier shrinkage than 2-leg." style="padding:6px 12px;font-size:11px;font-weight:600;border:none;border-left:1px solid var(--b1);background:transparent;color:var(--mu);cursor:pointer;letter-spacing:.5px">3-LEG</button>
+      </div>
     </div>
     <div id="evDrop" style="border:2px dashed var(--b2);border-radius:9px;padding:28px 16px;text-align:center;cursor:pointer;transition:all .15s;background:var(--s2)">
       <div style="font-size:13px;color:var(--tx);font-weight:600;margin-bottom:4px">Drag &amp; drop your FV sheet screenshot</div>
@@ -260,6 +264,11 @@ h1 em{color:var(--ac);font-style:normal;}
       <input type="file" id="evFile" accept="image/*" style="display:none" onchange="evUpload(event)">
     </div>
     <div id="evStatus" style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace;min-height:16px"></div>
+    <div id="evFilters3" style="display:none;gap:14px;flex-wrap:wrap;align-items:center;padding:8px 10px;background:var(--s2);border-radius:7px;font-size:10px;font-family:Space Mono,monospace;color:var(--mu)">
+      <div style="display:flex;align-items:center;gap:6px"><span>MIN EV%</span><input type="range" id="evMinEV3" min="0" max="50" step="1" value="10" oninput="evMinEV3Change()" style="width:100px"><span id="evMinEV3V" style="color:var(--ac);min-width:28px">10%</span></div>
+      <div style="display:flex;align-items:center;gap:6px"><span>MIN STARTS</span><input type="range" id="evMinN3" min="15" max="150" step="5" value="75" oninput="evMinN3Change()" style="width:100px"><span id="evMinN3V" style="color:var(--ac);min-width:28px">75</span></div>
+      <span style="margin-left:auto;color:var(--ac2);font-size:9px;letter-spacing:.4px" title="3-leg empirical joint rates can look inflated on aces because pitcher quality drives all three legs at once. Aggressive shrinkage is on: below n_eff=15 legs fall back to 100% global. If median EDGE across cards runs >+5pp, shrinkage is loose — filter harder or drop MIN STARTS.">&#9888; CALIBRATION ON — SEE TOOLTIP</span>
+    </div>
   </div>
   <div id="evDetected"></div>
   <div id="evResults"></div>
@@ -1079,6 +1088,32 @@ function tmClose(){
 */
 var EV_DETECTED=null;
 var EV_RESULTS=null;
+/* Per-size result cache. Toggling 2↔3 re-requests if the other size hasn't
+   been priced yet on the current EV_DETECTED; a cached result replays
+   without another DK round-trip. */
+var EV_RESULTS_BY_SIZE={2:null,3:null};
+
+/* Leg-count mode: 2 or 3. Default 2. 3-leg is opt-in because (a) it triples
+   the per-pitcher DK pricing load (C(k,3) calls) and (b) empirical 3-way
+   joints are higher variance than pairwise — requires heavier shrinkage and
+   tighter filters. Toggle in the +EV Finder header; state persists for the
+   current session. */
+var EV_LEG_SIZE=2;
+/* 3-leg filter defaults.
+   MIN EV% starts at +10% (not 5%) while the empirical 3-way joint is being
+   calibrated — aces produce high all3 because pitcher quality drives all
+   three legs simultaneously, so the early distribution skews optimistic.
+   Users can drop these sliders once we've observed a few slates. */
+var EV_MIN_EV_PCT_3=10;
+var EV_MIN_STARTS_3=75;
+/* 3-way shrinkage. 15 effective starts is the floor for any player weight
+   at all; below that a pitcher's empirical triplet rate is essentially noise
+   (one hot streak flips 20pp) and must route entirely to the global
+   triplet baseline. Above 15, weight follows n_eff/(n_eff+K_3WAY) with
+   K_3WAY=80 — stiffer than pairwise K=50 because joint frequency variance
+   is higher than marginal or pairwise frequency variance. */
+var BLEND_MIN_STARTS_3WAY=15;
+var K_3WAY=80;
 
 /* Correlation mode: 'global' | 'blended' | 'player'.
    Default 'blended' — Bayesian shrinkage of player r toward the global prior,
@@ -1140,6 +1175,43 @@ function evSetCorrMode(m){
      its card r values depend on CORR_MODE too, so re-render when active. */
   var pp=document.getElementById('page-pitcher');
   if(pp&&pp.classList.contains('active')&&typeof applyPF==='function')applyPF();
+}
+
+/* 2↔3 leg toggle. Re-uses the already-OCR'd EV_DETECTED legs — flipping
+   doesn't re-upload, just re-enumerates against DK. The per-size cache lets
+   users bounce between modes without hitting DK again once both have been
+   priced. Toggle visibility of the 3-leg filter bar follows the mode. */
+function evSetLegSize(n){
+  if(n!==2&&n!==3)return;
+  if(EV_LEG_SIZE===n)return;
+  EV_LEG_SIZE=n;
+  var btn2=document.getElementById('evLegSize2'),btn3=document.getElementById('evLegSize3');
+  if(btn2){btn2.className=n===2?'active':'';btn2.style.background=n===2?'rgba(34,197,94,.12)':'transparent';btn2.style.color=n===2?'var(--ac)':'var(--mu)';}
+  if(btn3){btn3.className=n===3?'active':'';btn3.style.background=n===3?'rgba(34,197,94,.12)':'transparent';btn3.style.color=n===3?'var(--ac)':'var(--mu)';}
+  var fb=document.getElementById('evFilters3');
+  if(fb)fb.style.display=n===3?'flex':'none';
+  /* If we already have an OCR'd leg set, re-request pricing at the new size
+     (cached replay when available). No OCR in flight means nothing to do —
+     the toggle will take effect on the next upload. */
+  if(!EV_DETECTED||!EV_DETECTED.length)return;
+  if(EV_RESULTS_BY_SIZE[n]){
+    EV_RESULTS=EV_RESULTS_BY_SIZE[n];
+    evRenderResults();
+  }else{
+    evFindSgps(n);
+  }
+}
+function evMinEV3Change(){
+  var el=document.getElementById('evMinEV3');if(!el)return;
+  EV_MIN_EV_PCT_3=+el.value;
+  var v=document.getElementById('evMinEV3V');if(v)v.textContent=EV_MIN_EV_PCT_3+'%';
+  if(EV_LEG_SIZE===3)evRenderResults();
+}
+function evMinN3Change(){
+  var el=document.getElementById('evMinN3');if(!el)return;
+  EV_MIN_STARTS_3=+el.value;
+  var v=document.getElementById('evMinN3V');if(v)v.textContent=EV_MIN_STARTS_3;
+  if(EV_LEG_SIZE===3)evRenderResults();
 }
 
 /* ---------- shared helpers (American↔Probability, stat category, correlation) ---------- */
@@ -1475,6 +1547,7 @@ function evCallClaude(b64,mime){
     .then(function(j){
       if(j.error){status.innerHTML='<span style="color:var(--red)">Extract error: '+j.error+'</span>';return;}
       EV_DETECTED=j.rows||[];
+      EV_RESULTS_BY_SIZE={2:null,3:null};  /* new OCR = fresh legs = fresh prices at both sizes */
       if(!EV_DETECTED.length){status.innerHTML='<span style="color:var(--red)">No legs extracted from image</span>';return;}
       var pitcherCount=Object.keys(EV_DETECTED.reduce(function(a,l){a[l.pitcher]=1;return a;},{})).length;
       status.innerHTML='<span style="color:var(--ac)">Extracted '+EV_DETECTED.length+' legs across '+pitcherCount+' pitcher(s). Fetching DK SGP prices...</span>';
@@ -1498,14 +1571,20 @@ function evRenderDetected(){
   document.getElementById('evDetected').innerHTML=html;
 }
 
-function evFindSgps(){
+function evFindSgps(size){
+  /* Defaults to the active EV_LEG_SIZE when called from the upload flow;
+     explicit size arg (from evSetLegSize) bypasses that so the toggle can
+     request the *other* size without mutating state first. */
+  var wantSize=(size===2||size===3)?size:EV_LEG_SIZE;
   var status=document.getElementById('evStatus');
-  document.getElementById('evResults').innerHTML='<div style="padding:24px;text-align:center;color:var(--cyan);font-family:Space Mono,monospace;font-size:12px;background:var(--s1);border:1px solid var(--b1);border-radius:10px;margin-top:10px">Step 2/2 &middot; Matching to DraftKings and pricing all combos...<br><span style="color:var(--mu);font-size:10px">This takes ~10-30 seconds depending on leg count</span></div>';
-  fetch('/api/dk/find-sgps',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({legs:EV_DETECTED})})
+  var slowNote=wantSize===3?' C(k,3) combos add ~1s per triplet against DK.':'';
+  document.getElementById('evResults').innerHTML='<div style="padding:24px;text-align:center;color:var(--cyan);font-family:Space Mono,monospace;font-size:12px;background:var(--s1);border:1px solid var(--b1);border-radius:10px;margin-top:10px">Step 2/2 &middot; Matching to DraftKings and pricing all '+wantSize+'-leg combos...<br><span style="color:var(--mu);font-size:10px">This takes ~10-30 seconds depending on leg count.'+slowNote+'</span></div>';
+  fetch('/api/dk/find-sgps',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({legs:EV_DETECTED,enumSize:wantSize})})
     .then(function(r){return r.json();})
     .then(function(j){
       if(j.error&&!j.pitchers){document.getElementById('evResults').innerHTML='<div class="note" style="border-left-color:var(--red)">'+j.error+'</div>';return;}
       EV_RESULTS=j;
+      EV_RESULTS_BY_SIZE[wantSize]=j;
       status.innerHTML='<span style="color:var(--ac)">Done! Scroll down to see all +EV SGPs ranked.</span>';
       evRenderResults();
     })
@@ -1568,6 +1647,11 @@ function evComputeCombo(pitcher,pd,matchedLegs,indices,dkDecimal){
 
 function evRenderResults(){
   if(!EV_RESULTS){document.getElementById('evResults').innerHTML='';return;}
+  /* 3-leg mode takes its own render path — different card layout, different
+     filters (MIN EV% / MIN STARTS), different data source (combos_3/all3
+     from aggregates rather than combos_2/pairwise r). 2-leg path below
+     unchanged. */
+  if(EV_LEG_SIZE===3){return evRenderResults3Leg();}
   _SGP_DATA=[];
   var html='';
   var pitchers=EV_RESULTS.pitchers||{};
@@ -1757,6 +1841,22 @@ function evRenderResults(){
 
   document.getElementById('evResults').innerHTML=html;
   window.scrollTo({top:document.getElementById('evResults').offsetTop-20,behavior:'smooth'});
+}
+
+/* ============ 3-leg render stub ============
+   WIP: the 2-leg path is production; the 3-leg render pipeline is under
+   construction. Backend (dk_api.py enum_size=3 + server forwarding) is live
+   and prompt builder is extended, but the frontend enumeration / card /
+   EV math block is still being authored. Flipping the toggle lands here
+   and shows a placeholder instead of crashing. Remove this stub when
+   evRenderResults3Leg proper lands. */
+function evRenderResults3Leg(){
+  document.getElementById('evResults').innerHTML=
+    '<div class="note" style="border-left-color:var(--ac2)">'+
+    '<b>3-leg mode is wired but the render pipeline is still in progress.</b><br>'+
+    'Backend is live (<code>enumSize:3</code> priced on DK) and the AI prompt builder handles 3-leg context. '+
+    'The enumeration + card render block lands next commit. Use 2-leg for now.'+
+    '</div>';
 }
 </script>
 <script>
