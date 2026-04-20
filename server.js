@@ -20,7 +20,31 @@ const DEBUG = process.env.DEBUG === 'true';
 
 app.use(compression());
 app.use(express.json({ limit: '25mb' }));
-app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1h' }));
+app.use(express.static(path.join(__dirname, 'public'), {
+  /* Default per-file cache window. Keeps the big public/data/*.json
+     aggregates (~30 MB) cacheable for an hour — they only change on
+     aggregator rebuilds and aren't iteration-sensitive. */
+  maxAge: '1h',
+  /* Override for the three iteration-sensitive asset classes.
+     Motivating case (2026-04-20): PR #37 merged to main + deployed
+     to Railway, but iPhone Safari kept serving the pre-PR bundle for
+     ~an hour because index.html + /utils/*.js were cached under the
+     blanket 1h maxAge. User saw old UI, stale diagnostic-panel rows,
+     and the "Logan O'Hoppe team=(none)" bug that PR #37 had already
+     fixed — until the cache expired.
+     Switching these to `no-cache` means every page load revalidates
+     against the server via ETag/Last-Modified. If the file hasn't
+     changed, Express returns 304 and the client uses its local copy
+     (fast). If it has, the new bytes go out immediately (correct).
+     Small files (index.html ~133 KB, each utils/*.js ~2-20 KB) so
+     the revalidate cost is negligible vs the stale-bundle confusion
+     it prevents. */
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('.html') || filePath.endsWith('.js') || filePath.endsWith('.css')) {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  },
+}));
 
 // ===== Deterministic leg normalization =====
 // The model returns raw cells. We build the canonical leg string here so the
