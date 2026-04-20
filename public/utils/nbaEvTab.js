@@ -281,6 +281,10 @@
     };
     bindDrop('nbaCorrDrop', 'nbaCorrFile', postCorrFile, 'xlsx');
     bindDrop('nbaFvDrop', 'nbaFvFile', handleFvImage, 'image');
+    /* FIRST-LOOK MODE: hide the filter bar entirely. Dead controls
+       would just confuse. Restoring is a one-line removal once defaults
+       are tuned from the first-upload distribution. */
+    var fb = document.getElementById('nbaFilterBar'); if (fb) fb.style.display = 'none';
     /* Paste-from-clipboard support (NBA tab only). */
     document.addEventListener('paste', function (e) {
       var pageEl = document.getElementById('page-nba-evfinder');
@@ -594,13 +598,60 @@
     renderResults();
   }
 
+  /* Pipeline funnel diagnostic (first-look mode companion). Renders
+     FV parse count, FV ∩ correlations match count + unmatched player
+     list, pairs enumerated, pairs DK-priced, pairs rendered. Collapsed
+     by default when no FV has been uploaded — nothing meaningful to
+     show. Matches #tmevDiagPanel s1/b1 visual vocabulary. */
+  function renderDiagnostics() {
+    var panel = document.getElementById('nbaDiag');
+    if (!panel) return;
+    var f = state.funnel;
+    if (!f || !state.fv) { panel.style.display = 'none'; panel.innerHTML = ''; return; }
+    panel.style.display = '';
+    var unmatchedList = '';
+    if (f.unmatched.length) {
+      var shown = f.unmatched.slice(0, 10);
+      var more = f.unmatched.length > shown.length ? '<li style="color:var(--b2)">…and ' + (f.unmatched.length - shown.length) + ' more</li>' : '';
+      unmatchedList =
+        '<div style="margin-top:10px"><div style="font-size:10px;color:var(--ac2);letter-spacing:.6px;margin-bottom:4px">UNMATCHED FV PLAYERS (' + f.unmatched.length + ')</div>' +
+        '<ul style="margin:0 0 0 16px;padding:0;font-size:11px;color:var(--tx);line-height:1.7">' +
+        shown.map(function (n) { return '<li>' + esc(n) + '</li>'; }).join('') + more + '</ul></div>';
+    }
+    /* Flag zero DK pricing separately. The Phase 3 dev harness attaches
+       DK on demand; Phase 4 OCR + Phase 5 DK wiring populate on real
+       uploads. Distinguishing "pairs enumerated but never priced" from
+       "pairs never enumerated" is the whole point of this funnel. */
+    var dkHint = (f.enumerated > 0 && f.dk_priced === 0)
+      ? ' <span style="color:var(--red)">← DK not wired (run DEV:SIM or wait for live pipeline)</span>' : '';
+    var rendered = Math.min(state.pageShown || state.pageSize || 30, (state.candidates || []).length);
+    panel.innerHTML =
+      '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px">' +
+        '<span style="font-size:11px;color:var(--cyan);font-weight:700;letter-spacing:.5px">PIPELINE FUNNEL</span>' +
+        '<span style="font-size:10px;color:var(--ac2)">FIRST-LOOK MODE · filters stripped</span>' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:auto 1fr;gap:4px 16px;font-size:11px;color:var(--tx)">' +
+        '<div style="color:var(--mu)">FV players parsed</div><div>' + f.fv_count + '</div>' +
+        '<div style="color:var(--mu)">FV ∩ Correlations match</div><div>' + f.matched.length + ' <span style="color:var(--b2)">/ ' + f.fv_count + '</span></div>' +
+        '<div style="color:var(--mu)">Pairs enumerated</div><div>' + f.enumerated + '</div>' +
+        '<div style="color:var(--mu)">DK priced</div><div>' + f.dk_priced + dkHint + '</div>' +
+        '<div style="color:var(--mu)">Rendered</div><div>' + rendered + ' <span style="color:var(--b2)">/ ' + f.enumerated + ' enumerated</span></div>' +
+      '</div>' +
+      unmatchedList;
+  }
+
   function renderResults() {
     var body = document.getElementById('nbaBody');
     var count = document.getElementById('nbaCandCount');
     if (!body) return;
     var cands = sortCandidates(state.candidates || []);
     state.candidates = cands;
-    if (count) count.textContent = cands.length + ' candidate' + (cands.length === 1 ? '' : 's');
+    /* Count banner shown on the (now-hidden) filter bar AND in the
+       top-right of the card list. Renders "Showing X of Y" so the user
+       sees both the paginated-render count and the total enumerated set. */
+    var rendered = Math.min(state.pageShown || state.pageSize || 30, cands.length);
+    if (count) count.textContent = 'Showing ' + rendered + ' of ' + cands.length + ' enumerated';
+    renderDiagnostics();
     if (!state.correlations || state.correlations.status === 'empty') {
       body.innerHTML = '<div class="nba-empty">No NBA correlations data uploaded yet. Drop your xlsx above to begin.</div>';
       return;
@@ -610,12 +661,23 @@
       return;
     }
     if (!cands.length) {
-      body.innerHTML = '<div class="nba-empty">No candidates matched the current filters. Loosen MIN EV%, MIN GAMES, or MAX P_VALUE to see more.</div>';
+      /* FIRST-LOOK MODE: filters are stripped, so zero candidates means
+         the pipeline itself produced nothing — not a too-tight filter.
+         Point the user at the diagnostic funnel instead of suggesting
+         they loosen sliders that don't exist in this mode. */
+      body.innerHTML = '<div class="nba-empty">No pairs enumerated from the current FV × correlations join. See the PIPELINE FUNNEL above for where the pipeline dropped out.</div>';
       return;
     }
     var shown = Math.min(state.pageShown, cands.length);
     var visible = cands.slice(0, shown);
-    var html = '<div class="nba-cards">' + visible.map(function (c) {
+    /* Count banner at the top of the card grid — visible replacement for
+       the filter-bar count which is hidden in first-look mode. */
+    var countBanner =
+      '<div style="display:flex;align-items:baseline;gap:8px;margin:4px 0 10px;font-family:Space Mono,monospace;font-size:11px">' +
+        '<span style="color:var(--cyan);font-weight:700;letter-spacing:.4px">SHOWING ' + shown + ' OF ' + cands.length + '</span>' +
+        '<span style="color:var(--mu)">enumerated candidates &middot; sorted by EV% desc</span>' +
+      '</div>';
+    var html = countBanner + '<div class="nba-cards">' + visible.map(function (c) {
       var cardHtml = renderCard(c);
       /* Inject badges after the placeholder div renderCard emitted. We
          render badges separately so card HTML stays a pure data->HTML

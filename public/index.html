@@ -492,6 +492,10 @@ h1 em{color:var(--ac);font-style:normal;}
     <button id="nbaDevSimBtn" type="button" onclick="window.nbaTab&amp;&amp;window.nbaTab.devSimulate()" style="display:none;padding:6px 12px;font-size:10px;font-weight:600;border:1px dashed var(--ac2);background:rgba(245,158,11,.08);color:var(--ac2);border-radius:5px;cursor:pointer;font-family:Space Mono,monospace;letter-spacing:.4px">DEV: SIMULATE FV+DK</button>
     <span id="nbaCandCount" style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace;margin-left:auto"></span>
   </div>
+  <!-- Pipeline diagnostic panel — populated by nbaEvTab.renderDiagnostics
+       after every runPipeline call. Mirrors #tmevDiagPanel visual
+       vocabulary. Inert until FV is uploaded. -->
+  <div id="nbaDiag" style="display:none;margin-top:10px;background:var(--s1);border:1px solid var(--b1);border-radius:9px;padding:12px 14px;font-family:Space Mono,monospace"></div>
   <div id="nbaBody"></div>
 </div>
 <div class="tm-overlay" id="tmOverlay" onclick="tmClose()"></div>
