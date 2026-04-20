@@ -111,6 +111,73 @@ h1 em{color:var(--ac);font-style:normal;}
 .ins-vbadge.play{background:rgba(74,222,128,.15);color:var(--ac);}
 .ins-vbadge.marginal{background:rgba(245,158,11,.15);color:var(--ac2);}
 .ins-vbadge.skip{background:rgba(248,113,113,.15);color:var(--red);}
+/* ===== Teammate Lookup tab ===== */
+.tm-ctrl{display:flex;flex-direction:column;gap:10px;padding:12px 14px;background:var(--s1);border:1px solid var(--b1);border-radius:9px;margin-bottom:14px;}
+.tm-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+.tm-label{font-size:10px;color:var(--mu);font-family:'Space Mono',monospace;letter-spacing:.3px;}
+.tm-modes{display:inline-flex;border:1px solid var(--b1);border-radius:6px;overflow:hidden;font-family:'Space Mono',monospace;}
+.tm-modes button{padding:6px 12px;font-size:11px;font-weight:600;border:none;background:transparent;color:var(--mu);cursor:pointer;letter-spacing:.4px;}
+.tm-modes button.active{background:rgba(34,211,238,.12);color:var(--cyan);}
+.tm-modes button+button{border-left:1px solid var(--b1);}
+.tm-slider{display:flex;align-items:center;gap:6px;font-family:'Space Mono',monospace;font-size:10px;color:var(--mu);}
+.tm-slider input[type=range]{width:100px;accent-color:var(--ac3);}
+.tm-slider .v{color:var(--ac3);font-weight:600;min-width:24px;text-align:right;}
+.tm-toggle{display:inline-flex;align-items:center;gap:6px;font-family:'Space Mono',monospace;font-size:10px;color:var(--mu);cursor:pointer;user-select:none;}
+.tm-toggle input{appearance:none;width:26px;height:14px;background:var(--bg);border:1px solid var(--b1);border-radius:7px;position:relative;cursor:pointer;transition:background .15s;}
+.tm-toggle input:checked{background:rgba(34,211,238,.18);border-color:var(--cyan);}
+.tm-toggle input::after{content:'';position:absolute;left:2px;top:1px;width:9px;height:9px;border-radius:50%;background:var(--mu);transition:transform .15s;}
+.tm-toggle input:checked::after{transform:translateX(11px);background:var(--cyan);}
+.tm-pdd{position:absolute;top:100%;left:0;right:0;background:var(--s1);border:1px solid var(--b2);border-radius:6px;margin-top:2px;max-height:220px;overflow-y:auto;z-index:50;display:none;}
+.tm-pdd.open{display:block;}
+.tm-pdd-item{padding:6px 10px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--b1);font-family:'Inter',sans-serif;}
+.tm-pdd-item:hover{background:var(--s2);color:var(--ac3);}
+.tm-search-wrap{position:relative;flex:1;min-width:160px;}
+.tm-search{width:100%;background:var(--bg);border:1px solid var(--b1);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--tx);font-family:'Inter',sans-serif;outline:none;}
+.tm-search:focus{border-color:var(--ac3);}
+.tm-stats{display:flex;gap:20px;flex-wrap:wrap;font-family:'Space Mono',monospace;font-size:11px;color:var(--mu);padding:6px 2px;}
+.tm-stats .n{font-size:14px;font-weight:700;color:var(--ac3);}
+.tm-table-wrap{background:var(--s1);border:1px solid var(--b1);border-radius:9px;overflow-x:auto;}
+.tm-table{width:100%;border-collapse:collapse;font-family:'Space Mono',monospace;}
+.tm-table th{padding:8px 8px;text-align:left;font-size:9px;font-weight:700;color:var(--mu);letter-spacing:.5px;cursor:pointer;user-select:none;white-space:nowrap;background:var(--s2);border-bottom:1px solid var(--b1);}
+.tm-table th:hover{color:var(--tx);}
+.tm-table td{padding:7px 8px;font-size:11px;border-bottom:1px solid var(--b1);}
+.tm-table tr.r{cursor:pointer;}
+.tm-table tr.r:hover{background:var(--s2);}
+.tm-rcell{display:inline-block;padding:2px 6px;border-radius:4px;font-weight:700;font-size:11px;min-width:48px;text-align:center;}
+.tm-rmcell{font-size:10px;color:var(--mu);margin-left:4px;}
+.tm-badge{font-size:9px;padding:1px 5px;border-radius:3px;font-weight:700;background:var(--s2);color:var(--mu);}
+.tm-badge.adj{background:rgba(96,165,250,.15);color:var(--ac3);}
+.tm-drawer{position:fixed;right:0;top:0;width:520px;max-width:100vw;height:100vh;background:var(--bg);border-left:1px solid var(--b1);z-index:200;overflow-y:auto;padding:18px 20px 40px;transform:translateX(100%);transition:transform .2s ease;box-shadow:-12px 0 32px rgba(0,0,0,.35);}
+.tm-drawer.open{transform:translateX(0);}
+.tm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:199;opacity:0;pointer-events:none;transition:opacity .2s;}
+.tm-overlay.open{opacity:1;pointer-events:auto;}
+.tm-close{position:absolute;top:10px;right:10px;width:28px;height:28px;border-radius:6px;border:1px solid var(--b1);background:var(--s1);color:var(--mu);font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.tm-close:hover{border-color:var(--b2);color:var(--tx);}
+.tm-drawer h3{font-family:'Syne',sans-serif;font-size:17px;font-weight:800;margin-bottom:2px;letter-spacing:-.3px;}
+.tm-drawer .sub{font-size:11px;color:var(--mu);font-family:'Space Mono',monospace;margin-bottom:14px;}
+.tm-sec{background:var(--s1);border:1px solid var(--b1);border-radius:8px;padding:11px 13px;margin-bottom:10px;}
+.tm-sec .title{font-size:10px;font-weight:700;font-family:'Space Mono',monospace;color:var(--mu);letter-spacing:.5px;margin-bottom:8px;}
+.tm-kv{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center;font-family:'Space Mono',monospace;}
+.tm-kv .k{font-size:9px;color:var(--mu);margin-bottom:2px;}
+.tm-kv .v{font-size:16px;font-weight:700;color:var(--ac3);}
+.tm-matrix{display:grid;gap:1px;}
+.tm-mh{font-size:9px;font-family:'Space Mono',monospace;color:var(--mu);font-weight:700;padding:3px 4px;text-align:center;}
+.tm-ml{font-size:9px;font-family:'Space Mono',monospace;color:var(--tx);font-weight:600;padding:3px 4px;text-align:right;white-space:nowrap;}
+.tm-mc{font-size:10px;font-family:'Space Mono',monospace;font-weight:700;padding:3px 4px;text-align:center;border-radius:3px;cursor:default;line-height:1.1;}
+.tm-mc .rm{font-size:8px;opacity:.75;display:block;font-weight:500;}
+.tm-slotgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:4px;}
+.tm-slotcell{background:var(--s2);padding:5px 4px;border-radius:5px;text-align:center;font-family:'Space Mono',monospace;}
+.tm-slotcell .slots{font-size:11px;font-weight:700;color:var(--tx);}
+.tm-slotcell .n{font-size:9px;color:var(--mu);margin-top:1px;}
+.tm-slotcell.top{background:rgba(34,211,238,.12);}
+.tm-slotcell.top .slots{color:var(--cyan);}
+.tm-context{background:var(--s2);padding:8px 10px;border-radius:6px;font-size:11px;color:var(--tx);font-family:'Inter',sans-serif;line-height:1.5;}
+.tm-context strong{color:var(--cyan);}
+.tm-years{display:flex;gap:14px;font-family:'Space Mono',monospace;font-size:11px;color:var(--tx);}
+.tm-years .y{color:var(--mu);margin-right:3px;}
+.tm-loadmsg{padding:40px 20px;text-align:center;color:var(--mu);font-family:'Space Mono',monospace;font-size:12px;}
+.tm-loadmsg .pulse{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--ac);margin-right:8px;vertical-align:middle;animation:pulse 1.2s infinite;}
+@media(max-width:768px){.tm-drawer{width:100%;}.tm-kv{grid-template-columns:repeat(3,1fr);}.tm-mh,.tm-mc,.tm-ml{font-size:8px;padding:2px 3px;}.tm-mc .rm{font-size:7px;}}
 </style>
 <script src="/utils/sgpInsightPrompt.js"></script>
 </head>
@@ -124,6 +191,7 @@ h1 em{color:var(--ac);font-style:normal;}
 <div class="nav">
   <button class="nav-tab active" onclick="showPage('global')">Global</button>
   <button class="nav-tab" onclick="showPage('pitcher')">Pitcher Lookup</button>
+  <button class="nav-tab" onclick="showPage('teammate')">Teammate Lookup</button>
   <button class="nav-tab" onclick="showPage('evfinder')">+EV Finder</button>
 </div>
 <div class="header">
@@ -189,7 +257,743 @@ h1 em{color:var(--ac);font-style:normal;}
   <div id="evDetected"></div>
   <div id="evResults"></div>
 </div>
+<div id="page-teammate" class="page">
+  <div class="tm-ctrl">
+    <div class="tm-row">
+      <span style="font-size:13px;color:var(--cyan);font-family:Syne,sans-serif;font-weight:700;letter-spacing:-.2px">TEAMMATE SGP LOOKUP</span>
+      <span style="font-size:10px;color:var(--mu);font-family:'Space Mono',monospace">cross-player correlations with slot-pair baselines</span>
+    </div>
+    <div class="tm-row">
+      <div class="tm-search-wrap" style="max-width:220px">
+        <input class="tm-search" id="tmSearch" placeholder="Search player..." oninput="tmSearchInput()" onfocus="tmSearchFocus()" onblur="setTimeout(tmSearchBlur,200)">
+        <div class="tm-pdd" id="tmSearchDD"></div>
+      </div>
+      <select class="ssel" id="tmTeam" onchange="tmRender()"><option value="">All teams</option></select>
+      <select class="ssel" id="tmSort" onchange="tmRender()">
+        <option value="r">Sort: best |r|</option>
+        <option value="n">Sort: n games</option>
+        <option value="adj">Sort: adjacency</option>
+      </select>
+      <div class="tm-modes">
+        <button id="tmModePlayer" class="" onclick="tmSetMode('player')" title="Pair-specific correlation, no shrinkage. Noisy at low n.">PLAYER</button>
+        <button id="tmModeBlended" class="active" onclick="tmSetMode('blended')" title="Bayesian shrinkage of pair r toward slot-pair baseline. Best point estimate.">BLENDED</button>
+        <button id="tmModeGlobal" class="" onclick="tmSetMode('global')" title="League-wide slot-pair baseline for the pair's most common slot config. Ignores pair-specific data.">GLOBAL</button>
+      </div>
+    </div>
+    <div class="tm-row">
+      <div class="tm-slider"><span class="tm-label">MIN GAMES</span><input type="range" id="tmMinN" min="20" max="250" value="30" oninput="tmMinNChange()"><span class="v" id="tmMinNV">30</span></div>
+      <div class="tm-slider"><span class="tm-label">MIN |r|</span><input type="range" id="tmMinR" min="0" max="80" step="1" value="20" oninput="tmMinRChange()"><span class="v" id="tmMinRV">0.20</span></div>
+      <label class="tm-toggle"><input type="checkbox" id="tm2026Only" onchange="tmRender()"><span>2026 ACTIVE PAIRS ONLY</span></label>
+      <span id="tmHint" style="font-size:10px;color:var(--mu);font-family:'Space Mono',monospace;margin-left:auto"></span>
+    </div>
+  </div>
+  <div class="tm-stats"><div><span class="n" id="tmCount">--</span> <span>PAIRS MATCHING</span></div><div><span class="n" id="tmTotal">--</span> <span>TOTAL PAIRS</span></div><div><span class="n" id="tmPlayers">--</span> <span>UNIQUE PLAYERS</span></div></div>
+  <div id="tmBody">
+    <div class="tm-loadmsg"><span class="pulse"></span> Click the Teammate Lookup tab to begin. Data loads on first open.</div>
+  </div>
+</div>
+<div class="tm-overlay" id="tmOverlay" onclick="tmClose()"></div>
+<div class="tm-drawer" id="tmDrawer"><button class="tm-close" onclick="tmClose()">&#10005;</button><div id="tmDrawerBody"></div></div>
 <script>
+/* ============================================================
+   Teammate Lookup tab — self-contained behavior layer.
+   Reads only DOM + its own lazy-loaded JSON blobs; does not
+   share state with the pitcher-side renderers.
+   ============================================================ */
+
+/* --- global state (attached to window so lazy-load survives tab switches) --- */
+window.TEAMMATE_LOADED  = window.TEAMMATE_LOADED  || false;
+window.TEAMMATE_LOADING = window.TEAMMATE_LOADING || false;
+window.TEAMMATE_DATA    = window.TEAMMATE_DATA    || null;   // pooled_static scheme
+window.SLOT_BASELINES   = window.SLOT_BASELINES   || null;   // slot_pair_baselines
+
+/* --- Color scale — mirrors pitcher Global tab thresholds
+       (rCls/rCol in index.html ~line 1371) so correlation cells look
+       identical across tabs. Thresholds: strong +0.30, moderate +0.15,
+       weak gray, negative red. Returned value is CSS var reference for
+       text; tmRBg returns a matching translucent background tint. */
+function tmRColor(r){
+  if(r===null||r===undefined||isNaN(r))return 'var(--mu)';
+  if(r>=0.30)return 'var(--ac)';
+  if(r>=0.15)return 'var(--ac2)';
+  if(r<0)    return 'var(--red)';
+  return 'var(--mu)';
+}
+function tmRBg(r){
+  if(r===null||r===undefined||isNaN(r))return 'transparent';
+  if(r>=0.30)return 'rgba(74,222,128,.14)';   /* green tint */
+  if(r>=0.15)return 'rgba(245,158,11,.12)';   /* amber tint */
+  if(r<0)    return 'rgba(248,113,113,.12)';  /* red tint */
+  return 'rgba(107,116,144,.08)';             /* gray */
+}
+
+/* --- Team dropdown: collect unique pair.t across all pairs, sort, and
+       inject into #tmTeam. Idempotent — called after data loads, safe
+       to re-invoke if we ever swap schemes at runtime. */
+function tmPopulateTeamDropdown(){
+  var sel = document.getElementById('tmTeam');
+  if(!sel || !window.TEAMMATE_DATA) return;
+  var teams = {};
+  var pairs = window.TEAMMATE_DATA.pairs || {};
+  for(var k in pairs){ if(pairs[k] && pairs[k].t) teams[pairs[k].t] = true; }
+  var sorted = Object.keys(teams).sort();
+  /* Preserve any already-selected value across re-populate. */
+  var prev = sel.value || '';
+  var html = '<option value="">All teams</option>';
+  for(var i=0;i<sorted.length;i++){
+    html += '<option value="'+sorted[i].replace(/"/g,'&quot;')+'">'+sorted[i]+'</option>';
+  }
+  sel.innerHTML = html;
+  if(prev && teams[prev]) sel.value = prev;
+}
+
+/* --- Lazy loader: pulled on first Teammate tab open (see showPage()).
+       Fetches slot_pair_baselines.json (1.3 MB) and
+       teammate_aggregates_pooled_static.json (30 MB) in parallel. Errors
+       render a visible message in the #tmBody area so a broken file
+       surfaces instead of leaving the tab silently empty.
+       Dynamic bucket schemes are deferred — Phase 1 UI runs entirely
+       off the static file to keep total bytes down. */
+async function teammateLazyLoad(){
+  if(window.TEAMMATE_LOADED || window.TEAMMATE_LOADING) return;
+  window.TEAMMATE_LOADING = true;
+  var body = document.getElementById('tmBody');
+  if(body){
+    body.innerHTML = '<div class="tm-loadmsg"><span class="pulse"></span> Loading teammate correlations &amp; slot baselines...</div>';
+  }
+  try{
+    var results = await Promise.all([
+      fetch('data/slot_pair_baselines.json').then(function(r){
+        if(!r.ok) throw new Error('slot_pair_baselines.json HTTP '+r.status);
+        return r.json();
+      }),
+      fetch('data/teammate_aggregates_pooled_static.json').then(function(r){
+        if(!r.ok) throw new Error('teammate_aggregates_pooled_static.json HTTP '+r.status);
+        return r.json();
+      }),
+    ]);
+    window.SLOT_BASELINES = results[0];
+    window.TEAMMATE_DATA  = results[1];
+    window.TEAMMATE_LOADED = true;
+    tmPopulateTeamDropdown();
+    if(typeof tmRender === 'function') tmRender();
+    else if(body){
+      body.innerHTML = '<div class="tm-loadmsg">Data loaded: '+
+        (window.TEAMMATE_DATA.n_pairs||0)+' pairs. Renderer pending (chunk 2).</div>';
+    }
+  }catch(err){
+    console.error('[teammate] load failed', err);
+    if(body){
+      body.innerHTML = '<div class="tm-loadmsg" style="color:var(--red)">'+
+        'Failed to load teammate data: '+(err && err.message ? err.message : err)+'</div>';
+    }
+  }finally{
+    window.TEAMMATE_LOADING = false;
+  }
+}
+
+/* --- Filter/UI state defaults. Kept on window so tab switches don't
+       reset the user's current view. Slider readouts use the real IDs
+       present in the markup: #tmMinN/#tmMinNV (value 20..250 raw games)
+       and #tmMinR/#tmMinRV (slider value 0..80 -> r in 0..0.80). */
+if(window.TM_MODE       === undefined) window.TM_MODE       = 'blended';
+if(window.TM_MIN_N      === undefined) window.TM_MIN_N      = 30;
+if(window.TM_MIN_R      === undefined) window.TM_MIN_R      = 0.20;
+if(window.TM_ACTIVE_ONLY=== undefined) window.TM_ACTIVE_ONLY= false;
+
+function _tmEscAttr(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,"&#39;");}
+
+/* --- Player typeahead. Collects unique names from p1 and p2 across
+       all pairs, filters case-insensitive, shows top 8 in the dropdown.
+       onmousedown fires before blur, so the 200ms setTimeout in
+       tm-search's onblur still allows the click to register. */
+function tmSearchInput(){
+  var inp = document.getElementById('tmSearch');
+  var dd  = document.getElementById('tmSearchDD');
+  if(!inp || !dd) return;
+  var q = (inp.value || '').trim().toLowerCase();
+  if(!q || !window.TEAMMATE_DATA){ dd.classList.remove('open'); dd.innerHTML=''; tmRender(); return; }
+  var seen = {};
+  var pairs = window.TEAMMATE_DATA.pairs || {};
+  for(var k in pairs){
+    var p = pairs[k];
+    if(p.p1 && p.p1.toLowerCase().indexOf(q)>=0) seen[p.p1]=true;
+    if(p.p2 && p.p2.toLowerCase().indexOf(q)>=0) seen[p.p2]=true;
+  }
+  var names = Object.keys(seen).sort().slice(0,8);
+  if(!names.length){
+    dd.innerHTML = '<div class="tm-pdd-item" style="color:var(--mu)">No players found</div>';
+  }else{
+    dd.innerHTML = names.map(function(n){
+      return '<div class="tm-pdd-item" onmousedown="tmSearchPick(\''+_tmEscAttr(n).replace(/\\/g,'\\\\')+'\')">'+_tmEscAttr(n)+'</div>';
+    }).join('');
+  }
+  dd.classList.add('open');
+  tmRender();
+}
+function tmSearchFocus(){
+  var inp = document.getElementById('tmSearch');
+  if(inp && inp.value) tmSearchInput();
+}
+function tmSearchBlur(){
+  var dd = document.getElementById('tmSearchDD');
+  if(dd) dd.classList.remove('open');
+}
+function tmSearchPick(name){
+  var inp = document.getElementById('tmSearch');
+  var dd  = document.getElementById('tmSearchDD');
+  if(inp) inp.value = name;
+  if(dd){ dd.classList.remove('open'); dd.innerHTML=''; }
+  tmRender();
+}
+
+/* --- Mode toggle. BLENDED is the committed default; shrinkage math
+       lands in chunk 3 so for chunk 2 BLENDED still displays the raw
+       pair r (same as PLAYER). GLOBAL swaps to the pair's slot-pair
+       baseline using pair.most_common_slots. */
+function tmSetMode(mode){
+  if(mode!=='player' && mode!=='blended' && mode!=='global') return;
+  window.TM_MODE = mode;
+  var ids = {player:'tmModePlayer', blended:'tmModeBlended', global:'tmModeGlobal'};
+  for(var k in ids){
+    var el = document.getElementById(ids[k]);
+    if(el) el.classList.toggle('active', k===mode);
+  }
+  tmRender();
+}
+
+function tmMinNChange(){
+  var inp = document.getElementById('tmMinN');
+  var out = document.getElementById('tmMinNV');
+  if(!inp) return;
+  window.TM_MIN_N = parseInt(inp.value, 10) || 30;
+  if(out) out.textContent = String(window.TM_MIN_N);
+  tmRender();
+}
+function tmMinRChange(){
+  var inp = document.getElementById('tmMinR');
+  var out = document.getElementById('tmMinRV');
+  if(!inp) return;
+  window.TM_MIN_R = (parseInt(inp.value, 10) || 0) / 100;
+  if(out) out.textContent = window.TM_MIN_R.toFixed(2);
+  tmRender();
+}
+/* The 2026-active checkbox is wired to tmRender() inline, but expose a
+   named handler in case the spec's id-based wiring is reintroduced. */
+function tmActiveOnlyChange(){
+  var cb = document.getElementById('tm2026Only');
+  window.TM_ACTIVE_ONLY = !!(cb && cb.checked);
+  tmRender();
+}
+
+/* --- Best-combo resolver for a pair under the current mode.
+       Returns {leg1, leg2, r} of the |r|-maximum combo, or null.
+       PLAYER/BLENDED (chunk 2): scan pair.combos_2 (positional list
+         aligned to window.TEAMMATE_DATA.combo_spec).
+       GLOBAL: scan the slot baseline for pair.most_common_slots.
+       Chunk 3 will rewrite BLENDED to run through resolvePairR. */
+function _tmSlotBaselineCombos(pair){
+  if(!window.SLOT_BASELINES || !pair.most_common_slots) return null;
+  var key = pair.most_common_slots[0]+'_'+pair.most_common_slots[1];
+  var sp = window.SLOT_BASELINES.slot_pairs && window.SLOT_BASELINES.slot_pairs[key];
+  return sp ? sp.combos_2 : null;
+}
+function _tmBestCombo(pair, mode){
+  if(mode==='global'){
+    var base = _tmSlotBaselineCombos(pair);
+    if(!base || !base.length) return null;
+    var best = null;
+    for(var i=0;i<base.length;i++){
+      var c = base[i];
+      if(!c || c.r_binary===null || c.r_binary===undefined) continue;
+      if(!best || Math.abs(c.r_binary) > Math.abs(best.r)){
+        best = {leg1:c.leg1, leg2:c.leg2, r:c.r_binary};
+      }
+    }
+    return best;
+  }
+  /* player / blended (chunk 2 behaviour) */
+  var spec = (window.TEAMMATE_DATA && window.TEAMMATE_DATA.combo_spec) || [];
+  var combos = pair.combos_2 || [];
+  var bestP = null;
+  for(var j=0;j<combos.length;j++){
+    var ent = combos[j];
+    if(!ent) continue;
+    var rb = ent[0];
+    if(rb===null || rb===undefined) continue;
+    if(!bestP || Math.abs(rb) > Math.abs(bestP.r)){
+      var legs = spec[j] || [null, null];
+      bestP = {leg1: legs[0], leg2: legs[1], r: rb};
+    }
+  }
+  return bestP;
+}
+
+/* --- Main table render. Reads inputs, applies filters, sorts, then
+       draws the top-100 pairs. Falls back to a clear empty-state if no
+       rows match. Row onclick refers to tmOpenDrawer which lands in
+       chunk 3 — clicking before chunk 3 will throw, but the table is
+       visible and scrollable on its own. */
+function tmRender(){
+  var body = document.getElementById('tmBody');
+  if(!body) return;
+  if(!window.TEAMMATE_LOADED || !window.TEAMMATE_DATA){
+    if(!window.TEAMMATE_LOADING){
+      body.innerHTML = '<div class="tm-loadmsg">Data not loaded.</div>';
+    }
+    return;
+  }
+  var teamSel = document.getElementById('tmTeam');
+  var sortSel = document.getElementById('tmSort');
+  var activeCb= document.getElementById('tm2026Only');
+  var srch    = document.getElementById('tmSearch');
+  var teamF   = teamSel ? teamSel.value : '';
+  var sortBy  = sortSel ? sortSel.value : 'r';
+  window.TM_ACTIVE_ONLY = !!(activeCb && activeCb.checked);
+  var q       = (srch && srch.value ? srch.value.trim().toLowerCase() : '');
+  var mode    = window.TM_MODE;
+  var minN    = window.TM_MIN_N;
+  var minR    = window.TM_MIN_R;
+
+  var pairs = window.TEAMMATE_DATA.pairs || {};
+  var pairKeys = Object.keys(pairs);
+  var rows = [];
+  var uniquePlayers = {};
+  for(var i=0;i<pairKeys.length;i++){
+    var p = pairs[pairKeys[i]];
+    if(!p) continue;
+    if(teamF && p.t !== teamF) continue;
+    if(q){
+      var hit = (p.p1 && p.p1.toLowerCase().indexOf(q)>=0) ||
+                (p.p2 && p.p2.toLowerCase().indexOf(q)>=0);
+      if(!hit) continue;
+    }
+    if((p.n_total||0) < minN) continue;
+    if(window.TM_ACTIVE_ONLY){
+      var n26 = p.n_by_year ? (p.n_by_year['2026']||0) : 0;
+      if(n26 <= 0) continue;
+    }
+    var best = _tmBestCombo(p, mode);
+    if(!best || best.r===null || best.r===undefined) continue;
+    if(Math.abs(best.r) < minR) continue;
+    rows.push({p:p, best:best});
+    uniquePlayers[p.p1] = true;
+    uniquePlayers[p.p2] = true;
+  }
+
+  /* Sort */
+  if(sortBy==='n')        rows.sort(function(a,b){return (b.p.n_total||0)-(a.p.n_total||0);});
+  else if(sortBy==='adj') rows.sort(function(a,b){return (b.p.adjacency||0)-(a.p.adjacency||0);});
+  else                    rows.sort(function(a,b){return Math.abs(b.best.r)-Math.abs(a.best.r);});
+
+  /* Counters */
+  var countEl   = document.getElementById('tmCount');
+  var totalEl   = document.getElementById('tmTotal');
+  var playersEl = document.getElementById('tmPlayers');
+  if(countEl)   countEl.textContent   = rows.length;
+  if(totalEl)   totalEl.textContent   = pairKeys.length;
+  if(playersEl) playersEl.textContent = Object.keys(uniquePlayers).length;
+
+  if(!rows.length){
+    body.innerHTML = '<div class="tm-loadmsg">No pairs match the current filters. Loosen MIN GAMES, MIN |r|, or clear the player/team filters.</div>';
+    return;
+  }
+
+  /* Top N cap. Table is already sorted by the chosen column, so slicing
+     preserves the user's expected ranking. Pagination/virtual scroll
+     is a future optimization. */
+  var TOP = 200;
+  var shown = rows.slice(0, TOP);
+
+  var html = '<div class="tm-table-wrap"><table class="tm-table">';
+  html += '<thead><tr>'
+        + '<th>PLAYER 1</th>'
+        + '<th>PLAYER 2</th>'
+        + '<th>TEAM</th>'
+        + '<th>n</th>'
+        + '<th>SLOT GAP</th>'
+        + '<th>ADJ</th>'
+        + '<th>BEST COMBO</th>'
+        + '<th>BEST r</th>'
+        + '</tr></thead><tbody>';
+  for(var r=0;r<shown.length;r++){
+    var row = shown[r];
+    var pr  = row.p;
+    var bc  = row.best;
+    var labP1 = _tmEscAttr(pr.p1);
+    var labP2 = _tmEscAttr(pr.p2);
+    var labT  = _tmEscAttr(pr.t);
+    var combo = (bc.leg1||'?')+' \u00d7 '+(bc.leg2||'?');
+    var rTxt  = (bc.r>=0?'+':'')+bc.r.toFixed(3);
+    var adjPct= Math.round((pr.adjacency||0)*100);
+    html += '<tr class="r" onclick="tmOpenDrawer(\''+labP1.replace(/\\/g,'\\\\')+'\',\''+labP2.replace(/\\/g,'\\\\')+'\',\''+labT.replace(/\\/g,'\\\\')+'\')">'
+         + '<td style="font-weight:600;color:var(--tx)">'+labP1+'</td>'
+         + '<td style="font-weight:600;color:var(--tx)">'+labP2+'</td>'
+         + '<td style="color:var(--mu)">'+labT+'</td>'
+         + '<td>'+(pr.n_total||0)+'</td>'
+         + '<td>'+(pr.slot_gap_mean!=null?pr.slot_gap_mean.toFixed(1):'--')+'</td>'
+         + '<td><span class="tm-badge'+(adjPct>=50?' adj':'')+'">'+adjPct+'%</span></td>'
+         + '<td style="color:var(--mu);font-size:10px">'+_tmEscAttr(combo)+'</td>'
+         + '<td><span class="tm-rcell" style="background:'+tmRBg(bc.r)+';color:'+tmRColor(bc.r)+'">'+rTxt+'</span></td>'
+         + '</tr>';
+  }
+  html += '</tbody></table></div>';
+  if(rows.length > TOP){
+    html += '<div style="text-align:center;padding:10px;font-size:11px;color:var(--mu);font-family:Space Mono,monospace">Showing top '+TOP+' of '+rows.length+' matching pairs. Narrow filters to see more.</div>';
+  }
+  body.innerHTML = html;
+}
+
+/* ============================================================
+   Chunk 3: shrinkage resolver, cross-stat matrix, detail drawer.
+   ============================================================ */
+
+/* Shrinkage constants — match build_teammate_aggregates.py so Blended
+   math is consistent with what the aggregator files advertise. Pulled
+   from window.TEAMMATE_DATA at call time with these defaults as the
+   fallback in case the file's metadata is absent. */
+var _TM_K_PAIR_DEFAULT       = 80;
+var _TM_BLEND_MIN_DEFAULT    = 30;
+function _tmKPair(){
+  return (window.TEAMMATE_DATA && window.TEAMMATE_DATA.k_pair) || _TM_K_PAIR_DEFAULT;
+}
+function _tmBlendMin(){
+  return (window.TEAMMATE_DATA && window.TEAMMATE_DATA.blend_min_games_pair) || _TM_BLEND_MIN_DEFAULT;
+}
+
+/* Leg-string parser — "Over 0.5 RBI" -> {direction, thresh, stat} */
+function _tmParseLeg(leg){
+  if(!leg || typeof leg !== 'string') return null;
+  var parts = leg.split(' ');
+  if(parts.length < 3) return null;
+  return {direction: parts[0], thresh: parseFloat(parts[1]), stat: parts.slice(2).join(' ')};
+}
+
+/* Materialize an object view of a pair's positional combo entry.
+   Returns null if the entry is null/skipped. Carries both the raw
+   values (r_binary/r_margin/hit1/hit2/both) and the leg-derived stat
+   metadata so downstream can match against slot baselines without
+   re-parsing legs repeatedly. */
+function _tmComboView(pair, idx){
+  var spec = (window.TEAMMATE_DATA && window.TEAMMATE_DATA.combo_spec) || [];
+  var raw  = (pair.combos_2 && pair.combos_2[idx]) || null;
+  if(!raw) return null;
+  var legs = spec[idx] || [null, null];
+  var p1 = _tmParseLeg(legs[0]);
+  var p2 = _tmParseLeg(legs[1]);
+  return {
+    idx:      idx,
+    leg1:     legs[0], leg2: legs[1],
+    stat1:    p1 ? p1.stat : null,
+    stat2:    p2 ? p2.stat : null,
+    thresh1:  p1 ? p1.thresh : null,
+    thresh2:  p2 ? p2.thresh : null,
+    dir1:     p1 ? p1.direction : null,
+    dir2:     p2 ? p2.direction : null,
+    r_binary: raw[0],
+    r_margin: raw[1],
+    hit1:     raw[2],
+    hit2:     raw[3],
+    both:     raw[4],
+  };
+}
+
+/* Look up a slot-pair baseline combo matching the given combo's
+   (leg1, leg2) strings. Returns the baseline dict or null. */
+function _tmBaselineForCombo(targetSlots, combo){
+  if(!window.SLOT_BASELINES || !targetSlots || !combo) return null;
+  var key = targetSlots[0]+'_'+targetSlots[1];
+  var sp = window.SLOT_BASELINES.slot_pairs && window.SLOT_BASELINES.slot_pairs[key];
+  if(!sp || !sp.combos_2) return null;
+  for(var i=0;i<sp.combos_2.length;i++){
+    var c = sp.combos_2[i];
+    if(c && c.leg1===combo.leg1 && c.leg2===combo.leg2) return c;
+  }
+  return null;
+}
+
+/* --- Core shrinkage resolver. Generic on targetSlots so Phase 2 can
+   pass tonight's actual lineup slots instead of the pair's historical
+   default. Phase 1 callers leave targetSlots undefined and fall back
+   to pair.most_common_slots.
+
+   Returns {r_binary, r_margin, baseline, w_player, fallback}:
+     * r_binary / r_margin: the resolved correlation under the active mode
+     * baseline: the slot baseline dict used (may be null in player mode)
+     * w_player: weight on specific-pair data (0..1; 0 in global/fallback)
+     * fallback: true when blended collapsed to pure baseline because
+                 pair.n_total < BLEND_MIN_GAMES_PAIR or baseline missing.
+*/
+function resolvePairR(pair, combo, targetSlots, mode){
+  if(!combo) return {r_binary:null, r_margin:null, baseline:null, w_player:0, fallback:false};
+  mode = mode || 'player';
+  var slots = targetSlots || pair.most_common_slots || null;
+
+  if(mode === 'player'){
+    return {r_binary: combo.r_binary, r_margin: combo.r_margin,
+            baseline: null, w_player: 1, fallback: false};
+  }
+
+  var base = _tmBaselineForCombo(slots, combo);
+  if(mode === 'global'){
+    if(!base) return {r_binary: 0, r_margin: 0, baseline: null, w_player: 0, fallback: true};
+    return {r_binary: base.r_binary, r_margin: base.r_margin,
+            baseline: base, w_player: 0, fallback: false};
+  }
+
+  /* blended */
+  var nTotal = pair.n_total || 0;
+  var minN   = _tmBlendMin();
+  if(!base || nTotal < minN){
+    return {r_binary: base ? base.r_binary : 0,
+            r_margin: base ? base.r_margin : 0,
+            baseline: base, w_player: 0, fallback: true};
+  }
+  var k = _tmKPair();
+  var w = nTotal / (nTotal + k);
+  function blend(a, b){
+    if(a==null && b==null) return null;
+    if(a==null) return b;
+    if(b==null) return a;
+    return w*a + (1-w)*b;
+  }
+  return {r_binary: blend(combo.r_binary, base.r_binary),
+          r_margin: blend(combo.r_margin, base.r_margin),
+          baseline: base, w_player: w, fallback: false};
+}
+
+/* --- 9x9 cross-stat matrix cell resolver.
+   For cell (stat_i, stat_j), find the best-matching combo from the
+   pair's combos_2 to represent that cell, then route through
+   resolvePairR to apply the active mode's shrinkage.
+   Preference order:
+     1. Over-Over combo at 0.5/0.5 thresholds
+     2. Over-Over combo at the smallest available thresholds
+     3. Any combo matching (stat_i, stat_j) regardless of direction
+*/
+function _tmMatrixCell(pair, stat_i, stat_j, mode, targetSlots){
+  var spec = (window.TEAMMATE_DATA && window.TEAMMATE_DATA.combo_spec) || [];
+  var candidates = [];
+  for(var idx=0; idx<spec.length; idx++){
+    var cv = _tmComboView(pair, idx);
+    if(!cv) continue;
+    if(cv.stat1 !== stat_i || cv.stat2 !== stat_j) continue;
+    candidates.push(cv);
+  }
+  if(!candidates.length) return {found:false};
+
+  function score(c){
+    /* lower is better */
+    var s = 0;
+    if(c.dir1 !== 'Over' || c.dir2 !== 'Over') s += 100;
+    if(c.thresh1 === 0.5 && c.thresh2 === 0.5) s += 0;
+    else s += (c.thresh1||0) + (c.thresh2||0);
+    return s;
+  }
+  candidates.sort(function(a,b){return score(a)-score(b);});
+  var pick = candidates[0];
+  var res = resolvePairR(pair, pick, targetSlots, mode);
+  return {
+    found:    true,
+    r_binary: res.r_binary,
+    r_margin: res.r_margin,
+    thresh1:  pick.thresh1,
+    thresh2:  pick.thresh2,
+    dir1:     pick.dir1,
+    dir2:     pick.dir2,
+    leg1:     pick.leg1,
+    leg2:     pick.leg2,
+    fallback: res.fallback,
+    w_player: res.w_player,
+  };
+}
+
+/* Canonical R x RBI combo for the "slot baseline context" line in the
+   drawer header. Tries p1-R/p2-RBI first, then the reverse direction. */
+function _tmCanonicalRRBI(pair){
+  var spec = (window.TEAMMATE_DATA && window.TEAMMATE_DATA.combo_spec) || [];
+  function find(s1, s2){
+    for(var i=0;i<spec.length;i++){
+      var cv = _tmComboView(pair, i);
+      if(!cv) continue;
+      if(cv.stat1===s1 && cv.stat2===s2 && cv.dir1==='Over' && cv.dir2==='Over' &&
+         cv.thresh1===0.5 && cv.thresh2===0.5) return cv;
+    }
+    return null;
+  }
+  return find('R','RBI') || find('RBI','R');
+}
+
+/* --- Upgrade chunk 2's _tmBestCombo so Blended mode actually uses the
+   shrinkage pipeline instead of raw pair r. Player mode unchanged;
+   Global mode keeps its slot-baseline scan (faster than going through
+   resolvePairR on every pair combo). */
+window._tmBestCombo = function(pair, mode){
+  if(mode==='global'){
+    var base = _tmSlotBaselineCombos(pair);
+    if(!base || !base.length) return null;
+    var best = null;
+    for(var i=0;i<base.length;i++){
+      var c = base[i];
+      if(!c || c.r_binary===null || c.r_binary===undefined) continue;
+      if(!best || Math.abs(c.r_binary) > Math.abs(best.r)){
+        best = {leg1:c.leg1, leg2:c.leg2, r:c.r_binary};
+      }
+    }
+    return best;
+  }
+  var spec = (window.TEAMMATE_DATA && window.TEAMMATE_DATA.combo_spec) || [];
+  var bestP = null;
+  for(var j=0;j<spec.length;j++){
+    var cv = _tmComboView(pair, j);
+    if(!cv) continue;
+    var r;
+    if(mode==='blended'){
+      var res = resolvePairR(pair, cv, undefined, 'blended');
+      r = res.r_binary;
+    }else{
+      r = cv.r_binary;
+    }
+    if(r===null || r===undefined) continue;
+    if(!bestP || Math.abs(r) > Math.abs(bestP.r)){
+      bestP = {leg1: cv.leg1, leg2: cv.leg2, r: r};
+    }
+  }
+  return bestP;
+};
+
+/* ============================================================
+   Detail drawer: cross-stat matrix, slot usage, year breakdown.
+   ============================================================ */
+
+var _TM_STATS = ['H','R','RBI','HR','TB','BB','SB','SO','HRR'];
+
+function tmOpenDrawer(p1, p2, team){
+  var drawer = document.getElementById('tmDrawer');
+  var overlay= document.getElementById('tmOverlay');
+  var body   = document.getElementById('tmDrawerBody');
+  if(!drawer || !body) return;
+
+  var key = p1+'||'+p2+'||'+team;
+  var pair = window.TEAMMATE_DATA && window.TEAMMATE_DATA.pairs && window.TEAMMATE_DATA.pairs[key];
+  if(!pair){
+    body.innerHTML = '<div style="color:var(--red);font-family:Space Mono,monospace;font-size:12px">Pair not found: '+_tmEscAttr(key)+'</div>';
+    drawer.classList.add('open');
+    if(overlay) overlay.classList.add('open');
+    return;
+  }
+  var mode = window.TM_MODE || 'blended';
+  var html = '';
+
+  /* Header */
+  html += '<div style="margin-bottom:14px;padding-right:30px">';
+  html += '<h3>'+_tmEscAttr(pair.p1)+' <span style="color:var(--mu);font-weight:400">+</span> '+_tmEscAttr(pair.p2)+'</h3>';
+  html += '<div class="sub">'+_tmEscAttr(pair.t)+' &middot; mode: <span style="color:var(--cyan)">'+mode.toUpperCase()+'</span></div>';
+  html += '</div>';
+
+  /* Summary cards */
+  var adjPct = Math.round((pair.adjacency||0)*100);
+  html += '<div class="tm-sec"><div class="tm-kv">'
+       +  '<div><div class="k">GAMES</div><div class="v">'+(pair.n_total||0)+'</div></div>'
+       +  '<div><div class="k">SLOT GAP</div><div class="v">'+(pair.slot_gap_mean!=null?pair.slot_gap_mean.toFixed(1):'--')+'</div></div>'
+       +  '<div><div class="k">ADJACENCY</div><div class="v">'+adjPct+'%</div></div>'
+       +  '</div></div>';
+
+  /* Slot baseline context line — uses R-RBI as representative combo. */
+  var rrbi = _tmCanonicalRRBI(pair);
+  if(rrbi){
+    var slotsStr = pair.most_common_slots ? (pair.most_common_slots[0]+'_'+pair.most_common_slots[1]) : '?';
+    var playerRes   = resolvePairR(pair, rrbi, undefined, 'player');
+    var globalRes   = resolvePairR(pair, rrbi, undefined, 'global');
+    var blendedRes  = resolvePairR(pair, rrbi, undefined, 'blended');
+    var wPct = Math.round((blendedRes.w_player||0)*100);
+    var basePct = 100 - wPct;
+    function fmtR(v){return (v==null?'--':((v>=0?'+':'')+v.toFixed(3)));}
+    var blendLabel = blendedRes.fallback
+      ? 'blended falls back to baseline (n &lt; '+_tmBlendMin()+')'
+      : 'blended ('+wPct+'% player / '+basePct+'% baseline) = <strong>'+fmtR(blendedRes.r_binary)+'</strong>';
+    html += '<div class="tm-sec"><div class="title">SLOT BASELINE CONTEXT — R x RBI</div>';
+    html += '<div class="tm-context">This pair most often at <strong>'+slotsStr+'</strong> ('+(pair.top_slot_pair_n||0)+' games). '
+         +  'Slot baseline R-RBI = <strong>'+fmtR(globalRes.r_binary)+'</strong>, '
+         +  'this pair specific = <strong>'+fmtR(playerRes.r_binary)+'</strong>, '
+         +  blendLabel+'.</div></div>';
+  }
+
+  /* Cross-stat matrix. Binary r on top line, margin r small underneath. */
+  html += '<div class="tm-sec"><div class="title">CROSS-STAT MATRIX &mdash; '+mode.toUpperCase()+' (r<sub>binary</sub> / r<sub>margin</sub>)</div>';
+  html += '<div class="tm-matrix" style="grid-template-columns:auto repeat('+_TM_STATS.length+',minmax(36px,1fr))">';
+  /* header row: col stats (p2's stat) */
+  html += '<div class="tm-mh" style="color:var(--ac3)">p1 &darr; / p2 &rarr;</div>';
+  for(var hi=0; hi<_TM_STATS.length; hi++) html += '<div class="tm-mh">'+_TM_STATS[hi]+'</div>';
+  /* body rows */
+  for(var ri=0; ri<_TM_STATS.length; ri++){
+    var si = _TM_STATS[ri];
+    html += '<div class="tm-ml">'+si+'</div>';
+    for(var ci=0; ci<_TM_STATS.length; ci++){
+      var sj = _TM_STATS[ci];
+      var cell = _tmMatrixCell(pair, si, sj, mode);
+      if(!cell.found){
+        html += '<div class="tm-mc" style="color:var(--b2)">&mdash;</div>';
+        continue;
+      }
+      var rb = cell.r_binary;
+      var rm = cell.r_margin;
+      var bg = tmRBg(rb);
+      var fg = tmRColor(rb);
+      var fgm= tmRColor(rm);
+      var tip = _tmEscAttr((cell.leg1||si)+' x '+(cell.leg2||sj)+
+                 ' — rb='+(rb==null?'--':rb.toFixed(3))+' rm='+(rm==null?'--':rm.toFixed(3)));
+      var rbTxt = (rb==null?'--':(rb>=0?'+':'')+rb.toFixed(2));
+      var rmTxt = (rm==null?'--':(rm>=0?'+':'')+rm.toFixed(2));
+      html += '<div class="tm-mc" title="'+tip+'" style="background:'+bg+';color:'+fg+'">'
+           +  rbTxt+'<span class="rm" style="color:'+fgm+'">'+rmTxt+'</span></div>';
+    }
+  }
+  html += '</div></div>';
+
+  /* Slot usage histogram — top 8 configs by count. */
+  if(pair.slot_usage){
+    var entries = [];
+    for(var su in pair.slot_usage){ entries.push([su, pair.slot_usage[su]]); }
+    entries.sort(function(a,b){return b[1]-a[1];});
+    var top = entries.slice(0,8);
+    var maxN = top.length ? top[0][1] : 1;
+    var topKey = pair.top_slot_pair || (top[0] && top[0][0]);
+    html += '<div class="tm-sec"><div class="title">SLOT USAGE — TOP 8 CONFIGS (p1 &rarr; p2 slots)</div>';
+    html += '<div class="tm-slotgrid">';
+    for(var ti=0;ti<top.length;ti++){
+      var sk = top[ti][0], sv = top[ti][1];
+      var pct = Math.round((sv/Math.max(pair.n_total,1))*100);
+      html += '<div class="tm-slotcell'+(sk===topKey?' top':'')+'"><div class="slots">'+sk.replace('_',' &rarr; ')+'</div><div class="n">'+sv+'g &middot; '+pct+'%</div></div>';
+    }
+    html += '</div></div>';
+  }
+
+  /* Year breakdown — non-zero years only. */
+  if(pair.n_by_year){
+    var parts = [];
+    ['2023','2024','2025','2026'].forEach(function(y){
+      var n = pair.n_by_year[y] || 0;
+      if(n > 0) parts.push('<span class="y">\''+y.slice(2)+'</span>'+n);
+    });
+    if(parts.length){
+      html += '<div class="tm-sec"><div class="title">YEAR BREAKDOWN</div>';
+      html += '<div class="tm-years">'+parts.join(' &middot; ')+'</div></div>';
+    }
+  }
+
+  body.innerHTML = html;
+  drawer.classList.add('open');
+  if(overlay) overlay.classList.add('open');
+}
+
+function tmClose(){
+  var drawer = document.getElementById('tmDrawer');
+  var overlay= document.getElementById('tmOverlay');
+  if(drawer)  drawer.classList.remove('open');
+  if(overlay) overlay.classList.remove('open');
+}
+</script>
 /* ===== +EV Finder: unified flow =====
    1. Upload FV sheet → OCR extract legs (existing /api/extract)
    2. Call /api/dk/find-sgps → backend finds DK game, matches legs, prices combos
@@ -1252,7 +2056,15 @@ var SMAP={SO:'Strikeout',ER:'Earned',BB:'Walk',H:'Hits',OUTS:'Outs'};
 var SKEY={'Strikeout':'SO','Earned':'ER','Walk':'BB','Hits':'H','Outs':'OUTS'};
 function statOf(leg){var keys=Object.keys(SKEY);for(var i=0;i<keys.length;i++){if(leg.indexOf(keys[i])>=0)return SKEY[keys[i]];}return null;}
 function getRawCorr(rc,leg1,leg2){if(!rc)return null;var s1=statOf(leg1);var s2=statOf(leg2);if(!s1||!s2)return null;var k1=s1+'_'+s2;var k2=s2+'_'+s1;if(rc[k1]!==undefined)return rc[k1];if(rc[k2]!==undefined)return rc[k2];return null;}
-function showPage(p){document.querySelectorAll('.page').forEach(function(e){e.classList.remove('active');});document.querySelectorAll('.nav-tab').forEach(function(t,i){t.classList.toggle('active',(i===0&&p==='global')||(i===1&&p==='pitcher')||(i===2&&p==='evfinder'));});document.getElementById('page-'+p).classList.add('active');}
+function showPage(p){
+  document.querySelectorAll('.page').forEach(function(e){e.classList.remove('active');});
+  var order=['global','pitcher','teammate','evfinder'];
+  document.querySelectorAll('.nav-tab').forEach(function(t,i){t.classList.toggle('active',order[i]===p);});
+  document.getElementById('page-'+p).classList.add('active');
+  // Lazy-load teammate data the first time the tab is opened; the 30MB
+  // scheme file and 1.3MB slot baseline are too heavy to pull on boot.
+  if(p==='teammate' && !window.TEAMMATE_LOADED && !window.TEAMMATE_LOADING) teammateLazyLoad();
+}
 function setLegs(n){gLegs=n;document.querySelectorAll('#gTG .tb').forEach(function(t,i){t.classList.toggle('active',(i===0&&n===2)||(i===1&&n===3));});renderG();}
 function setGF(f){gFilt=f;document.querySelectorAll('#gFB .fb').forEach(function(b){var t=b.textContent.trim();b.classList.toggle('active',f==='all'?t==='All':f==='SO'?t==='K':f==='ER'?t==='ER':f==='BB'?t==='BB':f==='H'?t==='Hits':f==='OUTS'?t==='Outs':false);});renderG();}
 function rCls(r){if(r===null||r===undefined)return 'wk';if(r>=0.3)return 'str';if(r>=0.15)return 'mod';if(r<0)return 'neg';return 'wk';}
