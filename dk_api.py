@@ -676,7 +676,19 @@ def _stat_matches_batter_market(stat_str, market_blob):
 def _match_leg_to_dk_batter(leg_str, props, player):
     """Batter analog of _match_leg_to_dk. Same .5 O/U ↔ integer-milestone
     equivalence as the pitcher path: Over 0.5 Hits ≡ "1+ Hits"; Under 1.5
-    Total Bases ≡ "1 or Fewer Total Bases"."""
+    Total Bases ≡ "1 or Fewer Total Bases".
+
+    Returns a dict { selection_id, direction, points, stat_str,
+    over_american, under_american, market_blob } or None when the primary
+    leg can't be matched. over_american / under_american are ints when
+    DK offers that side at the matched threshold (used by hybrid-mode
+    no-vig), else None. Callers expecting just the legacy selection-id
+    string should read `.selection_id` off the dict.
+
+    Hybrid mode (commit plan #1) needs BOTH sides of the matched
+    threshold to compute no-vig fair probability on the missing-FV leg,
+    so we do the opposite-direction lookup here once and cache both
+    onto the return dict rather than scanning props[] twice downstream."""
     parts = (leg_str or "").split(None, 2)
     if len(parts) < 3:
         return None
@@ -693,20 +705,88 @@ def _match_leg_to_dk_batter(leg_str, props, player):
     else:
         accept_points = (line,)
 
+    def _american_of(sel):
+        """Parse '+250'/'−140'/'140' into an int, or None."""
+        raw = (sel or {}).get("oddsAmerican") or ""
+        if not raw:
+            return None
+        s = str(raw).replace("−", "-").replace("+", "").strip()
+        try:
+            return int(s)
+        except (ValueError, TypeError):
+            return None
+
+    # Two-pass match. DK offers most batter stats in BOTH a milestone
+    # form ("1+ Hits" at points=1) and a two-way O/U form ("Hits O/U"
+    # Over 0.5 at points=0.5). For hybrid-mode no-vig we need the
+    # two-way variant so the opposite-direction lookup succeeds. Prefer
+    # subcategories containing "O/U" on the first pass; fall back to any
+    # match on the second. Full-FV candidates don't care which flavor
+    # gets picked — any priced selectionId works for calculateBets.
+    def _scan(prefer_two_way):
+        for p in props:
+            if not p.get("isBatterProp"):
+                continue
+            if not _pitcher_matches(player, p.get("player", "")):
+                continue
+            if _selection_direction(p.get("outcomeType")) != direction:
+                continue
+            pts = p.get("points")
+            if pts is None or pts not in accept_points:
+                continue
+            subcat = (p.get("subcategory") or "")
+            if prefer_two_way and ("o/u" not in subcat.lower()):
+                continue
+            blob = (p.get("marketName", "") + " " + subcat + " " + p.get("marketType", ""))
+            if _stat_matches_batter_market(stat_str, blob):
+                return p
+        return None
+
+    matched = _scan(prefer_two_way=True) or _scan(prefer_two_way=False)
+
+    if not matched:
+        return None
+
+    # Find the opposite-direction selection at the SAME matched points
+    # value. Must be same player + same stat-market blob + same threshold
+    # + same subcategory (so we don't cross-match a milestone 2+ partner
+    # against an O/U Over 1.5 primary). If DK only priced one side (common
+    # on milestone-only markets), this lookup returns None and the
+    # caller's hybrid-mode skip path kicks in.
+    opposite_dir = "Under" if direction == "Over" else "Over"
+    matched_pts = matched.get("points")
+    matched_subcat = matched.get("subcategory") or ""
+    opp = None
     for p in props:
         if not p.get("isBatterProp"):
             continue
         if not _pitcher_matches(player, p.get("player", "")):
             continue
-        if _selection_direction(p.get("outcomeType")) != direction:
+        if _selection_direction(p.get("outcomeType")) != opposite_dir:
             continue
-        pts = p.get("points")
-        if pts is None or pts not in accept_points:
+        if p.get("points") != matched_pts:
+            continue
+        if (p.get("subcategory") or "") != matched_subcat:
             continue
         blob = (p.get("marketName", "") + " " + p.get("subcategory", "") + " " + p.get("marketType", ""))
         if _stat_matches_batter_market(stat_str, blob):
-            return p.get("selectionId")
-    return None
+            opp = p
+            break
+
+    matched_am = _american_of(matched)
+    opp_am = _american_of(opp) if opp else None
+    over_am  = matched_am if direction == "Over"  else opp_am
+    under_am = matched_am if direction == "Under" else opp_am
+
+    return {
+        "selection_id":     matched.get("selectionId"),
+        "direction":        direction,
+        "points":           matched_pts,
+        "stat_str":         stat_str,
+        "over_american":    over_am,
+        "under_american":   under_am,
+        "opposite_selection_id": (opp.get("selectionId") if opp else None),
+    }
 
 
 def _normalize_team(name):
@@ -883,8 +963,11 @@ def find_sgps_teammate(payload):
             if md is not None:
                 event_markets[eid] = md
 
-    # Match each unique (event, player, leg) to a DK selectionId exactly once.
-    leg_match_cache = {}  # key: (eid, player_norm, leg_str) -> selection_id|None
+    # Match each unique (event, player, leg) to a DK match-record exactly
+    # once. match-record is a dict with selection_id + per-leg over/under
+    # American odds (needed by the client for hybrid-mode no-vig on a
+    # missing-FV leg). See _match_leg_to_dk_batter.
+    leg_match_cache = {}  # key: (eid, player_norm, leg_str) -> match-record | None
 
     def match_leg(eid, player, leg_str):
         if not eid or eid not in event_markets:
@@ -892,18 +975,21 @@ def find_sgps_teammate(payload):
         key = (eid, _normalize_name(player), leg_str)
         if key in leg_match_cache:
             return leg_match_cache[key]
-        sid = _match_leg_to_dk_batter(leg_str, event_markets[eid]["props"], player)
-        leg_match_cache[key] = sid
-        return sid
+        m = _match_leg_to_dk_batter(leg_str, event_markets[eid]["props"], player)
+        leg_match_cache[key] = m
+        return m
 
-    # Resolve every candidate to a (sel_a, sel_b) pair.
+    # Resolve every candidate to a (sel_a, sel_b) pair + both legs'
+    # match-records so the response can carry per-leg over/under prices.
     resolved = []  # parallel to `candidates`
     for c in candidates:
         team = c.get("team")
         eid = team_event_map.get(team)
         game_info = next((e for e in events if e["id"] == eid), {}) if eid else {}
-        sa = match_leg(eid, c.get("player_a"), c.get("leg_a")) if eid else None
-        sb = match_leg(eid, c.get("player_b"), c.get("leg_b")) if eid else None
+        ma = match_leg(eid, c.get("player_a"), c.get("leg_a")) if eid else None
+        mb = match_leg(eid, c.get("player_b"), c.get("leg_b")) if eid else None
+        sa = ma["selection_id"] if ma else None
+        sb = mb["selection_id"] if mb else None
         missing = []
         if not eid:
             missing.append(f"team:{team}")
@@ -918,6 +1004,8 @@ def find_sgps_teammate(payload):
             "game_name": game_info.get("name", "") if eid else "",
             "selection_a": sa,
             "selection_b": sb,
+            "match_a": ma,
+            "match_b": mb,
             "missing": missing,
         })
 
@@ -953,9 +1041,16 @@ def find_sgps_teammate(payload):
             for f in futs:
                 f.cancel()
 
-    # Build response rows.
+    # Build response rows. Per-leg over/under American odds surface on
+    # every matched result regardless of hybrid vs full-FV usage — the
+    # client decides which prices it needs based on its own FV coverage.
+    # Carrying both sides of both legs costs ~16 bytes per candidate in
+    # the JSON payload; trivially small next to the SGP pricing calls
+    # this function already makes.
     results = []
     for src, r in zip(candidates, resolved):
+        ma = r.get("match_a") or {}
+        mb = r.get("match_b") or {}
         out = {
             "id": r["id"],
             "event_id": r["event_id"],
@@ -967,6 +1062,13 @@ def find_sgps_teammate(payload):
             "leg_b": src.get("leg_b"),
             "selection_a": r["selection_a"],
             "selection_b": r["selection_b"],
+            # Per-leg DK prices (for hybrid-mode no-vig). None when the
+            # matched prop had no opposite-direction selection priced on
+            # DK — caller's hybrid path then skips the candidate.
+            "leg_a_over_american":  ma.get("over_american"),
+            "leg_a_under_american": ma.get("under_american"),
+            "leg_b_over_american":  mb.get("over_american"),
+            "leg_b_under_american": mb.get("under_american"),
         }
         if r["missing"]:
             out["matched"] = False
