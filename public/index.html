@@ -111,6 +111,73 @@ h1 em{color:var(--ac);font-style:normal;}
 .ins-vbadge.play{background:rgba(74,222,128,.15);color:var(--ac);}
 .ins-vbadge.marginal{background:rgba(245,158,11,.15);color:var(--ac2);}
 .ins-vbadge.skip{background:rgba(248,113,113,.15);color:var(--red);}
+/* ===== Teammate Lookup tab ===== */
+.tm-ctrl{display:flex;flex-direction:column;gap:10px;padding:12px 14px;background:var(--s1);border:1px solid var(--b1);border-radius:9px;margin-bottom:14px;}
+.tm-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+.tm-label{font-size:10px;color:var(--mu);font-family:'Space Mono',monospace;letter-spacing:.3px;}
+.tm-modes{display:inline-flex;border:1px solid var(--b1);border-radius:6px;overflow:hidden;font-family:'Space Mono',monospace;}
+.tm-modes button{padding:6px 12px;font-size:11px;font-weight:600;border:none;background:transparent;color:var(--mu);cursor:pointer;letter-spacing:.4px;}
+.tm-modes button.active{background:rgba(34,211,238,.12);color:var(--cyan);}
+.tm-modes button+button{border-left:1px solid var(--b1);}
+.tm-slider{display:flex;align-items:center;gap:6px;font-family:'Space Mono',monospace;font-size:10px;color:var(--mu);}
+.tm-slider input[type=range]{width:100px;accent-color:var(--ac3);}
+.tm-slider .v{color:var(--ac3);font-weight:600;min-width:24px;text-align:right;}
+.tm-toggle{display:inline-flex;align-items:center;gap:6px;font-family:'Space Mono',monospace;font-size:10px;color:var(--mu);cursor:pointer;user-select:none;}
+.tm-toggle input{appearance:none;width:26px;height:14px;background:var(--bg);border:1px solid var(--b1);border-radius:7px;position:relative;cursor:pointer;transition:background .15s;}
+.tm-toggle input:checked{background:rgba(34,211,238,.18);border-color:var(--cyan);}
+.tm-toggle input::after{content:'';position:absolute;left:2px;top:1px;width:9px;height:9px;border-radius:50%;background:var(--mu);transition:transform .15s;}
+.tm-toggle input:checked::after{transform:translateX(11px);background:var(--cyan);}
+.tm-pdd{position:absolute;top:100%;left:0;right:0;background:var(--s1);border:1px solid var(--b2);border-radius:6px;margin-top:2px;max-height:220px;overflow-y:auto;z-index:50;display:none;}
+.tm-pdd.open{display:block;}
+.tm-pdd-item{padding:6px 10px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--b1);font-family:'Inter',sans-serif;}
+.tm-pdd-item:hover{background:var(--s2);color:var(--ac3);}
+.tm-search-wrap{position:relative;flex:1;min-width:160px;}
+.tm-search{width:100%;background:var(--bg);border:1px solid var(--b1);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--tx);font-family:'Inter',sans-serif;outline:none;}
+.tm-search:focus{border-color:var(--ac3);}
+.tm-stats{display:flex;gap:20px;flex-wrap:wrap;font-family:'Space Mono',monospace;font-size:11px;color:var(--mu);padding:6px 2px;}
+.tm-stats .n{font-size:14px;font-weight:700;color:var(--ac3);}
+.tm-table-wrap{background:var(--s1);border:1px solid var(--b1);border-radius:9px;overflow-x:auto;}
+.tm-table{width:100%;border-collapse:collapse;font-family:'Space Mono',monospace;}
+.tm-table th{padding:8px 8px;text-align:left;font-size:9px;font-weight:700;color:var(--mu);letter-spacing:.5px;cursor:pointer;user-select:none;white-space:nowrap;background:var(--s2);border-bottom:1px solid var(--b1);}
+.tm-table th:hover{color:var(--tx);}
+.tm-table td{padding:7px 8px;font-size:11px;border-bottom:1px solid var(--b1);}
+.tm-table tr.r{cursor:pointer;}
+.tm-table tr.r:hover{background:var(--s2);}
+.tm-rcell{display:inline-block;padding:2px 6px;border-radius:4px;font-weight:700;font-size:11px;min-width:48px;text-align:center;}
+.tm-rmcell{font-size:10px;color:var(--mu);margin-left:4px;}
+.tm-badge{font-size:9px;padding:1px 5px;border-radius:3px;font-weight:700;background:var(--s2);color:var(--mu);}
+.tm-badge.adj{background:rgba(96,165,250,.15);color:var(--ac3);}
+.tm-drawer{position:fixed;right:0;top:0;width:520px;max-width:100vw;height:100vh;background:var(--bg);border-left:1px solid var(--b1);z-index:200;overflow-y:auto;padding:18px 20px 40px;transform:translateX(100%);transition:transform .2s ease;box-shadow:-12px 0 32px rgba(0,0,0,.35);}
+.tm-drawer.open{transform:translateX(0);}
+.tm-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:199;opacity:0;pointer-events:none;transition:opacity .2s;}
+.tm-overlay.open{opacity:1;pointer-events:auto;}
+.tm-close{position:absolute;top:10px;right:10px;width:28px;height:28px;border-radius:6px;border:1px solid var(--b1);background:var(--s1);color:var(--mu);font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.tm-close:hover{border-color:var(--b2);color:var(--tx);}
+.tm-drawer h3{font-family:'Syne',sans-serif;font-size:17px;font-weight:800;margin-bottom:2px;letter-spacing:-.3px;}
+.tm-drawer .sub{font-size:11px;color:var(--mu);font-family:'Space Mono',monospace;margin-bottom:14px;}
+.tm-sec{background:var(--s1);border:1px solid var(--b1);border-radius:8px;padding:11px 13px;margin-bottom:10px;}
+.tm-sec .title{font-size:10px;font-weight:700;font-family:'Space Mono',monospace;color:var(--mu);letter-spacing:.5px;margin-bottom:8px;}
+.tm-kv{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center;font-family:'Space Mono',monospace;}
+.tm-kv .k{font-size:9px;color:var(--mu);margin-bottom:2px;}
+.tm-kv .v{font-size:16px;font-weight:700;color:var(--ac3);}
+.tm-matrix{display:grid;gap:1px;}
+.tm-mh{font-size:9px;font-family:'Space Mono',monospace;color:var(--mu);font-weight:700;padding:3px 4px;text-align:center;}
+.tm-ml{font-size:9px;font-family:'Space Mono',monospace;color:var(--tx);font-weight:600;padding:3px 4px;text-align:right;white-space:nowrap;}
+.tm-mc{font-size:10px;font-family:'Space Mono',monospace;font-weight:700;padding:3px 4px;text-align:center;border-radius:3px;cursor:default;line-height:1.1;}
+.tm-mc .rm{font-size:8px;opacity:.75;display:block;font-weight:500;}
+.tm-slotgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:4px;}
+.tm-slotcell{background:var(--s2);padding:5px 4px;border-radius:5px;text-align:center;font-family:'Space Mono',monospace;}
+.tm-slotcell .slots{font-size:11px;font-weight:700;color:var(--tx);}
+.tm-slotcell .n{font-size:9px;color:var(--mu);margin-top:1px;}
+.tm-slotcell.top{background:rgba(34,211,238,.12);}
+.tm-slotcell.top .slots{color:var(--cyan);}
+.tm-context{background:var(--s2);padding:8px 10px;border-radius:6px;font-size:11px;color:var(--tx);font-family:'Inter',sans-serif;line-height:1.5;}
+.tm-context strong{color:var(--cyan);}
+.tm-years{display:flex;gap:14px;font-family:'Space Mono',monospace;font-size:11px;color:var(--tx);}
+.tm-years .y{color:var(--mu);margin-right:3px;}
+.tm-loadmsg{padding:40px 20px;text-align:center;color:var(--mu);font-family:'Space Mono',monospace;font-size:12px;}
+.tm-loadmsg .pulse{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--ac);margin-right:8px;vertical-align:middle;animation:pulse 1.2s infinite;}
+@media(max-width:768px){.tm-drawer{width:100%;}.tm-kv{grid-template-columns:repeat(3,1fr);}.tm-mh,.tm-mc,.tm-ml{font-size:8px;padding:2px 3px;}.tm-mc .rm{font-size:7px;}}
 </style>
 <script src="/utils/sgpInsightPrompt.js"></script>
 </head>
@@ -124,6 +191,7 @@ h1 em{color:var(--ac);font-style:normal;}
 <div class="nav">
   <button class="nav-tab active" onclick="showPage('global')">Global</button>
   <button class="nav-tab" onclick="showPage('pitcher')">Pitcher Lookup</button>
+  <button class="nav-tab" onclick="showPage('teammate')">Teammate Lookup</button>
   <button class="nav-tab" onclick="showPage('evfinder')">+EV Finder</button>
 </div>
 <div class="header">
@@ -189,6 +257,43 @@ h1 em{color:var(--ac);font-style:normal;}
   <div id="evDetected"></div>
   <div id="evResults"></div>
 </div>
+<div id="page-teammate" class="page">
+  <div class="tm-ctrl">
+    <div class="tm-row">
+      <span style="font-size:13px;color:var(--cyan);font-family:Syne,sans-serif;font-weight:700;letter-spacing:-.2px">TEAMMATE SGP LOOKUP</span>
+      <span style="font-size:10px;color:var(--mu);font-family:'Space Mono',monospace">cross-player correlations with slot-pair baselines</span>
+    </div>
+    <div class="tm-row">
+      <div class="tm-search-wrap" style="max-width:220px">
+        <input class="tm-search" id="tmSearch" placeholder="Search player..." oninput="tmSearchInput()" onfocus="tmSearchFocus()" onblur="setTimeout(tmSearchBlur,200)">
+        <div class="tm-pdd" id="tmSearchDD"></div>
+      </div>
+      <select class="ssel" id="tmTeam" onchange="tmRender()"><option value="">All teams</option></select>
+      <select class="ssel" id="tmSort" onchange="tmRender()">
+        <option value="r">Sort: best |r|</option>
+        <option value="n">Sort: n games</option>
+        <option value="adj">Sort: adjacency</option>
+      </select>
+      <div class="tm-modes">
+        <button id="tmModePlayer" class="" onclick="tmSetMode('player')" title="Pair-specific correlation, no shrinkage. Noisy at low n.">PLAYER</button>
+        <button id="tmModeBlended" class="active" onclick="tmSetMode('blended')" title="Bayesian shrinkage of pair r toward slot-pair baseline. Best point estimate.">BLENDED</button>
+        <button id="tmModeGlobal" class="" onclick="tmSetMode('global')" title="League-wide slot-pair baseline for the pair's most common slot config. Ignores pair-specific data.">GLOBAL</button>
+      </div>
+    </div>
+    <div class="tm-row">
+      <div class="tm-slider"><span class="tm-label">MIN GAMES</span><input type="range" id="tmMinN" min="20" max="250" value="30" oninput="tmMinNChange()"><span class="v" id="tmMinNV">30</span></div>
+      <div class="tm-slider"><span class="tm-label">MIN |r|</span><input type="range" id="tmMinR" min="0" max="80" step="1" value="20" oninput="tmMinRChange()"><span class="v" id="tmMinRV">0.20</span></div>
+      <label class="tm-toggle"><input type="checkbox" id="tm2026Only" onchange="tmRender()"><span>2026 ACTIVE PAIRS ONLY</span></label>
+      <span id="tmHint" style="font-size:10px;color:var(--mu);font-family:'Space Mono',monospace;margin-left:auto"></span>
+    </div>
+  </div>
+  <div class="tm-stats"><div><span class="n" id="tmCount">--</span> <span>PAIRS MATCHING</span></div><div><span class="n" id="tmTotal">--</span> <span>TOTAL PAIRS</span></div><div><span class="n" id="tmPlayers">--</span> <span>UNIQUE PLAYERS</span></div></div>
+  <div id="tmBody">
+    <div class="tm-loadmsg"><span class="pulse"></span> Click the Teammate Lookup tab to begin. Data loads on first open.</div>
+  </div>
+</div>
+<div class="tm-overlay" id="tmOverlay" onclick="tmClose()"></div>
+<div class="tm-drawer" id="tmDrawer"><button class="tm-close" onclick="tmClose()">&#10005;</button><div id="tmDrawerBody"></div></div>
 <script>
 /* ===== +EV Finder: unified flow =====
    1. Upload FV sheet → OCR extract legs (existing /api/extract)
@@ -1252,7 +1357,15 @@ var SMAP={SO:'Strikeout',ER:'Earned',BB:'Walk',H:'Hits',OUTS:'Outs'};
 var SKEY={'Strikeout':'SO','Earned':'ER','Walk':'BB','Hits':'H','Outs':'OUTS'};
 function statOf(leg){var keys=Object.keys(SKEY);for(var i=0;i<keys.length;i++){if(leg.indexOf(keys[i])>=0)return SKEY[keys[i]];}return null;}
 function getRawCorr(rc,leg1,leg2){if(!rc)return null;var s1=statOf(leg1);var s2=statOf(leg2);if(!s1||!s2)return null;var k1=s1+'_'+s2;var k2=s2+'_'+s1;if(rc[k1]!==undefined)return rc[k1];if(rc[k2]!==undefined)return rc[k2];return null;}
-function showPage(p){document.querySelectorAll('.page').forEach(function(e){e.classList.remove('active');});document.querySelectorAll('.nav-tab').forEach(function(t,i){t.classList.toggle('active',(i===0&&p==='global')||(i===1&&p==='pitcher')||(i===2&&p==='evfinder'));});document.getElementById('page-'+p).classList.add('active');}
+function showPage(p){
+  document.querySelectorAll('.page').forEach(function(e){e.classList.remove('active');});
+  var order=['global','pitcher','teammate','evfinder'];
+  document.querySelectorAll('.nav-tab').forEach(function(t,i){t.classList.toggle('active',order[i]===p);});
+  document.getElementById('page-'+p).classList.add('active');
+  // Lazy-load teammate data the first time the tab is opened; the 30MB
+  // scheme file and 1.3MB slot baseline are too heavy to pull on boot.
+  if(p==='teammate' && !window.TEAMMATE_LOADED && !window.TEAMMATE_LOADING) teammateLazyLoad();
+}
 function setLegs(n){gLegs=n;document.querySelectorAll('#gTG .tb').forEach(function(t,i){t.classList.toggle('active',(i===0&&n===2)||(i===1&&n===3));});renderG();}
 function setGF(f){gFilt=f;document.querySelectorAll('#gFB .fb').forEach(function(b){var t=b.textContent.trim();b.classList.toggle('active',f==='all'?t==='All':f==='SO'?t==='K':f==='ER'?t==='ER':f==='BB'?t==='BB':f==='H'?t==='Hits':f==='OUTS'?t==='Outs':false);});renderG();}
 function rCls(r){if(r===null||r===undefined)return 'wk';if(r>=0.3)return 'str';if(r>=0.15)return 'mod';if(r<0)return 'neg';return 'wk';}
