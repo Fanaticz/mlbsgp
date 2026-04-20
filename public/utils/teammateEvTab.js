@@ -56,6 +56,7 @@
       minEvPct: 3,
       minN:     30,
       conf:     'all',       // 'all' | 'med' | 'high'
+      type:     'all',       // 'all' | 'full_fv' | 'hybrid'
       team:     '',
       game:     '',
       confirmedOnly: false,
@@ -380,15 +381,32 @@
       S.dkMissing = (dkResp.results || []).filter(function (r) { return !r.matched; });
 
       var finalized = [];
+      var hybridDropped = 0;  // hybrid candidates that couldn't resolve no-vig
       for (var i = 0; i < batch.length; i++) {
         var cand = batch[i], dk = priceByCid['c' + i];
         if (!dk) continue;
         var dkAm = Number(String(dk.dk_odds).replace(/^\+/, ''));
         if (!isFinite(dkAm)) continue;
-        finalized.push(TE.finalizeCandidate(cand, dkAm));
+        /* Per-leg DK prices for hybrid mode's no-vig. find-sgps-teammate
+           returns these unconditionally — finalizeCandidate ignores them
+           for full-FV candidates and consumes them for hybrid. */
+        var legPrices = {
+          leg_a_over_american:  dk.leg_a_over_american,
+          leg_a_under_american: dk.leg_a_under_american,
+          leg_b_over_american:  dk.leg_b_over_american,
+          leg_b_under_american: dk.leg_b_under_american,
+        };
+        var fin = TE.finalizeCandidate(cand, dkAm, legPrices);
+        if (fin == null) { hybridDropped++; continue; }
+        finalized.push(fin);
       }
       S.candidatesFull = finalized;
-      setStatus('Priced ' + finalized.length + ' / ' + batch.length + ' candidates.' +
+      S.hybridDroppedCount = hybridDropped;
+      var fullCount = finalized.filter(function(c){return c.type==='full_fv';}).length;
+      var hybridCount = finalized.length - fullCount;
+      setStatus('Priced ' + finalized.length + ' / ' + batch.length + ' candidates' +
+        ' (' + fullCount + ' full-FV, ' + hybridCount + ' hybrid' +
+        (hybridDropped ? ', ' + hybridDropped + ' hybrid dropped no no-vig' : '') + ').' +
         (dkResp.truncated ? ' DK deadline hit — partial results.' : ''), 'ok');
       render();
     } catch (e) {
@@ -410,12 +428,26 @@
       var lvl = c.slot_match_confidence && c.slot_match_confidence.level;
       if (f.conf === 'high' && lvl !== 'high') return false;
       if (f.conf === 'med'  && lvl !== 'high' && lvl !== 'medium') return false;
+      if (f.type === 'full_fv' && c.type !== 'full_fv') return false;
+      if (f.type === 'hybrid'  && c.type !== 'hybrid')  return false;
       if (f.team && c.team !== f.team) return false;
       if (f.game && c.game_id !== f.game) return false;
       if (f.confirmedOnly && c.lineup_status !== 'confirmed') return false;
       return true;
     });
-    out.sort(function (a, b) { return b.ev_pct - a.ev_pct; });
+    /* Sort by ev_pct descending. On EV-tie (or within same EV bucket),
+       surface full-FV cards above hybrid cards — same EV from a full-FV
+       signal is stronger than from correlation-only because both legs'
+       probabilities are trusted. Tiebreak bias is small (0.5 EV%)
+       intentionally; prevents full-FV from drowning hybrid at higher
+       EVs where hybrid legitimately ranks better. */
+    out.sort(function (a, b) {
+      var evDiff = b.ev_pct - a.ev_pct;
+      if (Math.abs(evDiff) > 0.5) return evDiff;
+      if (a.type === 'full_fv' && b.type !== 'full_fv') return -1;
+      if (b.type === 'full_fv' && a.type !== 'full_fv') return 1;
+      return evDiff;
+    });
     return out;
   }
 
@@ -528,9 +560,34 @@
        diacritic-fix deploy). */
     var p1Show = c.p1_display || c.p1;
     var p2Show = c.p2_display || c.p2;
+    /* FULL FV vs HYBRID badge.
+         Cyan = full-FV (edge claim is marginal + correlation)
+         Amber = hybrid (edge claim is correlation-only — one leg
+           uses DK no-vig as "fair", so we can't claim marginal
+           edge; claim is ONLY that our pair-correlation data is
+           more granular than DK's generic SGP boost).
+       Hovering the HYBRID badge surfaces the full tooltip the
+       user speced — keeps the caveat one tap away even when the
+       card body is scrolled. */
+    var isHybrid = c.type === 'hybrid';
+    var badgeBg = isHybrid ? 'rgba(245,158,11,.18)' : 'rgba(34,211,238,.14)';
+    var badgeBorder = isHybrid ? 'var(--ac2)' : 'var(--cyan)';
+    var badgeColor = isHybrid ? 'var(--ac2)' : 'var(--cyan)';
+    var badgeText = isHybrid ? 'HYBRID' : 'FULL FV';
+    var badgeTooltip = isHybrid
+      ? _escAttr('Hybrid candidate: one leg uses your FV sheet, the other uses DK\'s no-vig price as the "fair" value. Edge claim is correlation-only (your pair-correlation data vs DK\'s generic SGP boost), not marginal probability. Treat with appropriately less conviction than Full FV cards.')
+      : _escAttr('Full FV candidate: both legs\' fair values come from your FV sheet. Edge claim is marginal + correlation — the strongest signal the tool produces.');
+    var badgeHtml = '<span title="' + badgeTooltip + '" style="font-family:Space Mono,monospace;font-size:9px;font-weight:700;letter-spacing:.4px;padding:2px 7px;border-radius:10px;background:' + badgeBg + ';border:1px solid ' + badgeBorder + ';color:' + badgeColor + '">' + badgeText + '</span>';
+    /* Hybrid cards use "CORR EV%" as the inline label under the EV%
+       number — a visual cue that the edge claim is correlation-only.
+       Full-FV cards keep the existing "EV" label. Font sizes match. */
+    var evLabelText = isHybrid ? 'CORR EV%' : 'EV';
     h += '<div>' +
-           '<div style="font-size:12px;font-weight:700">' + p1Show + ' &times; ' + p2Show + '</div>' +
-           '<div style="font-size:9px;color:var(--mu);font-family:Space Mono,monospace">' +
+           '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' +
+             '<div style="font-size:12px;font-weight:700">' + p1Show + ' &times; ' + p2Show + '</div>' +
+             badgeHtml +
+           '</div>' +
+           '<div style="font-size:9px;color:var(--mu);font-family:Space Mono,monospace;margin-top:3px">' +
              (c.team || '?') + ' &middot; ' + (c.game_label || '?') +
              ' &middot; <span style="color:' + (c.lineup_status === 'confirmed' ? 'var(--ac)' : 'var(--ac2)') + '">' + c.lineup_status + '</span>' +
              ' &middot; ' + modeBadge + fallbackNote +
@@ -539,23 +596,39 @@
     h += '<div style="text-align:right">' +
            '<div style="font-size:20px;font-weight:800;font-family:Space Mono,monospace;color:' + evColor(c.ev_pct) + '">' +
              (c.ev_pct >= 0 ? '+' : '') + c.ev_pct.toFixed(1) + '%</div>' +
-           '<div style="font-size:8px;color:var(--mu);font-family:Space Mono,monospace">EV</div>' +
+           '<div style="font-size:8px;color:var(--mu);font-family:Space Mono,monospace">' + evLabelText + '</div>' +
          '</div>';
     h += '</div>';
 
-    /* Legs box: two teammate legs + combined hit rate. */
+    /* Legs box: two teammate legs + combined hit rate. For hybrid
+       candidates, the FV side of the missing-FV leg renders "FV —"
+       with a secondary "DK-novig X.X%" underneath, so the user sees
+       exactly what probability was consumed for that leg. */
+    var leg1IsHybridMiss = isHybrid && c.missing_leg === 'p1';
+    var leg2IsHybridMiss = isHybrid && c.missing_leg === 'p2';
+    function _hybridFvCell(isHybridMiss, fvRaw, pFilled) {
+      if (!isHybridMiss) {
+        return '<span style="font-size:10px;font-family:Space Mono,monospace;color:var(--mu)">FV ' + fmtAm(fvRaw) + '</span>';
+      }
+      /* pFilled is the no-vig fair probability (0..1). Render as an
+         explicit "DK-novig X.X%" pill so the user can spot the
+         substitution at a glance. */
+      var pct = pFilled != null ? (pFilled * 100).toFixed(1) + '%' : '—';
+      return '<span style="font-size:10px;font-family:Space Mono,monospace;color:var(--mu)">FV —</span>' +
+             '<span title="' + _escAttr('Leg not in FV sheet; probability derived from DK Over/Under no-vig') + '" style="font-size:9px;font-family:Space Mono,monospace;color:var(--ac2);padding:1px 5px;background:rgba(245,158,11,.14);border-radius:8px">DK-novig ' + pct + '</span>';
+    }
     h += '<div style="background:var(--s2);border-radius:6px;padding:7px 9px;margin-bottom:8px">';
     h += '<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0">' +
            '<span class="leg ' + legSideCls(c.leg1_full) + '" style="font-size:10px">' + c.leg1_full + ' &middot; ' + p1Show + '</span>' +
            '<div style="display:flex;align-items:center;gap:6px">' +
-             '<span style="font-size:10px;font-family:Space Mono,monospace;color:var(--mu)">FV ' + fmtAm(c.fv_p1) + '</span>' +
+             _hybridFvCell(leg1IsHybridMiss, c.fv_p1, c.p_leg1) +
              '<span style="font-size:9px;font-family:Space Mono,monospace;color:var(--ac2)">' + hr1 + '</span>' +
            '</div>' +
          '</div>';
     h += '<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0">' +
            '<span class="leg ' + legSideCls(c.leg2_full) + '" style="font-size:10px">' + c.leg2_full + ' &middot; ' + p2Show + '</span>' +
            '<div style="display:flex;align-items:center;gap:6px">' +
-             '<span style="font-size:10px;font-family:Space Mono,monospace;color:var(--mu)">FV ' + fmtAm(c.fv_p2) + '</span>' +
+             _hybridFvCell(leg2IsHybridMiss, c.fv_p2, c.p_leg2) +
              '<span style="font-size:9px;font-family:Space Mono,monospace;color:var(--ac2)">' + hr2 + '</span>' +
            '</div>' +
          '</div>';
@@ -563,6 +636,25 @@
       h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:5px;padding-top:5px;border-top:1px solid rgba(255,255,255,0.07)">' +
              '<span style="font-size:9px;color:var(--mu);font-family:Space Mono,monospace">Both hit (' + n + ' games together)</span>' +
              '<span style="font-size:9px;font-family:Space Mono,monospace;color:var(--ac)">' + bothHr + '</span>' +
+           '</div>';
+    }
+    /* DK-implied fair line for hybrid candidates. Shows the exact
+       computation the no-vig path performed: which leg was filled,
+       the Over/Under DK prices that produced the no-vig, and the
+       resulting fair probability. Placed inside the legs box to
+       group with the leg the substitution applies to. */
+    if (isHybrid && c.novig_source) {
+      var ns = c.novig_source;
+      var legLabel = (ns.missing === 'p1') ? (c.leg1_full + ' · ' + p1Show)
+                                           : (c.leg2_full + ' · ' + p2Show);
+      var oStr = ns.leg_over_american  != null ? ((ns.leg_over_american  > 0 ? '+' : '') + ns.leg_over_american)  : '—';
+      var uStr = ns.leg_under_american != null ? ((ns.leg_under_american > 0 ? '+' : '') + ns.leg_under_american) : '—';
+      var fairStr = (ns.novig_fair_prob * 100).toFixed(1) + '%';
+      h += '<div style="margin-top:5px;padding-top:5px;border-top:1px solid rgba(255,255,255,0.07);display:flex;flex-direction:column;gap:2px">' +
+             '<div style="font-size:9px;color:var(--ac2);font-family:Space Mono,monospace">DK-implied fair (no-vig):</div>' +
+             '<div style="font-size:9px;color:var(--tx);font-family:Space Mono,monospace;word-break:break-word">' +
+               legLabel + ' &nbsp;·&nbsp; DK O=' + oStr + ' U=' + uStr + ' &nbsp;→&nbsp; ' + fairStr +
+             '</div>' +
            '</div>';
     }
     h += '</div>';
@@ -806,11 +898,21 @@
     });
 
     // Pair-level counts from enumeration output.
-    // candidatesRaw contains only pairs that cleared findPair + n_total
-    // threshold AND had valid FV for BOTH legs on at least one combo. So
-    // _uniquePairs(S.candidatesRaw) = "pairs with historical data that
-    // also appeared in the FV sheet and had a matchable combo".
-    var pairsWithData = _uniquePairs(S.candidatesRaw);
+    //
+    // pairsWithPhase1Data — pairs that passed pair-existence + min-games
+    //   checks and entered combo-level enumeration. Read from the
+    //   enumerator's new pairs_with_phase1_data counter so the funnel
+    //   reconciles:
+    //     pairs_considered
+    //       = pairs_no_data + pairs_below_threshold + pairs_with_phase1_data
+    //
+    // pairsEmitted — distinct pairs that produced at least one emitted
+    //   combo (i.e. combos where BOTH legs had FV). A pair can pass
+    //   Phase-1 checks but emit nothing if the FV sheet doesn't cover
+    //   matching legs for it, which was the motivating failure on
+    //   2026-04-20 (247 pairs with data, 0 emitted).
+    var pairsWithPhase1Data = (S.enumDiagnostics && S.enumDiagnostics.pairs_with_phase1_data) || 0;
+    var pairsEmitted  = _uniquePairs(S.candidatesRaw);
     var pairsPriced   = _uniquePairs(S.candidatesFull);
     var pairsSurviving = S.lastFilteredCount != null
       ? _uniquePairs(applyFilters(S.candidatesFull))
@@ -852,11 +954,16 @@
     row('Theoretical intra-team pairs:',
         theoreticalPerTeam.length ? theoreticalPerTeam.join(', ') + '  → ' + theoretical + ' total' : '0 total',
         '');
-    row('Pairs with historical data:', pairsWithData,
+    row('Pairs with historical data:', pairsWithPhase1Data,
         diag.pairs_considered != null
           ? '(' + diag.pairs_considered + ' considered, ' + (diag.pairs_no_data || 0) + ' no Phase-1 data, ' + (diag.pairs_below_threshold || 0) + ' below MIN GAMES)'
           : '',
-        pairsWithData ? 'var(--ac)' : 'var(--red)');
+        pairsWithPhase1Data ? 'var(--ac)' : 'var(--red)');
+    row('Pairs that emitted any combo:', pairsEmitted,
+        pairsWithPhase1Data > 0 && pairsEmitted === 0
+          ? '(all lost at leg-FV check — see combo-level skips below)'
+          : '',
+        pairsEmitted ? 'var(--ac)' : 'var(--ac2)');
     row('Pairs with valid DK SGP price:', (pairsPriced != null ? pairsPriced : '—'),
         (S.dkMissing && S.dkMissing.length ? '(' + S.dkMissing.length + ' DK-unmatched)' : ''),
         pairsPriced ? 'var(--ac)' : 'var(--ac2)');
@@ -952,6 +1059,7 @@
     var minEvEl = $('tmevMinEv'); if (minEvEl) S.filters.minEvPct = Number(minEvEl.value);
     var minNEl  = $('tmevMinN');  if (minNEl)  S.filters.minN     = Number(minNEl.value);
     var confEl  = $('tmevConf');  if (confEl)  S.filters.conf     = confEl.value;
+    var typeEl  = $('tmevType');  if (typeEl)  S.filters.type     = typeEl.value;
     var teamEl  = $('tmevTeam');  if (teamEl)  S.filters.team     = teamEl.value;
     var gameEl  = $('tmevGame');  if (gameEl)  S.filters.game     = gameEl.value;
     var coEl    = $('tmevConfirmedOnly'); if (coEl) S.filters.confirmedOnly = !!coEl.checked;

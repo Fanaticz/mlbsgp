@@ -336,6 +336,11 @@ h1 em{color:var(--ac);font-style:normal;}
       <option value="med">Medium+ only</option>
       <option value="high">High only</option>
     </select>
+    <select class="ssel" id="tmevType" onchange="window.teammateEvTab&amp;&amp;window.teammateEvTab.onFilter()" title="Full FV: both legs have FV from your sheet. Hybrid: one leg uses DK no-vig as fair; edge claim is correlation-only.">
+      <option value="all">Show: All</option>
+      <option value="full_fv">Full FV only</option>
+      <option value="hybrid">Hybrid only</option>
+    </select>
     <select class="ssel" id="tmevTeam" onchange="window.teammateEvTab&amp;&amp;window.teammateEvTab.onFilter()"><option value="">All teams</option></select>
     <select class="ssel" id="tmevGame" onchange="window.teammateEvTab&amp;&amp;window.teammateEvTab.onFilter()"><option value="">All games</option></select>
     <label class="tm-toggle"><input type="checkbox" id="tmevConfirmedOnly" onchange="window.teammateEvTab&amp;&amp;window.teammateEvTab.onFilter()"><span>CONFIRMED LINEUPS ONLY</span></label>

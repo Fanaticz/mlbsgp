@@ -33,6 +33,20 @@
     if (typeof s.normalize === 'function') {
       s = s.normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
     }
+    /* Replace any non-alphanumeric, non-whitespace character with a space
+       BEFORE collapsing whitespace. Motivating cases (all observed live
+       against tonight's slate on 2026-04-20):
+         - "Logan O'Hoppe" straight apostrophe U+0027
+         - "Logan O\u2019Hoppe"  curly apostrophe U+2019 (MLB Stats API uses this sometimes)
+         - "Isiah Kiner-Falefa" hyphen vs space variants
+         - "J.T. Realmuto"      periods
+         - "Ke'Bryan Hayes", "Travis d'Arnaud"
+       All of these fold to a single canonical form (space between tokens),
+       which means straight-vs-curly-apostrophe and hyphen-vs-space
+       mismatches across OCR, MLB API, and TEAMMATE_DATA all collapse at
+       every join site. Display names in lineup.displayName / player.batter
+       are preserved separately for UI; this fold is strictly for keys. */
+    s = s.replace(/[^A-Za-z0-9\s]/g, ' ');
     return s.replace(/\s+/g, ' ').trim();
   }
 
