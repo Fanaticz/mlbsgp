@@ -93,13 +93,120 @@
     }).finally(function () { state._busy = false; });
   }
 
-  function onActivate() {
-    /* Always repaint header stats from cached state so the user sees
-       something immediate, then kick off a background refresh. */
-    renderHeaderStats();
-    if (!state._activated) { state._activated = true; reload(); return; }
-    reload();
+  /* Render the per-tab "Last updated: … · N entries · M players · season …"
+     line and toggle the ROLL BACK button based on history availability.
+     Called after every reload() so uploads are immediately visible. */
+  function renderCorrMeta() {
+    var m = state.meta || {};
+    var line = document.getElementById('nbaCorrMetaLine');
+    var rb = document.getElementById('nbaCorrRollback');
+    if (!line) return;
+    if (m.status === 'ok') {
+      line.innerHTML =
+        'Last updated: <span style="color:var(--tx)">' + fmtTimestamp(m.uploaded_at) + '</span>' +
+        '  &middot;  ' + fmtInt(m.row_count) + ' entries' +
+        '  &middot;  ' + fmtInt(m.distinct_players) + ' players' +
+        '  &middot;  season ' + (m.season || '--') +
+        (m.rejected_rows ? '  &middot;  <span style="color:var(--ac2)">' + fmtInt(m.rejected_rows) + ' rejected</span>' : '');
+    } else {
+      line.innerHTML = '<span style="color:var(--mu)">No correlations data uploaded yet &mdash; drop your xlsx above to get started.</span>';
+    }
+    /* ROLL BACK is always visible; the server-side endpoint returns a
+       400 with "No history entries" when the archive is empty, which
+       onRollback surfaces as a clean error instead of a silent no-op. */
+    if (rb) rb.style.opacity = (m.status === 'ok') ? '1' : '0.5';
   }
 
-  window.nbaTab = { onActivate: onActivate, reload: reload, _state: state };
+  function setStatus(html) {
+    var el = document.getElementById('nbaCorrStatus');
+    if (el) el.innerHTML = html;
+  }
+
+  function postCorrFile(file) {
+    if (!file) return;
+    if (!/\.xlsx$/i.test(file.name)) {
+      setStatus('<span style="color:var(--red)">File must be .xlsx (got ' + file.name + ')</span>');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setStatus('<span style="color:var(--red)">File too large: ' + (file.size / 1024 / 1024).toFixed(1) + ' MB (max 10)</span>');
+      return;
+    }
+    setStatus('<span style="color:var(--ac2)">Uploading + parsing ' + file.name + '...</span>');
+    var fd = new FormData();
+    fd.append('file', file, file.name);
+    fetch('/api/nba/upload-correlations', { method: 'POST', body: fd })
+      .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
+      .then(function (res) {
+        var j = res.body || {};
+        if (!j.ok) {
+          setStatus('<span style="color:var(--red)">Upload failed: ' + (j.error || ('HTTP ' + res.status)) + '</span>');
+          return;
+        }
+        var rejNote = j.rejected_rows ? ' &middot; ' + fmtInt(j.rejected_rows) + ' rejected' : '';
+        setStatus('<span style="color:var(--ac)">&#10003; Uploaded ' + fmtInt(j.row_count) + ' entries, ' + fmtInt(j.distinct_players) + ' players' + rejNote + '</span>');
+        state._activated = true; // force reload to see new data
+        return reload();
+      })
+      .catch(function (e) {
+        setStatus('<span style="color:var(--red)">Upload error: ' + (e.message || e) + '</span>');
+      });
+  }
+
+  function onCorrUpload(ev) {
+    var f = ev.target.files && ev.target.files[0];
+    if (f) postCorrFile(f);
+    ev.target.value = ''; // allow re-uploading the same filename
+  }
+
+  function onRollback() {
+    if (!confirm('Restore the previous correlations snapshot? Current data will be replaced with the most recent archived version.')) return;
+    setStatus('<span style="color:var(--ac2)">Rolling back...</span>');
+    fetch('/api/nba/correlations/rollback', { method: 'POST' })
+      .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })
+      .then(function (res) {
+        var j = res.body || {};
+        if (!j.ok) { setStatus('<span style="color:var(--red)">Rollback failed: ' + (j.error || ('HTTP ' + res.status)) + '</span>'); return; }
+        setStatus('<span style="color:var(--ac)">&#10003; Rolled back to ' + (j.restored_from || 'previous snapshot') + '</span>');
+        state._activated = true;
+        return reload();
+      })
+      .catch(function (e) { setStatus('<span style="color:var(--red)">Rollback error: ' + (e.message || e) + '</span>'); });
+  }
+
+  /* Drag/drop wiring for the correlations drop zone. Idempotent via the
+     _wired flag — onActivate may fire many times but we only bind once. */
+  var _wired = false;
+  function wireDom() {
+    if (_wired) return;
+    var dz = document.getElementById('nbaCorrDrop');
+    if (!dz) return;
+    dz.addEventListener('click', function () { var i = document.getElementById('nbaCorrFile'); if (i) i.click(); });
+    dz.addEventListener('dragover', function (e) { e.preventDefault(); dz.style.borderColor = 'var(--cyan)'; dz.style.background = 'rgba(34,211,238,.08)'; });
+    dz.addEventListener('dragleave', function () { dz.style.borderColor = 'var(--b2)'; dz.style.background = 'var(--s2)'; });
+    dz.addEventListener('drop', function (e) {
+      e.preventDefault();
+      dz.style.borderColor = 'var(--b2)';
+      dz.style.background = 'var(--s2)';
+      var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) postCorrFile(f);
+    });
+    _wired = true;
+  }
+
+  function onActivate() {
+    wireDom();
+    renderHeaderStats();
+    renderCorrMeta();
+    if (!state._activated) { state._activated = true; reload().then(renderCorrMeta); return; }
+    reload().then(renderCorrMeta);
+  }
+
+  window.nbaTab = {
+    onActivate: onActivate,
+    reload: function () { return reload().then(renderCorrMeta); },
+    onCorrUpload: onCorrUpload,
+    onRollback: onRollback,
+    _state: state,
+  };
 })();

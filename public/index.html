@@ -401,17 +401,29 @@ h1 em{color:var(--ac);font-style:normal;}
   </div>
   <div id="tmevResults"></div>
 </div>
-<!-- NBA pages. Phase 2 stops at the placeholder below; Phase 3 replaces
-     #page-nba-evfinder's inner content with the correlations upload card,
-     FV sheet drop zone, filter bar, and candidate card grid. Keeping the
-     nba-page class lets setSport scope NBA activation without tripping
-     the existing MLB .page selectors. -->
+<!-- NBA pages. Phase 3 Edit 2 replaces the placeholder with the
+     correlations upload card. Later edits append the FV upload card,
+     filter bar, and candidate results grid. -->
 <div id="page-nba-evfinder" class="page nba-page">
-  <div class="empty" style="padding:56px 24px;text-align:center;color:var(--mu);font-family:'Space Mono',monospace;line-height:1.7">
-    <div style="font-size:14px;color:var(--tx);font-weight:700;margin-bottom:10px;letter-spacing:.4px">NBA +EV FINDER</div>
-    <div style="font-size:11px">Shell only &middot; Phase 3 will fill this tab with:<br>&rarr; correlations xlsx upload card<br>&rarr; FV sheet drop zone<br>&rarr; filter controls (MIN EV%, MIN GAMES, MAX P_VALUE, prop multi-select)<br>&rarr; candidate cards (EV% / DK SGP / model joint / edge pp)</div>
-    <div style="margin-top:14px;font-size:10px;color:var(--b2)">Upload endpoint at /api/nba/upload-correlations is live (Phase 1). Data dir: /data/nba/.</div>
+  <div class="ctrl" style="flex-direction:column;align-items:stretch;gap:10px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span style="font-size:13px;color:var(--cyan);font-family:Syne,sans-serif;font-weight:700">NBA CORRELATIONS DATA</span>
+      <span style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace">drop today's correlations xlsx &rarr; persists server-side</span>
+    </div>
+    <div id="nbaCorrDrop" style="border:2px dashed var(--b2);border-radius:9px;padding:22px 16px;text-align:center;cursor:pointer;transition:all .15s;background:var(--s2)">
+      <div style="font-size:13px;color:var(--tx);font-weight:600;margin-bottom:4px">Drag &amp; drop today's correlations xlsx</div>
+      <div style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace">or click to pick a file &middot; .xlsx only, max 10 MB</div>
+      <input type="file" id="nbaCorrFile" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none" onchange="window.nbaTab&amp;&amp;window.nbaTab.onCorrUpload(event)">
+    </div>
+    <div id="nbaCorrMeta" style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+      <span id="nbaCorrMetaLine">Loading...</span>
+      <span style="margin-left:auto;display:inline-flex;gap:6px">
+        <button id="nbaCorrRollback" type="button" onclick="window.nbaTab&amp;&amp;window.nbaTab.onRollback()" style="padding:4px 10px;font-size:10px;border:1px solid var(--b1);background:transparent;color:var(--mu);border-radius:5px;cursor:pointer;font-family:Space Mono,monospace">ROLL BACK</button>
+      </span>
+    </div>
+    <div id="nbaCorrStatus" style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace;min-height:16px"></div>
   </div>
+  <div id="nbaBody"></div>
 </div>
 <div class="tm-overlay" id="tmOverlay" onclick="tmClose()"></div>
 <div class="tm-drawer" id="tmDrawer"><button class="tm-close" onclick="tmClose()">&#10005;</button><div id="tmDrawerBody"></div></div>
