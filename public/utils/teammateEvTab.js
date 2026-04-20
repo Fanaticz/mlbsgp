@@ -303,7 +303,146 @@
     return out;
   }
 
-  /* ---------------- placeholder renderer (full cards arrive in 5c) ---------------- */
+  /* ---------------- card renderer ---------------- */
+  function fmtAm(n) { if (n == null || isNaN(n)) return '--'; return (n > 0 ? '+' : '') + n; }
+  function confColor(level) {
+    return level === 'high'   ? 'var(--ac)'
+         : level === 'medium' ? 'var(--ac2)'
+         : level === 'low'    ? 'var(--red)'
+         : 'var(--mu)';
+  }
+  function evColor(ev) { return ev >= 5 ? 'var(--ac)' : ev >= 0 ? 'var(--ac2)' : 'var(--red)'; }
+  function evCls(ev)   { return ev >= 5 ? 'str'        : ev >= 0 ? 'mod'        : 'neg'; }
+  function legSideCls(leg) { return /^Over/.test(leg) ? 'ov' : 'un'; }
+  function rColorFor(r) {
+    if (r == null || isNaN(r)) return 'var(--mu)';
+    return r >= 0.3 ? 'var(--ac)' : r < 0 ? 'var(--red)' : 'var(--ac2)';
+  }
+
+  function _pct(x) { return x == null || isNaN(x) ? '--' : (x * 100).toFixed(1) + '%'; }
+
+  /* Build a shrinkage-provenance tooltip string for one candidate. Used
+     on the R BINARY pill so users can hover to see the player/global
+     split + weights that produced the blended r. */
+  function shrinkageProv(c) {
+    if (c.mode === 'player' || c.w_player === 1) {
+      return 'player r = ' + (c.r_binary_player == null ? 'null' : c.r_binary_player.toFixed(4)) +
+             ' (n=' + c.n_total + ', no shrinkage)';
+    }
+    if (c.mode === 'global' || c.w_player === 0) {
+      return 'slot-baseline r = ' + (c.r_binary_global == null ? 'null' : c.r_binary_global.toFixed(4)) +
+             ' at slots ' + c.tonight_slots[0] + '_' + c.tonight_slots[1];
+    }
+    var wp = Math.round(c.w_player * 100), wg = 100 - wp;
+    return 'player ' + (c.r_binary_player == null ? 'null' : c.r_binary_player.toFixed(4)) +
+           ' × ' + wp + '%  +  slot-baseline ' + (c.r_binary_global == null ? 'null' : c.r_binary_global.toFixed(4)) +
+           ' × ' + wg + '%  →  blended ' + (c.r_binary == null ? 'null' : c.r_binary.toFixed(4)) +
+           '   (n=' + c.n_total + ' at slots ' + c.tonight_slots[0] + '_' + c.tonight_slots[1] + ')';
+  }
+
+  function cardHtml(c, idx) {
+    /* Mirrors the pitcher EV card (index.html:card2pitcher + the
+       evfinder ranked-card block) so the visual language is uniform
+       across tabs. Teammate-specific additions: slot-match confidence
+       badge, tonight-vs-historical slot row. */
+    var dkStr  = fmtAm(c.dk_american);
+    var fvStr  = fmtAm(c.fv_corr_american);
+    var hr1 = c.hit1 != null ? _pct(c.hit1) : '--';
+    var hr2 = c.hit2 != null ? _pct(c.hit2) : '--';
+    var bothHr = c.both_hit != null ? _pct(c.both_hit) : null;
+    var n = c.n_total;
+    var conf = c.slot_match_confidence || { level: 'none', n: 0 };
+    var slotStr = c.tonight_slots[0] + '_' + c.tonight_slots[1];
+    var histStr = c.most_common_slots ? c.most_common_slots.join('_') : '?';
+    var modeBadge = c.mode ? c.mode.toUpperCase() : 'BLENDED';
+    var fallbackNote = c.fallback ? ' <span style="color:var(--ac2);font-size:9px">(blended→global)</span>' : '';
+    var rmColor = rColorFor(c.r_margin);
+    var rmText  = c.r_margin == null ? null : ((c.r_margin >= 0 ? '+' : '') + c.r_margin.toFixed(2));
+
+    var rProv = shrinkageProv(c).replace(/"/g, '&quot;');
+
+    var h = '';
+    h += '<div class="card ' + evCls(c.ev_pct) + '" id="tmev-card-' + idx + '">';
+    /* Header: pair × EV% */
+    h += '<div style="display:flex;justify-content:space-between;align-items:start;gap:8px;margin-bottom:8px">';
+    h += '<div>' +
+           '<div style="font-size:12px;font-weight:700">' + c.p1 + ' &times; ' + c.p2 + '</div>' +
+           '<div style="font-size:9px;color:var(--mu);font-family:Space Mono,monospace">' +
+             (c.team || '?') + ' &middot; ' + (c.game_label || '?') +
+             ' &middot; <span style="color:' + (c.lineup_status === 'confirmed' ? 'var(--ac)' : 'var(--ac2)') + '">' + c.lineup_status + '</span>' +
+             ' &middot; ' + modeBadge + fallbackNote +
+           '</div>' +
+         '</div>';
+    h += '<div style="text-align:right">' +
+           '<div style="font-size:20px;font-weight:800;font-family:Space Mono,monospace;color:' + evColor(c.ev_pct) + '">' +
+             (c.ev_pct >= 0 ? '+' : '') + c.ev_pct.toFixed(1) + '%</div>' +
+           '<div style="font-size:8px;color:var(--mu);font-family:Space Mono,monospace">EV</div>' +
+         '</div>';
+    h += '</div>';
+
+    /* Legs box: two teammate legs + combined hit rate. */
+    h += '<div style="background:var(--s2);border-radius:6px;padding:7px 9px;margin-bottom:8px">';
+    h += '<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0">' +
+           '<span class="leg ' + legSideCls(c.leg1_full) + '" style="font-size:10px">' + c.leg1_full + ' &middot; ' + c.p1 + '</span>' +
+           '<div style="display:flex;align-items:center;gap:6px">' +
+             '<span style="font-size:10px;font-family:Space Mono,monospace;color:var(--mu)">FV ' + fmtAm(c.fv_p1) + '</span>' +
+             '<span style="font-size:9px;font-family:Space Mono,monospace;color:var(--ac2)">' + hr1 + '</span>' +
+           '</div>' +
+         '</div>';
+    h += '<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0">' +
+           '<span class="leg ' + legSideCls(c.leg2_full) + '" style="font-size:10px">' + c.leg2_full + ' &middot; ' + c.p2 + '</span>' +
+           '<div style="display:flex;align-items:center;gap:6px">' +
+             '<span style="font-size:10px;font-family:Space Mono,monospace;color:var(--mu)">FV ' + fmtAm(c.fv_p2) + '</span>' +
+             '<span style="font-size:9px;font-family:Space Mono,monospace;color:var(--ac2)">' + hr2 + '</span>' +
+           '</div>' +
+         '</div>';
+    if (bothHr != null) {
+      h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:5px;padding-top:5px;border-top:1px solid rgba(255,255,255,0.07)">' +
+             '<span style="font-size:9px;color:var(--mu);font-family:Space Mono,monospace">Both hit (' + n + ' games together)</span>' +
+             '<span style="font-size:9px;font-family:Space Mono,monospace;color:var(--ac)">' + bothHr + '</span>' +
+           '</div>';
+    }
+    h += '</div>';
+
+    /* Metric row: DK, FVcorr, R binary, R margin, QK (5 pills). */
+    h += '<div class="hr4" style="grid-template-columns:repeat(5,1fr)">';
+    h += '<div class="hi"><div class="hv" style="color:var(--cyan);font-size:15px">' + dkStr + '</div><div class="hl">DK SGP</div></div>';
+    h += '<div class="hi"><div class="hv" style="color:var(--ac);font-size:15px">' + fvStr + '</div><div class="hl">FV CORR</div></div>';
+    h += '<div class="hi" title="' + rProv + '"><div class="hv" style="color:' + rColorFor(c.r_binary) + ';font-size:15px">' +
+         (c.r_binary == null ? 'N/A' : ((c.r_binary >= 0 ? '+' : '') + c.r_binary.toFixed(2))) +
+         '</div><div class="hl">R BINARY</div></div>';
+    h += '<div class="hi"><div class="hv" style="color:' + rmColor + ';font-size:15px">' +
+         (rmText == null ? 'N/A' : rmText) + '</div><div class="hl">MARGIN</div></div>';
+    h += '<div class="hi"><div class="hv" style="color:var(--mu);font-size:13px">' + c.qk_pct.toFixed(2) + 'u</div><div class="hl">QK</div></div>';
+    h += '</div>';
+
+    /* Slot-match confidence row + shrinkage provenance + AI Insights button */
+    h += '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">';
+    h += '<div style="font-size:9px;font-family:Space Mono,monospace;color:var(--mu)">' +
+           'tonight <span style="color:var(--tx)">' + slotStr + '</span>' +
+           ' &nbsp;vs hist <span style="color:var(--tx)">' + histStr + '</span>' +
+         '</div>';
+    h += '<div style="font-size:9px;font-family:Space Mono,monospace;padding:2px 8px;border-radius:10px;background:rgba(0,0,0,.2);color:' + confColor(conf.level) + ';border:1px solid ' + confColor(conf.level) + '">' +
+           conf.level.toUpperCase() + ' · n=' + conf.n +
+         '</div>';
+    h += '<button onclick="window.teammateEvTab._aiInsight(' + idx + ')" title="Coming in chunk 6" style="margin-left:auto;padding:4px 10px;font-size:10px;border:1px solid var(--ac3);background:transparent;color:var(--ac3);border-radius:5px;cursor:pointer;font-family:Space Mono,monospace">AI INSIGHTS</button>';
+    h += '</div>';
+    /* Shrinkage provenance line (always visible, matches what the
+       tooltip on R BINARY would have shown so keyboard/mobile users
+       aren't locked out of that information). */
+    h += '<div style="margin-top:6px;font-size:9px;color:var(--mu);font-family:Space Mono,monospace;line-height:1.4;word-break:break-word">' +
+         shrinkageProv(c) + '</div>';
+
+    h += '</div>';
+    return h;
+  }
+
+  function aiInsightPlaceholder(idx) {
+    /* Chunk 6 will replace this with a real /api/sgp-insight call. */
+    alert('AI Insights for teammate cards land in Phase 2 chunk 6.\n\n' +
+          'Candidate idx: ' + idx + ' (see window.teammateEvTab._state.candidatesFull for the record).');
+  }
+
   function render() {
     $('tmevFilterBar').style.display = 'flex';
     var filtered = applyFilters(S.candidatesFull);
@@ -312,34 +451,22 @@
       ' · source: ' + (S.fvSource || 'none');
     var container = $('tmevResults');
     if (!filtered.length) {
-      container.innerHTML = '<div class="empty" style="padding:20px;color:var(--mu);font-size:12px;text-align:center">' +
-        'No candidates match the current filters. Try lowering MIN EV% or widening confidence.</div>';
+      container.innerHTML = '<div class="empty" style="padding:20px;color:var(--mu);font-size:12px;text-align:center;margin-top:10px">' +
+        'No candidates match the current filters. Try lowering MIN EV%, widening confidence, or checking other teams.</div>';
       return;
     }
-    /* 5c will replace this with proper cards. For now, show a dense
-       table-like summary so the pipeline is demonstrably working end
-       to end. Render top 30 to keep DOM cost bounded. */
-    var rows = filtered.slice(0, 30).map(function (c) {
-      var dk = (c.dk_american > 0 ? '+' : '') + c.dk_american;
-      var fvC = (c.fv_corr_american > 0 ? '+' : '') + c.fv_corr_american;
-      var conf = c.slot_match_confidence;
-      var confColor = conf.level === 'high' ? 'var(--ac)' : conf.level === 'medium' ? 'var(--ac2)' : conf.level === 'low' ? 'var(--red)' : 'var(--mu)';
-      return '<div style="display:grid;grid-template-columns:minmax(220px,1fr) 140px 120px 100px 100px 90px 80px;gap:10px;padding:8px 10px;border-bottom:1px solid var(--b1);font-family:Space Mono,monospace;font-size:11px;align-items:center">' +
-        '<div style="color:var(--tx)"><strong>' + c.p1 + '</strong> × <strong>' + c.p2 + '</strong>' +
-          '<div style="font-size:9px;color:var(--mu)">' + c.team + ' · ' + (c.game_label || '') + '</div></div>' +
-        '<div style="color:var(--mu);font-size:10px">' + c.leg1_full + '<br>' + c.leg2_full + '</div>' +
-        '<div style="color:var(--mu)">slots ' + c.tonight_slots[0] + '_' + c.tonight_slots[1] + '<br><span style="color:' + confColor + ';font-size:10px">' + conf.level + ' n=' + conf.n + '</span></div>' +
-        '<div>r=' + (c.r_binary == null ? 'null' : c.r_binary.toFixed(3)) + '<br><span style="color:var(--mu);font-size:10px">w=' + (c.w_player || 0).toFixed(2) + '</span></div>' +
-        '<div>DK ' + dk + '<br><span style="color:var(--mu);font-size:10px">FV ' + fvC + '</span></div>' +
-        '<div style="color:' + (c.ev_pct >= 5 ? 'var(--ac)' : c.ev_pct >= 0 ? 'var(--ac2)' : 'var(--red)') + ';font-weight:700">' + c.ev_pct.toFixed(1) + '%</div>' +
-        '<div style="color:var(--mu)">QK ' + c.qk_pct.toFixed(2) + 'u</div>' +
-        '</div>';
-    }).join('');
+    /* Cap to top 60 — at 60 cards × ~8 DOM elements each we stay under
+       500 nodes. UI can grow this later with a "load more" button. */
+    var cap = Math.min(filtered.length, 60);
+    var cardsHtml = '';
+    for (var i = 0; i < cap; i++) cardsHtml += cardHtml(filtered[i], i);
     container.innerHTML =
-      '<div style="padding:10px;background:var(--s1);border-radius:8px;border:1px solid var(--b1);margin-top:10px">' +
-        '<div style="font-size:10px;color:var(--mu);padding:4px 10px 8px;font-family:Space Mono,monospace">Preview — full card UI lands in chunk 5c</div>' +
-        rows +
-      '</div>';
+      '<div class="grid" style="margin-top:10px;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:10px">' +
+        cardsHtml +
+      '</div>' +
+      (filtered.length > cap
+         ? '<div style="text-align:center;margin-top:10px;font-size:10px;color:var(--mu);font-family:Space Mono,monospace">Showing top ' + cap + ' of ' + filtered.length + ' — refine filters to see more</div>'
+         : '');
   }
 
   /* ---------------- filter/mode handlers ---------------- */
@@ -412,6 +539,9 @@
     setMode:         setMode,
     onFilter:        onFilter,
     useSyntheticFv:  useSyntheticFv,
+    _aiInsight:      aiInsightPlaceholder, // chunk 6 replaces this
+    _render:         render,
+    _cardHtml:       cardHtml,
     _state:          S,  // for debugging from the browser console
   };
 })();
