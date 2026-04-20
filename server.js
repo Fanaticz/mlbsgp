@@ -4,6 +4,11 @@
 const express = require('express');
 const compression = require('compression');
 const path = require('path');
+/* foldAscii: NFKD-fold + strip combining marks. Used to normalize player
+   names at every boundary so the FV-sheet OCR (ASCII), MLB Stats API
+   lineup hydrate (diacritic), and TEAMMATE_DATA aggregates (ASCII) all
+   join cleanly. See public/utils/nameNormalize.js for the canonical impl. */
+const { foldAscii } = require('./public/utils/nameNormalize.js');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -358,7 +363,13 @@ function normalizeBatterRows(rows) {
       }
     }
 
-    const batter = (r.batter || r.player || r.pitcher || '').trim();
+    /* OCR sometimes returns names with stray accents the user's sheet
+       didn't actually have, and even when it doesn't, downstream joins
+       happen against TEAMMATE_DATA (ASCII) and the lineup endpoint
+       (which we also ASCII-fold). Fold here so the join key is canonical
+       for the entire pipeline. */
+    const batterRaw = (r.batter || r.player || r.pitcher || '').trim();
+    const batter = foldAscii(batterRaw);
     if (!batter) {
       unmatched.push({ L: r.L, bet_name: r.bet_name, market: r.market, reason: 'no batter name' });
       return;
@@ -862,8 +873,14 @@ function normalizeHydratePlayer(p, slot, metaById) {
   if (!p) return null;
   const id = p.id || (p.person && p.person.id) || null;
   const meta = id != null ? (metaById[id] || {}) : {};
+  /* MLB Stats API returns names with diacritics (e.g. "Andrés Giménez").
+     We preserve that on `displayName` for the UI but fold `player` to
+     ASCII so the join key matches the ASCII forms used in TEAMMATE_DATA
+     and in FV-sheet OCR output. */
+  const raw = p.fullName || (p.person && p.person.fullName) || meta.fullName || null;
   return {
-    player: p.fullName || (p.person && p.person.fullName) || meta.fullName || null,
+    player: foldAscii(raw),
+    displayName: raw,
     slot,
     position: (p.primaryPosition && p.primaryPosition.abbreviation) || meta.position || null,
     hand: (p.batSide && p.batSide.code) || meta.hand || null,
@@ -884,9 +901,12 @@ function lineupFromBoxscore(box, side) {
     if (!p || !p.battingOrder) continue;
     const bo = parseInt(p.battingOrder, 10);
     if (!Number.isFinite(bo) || bo % 100 !== 0) continue; // keep slot-100 starters only
+    /* Same display/canonical split as normalizeHydratePlayer above. */
+    const fullName = p.person && p.person.fullName;
     starters.push({
       slot: bo / 100,
-      player: p.person && p.person.fullName,
+      player: foldAscii(fullName),
+      displayName: fullName,
       position: (p.position && p.position.abbreviation) || null,
       hand: (p.person && p.person.batSide && p.person.batSide.code) || null,
       mlbam_id: p.person && p.person.id,
