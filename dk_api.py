@@ -27,12 +27,18 @@ DK_SGP = "https://sportsbook-nash.draftkings.com/sites/US-SB/api/sportscontent/p
 DK_PRICE = "https://gaming-us-nj.draftkings.com/api/wager/v1/calculateBets"
 
 # Rotate TLS fingerprints so Akamai can't pin a single one as "bot" and 403
-# every subcategory request for the remainder of the subprocess.
+# every subcategory request for the remainder of the subprocess. Order is
+# deliberate: latest "chrome" first because Akamai aggressively 503s the
+# pinned-version fingerprints (chrome120/116/etc) on some IPs, while latest
+# "chrome" stays under the radar. We round-robin in this order on each rotate
+# rather than random.choice'ing — guarantees we exhaust all fingerprints in
+# at most N attempts instead of stochastically retrying the bad ones.
 _IMPERSONATES = ["chrome", "chrome120", "chrome116", "chrome110", "chrome107",
                  "chrome101", "edge101", "edge99", "safari17_2_ios"]
 
 _session_lock = threading.Lock()
-session = cffi_requests.Session(impersonate=random.choice(_IMPERSONATES))
+_imp_idx = 0
+session = cffi_requests.Session(impersonate=_IMPERSONATES[0])
 
 # Throttle gate: once DK returns a 403 we pause all threads for a cool-off.
 # Without this, every in-flight request races into the Akamai block and the
@@ -41,9 +47,10 @@ _cooloff_until = 0.0
 
 
 def _rotate_session():
-    global session
+    global session, _imp_idx
     with _session_lock:
-        session = cffi_requests.Session(impersonate=random.choice(_IMPERSONATES))
+        _imp_idx = (_imp_idx + 1) % len(_IMPERSONATES)
+        session = cffi_requests.Session(impersonate=_IMPERSONATES[_imp_idx])
 
 
 def _trigger_cooloff(seconds):
@@ -177,14 +184,19 @@ def _fetch_subcategory(event_id, sc):
     return mkts, sels
 
 
-def get_markets(event_id, pitcher_only=False):
+def get_markets(event_id, pitcher_only=False, batter_only=False):
     """Return all markets and selections for an event, scoped properly to that event.
 
     When pitcher_only=True, skip subcategories that are clearly batter/team/game
     markets before making the per-subcat HTTP call. DK's subcategory endpoint is
     the slowest/most rate-limited part of the flow, so dropping ~80% of the
     fetches (we only care about pitcher props for SGP pricing) is the biggest
-    lever we have on end-to-end latency."""
+    lever we have on end-to-end latency.
+
+    When batter_only=True, the inverse: keep only subcategories whose names
+    suggest batter props (Hits, Runs, RBI, TB, HR, Walks, Singles/Doubles/
+    Triples, Stolen Bases). Used by find_sgps_teammate to scope teammate-pair
+    pricing to a manageable set of fetches per game."""
     # Step 1: Get event metadata (subcategories + market groups)
     r0 = _get_with_retry(f"{DK_SGP}/{event_id}")
     evt = r0.json()["data"]["events"][0]
@@ -207,6 +219,30 @@ def get_markets(event_id, pitcher_only=False):
                 return False
             return any(k in n for k in _SC_PITCHER_HINTS)
         subcats = [sc for sc in subcats if _keep(sc)]
+    elif batter_only:
+        # Symmetric to pitcher_only: keep batter subcats, drop pitcher/team/
+        # game-line subcats. Note "home run" appears in both batter (Player
+        # Home Runs) and team (Team Total Home Runs) names; the team-line
+        # exclusion below catches the latter.
+        _SC_BATTER_HINTS = ("hits", "runs", "rbi", "total bases", "home run",
+                            "at bat", "stolen base", "singles", "doubles",
+                            "triples", "walks", "batter", "hitter", "batting",
+                            "extra base")
+        _SC_TEAM_OR_GAME_HINTS = ("team total", "team to", "moneyline",
+                                  "run line", "game prop", "game lines",
+                                  "first inning", "first 5", "1st 5",
+                                  "innings", "alternate run line", "spread")
+        _SC_PITCHER_HINTS = ("pitcher", "pitching", "strikeout", "earned run",
+                             "walks allowed", "walk allowed", "hits allowed",
+                             "outs recorded", "outs o/u", "outs thrown")
+        def _keep_batter(sc):
+            n = (sc.get("name") or "").lower()
+            if any(h in n for h in _SC_PITCHER_HINTS):
+                return False
+            if any(h in n for h in _SC_TEAM_OR_GAME_HINTS):
+                return False
+            return any(k in n for k in _SC_BATTER_HINTS)
+        subcats = [sc for sc in subcats if _keep_batter(sc)]
 
     # Step 2: Fetch markets for each subcategory in parallel
     all_markets = []
@@ -237,7 +273,15 @@ def get_markets(event_id, pitcher_only=False):
                         "pitching out", "pitcher", "outs recorded", "pitching strikeouts",
                         "outs o/u", "outs thrown")
     BATTER_HINTS = ("rbi", "total bases", "home run", "at bat", "stolen base", "singles",
-                    "doubles", "batting")
+                    "doubles", "triples", "batting")
+    # Batter prop detector: complement of pitcher detector. A prop is batter
+    # if its name/subcat/type blob is clearly batter-flavored AND lacks any
+    # pitcher signal. "Walks"/"Hits" alone are ambiguous (pitcher walks-
+    # allowed and batter walks both contain "walks"); the pitcher-keyword
+    # exclusion disambiguates via the "allowed"/"pitching" qualifier.
+    BATTER_KEYWORDS = ("hits", "runs", "rbi", "total bases", "home run",
+                       "at bat", "stolen base", "singles", "doubles",
+                       "triples", "walks", "batter", "hitter")
     props = []
     for m in all_markets:
         mname = m.get("name", "")
@@ -250,6 +294,13 @@ def get_markets(event_id, pitcher_only=False):
         # Only pitcher if pitcher keywords hit AND no batter hints
         is_pitcher = any(kw in blob_lower for kw in PITCHER_KEYWORDS) and \
                      not any(bh in blob_lower for bh in BATTER_HINTS)
+        # Only batter if batter keywords hit AND no pitcher signal. The
+        # "team total" / "1st inning" exclusion happens at subcat-keep time
+        # for batter_only=True; here we additionally guard so a stray team-
+        # total market that slipped through doesn't get tagged as batter.
+        is_batter = (any(kw in blob_lower for kw in BATTER_KEYWORDS)
+                     and not any(pkw in blob_lower for pkw in PITCHER_KEYWORDS)
+                     and "team" not in blob_lower)
         player_name = _extract_player_name(mname, mtype, m.get("_subCategoryName", ""))
 
         for s in m_sels:
@@ -285,6 +336,7 @@ def get_markets(event_id, pitcher_only=False):
                 "oddsAmerican": s.get("displayOdds", {}).get("american", ""),
                 "oddsDecimal": s.get("trueOdds"),
                 "isPitcherProp": is_pitcher,
+                "isBatterProp": is_batter,
                 "isDisabled": s.get("isDisabled", False),
             })
 
@@ -580,6 +632,369 @@ def _match_leg_to_dk(leg, props, pitcher):
     return None
 
 
+def _stat_matches_batter_market(stat_str, market_blob):
+    """Batter version of _stat_matches_market. Caller has already scoped
+    `market_blob` to a batter prop (via batter_only subcat filter), so we
+    only need to disambiguate within batter stats. Stat strings here are
+    the canonical leg labels emitted by the FV-sheet OCR normalizer:
+    Hits, Runs, RBIs, Home Runs, Total Bases, Walks, Stolen Bases,
+    Singles, Doubles, Triples."""
+    s = (stat_str or "").lower().strip()
+    m = (market_blob or "").lower()
+
+    # Order matters: more specific stats first so "Total Bases" doesn't
+    # collide with the bare "bases" in "Stolen Bases", and "Home Runs"
+    # doesn't collide with plain "Runs".
+    if "total base" in s or s == "tb":
+        return "total base" in m
+    if "home run" in s or s == "hr":
+        return "home run" in m
+    if "stolen base" in s or s == "sb":
+        return "stolen base" in m
+    if "single" in s or s == "1b":
+        return "single" in m
+    if "double" in s or s == "2b":
+        return "double" in m
+    if "triple" in s or s == "3b":
+        return "triple" in m
+    if "rbi" in s:
+        return "rbi" in m
+    if "walk" in s or s == "bb":
+        return "walk" in m
+    if s == "runs" or s == "r":
+        # Plain runs — must NOT be Home Runs / RBIs (caller-side stat
+        # already excluded those above; market side may still mention
+        # "Home Runs" so guard here).
+        return ("runs" in m) and ("home run" not in m) and ("rbi" not in m)
+    if s == "hits" or s == "h":
+        # Plain batter Hits market. The pitcher Hits-Allowed disambiguation
+        # is upstream (subcat filter) — within batter scope, "hits" is hits.
+        return "hits" in m
+    return False
+
+
+def _match_leg_to_dk_batter(leg_str, props, player):
+    """Batter analog of _match_leg_to_dk. Same .5 O/U ↔ integer-milestone
+    equivalence as the pitcher path: Over 0.5 Hits ≡ "1+ Hits"; Under 1.5
+    Total Bases ≡ "1 or Fewer Total Bases"."""
+    parts = (leg_str or "").split(None, 2)
+    if len(parts) < 3:
+        return None
+    direction, line_str, stat_str = parts[0], parts[1], parts[2]
+    try:
+        line = float(line_str)
+    except (ValueError, TypeError):
+        return None
+
+    if direction == "Over":
+        accept_points = (line, line + 0.5)
+    elif direction == "Under":
+        accept_points = (line, line - 0.5)
+    else:
+        accept_points = (line,)
+
+    for p in props:
+        if not p.get("isBatterProp"):
+            continue
+        if not _pitcher_matches(player, p.get("player", "")):
+            continue
+        if _selection_direction(p.get("outcomeType")) != direction:
+            continue
+        pts = p.get("points")
+        if pts is None or pts not in accept_points:
+            continue
+        blob = (p.get("marketName", "") + " " + p.get("subcategory", "") + " " + p.get("marketType", ""))
+        if _stat_matches_batter_market(stat_str, blob):
+            return p.get("selectionId")
+    return None
+
+
+def _normalize_team(name):
+    """Normalize a team string to a comparable token. Phase-1 teammate data
+    uses full city + nickname ("San Francisco Giants"); DK exposes the same
+    under homeTeam/awayTeam. Lowercase + strip non-alpha covers the "St."
+    vs "Saint" / "A's" vs "As" edge cases."""
+    n = (name or "").lower()
+    n = re.sub(r"[^a-z0-9 ]+", "", n)
+    return " ".join(n.split())
+
+
+# Tokens that are city prefixes (NOT part of the nickname). Includes both
+# full city words ("kansas", "city", "los", "angeles") and DK's 2-3 letter
+# city codes ("kc", "laa", "wsh"). Anything not in this set is treated as a
+# nickname token. Lets us treat "Kansas City Royals" / "KC Royals" / "Royals"
+# as the same team without an alias table.
+_TEAM_CITY_TOKENS = {
+    "arizona","atlanta","baltimore","boston","chicago","cincinnati",
+    "cleveland","colorado","detroit","houston","kansas","city","la",
+    "los","angeles","miami","milwaukee","minnesota","new","york",
+    "oakland","philadelphia","pittsburgh","san","diego","francisco",
+    "seattle","st","saint","louis","tampa","bay","texas","toronto",
+    "washington",
+    "ari","atl","bal","bos","chc","cws","cin","cle","col","det",
+    "hou","kc","laa","lad","mia","mil","min","nym","nyy","ath","oak",
+    "phi","pit","sd","sf","sea","stl","tb","tex","tor","wsh","was",
+}
+
+
+def _team_nickname(name):
+    """Extract a comparable nickname from a team string. Strips city
+    prefix (full words or DK short codes) and returns the remainder.
+    Examples:
+      'Kansas City Royals' -> 'royals'
+      'KC Royals'           -> 'royals'
+      'Boston Red Sox'      -> 'red sox'
+      'BOS Red Sox'         -> 'red sox'
+      'Athletics'           -> 'athletics'
+      'Diamondbacks'        -> 'diamondbacks'
+    """
+    n = _normalize_team(name)
+    if not n:
+        return ""
+    tokens = n.split()
+    for i, t in enumerate(tokens):
+        if t not in _TEAM_CITY_TOKENS:
+            return " ".join(tokens[i:])
+    return tokens[-1]  # all-city fallback (shouldn't happen for real team names)
+
+
+def _team_in_event(team_str, event):
+    """Match a Phase-1 team string against a DK event. Returns 'home',
+    'away', or None. Compares on nickname so "Kansas City Royals" vs
+    "KC Royals" / "Royals" all collapse to 'royals'."""
+    nick = _team_nickname(team_str)
+    if not nick:
+        return None
+    home_full_nick = _team_nickname(event.get("homeTeam"))
+    away_full_nick = _team_nickname(event.get("awayTeam"))
+    home_short_nick = _team_nickname(event.get("homeShort"))
+    away_short_nick = _team_nickname(event.get("awayShort"))
+    if nick and nick in (home_full_nick, home_short_nick):
+        return "home"
+    if nick and nick in (away_full_nick, away_short_nick):
+        return "away"
+    return None
+
+
+def find_sgps_teammate(payload):
+    """Price a batch of teammate 2-leg SGP candidates against DraftKings.
+
+    Input shape (passed via stdin JSON):
+      {
+        "candidates": [
+          {
+            "id": "<arbitrary frontend handle>",     # echoed back; used to align response rows
+            "team": "Kansas City Royals",            # full team name from Phase-1 teammate dataset
+            "player_a": "Bobby Witt Jr.",
+            "leg_a":    "Over 0.5 Hits",             # canonical leg string (same shape as pitcher side)
+            "player_b": "Salvador Perez",
+            "leg_b":    "Over 0.5 RBIs"
+          },
+          ...
+        ]
+      }
+
+    Output:
+      {
+        "results": [
+          {
+            "id": ...,
+            "event_id": "...",
+            "game_name": "...",
+            "matched": true|false,
+            "missing": ["player_a leg_a", ...],   # only present when matched=false
+            "dk_odds": "+350",                     # only present when matched=true
+            "dk_decimal": 4.5,
+            "selection_a": "...",
+            "selection_b": "..."
+          }, ...
+        ],
+        "events_scanned": [eid, ...],
+        "team_event_map": { "<team>": eid|null },
+        "truncated": bool
+      }
+
+    Invariants:
+      - Each unique team is scanned exactly once (via batter_only get_markets).
+      - Each unique (player, leg) is matched to a selectionId exactly once.
+      - Each unique unordered (sel_a, sel_b) pair is priced at most once;
+        candidates that map to the same pair share the price.
+      - Soft 110s deadline mirrors find_sgps; whatever is missing comes back
+        as matched=false rather than failing the whole request.
+    """
+    from itertools import combinations  # noqa: F401  (kept for future expansion)
+    import concurrent.futures
+
+    pricing_deadline = _time.monotonic() + 110.0
+    truncated = False
+
+    candidates = (payload or {}).get("candidates", []) or []
+    if not isinstance(candidates, list) or not candidates:
+        return {"error": "candidates array required"}
+
+    # Dedupe teams.
+    needed_teams = []
+    seen_teams = set()
+    for c in candidates:
+        t = c.get("team")
+        if not t:
+            continue
+        nt = _normalize_team(t)
+        if nt in seen_teams:
+            continue
+        seen_teams.add(nt)
+        needed_teams.append(t)
+
+    # Resolve team → DK event.
+    try:
+        games_data = get_games()
+    except Exception as e:
+        return {"error": f"DK games endpoint unavailable: {e}. Try again in a moment."}
+    events = [e for e in games_data["events"] if e.get("hasSGP")]
+
+    team_event_map = {}
+    for t in needed_teams:
+        chosen = None
+        for e in events:
+            if _team_in_event(t, e):
+                chosen = e["id"]
+                break
+        team_event_map[t] = chosen
+
+    needed_event_ids = sorted({eid for eid in team_event_map.values() if eid})
+
+    # Scan markets per event in parallel. Same low max_workers (and the
+    # nested batter_only get_markets uses its own workers=2) so effective
+    # concurrency against DK stays at 4 — the level pitcher find_sgps
+    # established as safe against Akamai's 403 cascade.
+    event_markets = {}
+    def scan(eid):
+        try:
+            md = get_markets(eid, batter_only=True)
+            return eid, md
+        except Exception as ex:
+            sys.stderr.write(f"dk_api: teammate event {eid} scan failed: {ex}\n")
+            return eid, None
+
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        futs = {ex.submit(scan, eid): eid for eid in needed_event_ids}
+        for fut in as_completed(futs):
+            eid, md = fut.result()
+            if md is not None:
+                event_markets[eid] = md
+
+    # Match each unique (event, player, leg) to a DK selectionId exactly once.
+    leg_match_cache = {}  # key: (eid, player_norm, leg_str) -> selection_id|None
+
+    def match_leg(eid, player, leg_str):
+        if not eid or eid not in event_markets:
+            return None
+        key = (eid, _normalize_name(player), leg_str)
+        if key in leg_match_cache:
+            return leg_match_cache[key]
+        sid = _match_leg_to_dk_batter(leg_str, event_markets[eid]["props"], player)
+        leg_match_cache[key] = sid
+        return sid
+
+    # Resolve every candidate to a (sel_a, sel_b) pair.
+    resolved = []  # parallel to `candidates`
+    for c in candidates:
+        team = c.get("team")
+        eid = team_event_map.get(team)
+        game_info = next((e for e in events if e["id"] == eid), {}) if eid else {}
+        sa = match_leg(eid, c.get("player_a"), c.get("leg_a")) if eid else None
+        sb = match_leg(eid, c.get("player_b"), c.get("leg_b")) if eid else None
+        missing = []
+        if not eid:
+            missing.append(f"team:{team}")
+        else:
+            if not sa:
+                missing.append(f"{c.get('player_a')} :: {c.get('leg_a')}")
+            if not sb:
+                missing.append(f"{c.get('player_b')} :: {c.get('leg_b')}")
+        resolved.append({
+            "id": c.get("id"),
+            "event_id": eid,
+            "game_name": game_info.get("name", "") if eid else "",
+            "selection_a": sa,
+            "selection_b": sb,
+            "missing": missing,
+        })
+
+    # Dedupe pricing on the unordered selection pair.
+    price_cache = {}  # key: frozenset({sa, sb}) -> price dict|None|"pending"
+    pricing_jobs = []
+    for r in resolved:
+        if not r["selection_a"] or not r["selection_b"]:
+            continue
+        if r["selection_a"] == r["selection_b"]:
+            continue  # same selection used twice would fail calculateBets anyway
+        key = frozenset({r["selection_a"], r["selection_b"]})
+        if key in price_cache:
+            continue
+        price_cache[key] = "pending"
+        pricing_jobs.append((key, r["selection_a"], r["selection_b"]))
+
+    def price_one(key, sa, sb):
+        return key, _price_combo([sa, sb])
+
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        futs = [ex.submit(price_one, *job) for job in pricing_jobs]
+        remaining = max(0.5, pricing_deadline - _time.monotonic())
+        try:
+            for f in as_completed(futs, timeout=remaining):
+                try:
+                    key, price = f.result()
+                    price_cache[key] = price  # may be None on incompat / DK error
+                except Exception:
+                    pass
+        except concurrent.futures.TimeoutError:
+            truncated = True
+            for f in futs:
+                f.cancel()
+
+    # Build response rows.
+    results = []
+    for src, r in zip(candidates, resolved):
+        out = {
+            "id": r["id"],
+            "event_id": r["event_id"],
+            "game_name": r["game_name"],
+            "team": src.get("team"),
+            "player_a": src.get("player_a"),
+            "leg_a": src.get("leg_a"),
+            "player_b": src.get("player_b"),
+            "leg_b": src.get("leg_b"),
+            "selection_a": r["selection_a"],
+            "selection_b": r["selection_b"],
+        }
+        if r["missing"]:
+            out["matched"] = False
+            out["missing"] = r["missing"]
+            results.append(out)
+            continue
+        key = frozenset({r["selection_a"], r["selection_b"]})
+        price = price_cache.get(key)
+        if price in (None, "pending"):
+            out["matched"] = False
+            out["missing"] = ["dk:price_unavailable"]
+            results.append(out)
+            continue
+        out["matched"] = True
+        out["dk_odds"] = price["sgpOdds"]
+        out["dk_decimal"] = price["sgpDecimal"]
+        results.append(out)
+
+    response = {
+        "results": results,
+        "events_scanned": needed_event_ids,
+        "team_event_map": team_event_map,
+    }
+    if truncated:
+        response["truncated"] = True
+    return response
+
+
 def find_sgps(legs):
     """Given OCR'd legs, auto-match them to DK selections, enumerate 2-leg combos,
     and return DK-priced SGPs. Frontend computes FV and EV."""
@@ -804,6 +1219,10 @@ if __name__ == "__main__":
             stdin_data = sys.stdin.read().strip()
             legs = json.loads(stdin_data) if stdin_data else []
             result = find_sgps(legs)
+        elif cmd == "find-sgps-teammate":
+            stdin_data = sys.stdin.read().strip()
+            payload = json.loads(stdin_data) if stdin_data else {}
+            result = find_sgps_teammate(payload)
         elif cmd == "price":
             stdin_data = sys.stdin.read().strip()
             if stdin_data:

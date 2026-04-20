@@ -404,6 +404,24 @@ app.post('/api/dk/find-sgps', async (req, res) => {
   }
 });
 
+// POST /api/dk/find-sgps-teammate — batter teammate-pair SGP pricing.
+// Request body: { candidates: [{ id, team, player_a, leg_a, player_b, leg_b }] }
+// Response: { results: [{ id, matched, dk_odds, dk_decimal, missing? }], events_scanned, truncated? }
+// Same Akamai-throttling story as find-sgps; per-call deadline ~110s.
+app.post('/api/dk/find-sgps-teammate', async (req, res) => {
+  try {
+    const { candidates } = req.body || {};
+    if (!Array.isArray(candidates) || !candidates.length) {
+      return res.status(400).json({ error: 'candidates array required' });
+    }
+    const result = await dkCall(['find-sgps-teammate'], JSON.stringify({ candidates }));
+    if (result.error && !result.results) return res.json(result);
+    return res.json(result);
+  } catch (e) {
+    return res.status(500).json({ error: 'DK find-sgps-teammate failed: ' + e.message });
+  }
+});
+
 // POST /api/dk/price — get correlated SGP price from DraftKings
 app.post('/api/dk/price', async (req, res) => {
   try {
