@@ -806,11 +806,21 @@
     });
 
     // Pair-level counts from enumeration output.
-    // candidatesRaw contains only pairs that cleared findPair + n_total
-    // threshold AND had valid FV for BOTH legs on at least one combo. So
-    // _uniquePairs(S.candidatesRaw) = "pairs with historical data that
-    // also appeared in the FV sheet and had a matchable combo".
-    var pairsWithData = _uniquePairs(S.candidatesRaw);
+    //
+    // pairsWithPhase1Data — pairs that passed pair-existence + min-games
+    //   checks and entered combo-level enumeration. Read from the
+    //   enumerator's new pairs_with_phase1_data counter so the funnel
+    //   reconciles:
+    //     pairs_considered
+    //       = pairs_no_data + pairs_below_threshold + pairs_with_phase1_data
+    //
+    // pairsEmitted — distinct pairs that produced at least one emitted
+    //   combo (i.e. combos where BOTH legs had FV). A pair can pass
+    //   Phase-1 checks but emit nothing if the FV sheet doesn't cover
+    //   matching legs for it, which was the motivating failure on
+    //   2026-04-20 (247 pairs with data, 0 emitted).
+    var pairsWithPhase1Data = (S.enumDiagnostics && S.enumDiagnostics.pairs_with_phase1_data) || 0;
+    var pairsEmitted  = _uniquePairs(S.candidatesRaw);
     var pairsPriced   = _uniquePairs(S.candidatesFull);
     var pairsSurviving = S.lastFilteredCount != null
       ? _uniquePairs(applyFilters(S.candidatesFull))
@@ -852,11 +862,16 @@
     row('Theoretical intra-team pairs:',
         theoreticalPerTeam.length ? theoreticalPerTeam.join(', ') + '  → ' + theoretical + ' total' : '0 total',
         '');
-    row('Pairs with historical data:', pairsWithData,
+    row('Pairs with historical data:', pairsWithPhase1Data,
         diag.pairs_considered != null
           ? '(' + diag.pairs_considered + ' considered, ' + (diag.pairs_no_data || 0) + ' no Phase-1 data, ' + (diag.pairs_below_threshold || 0) + ' below MIN GAMES)'
           : '',
-        pairsWithData ? 'var(--ac)' : 'var(--red)');
+        pairsWithPhase1Data ? 'var(--ac)' : 'var(--red)');
+    row('Pairs that emitted any combo:', pairsEmitted,
+        pairsWithPhase1Data > 0 && pairsEmitted === 0
+          ? '(all lost at leg-FV check — see combo-level skips below)'
+          : '',
+        pairsEmitted ? 'var(--ac)' : 'var(--ac2)');
     row('Pairs with valid DK SGP price:', (pairsPriced != null ? pairsPriced : '—'),
         (S.dkMissing && S.dkMissing.length ? '(' + S.dkMissing.length + ' DK-unmatched)' : ''),
         pairsPriced ? 'var(--ac)' : 'var(--ac2)');

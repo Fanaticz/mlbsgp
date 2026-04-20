@@ -123,6 +123,16 @@
       pairs_considered:    0,
       pairs_no_data:       0,
       pairs_below_threshold: 0,
+      /* Pairs that passed BOTH pair-existence and min-games checks — i.e.
+         pairs that entered combo-level enumeration. Reconciles the
+         funnel:
+           pairs_considered
+             = pairs_no_data + pairs_below_threshold + pairs_with_phase1_data
+         Before this counter existed, the diag panel showed "Pairs with
+         historical data: 0" whenever combos_emitted = 0, which was
+         misleading: pairs HAD Phase-1 data, they just lost downstream at
+         leg-FV checks. */
+      pairs_with_phase1_data: 0,
       combos_considered:   0,
       combos_null:         0,
       combos_so_skip:      0,
@@ -158,6 +168,7 @@
             var pair = tp.findPair(teammateData, a.player, b.player, team);
             if (!pair) { diag.pairs_no_data++; continue; }
             if ((pair.n_total || 0) < minPairGames) { diag.pairs_below_threshold++; continue; }
+            diag.pairs_with_phase1_data++;
 
             // Order tonight's slots to match pair.p1/p2.
             // Both sides are ASCII-folded: pair.p1/p2 were folded at
