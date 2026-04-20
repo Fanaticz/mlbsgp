@@ -16,6 +16,10 @@ node scripts/nba_ev_formula_check.js
 # Verify null-EV candidates sort/filter/paginate correctly. Locked in
 # by Phase 3 rider 1. Expected final line: "ALL NULL-EV GUARDS PASS"
 node scripts/nba_null_ev_sort_check.js
+
+# NBA OCR normalizer + market table + groupNbaPlayers. Landed in
+# Phase 4 Edit 4. Expected final line: "ALL NBA OCR NORMALIZE TESTS PASS"
+node scripts/nba_ocr_normalize_tests.js
 ```
 
 Neither needs jsdom or a running server — both eval the NBA module in a
