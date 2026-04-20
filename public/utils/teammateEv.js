@@ -1,0 +1,284 @@
+/* teammateEv.js — candidate enumeration + EV finalization orchestrator.
+   UMD: works as <script> in browser (window.teammateEv) or require() in
+   Node. Depends on teammateMath.js + teammatePairLookup.js. No math,
+   no data access — just glue between Phase-1 aggregates, tonight's
+   lineups, FV data, and DK pricing.
+
+   Flow:
+     1. enumerateCandidates(args) returns { candidates, diagnostics }.
+        Pure — no network. DK pricing happens OUT-OF-BAND; the caller
+        batches the candidate list to /api/dk/find-sgps-teammate.
+     2. For each DK-priced candidate, finalizeCandidate(cand, dkAm)
+        returns the same record enriched with pJoint / fvCorr /
+        evPct / kellyPct / qkPct via teammateMath.ivBundle.
+     3. rankAndFilter(finalizedCandidates, {minEvPct}) sorts and
+        threshold-filters for UI consumption.
+
+   FV data shape (matches chunk 3 groupBatterPlayers output, re-indexed
+   for fast lookup):
+     fvByPlayer[playerName][statFull][threshold] = {
+       over_fv: <American odds number|null>,
+       under_fv: <American odds number|null>,
+       over_avg_odds: <"+120 / -140" string|null>,
+       under_avg_odds: <same|null>,
+     }
+*/
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) {
+    module.exports = factory(require('./teammateMath.js'),
+                             require('./teammatePairLookup.js'));
+  } else {
+    root.teammateEv = factory(root.teammateMath, root.teammatePairLookup);
+  }
+}(typeof self !== 'undefined' ? self : this, function (tm, tp) {
+
+  if (!tm || !tp) {
+    throw new Error('teammateEv: requires teammateMath + teammatePairLookup loaded first');
+  }
+
+  /* Convert chunk-3 groupBatterPlayers output to a fast lookup index
+     keyed by player → stat → threshold. Callers with a different FV
+     source can pass a pre-built index directly to enumerateCandidates. */
+  function fvIndexFromExtractor(players) {
+    var idx = {};
+    if (!Array.isArray(players)) return idx;
+    for (var i = 0; i < players.length; i++) {
+      var p = players[i];
+      if (!p || !p.player) continue;
+      idx[p.player] = idx[p.player] || {};
+      var props = p.props || [];
+      for (var j = 0; j < props.length; j++) {
+        var pr = props[j];
+        idx[p.player][pr.stat] = idx[p.player][pr.stat] || {};
+        idx[p.player][pr.stat][pr.threshold] = {
+          over_fv: pr.over_fv, under_fv: pr.under_fv,
+          over_avg_odds: pr.over_avg_odds, under_avg_odds: pr.under_avg_odds,
+        };
+      }
+    }
+    return idx;
+  }
+
+  /* Look up FV odds for one (player, canonical_stat, threshold, direction).
+     Returns the American odds (number) or null if absent. */
+  function lookupFv(fvByPlayer, player, statFull, threshold, direction) {
+    var pRec = fvByPlayer && fvByPlayer[player];
+    if (!pRec) return null;
+    var sRec = pRec[statFull];
+    if (!sRec) return null;
+    var tRec = sRec[threshold];
+    if (!tRec) return null;
+    var key = (direction === 'Over') ? 'over_fv' : 'under_fv';
+    var v = tRec[key];
+    return (v == null || isNaN(v)) ? null : Number(v);
+  }
+
+  /* Enumerate every valid (pair × combo × lineup-slot) candidate from
+     tonight's slate. Pure — no network calls, no mutation of inputs.
+
+     args = {
+       lineups:        [{ home_team, away_team, home_lineup: [{player, slot}],
+                          away_lineup: [{player, slot}], status, game_id, ... }, ...]
+                       (shape from /api/lineups)
+       fvByPlayer:     {playerName: {statFull: {threshold: {over_fv, under_fv,...}}}}
+       teammateData:   loaded public/data/teammate_aggregates_pooled_static.json
+       slotBaselines:  loaded public/data/slot_pair_baselines.json
+       mode:           'player' | 'global' | 'blended'  (default 'blended')
+       minPairGames:   pair.n_total >= this  (default 30 — pair_min_total_cold)
+       skipStatuses:   set of lineup statuses to skip (default {'awaiting'})
+     }
+
+     Returns { candidates, diagnostics } where diagnostics is a count
+     bucket keyed by skip reason. */
+  function enumerateCandidates(args) {
+    var lineups       = (args && args.lineups) || [];
+    var fvByPlayer    = (args && args.fvByPlayer) || {};
+    var teammateData  = args && args.teammateData;
+    var slotBaselines = args && args.slotBaselines;
+    var mode          = (args && args.mode) || 'blended';
+    var minPairGames  = args && args.minPairGames != null ? args.minPairGames : 30;
+    var skipStatuses  = (args && args.skipStatuses) || { awaiting: 1 };
+
+    if (!teammateData || !teammateData.pairs) {
+      throw new Error('enumerateCandidates: teammateData.pairs required');
+    }
+    var comboSpec = teammateData.combo_spec || [];
+
+    var candidates = [];
+    var diag = {
+      games_considered:    0,
+      games_skipped_status: 0,
+      pairs_considered:    0,
+      pairs_no_data:       0,
+      pairs_below_threshold: 0,
+      combos_considered:   0,
+      combos_null:         0,
+      combos_so_skip:      0,
+      combos_hrr_skip:     0,
+      combos_other_skip:   0,
+      combos_no_fv_leg1:   0,
+      combos_no_fv_leg2:   0,
+      combos_emitted:      0,
+    };
+
+    for (var gi = 0; gi < lineups.length; gi++) {
+      var game = lineups[gi];
+      if (!game) continue;
+      if (skipStatuses[game.status]) { diag.games_skipped_status++; continue; }
+      diag.games_considered++;
+
+      var sides = [
+        { team: game.home_team, lineup: game.home_lineup || [] },
+        { team: game.away_team, lineup: game.away_lineup || [] },
+      ];
+
+      for (var si = 0; si < sides.length; si++) {
+        var team = sides[si].team, lineup = sides[si].lineup;
+        if (!team || lineup.length < 2) continue;
+
+        // Unique unordered pairs of batters in this lineup
+        for (var i = 0; i < lineup.length; i++) {
+          for (var j = i + 1; j < lineup.length; j++) {
+            var a = lineup[i], b = lineup[j];
+            if (!a || !b || !a.player || !b.player) continue;
+            diag.pairs_considered++;
+
+            var pair = tp.findPair(teammateData, a.player, b.player, team);
+            if (!pair) { diag.pairs_no_data++; continue; }
+            if ((pair.n_total || 0) < minPairGames) { diag.pairs_below_threshold++; continue; }
+
+            // Order tonight's slots to match pair.p1/p2
+            var p1 = pair.p1, p2 = pair.p2;
+            var slotP1, slotP2;
+            if (a.player === p1 && b.player === p2) { slotP1 = a.slot; slotP2 = b.slot; }
+            else if (a.player === p2 && b.player === p1) { slotP1 = b.slot; slotP2 = a.slot; }
+            else { continue; }  // name mismatch (rare: diacritic / suffix drift)
+            var tonightSlots = [slotP1, slotP2];
+            var conf = tp.slotMatchConfidence(pair, tonightSlots);
+
+            for (var ci = 0; ci < comboSpec.length; ci++) {
+              diag.combos_considered++;
+              var combo = tp.comboView(pair, ci, comboSpec);
+              if (!combo) { diag.combos_null++; continue; }
+
+              var t1 = tm.shortLegToFull(combo.leg1);
+              var t2 = tm.shortLegToFull(combo.leg2);
+              if (t1.skipped || t2.skipped) {
+                var reason = (t1.reason || t2.reason || '').toLowerCase();
+                if (reason.indexOf('strikeout') >= 0) diag.combos_so_skip++;
+                else if (reason.indexOf('multi-stat') >= 0) diag.combos_hrr_skip++;
+                else diag.combos_other_skip++;
+                continue;
+              }
+
+              var fv1 = lookupFv(fvByPlayer, p1, t1.statFull, t1.threshold, t1.direction);
+              if (fv1 == null) { diag.combos_no_fv_leg1++; continue; }
+              var fv2 = lookupFv(fvByPlayer, p2, t2.statFull, t2.threshold, t2.direction);
+              if (fv2 == null) { diag.combos_no_fv_leg2++; continue; }
+
+              var res = tp.resolvePairR(pair, combo, {
+                mode: mode,
+                targetSlots: tonightSlots,
+                slotBaselines: slotBaselines,
+                teammateData: teammateData,
+              });
+
+              candidates.push({
+                // Identity
+                pair_key: p1 + '||' + p2 + '||' + team,
+                team: team,
+                game_id: game.game_id,
+                game_label: (game.away_team_abbr || '?') + ' @ ' + (game.home_team_abbr || '?'),
+                lineup_status: game.status,
+                // Players + slots
+                p1: p1, p2: p2,
+                p1_slot: slotP1, p2_slot: slotP2,
+                tonight_slots: tonightSlots,
+                most_common_slots: pair.most_common_slots || null,
+                n_total: pair.n_total || 0,
+                // Combo
+                combo_idx: ci,
+                leg1_short: combo.leg1, leg2_short: combo.leg2,
+                leg1_full:  t1.leg,     leg2_full:  t2.leg,
+                direction1: t1.direction, direction2: t2.direction,
+                stat1_full: t1.statFull, stat2_full: t2.statFull,
+                thresh1:    t1.threshold, thresh2:   t2.threshold,
+                // Hit rates from Phase 1
+                hit1: combo.hit1, hit2: combo.hit2, both_hit: combo.both,
+                // FV
+                fv_p1: fv1, fv_p2: fv2,
+                p_leg1: tm.americanToProb(fv1),
+                p_leg2: tm.americanToProb(fv2),
+                // Correlation (mode-resolved)
+                mode: mode,
+                r_binary: res.r_binary,
+                r_margin: res.r_margin,
+                r_binary_player: res.r_binary_player,
+                r_binary_global: res.r_binary_global,
+                r_margin_player: res.r_margin_player,
+                r_margin_global: res.r_margin_global,
+                w_player: res.w_player,
+                fallback: res.fallback,
+                // Confidence
+                slot_match_confidence: conf,
+              });
+              diag.combos_emitted++;
+            }
+          }
+        }
+      }
+    }
+
+    return { candidates: candidates, diagnostics: diag };
+  }
+
+  /* Given a candidate + a DK SGP price (American odds number, e.g. +250 or
+     -120), produce the EV-finalized record via teammateMath.ivBundle.
+     Returns a NEW object (shallow-copied from cand + bundle fields).
+     If dkAmericanOdds is null/undefined, bundle fields are FV-only
+     (no EV%, no Kelly). */
+  function finalizeCandidate(cand, dkAmericanOdds) {
+    var dkDec = (dkAmericanOdds == null) ? null : tm.americanToDecimal(dkAmericanOdds);
+    var bundle = tm.ivBundle(cand.p_leg1, cand.p_leg2, cand.r_binary, dkDec);
+    var out = {};
+    for (var k in cand) if (Object.prototype.hasOwnProperty.call(cand, k)) out[k] = cand[k];
+    out.dk_american = (dkAmericanOdds == null) ? null : Number(dkAmericanOdds);
+    out.dk_decimal  = dkDec;
+    if (bundle) {
+      out.p_joint         = bundle.pJoint;
+      out.fv_corr_american = bundle.fvCorrAmerican;
+      out.ev_pct          = bundle.evPct;
+      out.kelly_pct       = bundle.kellyPct;
+      out.qk_pct          = bundle.qkPct;
+    } else {
+      out.p_joint = null; out.fv_corr_american = null;
+      out.ev_pct = null;  out.kelly_pct = null; out.qk_pct = null;
+    }
+    return out;
+  }
+
+  /* Sort by ev_pct descending, keep only ev_pct >= minEvPct. Candidates
+     whose ev_pct is null (no DK price) are excluded regardless of
+     threshold — callers that want "show all" should skip this filter. */
+  function rankAndFilter(finalizedCandidates, opts) {
+    opts = opts || {};
+    var minEv = opts.minEvPct != null ? opts.minEvPct : 3;
+    var out = [];
+    for (var i = 0; i < finalizedCandidates.length; i++) {
+      var c = finalizedCandidates[i];
+      if (c.ev_pct == null || isNaN(c.ev_pct)) continue;
+      if (c.ev_pct < minEv) continue;
+      out.push(c);
+    }
+    out.sort(function (a, b) { return b.ev_pct - a.ev_pct; });
+    return out;
+  }
+
+  return {
+    fvIndexFromExtractor: fvIndexFromExtractor,
+    lookupFv:             lookupFv,
+    enumerateCandidates:  enumerateCandidates,
+    finalizeCandidate:    finalizeCandidate,
+    rankAndFilter:        rankAndFilter,
+  };
+}));

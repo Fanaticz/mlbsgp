@@ -179,7 +179,12 @@ h1 em{color:var(--ac);font-style:normal;}
 .tm-loadmsg .pulse{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--ac);margin-right:8px;vertical-align:middle;animation:pulse 1.2s infinite;}
 @media(max-width:768px){.tm-drawer{width:100%;}.tm-kv{grid-template-columns:repeat(3,1fr);}.tm-mh,.tm-mc,.tm-ml{font-size:8px;padding:2px 3px;}.tm-mc .rm{font-size:7px;}}
 </style>
+<script src="/utils/sgpMath.js"></script>
+<script src="/utils/teammateMath.js"></script>
+<script src="/utils/teammatePairLookup.js"></script>
+<script src="/utils/teammateEv.js"></script>
 <script src="/utils/sgpInsightPrompt.js"></script>
+<script src="/utils/teammateInsightPrompt.js"></script>
 </head>
 <body>
 <div id="appLoading" style="position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:1000;">
@@ -193,6 +198,7 @@ h1 em{color:var(--ac);font-style:normal;}
   <button class="nav-tab" onclick="showPage('pitcher')">Pitcher Lookup</button>
   <button class="nav-tab" onclick="showPage('teammate')">Teammate Lookup</button>
   <button class="nav-tab" onclick="showPage('evfinder')">+EV Finder</button>
+  <button class="nav-tab" onclick="showPage('tmev')">Teammate +EV</button>
 </div>
 <div class="header">
   <div class="badge"><span class="dot"></span> <span id="hdrBadge">Loading historical data...</span></div>
@@ -291,6 +297,44 @@ h1 em{color:var(--ac);font-style:normal;}
   <div id="tmBody">
     <div class="tm-loadmsg"><span class="pulse"></span> Click the Teammate Lookup tab to begin. Data loads on first open.</div>
   </div>
+</div>
+<div id="page-tmev" class="page">
+  <div class="ctrl" style="flex-direction:column;align-items:stretch;gap:10px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span style="font-size:13px;color:var(--cyan);font-family:Syne,sans-serif;font-weight:700">TEAMMATE +EV</span>
+      <span style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace">upload a batter FV sheet &rarr; match tonight's lineups &rarr; find slot-aware pair edges</span>
+    </div>
+    <div id="tmevLineupBar" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:8px 10px;background:var(--s2);border-radius:7px;font-size:11px;font-family:Space Mono,monospace">
+      <span id="tmevLineupStatus" style="color:var(--mu)">Loading tonight's lineups...</span>
+      <span id="tmevLineupStamp" style="color:var(--mu)"></span>
+      <button id="tmevLineupRefresh" onclick="window.teammateEvTab&amp;&amp;window.teammateEvTab.refreshLineups()" style="margin-left:auto;padding:4px 10px;font-size:10px;border:1px solid var(--b1);background:transparent;color:var(--mu);border-radius:5px;cursor:pointer;font-family:Space Mono,monospace">REFRESH</button>
+    </div>
+    <div id="tmevDrop" style="border:2px dashed var(--b2);border-radius:9px;padding:22px 16px;text-align:center;cursor:pointer;transition:all .15s;background:var(--s2)">
+      <div style="font-size:13px;color:var(--tx);font-weight:600;margin-bottom:4px">Drag &amp; drop your batter FV sheet screenshot</div>
+      <div style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace">or paste with Ctrl+V &middot; or click to pick a file &middot; <a href="#" id="tmevSynthLink" style="color:var(--ac3);text-decoration:underline">use synthetic FV</a></div>
+      <input type="file" id="tmevFile" accept="image/*" style="display:none" onchange="window.teammateEvTab&amp;&amp;window.teammateEvTab.handleUpload(event)">
+    </div>
+    <div id="tmevStatus" style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace;min-height:16px"></div>
+  </div>
+  <div class="ctrl" id="tmevFilterBar" style="display:none;flex-wrap:wrap;gap:10px;align-items:center">
+    <div style="display:inline-flex;border:1px solid var(--b1);border-radius:6px;overflow:hidden;font-family:Space Mono,monospace">
+      <button id="tmevModePlayer"  onclick="window.teammateEvTab&amp;&amp;window.teammateEvTab.setMode('player')"  title="Pair-specific correlation, no shrinkage."         style="padding:6px 12px;font-size:11px;font-weight:600;border:none;background:transparent;color:var(--mu);cursor:pointer">PLAYER</button>
+      <button id="tmevModeBlended" onclick="window.teammateEvTab&amp;&amp;window.teammateEvTab.setMode('blended')" title="Pair r shrunk toward tonight's slot-pair baseline." style="padding:6px 12px;font-size:11px;font-weight:600;border:none;border-left:1px solid var(--b1);background:rgba(34,197,94,.12);color:var(--ac);cursor:pointer">BLENDED</button>
+      <button id="tmevModeGlobal"  onclick="window.teammateEvTab&amp;&amp;window.teammateEvTab.setMode('global')"  title="Slot-pair baseline only, ignores pair-specific data." style="padding:6px 12px;font-size:11px;font-weight:600;border:none;border-left:1px solid var(--b1);background:transparent;color:var(--mu);cursor:pointer">GLOBAL</button>
+    </div>
+    <div class="tm-slider"><span class="tm-label">MIN EV%</span><input type="range" id="tmevMinEv" min="-10" max="30" value="3" oninput="window.teammateEvTab&amp;&amp;window.teammateEvTab.onFilter()"><span class="v" id="tmevMinEvV">+3%</span></div>
+    <div class="tm-slider"><span class="tm-label">MIN GAMES</span><input type="range" id="tmevMinN" min="20" max="250" value="30" oninput="window.teammateEvTab&amp;&amp;window.teammateEvTab.onFilter()"><span class="v" id="tmevMinNV">30</span></div>
+    <select class="ssel" id="tmevConf" onchange="window.teammateEvTab&amp;&amp;window.teammateEvTab.onFilter()">
+      <option value="all">All confidence</option>
+      <option value="med">Medium+ only</option>
+      <option value="high">High only</option>
+    </select>
+    <select class="ssel" id="tmevTeam" onchange="window.teammateEvTab&amp;&amp;window.teammateEvTab.onFilter()"><option value="">All teams</option></select>
+    <select class="ssel" id="tmevGame" onchange="window.teammateEvTab&amp;&amp;window.teammateEvTab.onFilter()"><option value="">All games</option></select>
+    <label class="tm-toggle"><input type="checkbox" id="tmevConfirmedOnly" onchange="window.teammateEvTab&amp;&amp;window.teammateEvTab.onFilter()"><span>CONFIRMED LINEUPS ONLY</span></label>
+    <span id="tmevCount" style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace;margin-left:auto"></span>
+  </div>
+  <div id="tmevResults"></div>
 </div>
 <div class="tm-overlay" id="tmOverlay" onclick="tmClose()"></div>
 <div class="tm-drawer" id="tmDrawer"><button class="tm-close" onclick="tmClose()">&#10005;</button><div id="tmDrawerBody"></div></div>
@@ -1065,8 +1109,11 @@ function evSetCorrMode(m){
 }
 
 /* ---------- shared helpers (American↔Probability, stat category, correlation) ---------- */
-function americanToProb(o){o=parseFloat(o);if(!o||isNaN(o))return null;return o>0?100/(o+100):-o/(-o+100);}
-function probToAmerican(p){if(p<=0||p>=1)return null;return p>=0.5?Math.round(-p/(1-p)*100):Math.round((1-p)/p*100);}
+/* Sourced from /utils/sgpMath.js (single source of truth shared with
+   teammateEv.js). Local var bindings preserve the existing call-sites
+   verbatim — pitcher behavior unchanged. */
+var americanToProb = window.sgpMath.americanToProb;
+var probToAmerican = window.sgpMath.probToAmerican;
 function fmtAm(o){if(o===null||isNaN(o))return '--';return(o>0?'+':'')+o;}
 function statCat(leg){if(leg.indexOf('Strikeout')>=0)return 'SO';if(leg.indexOf('Earned Run')>=0)return 'ER';if(leg.indexOf('Walk')>=0)return 'BB';if(leg.indexOf('Hit')>=0)return 'H';if(leg.indexOf('Out')>=0)return 'OUTS';return '';}
 var _NF=Object.create(null);
@@ -1236,7 +1283,9 @@ function rCorrTooltip(res){
   return 'player '+fmt4(res.rPlayer)+' → shrunk toward global '+fmt4(res.rGlobal)+
          ' ('+wp+'% player / '+wg+'% global, n_eff='+Math.round(res.n)+kStr+') → '+fmt4(res.r);
 }
-function jointFrechet(pa,pb,r){if(r===null||r===undefined||isNaN(r))r=0;var pab=pa*pb;if(r>=0){return pab+r*(Math.min(pa,pb)-pab);}return pab+r*(pab-Math.max(0,pa+pb-1));}
+/* Sourced from /utils/sgpMath.js (single source of truth shared with
+   teammateEv.js). Pitcher EV math unchanged. */
+var jointFrechet = window.sgpMath.jointFrechet;
 
 /* ---------- AI Insight state + handlers ---------- */
 var _SGP_DATA=[];
@@ -2057,12 +2106,17 @@ function statOf(leg){var keys=Object.keys(SKEY);for(var i=0;i<keys.length;i++){i
 function getRawCorr(rc,leg1,leg2){if(!rc)return null;var s1=statOf(leg1);var s2=statOf(leg2);if(!s1||!s2)return null;var k1=s1+'_'+s2;var k2=s2+'_'+s1;if(rc[k1]!==undefined)return rc[k1];if(rc[k2]!==undefined)return rc[k2];return null;}
 function showPage(p){
   document.querySelectorAll('.page').forEach(function(e){e.classList.remove('active');});
-  var order=['global','pitcher','teammate','evfinder'];
+  /* Order MUST match the nav-tab button order above exactly — the
+     active-state index below relies on positional alignment. */
+  var order=['global','pitcher','teammate','evfinder','tmev'];
   document.querySelectorAll('.nav-tab').forEach(function(t,i){t.classList.toggle('active',order[i]===p);});
   document.getElementById('page-'+p).classList.add('active');
   // Lazy-load teammate data the first time the tab is opened; the 30MB
   // scheme file and 1.3MB slot baseline are too heavy to pull on boot.
-  if(p==='teammate' && !window.TEAMMATE_LOADED && !window.TEAMMATE_LOADING) teammateLazyLoad();
+  // Teammate +EV needs the same dataset — reuse teammateLazyLoad so
+  // visiting one tab then the other doesn't re-fetch.
+  if((p==='teammate' || p==='tmev') && !window.TEAMMATE_LOADED && !window.TEAMMATE_LOADING) teammateLazyLoad();
+  if(p==='tmev' && window.teammateEvTab && typeof window.teammateEvTab.onActivate==='function') window.teammateEvTab.onActivate();
 }
 function setLegs(n){gLegs=n;document.querySelectorAll('#gTG .tb').forEach(function(t,i){t.classList.toggle('active',(i===0&&n===2)||(i===1&&n===3));});renderG();}
 function setGF(f){gFilt=f;document.querySelectorAll('#gFB .fb').forEach(function(b){var t=b.textContent.trim();b.classList.toggle('active',f==='all'?t==='All':f==='SO'?t==='K':f==='ER'?t==='ER':f==='BB'?t==='BB':f==='H'?t==='Hits':f==='OUTS'?t==='Outs':false);});renderG();}
@@ -2153,5 +2207,6 @@ function applyPF(){
 }
 /* renderG now invoked by initializeApp() after data loads */
 </script>
+<script src="/utils/teammateEvTab.js"></script>
 </body>
 </html>
