@@ -248,4 +248,32 @@ async function main() {
   console.log('=== smoke done ===');
 }
 
+/* ---------------- Unit tests: nameNormalize.foldKey ----------------
+   Inline assertions per the diacritic-fix follow-up. Runs BEFORE main()
+   via require side-effects so a fold regression fails the entire smoke
+   loud and early. */
+(function runFoldKeyTests() {
+  var N = require(path.join(__dirname, '..', 'public', 'utils', 'nameNormalize.js'));
+  var assert = require('assert');
+  var pass = 0, fail = 0;
+  function check(label, ok) {
+    if (ok) { pass++; }
+    else { fail++; console.error('  ✗ ' + label); }
+  }
+  check('foldKey diacritic e/é equivalence',     N.foldKey('Giménez') === N.foldKey('Gimenez'));
+  check('foldKey case + whitespace normalization', N.foldKey('Giménez') === N.foldKey('  GIMENEZ  '));
+  check('foldKey ñ → n equivalence',             N.foldKey('Peña') === N.foldKey('Pena'));
+  check('foldKey multi-diacritic full name',     N.foldKey('José Ramírez') === N.foldKey('Jose Ramirez'));
+  check('foldKey does NOT over-match suffixes',  N.foldKey('Gimenez') !== N.foldKey('Giménez Jr'));
+  check('foldAscii is idempotent',               N.foldAscii(N.foldAscii('Andrés Giménez')) === N.foldAscii('Andrés Giménez'));
+  check('foldKey null is empty string',          N.foldKey(null) === '');
+  check('foldKey empty string is empty string',  N.foldKey('') === '');
+  if (fail === 0) {
+    console.log('[fold tests] ' + pass + '/' + (pass + fail) + ' passing');
+  } else {
+    console.error('[fold tests] ' + pass + '/' + (pass + fail) + ' passing — FAILURES above');
+    process.exit(2);
+  }
+})();
+
 main().catch(function (e) { console.error('FATAL:', e); process.exit(1); });
