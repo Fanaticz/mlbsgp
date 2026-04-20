@@ -299,6 +299,340 @@ Return exactly this JSON shape, nothing else:
   }
 });
 
+// ===== Batter FV-sheet OCR =====
+// Mirrors the pitcher /api/extract pipeline for batter prop sheets.
+// Output shape is per-(player, team, game) with Over+Under merged into a
+// single record per (stat, threshold) — matches Phase-2 chunk-0 spec and is
+// what the Teammate +EV pipeline (chunk 4) consumes.
+
+// Canonical batter stat vocabulary, kept in lockstep with the chunk 2
+// matcher (_stat_matches_batter_market in dk_api.py). Order matters: more
+// specific names first so "Total Bases" doesn't collide with "Bases" inside
+// "Stolen Bases", and "Home Runs" doesn't collide with plain "Runs".
+const BATTER_STAT_FROM_MARKET = [
+  // Multi-stat combo markets (Hits + Runs + RBIs, Runs + RBIs) get dropped —
+  // we only care about single-stat props for teammate-pair correlations.
+  { re: /hits?\s*\+\s*runs?\s*\+\s*rbi/i,    drop: true },
+  { re: /runs?\s*\+\s*rbi/i,                  drop: true },
+  // Single-stat batter markets
+  { re: /total\s*bases/i,                     stat: 'Total Bases',   valid: [1.5, 2.5, 3.5] },
+  { re: /home\s*runs?/i,                      stat: 'Home Runs',     valid: [0.5] },
+  { re: /stolen\s*bases?/i,                   stat: 'Stolen Bases',  valid: [0.5] },
+  { re: /singles?/i,                          stat: 'Singles',       valid: [0.5] },
+  { re: /doubles?/i,                          stat: 'Doubles',       valid: [0.5] },
+  { re: /triples?/i,                          stat: 'Triples',       valid: [0.5] },
+  { re: /\brbi/i,                             stat: 'RBIs',          valid: [0.5, 1.5] },
+  { re: /walks?/i,                            stat: 'Walks',         valid: [0.5] },
+  { re: /\bruns?\b(?!\s*\+)/i,                stat: 'Runs',          valid: [0.5, 1.5] },
+  { re: /\bhits?\b/i,                         stat: 'Hits',          valid: [0.5, 1.5, 2.5] },
+];
+
+function normalizeBatterLeg(market, direction, line) {
+  if (!market || !direction || !isFinite(line)) return { drop: true, reason: 'missing fields' };
+  const hit = BATTER_STAT_FROM_MARKET.find(s => s.re.test(market));
+  if (!hit) return { drop: true, reason: 'unknown market' };
+  if (hit.drop) return { drop: true, reason: 'multi-stat combo (skipped)' };
+  if (!hit.valid.includes(line)) return { drop: true, reason: 'line ' + line + ' not valid for ' + hit.stat };
+  return { drop: false, stat: hit.stat, leg: direction + ' ' + line + ' ' + hit.stat };
+}
+
+/* normalizeBatterRows: same per-row discipline as normalizeRows (pitcher).
+   Outputs flat per-direction rows with canonical stat labels. groupBatterPlayers
+   then merges Over+Under into one prop record per (player, stat, threshold). */
+function normalizeBatterRows(rows) {
+  if (!Array.isArray(rows)) return { rows: [], unmatched: [] };
+  const out = [];
+  const unmatched = [];   // diagnostic: rows we dropped + why
+  const seen = new Set(); // first-pass dedupe by (batter, L) — see pitcher comment
+  rows.forEach((r, idx) => {
+    if (!r || typeof r !== 'object') return;
+
+    // Direction + line: prefer explicit fields, fall back to bet_name parse.
+    let direction = canonDirection(r.direction);
+    let line = (r.line !== undefined && r.line !== null && r.line !== '') ? Number(r.line) : NaN;
+    if (!direction || !isFinite(line)) {
+      const parsed = parseBetNameDirection(r.bet_name);
+      if (parsed) {
+        if (!direction) direction = parsed.direction;
+        if (!isFinite(line)) line = parsed.line;
+      }
+    }
+
+    const batter = (r.batter || r.player || r.pitcher || '').trim();
+    if (!batter) {
+      unmatched.push({ L: r.L, bet_name: r.bet_name, market: r.market, reason: 'no batter name' });
+      return;
+    }
+
+    const market = (r.market || '').trim();
+    const norm = normalizeBatterLeg(market, direction, line);
+    if (norm.drop) {
+      unmatched.push({ L: r.L, batter, bet_name: r.bet_name, market, reason: norm.reason });
+      return;
+    }
+
+    const fv = Number(r.avg_fv);
+    if (!isFinite(fv)) {
+      unmatched.push({ L: r.L, batter, bet_name: r.bet_name, market, reason: 'avg_fv not numeric' });
+      return;
+    }
+
+    // Same avg_fv vs avg_odds pair-collision check the pitcher path uses to
+    // catch the Kremer −309 column-confusion bug — see normalizeRows comment.
+    const avgOddsRaw = String(r.avg_odds == null ? '' : r.avg_odds);
+    const oddsPair = avgOddsRaw.match(/([+-]?\d+)\s*\/\s*([+-]?\d+)/);
+    let fvSuspicious = false;
+    if (oddsPair) {
+      const oddsOver = Number(oddsPair[1]);
+      const oddsUnder = Number(oddsPair[2]);
+      if (fv === oddsOver || fv === oddsUnder) {
+        fvSuspicious = true;
+        console.warn('[batter suspicious_fv] L=' + (r.L != null ? r.L : '?') +
+          ' ' + (r.bet_name || batter + ' ' + norm.leg) +
+          ': avg_fv=' + fv + ' matches avg_odds pair (' +
+          oddsOver + '/' + oddsUnder + ')');
+      }
+    }
+
+    if (DEBUG) {
+      console.log('[batter ocr_raw]', r.L, r.bet_name, {
+        team: r.team, game: r.game, avg_fv: r.avg_fv, avg_odds: r.avg_odds,
+        books_count: r.books_count, _fv_suspicious: fvSuspicious,
+      });
+    }
+
+    const rowIdRaw = (r.L !== undefined && r.L !== null && r.L !== '') ? r.L : ('idx' + idx);
+    const rowIdKey = String(rowIdRaw);
+    const key = batter + '|' + rowIdKey;
+    if (seen.has(key)) return;
+    seen.add(key);
+
+    const L = Number.isFinite(Number(rowIdRaw)) ? Number(rowIdRaw) : -1;
+    const booksCount = Number(r.books_count);
+
+    out.push({
+      batter,
+      team: (r.team || '').trim() || null,
+      game: (r.game || '').trim() || null,
+      stat: norm.stat,
+      threshold: line,
+      direction,
+      leg: norm.leg,
+      avg_fv: fv,
+      avg_odds: avgOddsRaw || null,
+      _fv_suspicious: fvSuspicious,
+      _L: L,
+      _books: Number.isFinite(booksCount) ? booksCount : 0,
+    });
+  });
+
+  // Per-direction collapse on (batter, leg). Same tiebreak as pitcher:
+  // (books_count desc, L desc).
+  const groups = new Map();
+  for (const r of out) {
+    const k = r.batter + '|' + r.leg;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(r);
+  }
+  const collapsed = [];
+  for (const [, rows2] of groups) {
+    if (rows2.length === 1) { collapsed.push(rows2[0]); continue; }
+    rows2.sort((a, b) => (b._books - a._books) || (b._L - a._L));
+    if (DEBUG) {
+      console.log('[batter collapse] ' + rows2[0].batter + '|' + rows2[0].leg +
+        ' — kept L=' + rows2[0]._L + ' books=' + rows2[0]._books +
+        ', dropped: ' + rows2.slice(1).map(r => 'L=' + r._L + ' books=' + r._books).join(', '));
+    }
+    collapsed.push(rows2[0]);
+  }
+  return { rows: collapsed, unmatched };
+}
+
+/* groupBatterPlayers: merges Over and Under rows for the same (batter, stat,
+   threshold) into one prop record, then nests by player. Sparse OK — if only
+   Over (or only Under) exists for a (player, stat, threshold), the other
+   side's fields are null. team and game come from whichever direction's row
+   had them set first.
+
+   Per-player ordering: stable on first-seen leg order. Per-prop ordering:
+   stat alphabetical, threshold ascending. */
+function groupBatterPlayers(normRows) {
+  const players = new Map();   // batter -> { player, team, game, propsByKey: Map }
+  for (const r of normRows) {
+    if (!players.has(r.batter)) {
+      players.set(r.batter, {
+        player: r.batter,
+        team: r.team || null,
+        game: r.game || null,
+        propsByKey: new Map(),
+      });
+    }
+    const p = players.get(r.batter);
+    if (!p.team && r.team) p.team = r.team;
+    if (!p.game && r.game) p.game = r.game;
+
+    const propKey = r.stat + '|' + r.threshold;
+    if (!p.propsByKey.has(propKey)) {
+      p.propsByKey.set(propKey, {
+        stat: r.stat,
+        threshold: r.threshold,
+        over_fv: null,    over_avg_odds: null, over_books_count: null, over_L: null, over_fv_suspicious: false,
+        under_fv: null,   under_avg_odds: null, under_books_count: null, under_L: null, under_fv_suspicious: false,
+      });
+    }
+    const prop = p.propsByKey.get(propKey);
+    const side = r.direction === 'Over' ? 'over' : 'under';
+    prop[side + '_fv'] = r.avg_fv;
+    prop[side + '_avg_odds'] = r.avg_odds;
+    prop[side + '_books_count'] = r._books;
+    prop[side + '_L'] = r._L;
+    prop[side + '_fv_suspicious'] = r._fv_suspicious;
+  }
+  // Materialize, sort props within each player.
+  const out = [];
+  for (const p of players.values()) {
+    const props = [...p.propsByKey.values()].sort((a, b) => {
+      if (a.stat !== b.stat) return a.stat < b.stat ? -1 : 1;
+      return a.threshold - b.threshold;
+    });
+    out.push({ player: p.player, team: p.team, game: p.game, props });
+  }
+  // Stable player ordering: alphabetical by player name (frontend can re-sort).
+  out.sort((a, b) => a.player.localeCompare(b.player));
+  return out;
+}
+
+const BATTER_OCR_PROMPT = `You are extracting MLB BATTER prop bets from a screenshot of a spreadsheet. Return ONLY valid JSON, no prose, no markdown fences.
+
+The table header row contains these column names (left to right, may include some optional columns like team or game): league, date, time, game, team, market, bet_name, book, L, M, odds, limit, books_count, avg_odds, avg_fv, avg_hold, fbc, ev, qk.
+
+YOUR TASK: For each data row, return ONE JSON object with cell values from that single row. Do NOT normalize, do NOT combine columns, do NOT infer values from other rows. Each row of JSON must come from exactly ONE row of the table. Emit one object per row — do NOT skip rows, do NOT merge rows.
+
+═══ FIELDS TO RETURN (per row) ═══
+- L: the integer in the "L" column, the small per-row index (1, 2, 3, ...). Required — anchors the row.
+- batter: the player name (everything in bet_name BEFORE the word "Over" or "Under")
+- team: the EXACT text under the "team" column if present (short code like "KC", "BOS", "NYY"). If no team column exists, return "".
+- game: the EXACT text under the "game" column (e.g., "TEX@KC", "BAL @ KC"). If no game column exists, return "".
+- market: the EXACT text from the "market" column. Examples: "Player Hits", "Player Total Bases", "Player RBIs", "Player Home Runs", "Player Singles", "Player Doubles", "Player Triples", "Player Walks", "Player Stolen Bases", "Player Runs", "Player Hits + Runs + RBIs". DO NOT shorten "RBIs" to "RBI" if the sheet says "RBIs"; copy verbatim.
+- bet_name: the EXACT text from the "bet_name" column. Examples: "Bobby Witt Jr. Over 0.5", "Salvador Perez Under 1.5"
+- direction: the word "Over" or "Under" — read it letter-by-letter from this row's bet_name cell
+- line: the numeric line from this row's bet_name (0.5, 1.5, 2.5, 3.5, etc.) as a number
+- avg_odds: the EXACT text under the "avg_odds" header for this row, as a STRING. This cell always contains a PAIR of signed integers separated by "/". Preserve the format verbatim: "-280 / +220", "+135 / -155", "-110 / -110". If the cell is genuinely empty, return "".
+- avg_fv: the SINGLE SIGNED INTEGER under the "avg_fv" header for this row. ONE number, not a pair. Examples: -260, +250, +135, -155.
+- books_count: the UNSIGNED INTEGER under the "books_count" header. A small count like 2, 3, 5, 7, 8. If empty or non-numeric, return 0.
+
+═══ HOW TO IDENTIFY THE avg_fv COLUMN — READ THIS CAREFULLY ═══
+Do NOT count columns. Do NOT infer column position from neighbors. Do NOT use adjacent columns as positional anchors. Instead:
+
+1. Locate the HEADER ROW at the top of the table. Visually find the text "avg_fv".
+2. Read values straight DOWN from that specific header cell. For each data row, the avg_fv value is the cell directly under the "avg_fv" header.
+3. The "avg_odds" header sits immediately to the LEFT of "avg_fv". Its cells contain TWO numbers separated by "/". That column is NOT avg_fv. Never substitute one for the other.
+
+═══ MANDATORY SELF-CHECK BEFORE EMITTING EACH ROW ═══
+For every row, verify these three conditions. If ANY fail, you are reading the wrong column — re-locate the "avg_fv" header and re-read.
+
+(a) avg_fv is a SINGLE integer. It contains NO "/" character and NO space-separated second number.
+(b) avg_fv is NOT numerically equal to either half of this row's avg_odds pair.
+    If avg_odds is "-280 / +220" and you think avg_fv is +220, that's impossible — you copied from the wrong column.
+    If avg_odds is "+135 / -155" and you think avg_fv is -155, that's impossible — same mistake.
+(c) avg_fv is the value directly under the "avg_fv" header text, not under "avg_odds" or "avg_hold".
+
+═══ ROW DISCIPLINE ═══
+market, bet_name, direction, avg_odds, and avg_fv MUST all come from the SAME row. Use L as a positional anchor. Before emitting JSON for a row, ask: "Am I reading every field from the row whose L = X?" If not, re-align.
+
+DO NOT cross rows. DO NOT pair the market from one row with the bet_name from another.
+
+A SINGLE BATTER WILL HAVE MANY ROWS — one for each (stat, threshold, direction) triple. For Bobby Witt Jr. you might see:
+  L=1  Bobby Witt Jr. Over 0.5  Player Hits           direction=Over
+  L=2  Bobby Witt Jr. Under 0.5 Player Hits           direction=Under
+  L=3  Bobby Witt Jr. Over 1.5  Player Total Bases    direction=Over
+  L=4  Bobby Witt Jr. Under 1.5 Player Total Bases    direction=Under
+Each is a SEPARATE row in your output. Do not merge the two "Hits" rows; do not skip any row because the player name is the same.
+
+═══ OVER vs UNDER ═══
+The same batter often appears in MULTIPLE rows with different directions, lines, and stats. For EACH row independently:
+1. Locate the bet_name cell in the row whose L = X.
+2. Read the literal letters after the player name — "Over" (O) or "Under" (U). Do NOT guess from context, do NOT infer from avg_fv sign.
+3. Copy that exact word into "direction" AND keep it in the verbatim "bet_name". They MUST agree.
+
+If the same batter has two rows with the same line+stat, one MUST be Over and the other MUST be Under. Never label both with the same direction.
+
+═══ WORKED EXAMPLES ═══
+CORRECT:
+{"L":1,"batter":"Bobby Witt Jr.","team":"KC","game":"BAL@KC","market":"Player Hits","bet_name":"Bobby Witt Jr. Over 0.5","direction":"Over","line":0.5,"avg_odds":"-280 / +220","avg_fv":-260,"books_count":7}
+
+CORRECT:
+{"L":2,"batter":"Bobby Witt Jr.","team":"KC","game":"BAL@KC","market":"Player Hits","bet_name":"Bobby Witt Jr. Under 0.5","direction":"Under","line":0.5,"avg_odds":"-280 / +220","avg_fv":250,"books_count":7}
+
+CORRECT:
+{"L":15,"batter":"Salvador Perez","team":"KC","game":"BAL@KC","market":"Player Total Bases","bet_name":"Salvador Perez Over 1.5","direction":"Over","line":1.5,"avg_odds":"+150 / -180","avg_fv":135,"books_count":5}
+
+WRONG — the exact bug this prompt guards against:
+{"L":1,"batter":"Bobby Witt Jr.","bet_name":"Bobby Witt Jr. Over 0.5","avg_odds":"-280 / +220","avg_fv":+220,"books_count":7}
+  — avg_fv was copied from the avg_odds pair. ALWAYS WRONG. The real avg_fv (-260) lives in the NEXT column to the right.
+
+WRONG — direction flipped:
+{"L":3,"bet_name":"Bobby Witt Jr. Under 0.5","direction":"Over",...}
+  — bet_name says "Under" but direction says "Over". They MUST agree.
+
+WRONG — merged rows:
+{"L":1,"batter":"Bobby Witt Jr.","market":"Player Hits","bet_name":"Bobby Witt Jr. Over 0.5","direction":"Over","line":0.5,"avg_fv":-260,"under_fv":250}
+  — Each row is one direction. Do NOT collapse Over and Under into one object. Emit two separate rows.
+
+═══ OUTPUT ═══
+Return exactly this JSON shape, nothing else:
+{"rows":[{"L":1,"batter":"...","team":"...","game":"...","market":"...","bet_name":"...","direction":"Over","line":0.5,"avg_odds":"+X / -Y","avg_fv":123,"books_count":7}, ...]}`;
+
+app.post('/api/extract-batter', async (req, res) => {
+  try {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not set on server' });
+
+    const { image, mime } = req.body || {};
+    if (!image) return res.status(400).json({ error: 'Missing image (base64) in body' });
+
+    const body = {
+      model: 'claude-opus-4-6',
+      max_tokens: 4000,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: mime || 'image/png', data: image } },
+          { type: 'text', text: BATTER_OCR_PROMPT }
+        ]
+      }]
+    };
+
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify(body)
+    });
+
+    const j = await r.json();
+    if (j.error) return res.status(500).json({ error: j.error.message || 'Anthropic API error', detail: j.error });
+
+    const txt = j.content && j.content[0] && j.content[0].text || '';
+    const m = txt.match(/\{[\s\S]*\}/);
+    if (!m) return res.status(500).json({ error: 'Could not parse JSON from model output', raw: txt });
+
+    try {
+      const parsed = JSON.parse(m[0]);
+      const { rows: normRows, unmatched } = normalizeBatterRows(parsed.rows);
+      const players = groupBatterPlayers(normRows);
+      return res.json({ players, unmatched_markets: unmatched });
+    } catch (e) {
+      return res.status(500).json({ error: 'JSON parse error: ' + e.message, raw: m[0] });
+    }
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
 // ===== SGP AI Insight =====
 app.post('/api/sgp-insight', async (req, res) => {
   try {
