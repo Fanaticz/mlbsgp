@@ -494,11 +494,63 @@
       '</div>';
   }
 
+  /* ---------- Badges (Edit 7) ---------- */
+  /* Five spec-defined badges:
+       [NBA]              info — always present, sport clarity
+       [LOW p-val]        danger — p_value > 0.10
+       [SMALL n]          warn — n_games < 25
+       [OUTLIER]          danger — EV% > 100%
+       [IMPLAUSIBLE GAP]  danger — |p_joint - p_independent| > 0.20
+     (Phase 5 will add [QUESTIONABLE] / [OUT] when injury reports load.) */
+  function computeBadges(c) {
+    var out = [{ cls: 'info', text: 'NBA' }];
+    var e = c.entry || {};
+    if (e.p_value != null && e.p_value > 0.10) out.push({ cls: 'danger', text: 'LOW p-val' });
+    if (e.n_games != null && e.n_games < 25) out.push({ cls: 'warn', text: 'SMALL n' });
+    if (c.ev_pct != null && c.ev_pct > 1.0) out.push({ cls: 'danger', text: 'OUTLIER' });
+    if (e.p_joint != null && e.p_independent != null && Math.abs(e.p_joint - e.p_independent) > 0.20) {
+      out.push({ cls: 'danger', text: 'IMPLAUSIBLE GAP' });
+    }
+    return out;
+  }
+
+  function renderBadges(c) {
+    return computeBadges(c).map(function (b) {
+      return '<span class="nc-bdg ' + b.cls + '">' + esc(b.text) + '</span>';
+    }).join('');
+  }
+
+  /* ---------- Sort + pagination (Edit 7) ---------- */
+  /* Spec: EV% desc, tiebreak by p_value asc (lower p_value = higher
+     confidence). Candidates without an EV% (missing DK SGP) sort last. */
+  function sortCandidates(cands) {
+    return cands.slice().sort(function (a, b) {
+      var aEv = a.ev_pct == null ? -Infinity : a.ev_pct;
+      var bEv = b.ev_pct == null ? -Infinity : b.ev_pct;
+      if (aEv !== bEv) return bEv - aEv;
+      var aP = (a.entry && a.entry.p_value) != null ? a.entry.p_value : 1;
+      var bP = (b.entry && b.entry.p_value) != null ? b.entry.p_value : 1;
+      return aP - bP;
+    });
+  }
+
+  /* Load 30 cards at a time. "Load more" button appends the next batch
+     without re-enumerating — cheap since enumeration already produced
+     the full sorted list. */
+  state.pageSize = 30;
+  state.pageShown = 30;
+
+  function onLoadMore() {
+    state.pageShown += state.pageSize;
+    renderResults();
+  }
+
   function renderResults() {
     var body = document.getElementById('nbaBody');
     var count = document.getElementById('nbaCandCount');
     if (!body) return;
-    var cands = state.candidates || [];
+    var cands = sortCandidates(state.candidates || []);
+    state.candidates = cands;
     if (count) count.textContent = cands.length + ' candidate' + (cands.length === 1 ? '' : 's');
     if (!state.correlations || state.correlations.status === 'empty') {
       body.innerHTML = '<div class="nba-empty">No NBA correlations data uploaded yet. Drop your xlsx above to begin.</div>';
@@ -512,13 +564,28 @@
       body.innerHTML = '<div class="nba-empty">No candidates matched the current filters. Loosen MIN EV%, MIN GAMES, or MAX P_VALUE to see more.</div>';
       return;
     }
-    body.innerHTML = '<div class="nba-cards">' + cands.map(renderCard).join('') + '</div>';
+    var shown = Math.min(state.pageShown, cands.length);
+    var visible = cands.slice(0, shown);
+    var html = '<div class="nba-cards">' + visible.map(function (c) {
+      var cardHtml = renderCard(c);
+      /* Inject badges after the placeholder div renderCard emitted. We
+         render badges separately so card HTML stays a pure data->HTML
+         transform without badge-computation dependencies. */
+      var badgesHtml = renderBadges(c);
+      return cardHtml.replace('<div class="nc-badges" data-nba-badges="' + esc(c.id) + '"></div>',
+                              '<div class="nc-badges">' + badgesHtml + '</div>');
+    }).join('') + '</div>';
+    if (shown < cands.length) {
+      html += '<div style="text-align:center;margin:16px 0"><button type="button" onclick="window.nbaTab.onLoadMore()" style="padding:8px 18px;font-family:Space Mono,monospace;font-size:11px;font-weight:600;border:1px solid var(--b2);background:var(--s2);color:var(--tx);border-radius:6px;cursor:pointer">LOAD MORE (' + (cands.length - shown) + ' remaining)</button></div>';
+    }
+    body.innerHTML = html;
   }
 
   /* Main pipeline entry. Rebuilds state.candidates from the current inputs.
      Cheap enough to call on every filter change — the FV + DK fetches are
      the expensive legs and those happen at upload time, not here. */
   function runPipeline(opts) {
+    state.pageShown = state.pageSize; // any pipeline run resets pagination to page 1
     if (!state.correlations || !state.fv) { state.candidates = []; if (typeof renderResults === 'function') renderResults(); return; }
     var all = enumerateCandidates(state.correlations, state.fv, state.filters, state.confirmedSet);
     state.candidatesAll = all;
@@ -605,6 +672,10 @@
     _math: { amToDec: amToDec, decToAm: decToAm, jointFromPhi: jointFromPhi, enumerateCandidates: enumerateCandidates, applyEvFilter: applyEvFilter },
     _runPipeline: runPipeline,
     _renderCard: renderCard,
+    _renderBadges: renderBadges,
+    _computeBadges: computeBadges,
+    _sortCandidates: sortCandidates,
+    onLoadMore: onLoadMore,
     _state: state,
   };
 })();
