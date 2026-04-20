@@ -676,6 +676,12 @@ app.post('/api/extract-batter', async (req, res) => {
       }
 
       const players = groupBatterPlayers(normRows);
+      /* Sample raw OCR rows for the client-side diagnostic panel.
+         Pass through verbatim (no normalization) so the user can
+         eyeball exactly what Vision emitted for avg_fv, avg_odds,
+         market, bet_name, etc. — the fastest way to spot column-drift
+         bugs that slip past the 20% abort gate. */
+      const sampleRows = (Array.isArray(parsed.rows) ? parsed.rows : []).slice(0, 3);
       return res.json({
         players,
         unmatched_markets: unmatched,
@@ -686,6 +692,7 @@ app.post('/api/extract-batter', async (req, res) => {
           bad_fv_count: badFvCount,
           normalized_row_count: normRows.length,
         },
+        sample_rows: sampleRows,
       });
     } catch (e) {
       return res.status(500).json({ error: 'JSON parse error: ' + e.message, raw: m[0] });

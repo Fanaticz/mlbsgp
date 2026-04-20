@@ -45,9 +45,12 @@
     lineups:        null,    // /api/lineups response
     fvIndex:        null,    // { player: { stat: { thresh: {over_fv,under_fv,...} } } }
     fvSource:       null,    // "ocr" | "synthetic" | null
+    ocrResponse:    null,    // full /api/extract-batter response (for diag panel)
+    enumDiagnostics: null,   // enumRes.diagnostics (for diag panel)
     candidatesRaw:  [],      // output of enumerateCandidates (pre-DK)
     candidatesFull: [],      // after finalizeCandidate with DK prices
     dkMissing:      [],      // candidate ids that didn't get a DK match
+    lastFilteredCount: null, // cached from render() for the diag panel
     mode:           'blended',
     filters: {
       minEvPct: 3,
@@ -241,6 +244,7 @@
         if (!players.length) { setStatus('No batter props extracted from image', 'err'); return; }
         S.fvIndex = TE.fvIndexFromExtractor(players);
         S.fvSource = 'ocr';
+        S.ocrResponse = j;  // retained for the #tmevDiagPanel funnel
         var propCount = players.reduce(function (a, p) { return a + (p.props ? p.props.length : 0); }, 0);
 
         /* CHECKPOINT 1: OCR output → fv index. Log distinct names so we can
@@ -332,6 +336,7 @@
       minPairGames: S.filters.minN,
     });
     S.candidatesRaw = enumRes.candidates;
+    S.enumDiagnostics = enumRes.diagnostics;  // retained for #tmevDiagPanel
 
     /* CHECKPOINT 3: enumeration result. The diagnostics breakdown tells
        us WHY the candidate count is what it is — sparse Phase-1 data,
@@ -388,6 +393,10 @@
       render();
     } catch (e) {
       setStatus('DK pricing error: ' + e.message, 'err');
+      /* Show the partial funnel so the failure mode is still visible
+         without a console — user sees OCR + enumeration counts even
+         when the DK call failed entirely. */
+      renderDiagnosticPanel();
     }
   }
 
@@ -709,9 +718,201 @@
       });
   }
 
+  /* ---------------- pipeline diagnostic panel ---------------- */
+
+  /* Build a {player → {full, abbr}} map from the currently-loaded
+     lineup. Folded-ASCII player key, since the post-diacritic-fix
+     enumerator uses ASCII canonical names as its join keys.
+     Full team name is used for the funnel's per-team breakdown (more
+     readable); abbr is used in the OCR sample rows (cleaner). */
+  function _lineupPlayerTeams() {
+    var map = {};
+    var games = (S.lineups && S.lineups.games) || [];
+    for (var i = 0; i < games.length; i++) {
+      var g = games[i];
+      (g.home_lineup || []).forEach(function (p) {
+        if (p && p.player) map[p.player] = { full: g.home_team, abbr: g.home_team_abbr || g.home_team };
+      });
+      (g.away_lineup || []).forEach(function (p) {
+        if (p && p.player) map[p.player] = { full: g.away_team, abbr: g.away_team_abbr || g.away_team };
+      });
+    }
+    return map;
+  }
+
+  /* Count unique pair_keys across a list of candidate records. Different
+     combos of the same pair share a pair_key, so this collapses to
+     per-pair count — which is what the funnel tracks at the "pairs with
+     historical data" / "pairs with valid DK SGP price" stages. */
+  function _uniquePairs(list) {
+    if (!list || !list.length) return 0;
+    var s = {};
+    for (var i = 0; i < list.length; i++) s[list[i].pair_key] = 1;
+    return Object.keys(s).length;
+  }
+
+  function _escAttr(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function _fmtOddsPair(raw) {
+    if (!raw) return 'over=?  under=?';
+    var m = String(raw).match(/([+-]?\d+)\s*\/\s*([+-]?\d+)/);
+    if (!m) return 'over=? under=? (raw=' + _escAttr(String(raw).slice(0, 20)) + ')';
+    return 'dk_over=' + m[1] + '  dk_under=' + m[2];
+  }
+
+  /* Compose the funnel breakdown. Panel is always expanded on first
+     render — default to visible whenever we have any OCR response,
+     regardless of whether enumeration produced candidates. The whole
+     point of this panel is to show WHY zero slipped through. */
+  function renderDiagnosticPanel() {
+    var el = $('tmevDiagPanel');
+    if (!el) return;
+    if (!S.ocrResponse && S.fvSource !== 'synthetic') {
+      el.style.display = 'none';
+      return;
+    }
+
+    var stats = (S.ocrResponse && S.ocrResponse.ocr_stats) || {};
+    var samples = (S.ocrResponse && S.ocrResponse.sample_rows) || [];
+    var diag = S.enumDiagnostics || {};
+    var teamMap = _lineupPlayerTeams();
+
+    // Stage: distinct players
+    var fvNames = S.fvIndex ? Object.keys(S.fvIndex) : [];
+    var distinctCount = fvNames.length;
+
+    // Stage: players matched to lineup
+    var matched = [], unmatched = [];
+    fvNames.forEach(function (n) { (teamMap[n] ? matched : unmatched).push(n); });
+
+    // Stage: players per team (keyed by full name for readability)
+    var teamCounts = {};
+    matched.forEach(function (n) {
+      var t = (teamMap[n] && teamMap[n].full) || '(unknown)';
+      teamCounts[t] = (teamCounts[t] || 0) + 1;
+    });
+    var teamList = Object.keys(teamCounts).map(function (t) { return t + ': ' + teamCounts[t]; });
+
+    // Stage: theoretical intra-team pairs = sum over teams of C(n, 2)
+    var theoretical = 0;
+    var theoreticalPerTeam = Object.keys(teamCounts).map(function (t) {
+      var n = teamCounts[t];
+      var c = n * (n - 1) / 2;
+      theoretical += c;
+      return t + ': ' + c;
+    });
+
+    // Pair-level counts from enumeration output.
+    // candidatesRaw contains only pairs that cleared findPair + n_total
+    // threshold AND had valid FV for BOTH legs on at least one combo. So
+    // _uniquePairs(S.candidatesRaw) = "pairs with historical data that
+    // also appeared in the FV sheet and had a matchable combo".
+    var pairsWithData = _uniquePairs(S.candidatesRaw);
+    var pairsPriced   = _uniquePairs(S.candidatesFull);
+    var pairsSurviving = S.lastFilteredCount != null
+      ? _uniquePairs(applyFilters(S.candidatesFull))
+      : null;
+    var candidatesSurviving = S.lastFilteredCount;
+
+    // ---- HTML ----
+    var h = '';
+    h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
+    h += '<div style="font-size:12px;color:var(--cyan);font-weight:700;letter-spacing:.4px">PIPELINE DIAGNOSTIC</div>';
+    h += '<div style="font-size:9px;color:var(--mu)">stage counts — purpose: reveal which stage dropped to zero</div>';
+    h += '</div>';
+    h += '<div style="font-size:10px;color:var(--tx);line-height:1.75">';
+
+    function row(label, value, note, color) {
+      var c = color || 'var(--tx)';
+      h += '<div style="display:flex;gap:10px"><span style="color:var(--mu);flex:0 0 38%">' + label + '</span>' +
+           '<span style="color:' + c + ';font-weight:600">' + value + '</span>' +
+           (note ? '<span style="color:var(--mu);margin-left:8px">' + note + '</span>' : '') + '</div>';
+    }
+
+    // OCR stages
+    row('OCR rows parsed:',
+        (stats.raw_row_count != null ? stats.raw_row_count : '—'),
+        stats.bad_fv_count != null ? '(' + stats.bad_fv_count + ' rejected — bad avg_fv)' : '');
+    row('Schema-valid rows:',
+        (stats.normalized_row_count != null ? stats.normalized_row_count : '—'),
+        (S.ocrResponse && S.ocrResponse.unmatched_markets && S.ocrResponse.unmatched_markets.length
+           ? '(' + S.ocrResponse.unmatched_markets.length + ' dropped — see below)' : ''));
+    row('Distinct players (FV):', distinctCount, '', distinctCount ? 'var(--ac)' : 'var(--red)');
+
+    // Lineup-join stages
+    var joinCount = matched.length + '/' + distinctCount;
+    var joinNote = unmatched.length ? ('not in lineup: ' + unmatched.slice(0, 4).join(', ') + (unmatched.length > 4 ? ', +' + (unmatched.length - 4) + ' more' : '')) : '';
+    row('Players matched to lineup:', joinCount, joinNote, matched.length ? 'var(--ac)' : 'var(--red)');
+    row('Players per team:', teamList.length ? teamList.join(', ') : '(no matches)');
+
+    // Pair-level stages
+    row('Theoretical intra-team pairs:',
+        theoreticalPerTeam.length ? theoreticalPerTeam.join(', ') + '  → ' + theoretical + ' total' : '0 total',
+        '');
+    row('Pairs with historical data:', pairsWithData,
+        diag.pairs_considered != null
+          ? '(' + diag.pairs_considered + ' considered, ' + (diag.pairs_no_data || 0) + ' no Phase-1 data, ' + (diag.pairs_below_threshold || 0) + ' below MIN GAMES)'
+          : '',
+        pairsWithData ? 'var(--ac)' : 'var(--red)');
+    row('Pairs with valid DK SGP price:', (pairsPriced != null ? pairsPriced : '—'),
+        (S.dkMissing && S.dkMissing.length ? '(' + S.dkMissing.length + ' DK-unmatched)' : ''),
+        pairsPriced ? 'var(--ac)' : 'var(--ac2)');
+    row('Pairs surviving filters:', (pairsSurviving != null ? pairsSurviving : '—'),
+        candidatesSurviving != null && candidatesSurviving !== pairsSurviving
+          ? '(' + candidatesSurviving + ' candidates across those pairs)' : '',
+        candidatesSurviving ? 'var(--ac)' : 'var(--ac2)');
+
+    // Combo-level diagnostic (collapsed info)
+    if (diag.combos_emitted != null) {
+      h += '<div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--b1);color:var(--mu);font-size:9px">' +
+           'combo-level skips: ' +
+           (diag.combos_so_skip || 0) + ' SO, ' +
+           (diag.combos_hrr_skip || 0) + ' HRR, ' +
+           (diag.combos_no_fv_leg1 || 0) + ' no-FV leg1, ' +
+           (diag.combos_no_fv_leg2 || 0) + ' no-FV leg2, ' +
+           (diag.combos_null || 0) + ' null; ' +
+           (diag.combos_emitted || 0) + ' emitted' +
+           '</div>';
+    }
+    h += '</div>';
+
+    // Sample OCR rows
+    if (samples && samples.length) {
+      h += '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--b1)">';
+      h += '<div style="font-size:11px;color:var(--ac3);font-weight:600;margin-bottom:6px">OCR Sample (first ' + samples.length + ' rows, raw):</div>';
+      h += '<div style="font-size:9px;color:var(--tx);line-height:1.6;word-break:break-word">';
+      samples.forEach(function (r, i) {
+        /* Prefer the team abbreviation so the sample line is compact
+           enough to read on mobile. Fall back to whatever the OCR row
+           itself claimed for team (often blank on EV Collective sheets
+           that don't carry a team column). */
+        var folded = (window.nameNormalize && window.nameNormalize.foldAscii(r.batter || '')) || r.batter || '';
+        var entry = teamMap[folded];
+        var team = entry ? entry.abbr : (r.team || '(none)');
+        h += '<div style="padding:2px 0">' + (i + 1) + '. ' +
+             'player=&quot;' + _escAttr(r.batter) + '&quot; ' +
+             'team=&quot;' + _escAttr(team) + '&quot; ' +
+             'market=&quot;' + _escAttr(r.market) + '&quot; ' +
+             'bet=&quot;' + _escAttr((r.direction || '') + ' ' + (r.line != null ? r.line : '')) + '&quot; ' +
+             'avg_fv=' + _escAttr(r.avg_fv) + ' ' +
+             _fmtOddsPair(r.avg_odds) +
+             '</div>';
+      });
+      h += '</div></div>';
+    }
+
+    el.innerHTML = h;
+    el.style.display = 'block';
+  }
+
   function render() {
     $('tmevFilterBar').style.display = 'flex';
     var filtered = applyFilters(S.candidatesFull);
+    S.lastFilteredCount = filtered.length;  // feeds #tmevDiagPanel's final row
+    renderDiagnosticPanel();
     $('tmevCount').textContent =
       filtered.length + ' / ' + S.candidatesFull.length + ' match current filters' +
       ' · source: ' + (S.fvSource || 'none');

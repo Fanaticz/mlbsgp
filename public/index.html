@@ -317,6 +317,12 @@ h1 em{color:var(--ac);font-style:normal;}
     </div>
     <div id="tmevStatus" style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace;min-height:16px"></div>
   </div>
+  <!-- Pipeline diagnostic panel — populated by teammateEvTab.js after each
+       OCR upload + pipeline run. Purpose is funnel visibility: each row
+       shows per-stage count + drop reason so the failing stage is
+       identifiable at a glance without a browser console. Empty until
+       the client injects HTML. -->
+  <div id="tmevDiagPanel" style="display:none;margin-top:10px;background:var(--s1);border:1px solid var(--b1);border-radius:9px;padding:12px 14px;font-family:Space Mono,monospace"></div>
   <div class="ctrl" id="tmevFilterBar" style="display:none;flex-wrap:wrap;gap:10px;align-items:center">
     <div style="display:inline-flex;border:1px solid var(--b1);border-radius:6px;overflow:hidden;font-family:Space Mono,monospace">
       <button id="tmevModePlayer"  onclick="window.teammateEvTab&amp;&amp;window.teammateEvTab.setMode('player')"  title="Pair-specific correlation, no shrinkage."         style="padding:6px 12px;font-size:11px;font-weight:600;border:none;background:transparent;color:var(--mu);cursor:pointer">PLAYER</button>
