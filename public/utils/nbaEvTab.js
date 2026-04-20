@@ -250,7 +250,11 @@
         if (!propMap[pr.stat]) propMap[pr.stat] = {};
         propMap[pr.stat][pr.threshold] = pr;
       }
-      idx[p.player] = { player: p.player, team: p.team || null, game: p.game || null, props: propMap };
+      /* foldedKey is computed once at index time so the enumeration
+         hot path doesn't re-fold on every FV player read. Keys are
+         whatever the FV source (OCR or synthetic) emitted raw — foldedKey
+         is the normalized form used to join against correlations. */
+      idx[p.player] = { player: p.player, foldedKey: foldKey(p.player), team: p.team || null, game: p.game || null, props: propMap };
     }
     return idx;
   }
@@ -338,6 +342,33 @@
     };
   }
 
+  /* Canonical fold-key for player-name joins. Reuses the shared
+     nameNormalize.foldKey (NFKD decomposition + strip combining marks +
+     lowercase + strip non-alphanumerics). Same helper MLB uses to
+     resolve Giménez/O'Hoppe-class mismatches. Defensive fallback just
+     lowercases if the script isn't loaded for some reason. */
+  function foldKey(name) {
+    if (window.nameNormalize && typeof window.nameNormalize.foldKey === 'function') {
+      return window.nameNormalize.foldKey(name);
+    }
+    return String(name == null ? '' : name).toLowerCase();
+  }
+
+  /* Build correlations.foldedByPlayer: foldedKey → [entry indices].
+     Idempotent (safe to call on every reload). Collisions are merged
+     by concat so a single folded key can point to entries from
+     multiple original-name variants (e.g. "Luka Doncic" + "Luka Dončić"
+     both folding to "luka doncic"). */
+  function buildFoldedIndex(correlations) {
+    if (!correlations || !correlations.by_player) return;
+    var folded = {};
+    Object.keys(correlations.by_player).forEach(function (rawName) {
+      var key = foldKey(rawName);
+      folded[key] = (folded[key] || []).concat(correlations.by_player[rawName]);
+    });
+    correlations.foldedByPlayer = folded;
+  }
+
   /* Pure: build candidates from (correlations, fvIndex, filters, confirmedSet).
      Each correlation entry becomes 0 or 1 candidate depending on whether
      both legs have FV + pass leg-level filters. DK prices are expected to
@@ -348,10 +379,17 @@
   function enumerateCandidates(correlations, fvIndex, filters, confirmedSet) {
     var out = [];
     if (!correlations || !correlations.entries || !fvIndex) return out;
+    /* Prefer the folded index if present. Built lazily in runPipeline +
+       populated on correlation-load so the hot path here stays branch-free.
+       Raw-name lookup is kept as a fallback so pre-Phase-4 regression tests
+       (which build fixtures with correlations.by_player only) still work. */
+    var foldedIdx = correlations.foldedByPlayer || null;
     var players = Object.keys(fvIndex);
     for (var i = 0; i < players.length; i++) {
       var player = players[i];
-      var idxs = (correlations.by_player && correlations.by_player[player]) || [];
+      var fvP = fvIndex[player];
+      var fk = (fvP && fvP.foldedKey) ? fvP.foldedKey : foldKey(player);
+      var idxs = (foldedIdx && foldedIdx[fk]) || (correlations.by_player && correlations.by_player[player]) || [];
       for (var k = 0; k < idxs.length; k++) {
         var e = correlations.entries[idxs[k]];
         if (!e) continue;
@@ -595,12 +633,59 @@
   /* Main pipeline entry. Rebuilds state.candidates from the current inputs.
      Cheap enough to call on every filter change — the FV + DK fetches are
      the expensive legs and those happen at upload time, not here. */
+  /* FIRST-LOOK MODE: all filters are stripped. Every enumerated pair
+     renders so we can see exactly what the pipeline produces without
+     a filter-defaults argument over what's "really there". MIN EV%,
+     MIN GAMES, MAX P_VALUE, prop multi-select, and confirmed-starter
+     gates are all bypassed. Pagination still caps the render at 30
+     cards — rendering 500+ cards at once would lag the tab.
+     Restore filter gating once we see the distribution of actual edges
+     on a real FV upload and know what defaults make sense. */
+  var PERMISSIVE_FILTERS = {
+    props: { 'Points': true, 'Rebounds': true, 'Assists': true, '3-Pointers Made': true },
+    minGames: 0,
+    maxPValue: 1.0,
+    confirmedOnly: false,
+  };
+
+  /* Walk the FV index → correlations join once, record who matched and
+     who didn't (for the diagnostic panel). Separate from enumeration so
+     this count includes players whose entries don't happen to pass the
+     FV leg-lookup in enumerateCandidates — i.e., we know the player is
+     in correlations even if none of their entries produced a card. */
+  function computeFunnel(correlations, fvIndex) {
+    var foldedIdx = correlations && correlations.foldedByPlayer;
+    var matched = [], unmatched = [];
+    Object.keys(fvIndex || {}).forEach(function (rawName) {
+      var fvP = fvIndex[rawName];
+      var fk = (fvP && fvP.foldedKey) ? fvP.foldedKey : foldKey(rawName);
+      var idxs = (foldedIdx && foldedIdx[fk]) || (correlations && correlations.by_player && correlations.by_player[rawName]) || [];
+      if (idxs.length) matched.push(rawName); else unmatched.push(rawName);
+    });
+    return { fv_count: Object.keys(fvIndex || {}).length, matched: matched, unmatched: unmatched, enumerated: 0, dk_priced: 0 };
+  }
+
   function runPipeline(opts) {
-    state.pageShown = state.pageSize; // any pipeline run resets pagination to page 1
-    if (!state.correlations || !state.fv) { state.candidates = []; if (typeof renderResults === 'function') renderResults(); return; }
-    var all = enumerateCandidates(state.correlations, state.fv, state.filters, state.confirmedSet);
+    state.pageShown = state.pageSize;
+    if (!state.correlations || !state.fv) {
+      state.candidates = []; state.candidatesAll = [];
+      state.funnel = { fv_count: 0, matched: [], unmatched: [], enumerated: 0, dk_priced: 0 };
+      if (typeof renderResults === 'function') renderResults();
+      return;
+    }
+    /* Build the folded-player index once per correlations-load. runPipeline
+       may fire many times (filter changes — now no-op, FV uploads, dev sim)
+       and we don't want to rebuild it on each call. */
+    if (!state.correlations.foldedByPlayer) buildFoldedIndex(state.correlations);
+    var funnel = computeFunnel(state.correlations, state.fv);
+    var all = enumerateCandidates(state.correlations, state.fv, PERMISSIVE_FILTERS, null);
+    funnel.enumerated = all.length;
+    funnel.dk_priced = all.filter(function (c) { return c.dk_sgp_american != null; }).length;
+    state.funnel = funnel;
     state.candidatesAll = all;
-    state.candidates = applyEvFilter(all, state.filters.minEvPct);
+    /* FIRST-LOOK MODE: no applyEvFilter — render everything. Sort + page
+       limits happen in renderResults. */
+    state.candidates = all;
     if (typeof renderResults === 'function') renderResults();
   }
 
