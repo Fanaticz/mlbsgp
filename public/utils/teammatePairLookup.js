@@ -32,15 +32,61 @@
      TEAMMATE_DATA.pairs is keyed "<p1>||<p2>||<team>". The p1/p2
      ordering inside the key is NOT alphabetical (verified empirically:
      ~50/50 split). For a random (a, b) input from a lineup, we try
-     both orderings before giving up. */
+     both orderings before giving up.
+
+     Defensive ASCII-fold: server-side normalization in server.js
+     (lineup endpoint + batter OCR) already folds names before they
+     reach this function, but folding here too means any future
+     code path that invokes findPair with an un-normalized name
+     (e.g. a console-paste debugging session, a third-party data
+     source) still resolves correctly. Idempotent on already-folded
+     input — see public/utils/nameNormalize.js. */
+  /* Resolve foldKey from either the browser global or Node require.
+     Returns a function(name) → string. Falls back to no-op fold if
+     neither is reachable (legacy/standalone usage). */
+  function _resolveFoldKey() {
+    if (typeof window !== 'undefined' && window.nameNormalize && window.nameNormalize.foldKey) {
+      return window.nameNormalize.foldKey;
+    }
+    if (typeof require === 'function') {
+      try { return require('./nameNormalize.js').foldKey; } catch (_) {}
+    }
+    return function (s) { return (s == null ? '' : String(s)).trim().toLowerCase(); };
+  }
+
+  /* Build a foldKey-indexed sidecar over teammateData.pairs once per
+     dataset. Cached on the teammateData object itself so module reloads
+     don't cost a re-index. ~10K pairs × 2 keys + foldKey is sub-50ms.
+     Idempotent — repeat calls hit the cache. */
+  function _ensureFoldedPairIndex(teammateData) {
+    if (teammateData._tpFoldedPairs) return teammateData._tpFoldedPairs;
+    var foldKey = _resolveFoldKey();
+    var idx = {};
+    var keys = Object.keys(teammateData.pairs || {});
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i];
+      var parts = k.split('||');
+      if (parts.length < 3) continue;
+      var p1 = parts[0], p2 = parts[1], team = parts.slice(2).join('||');
+      var fk1 = foldKey(p1) + '||' + foldKey(p2) + '||' + foldKey(team);
+      var fk2 = foldKey(p2) + '||' + foldKey(p1) + '||' + foldKey(team);
+      idx[fk1] = teammateData.pairs[k];
+      idx[fk2] = teammateData.pairs[k];
+    }
+    Object.defineProperty(teammateData, '_tpFoldedPairs', { value: idx, enumerable: false });
+    return idx;
+  }
+
   function findPair(teammateData, playerA, playerB, team) {
     if (!teammateData || !teammateData.pairs) return null;
-    var pairs = teammateData.pairs;
-    var kAB = playerA + '||' + playerB + '||' + team;
-    if (pairs[kAB]) return pairs[kAB];
-    var kBA = playerB + '||' + playerA + '||' + team;
-    if (pairs[kBA]) return pairs[kBA];
-    return null;
+    var foldKey = _resolveFoldKey();
+    var idx = _ensureFoldedPairIndex(teammateData);
+    /* Team is folded along with player names so a diacritic / case-drift
+       team name (e.g. accidentally lowercased from a UI source) still
+       resolves. The dataset's own team column is ASCII proper-case but
+       the foldKey symmetry costs nothing. */
+    var k = foldKey(playerA) + '||' + foldKey(playerB) + '||' + foldKey(team);
+    return idx[k] || null;
   }
 
   /* Default shrinkage constants — match build_teammate_aggregates.py

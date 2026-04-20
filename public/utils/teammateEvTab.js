@@ -22,6 +22,23 @@
   var TP = window.teammatePairLookup;
   var TM = window.teammateMath;
 
+  /* Diagnostic logging flag. Default OFF in production. Two ways to
+     enable when investigating a live issue:
+       1. URL param: ?tmev_diag=1   (sticky for the page session)
+       2. Console: window.TMEV_DIAG = true; then re-run pipeline
+     Logs are prefixed [TMEV-DIAG] for easy console filtering. */
+  var DIAG = function () { return window.TMEV_DIAG === true; };
+  try {
+    var _u = new URL(window.location.href);
+    if (_u.searchParams.get('tmev_diag') === '1') window.TMEV_DIAG = true;
+  } catch (_) { /* file:// or similar — ignore */ }
+  function dlog() {
+    if (!DIAG()) return;
+    var args = Array.prototype.slice.call(arguments);
+    args.unshift('[TMEV-DIAG]');
+    console.log.apply(console, args);
+  }
+
   /* ---------------- state ---------------- */
   var S = {
     activated:      false,   // onActivate has fired at least once
@@ -202,6 +219,20 @@
         S.fvIndex = TE.fvIndexFromExtractor(players);
         S.fvSource = 'ocr';
         var propCount = players.reduce(function (a, p) { return a + (p.props ? p.props.length : 0); }, 0);
+
+        /* CHECKPOINT 1: OCR output → fv index. Log distinct names so we can
+           spot diacritic / casing / spacing drift between OCR and the
+           lineup endpoint that breaks the player-name join downstream. */
+        dlog('CHECKPOINT 1 — OCR result');
+        dlog('  players parsed:', players.length, '| props total:', propCount);
+        dlog('  unmatched_markets count:', (j.unmatched_markets || []).length);
+        dlog('  distinct OCR player names:', players.map(function (p) { return p.player; }).sort());
+        dlog('  distinct OCR teams:', Array.from(new Set(players.map(function (p) { return p.team || '(none)'; }))).sort());
+        dlog('  sample player record (first):', JSON.stringify(players[0], null, 2));
+        if ((j.unmatched_markets || []).length) {
+          dlog('  first 5 unmatched_markets:', j.unmatched_markets.slice(0, 5));
+        }
+
         setStatus('Extracted ' + players.length + ' players / ' + propCount + ' props. Enumerating candidates...', 'ok');
         runPipeline();
       })
@@ -231,6 +262,43 @@
     if (!S.lineups) { setStatus('Lineups not loaded yet — retry in a moment', 'err'); return; }
     if (!S.fvIndex)  { setStatus('No FV data — upload a sheet or use synthetic FV', 'err'); return; }
 
+    /* CHECKPOINT 2: FV ↔ lineup intersection BEFORE enumeration.
+       This is the "is the join even going to find anything" check.
+       After the diacritic-fix deploy, the FV side and lineup side
+       should both be ASCII-folded and any non-zero intersection means
+       enumeration has at least a chance of producing candidates. */
+    if (DIAG()) {
+      var fvNames = Object.keys(S.fvIndex);
+      var lineupNamesByTeam = {};
+      var allLineupNames = new Set();
+      (S.lineups.games || []).forEach(function (g) {
+        for (var side of ['home_lineup', 'away_lineup']) {
+          var teamName = side === 'home_lineup' ? g.home_team : g.away_team;
+          (g[side] || []).forEach(function (p) {
+            if (!p || !p.player) return;
+            allLineupNames.add(p.player);
+            (lineupNamesByTeam[teamName] = lineupNamesByTeam[teamName] || []).push(p.player);
+          });
+        }
+      });
+      var matched = fvNames.filter(function (n) { return allLineupNames.has(n); });
+      var unmatched = fvNames.filter(function (n) { return !allLineupNames.has(n); });
+      dlog('CHECKPOINT 2 — FV ↔ lineup intersection');
+      dlog('  FV players:', fvNames.length, '| lineup players:', allLineupNames.size,
+           '| FV ∩ lineup:', matched.length);
+      if (unmatched.length) dlog('  FV names NOT in any lineup (' + unmatched.length + '):', unmatched);
+      if (matched.length)   dlog('  FV names matched to lineups:', matched);
+      /* For diagnosing 0-candidate runs: also dump per-team FV coverage
+         so the user can see whether their FV sheet covers both sides
+         of any single game. */
+      var perTeamCoverage = {};
+      Object.keys(lineupNamesByTeam).forEach(function (t) {
+        var inFv = lineupNamesByTeam[t].filter(function (n) { return S.fvIndex[n]; });
+        if (inFv.length) perTeamCoverage[t] = inFv;
+      });
+      dlog('  per-team FV coverage:', perTeamCoverage);
+    }
+
     var enumRes = TE.enumerateCandidates({
       lineups:      S.lineups.games || [],
       fvByPlayer:   S.fvIndex,
@@ -240,6 +308,21 @@
       minPairGames: S.filters.minN,
     });
     S.candidatesRaw = enumRes.candidates;
+
+    /* CHECKPOINT 3: enumeration result. The diagnostics breakdown tells
+       us WHY the candidate count is what it is — sparse Phase-1 data,
+       below-threshold pairs, SO/HRR skips, missing FV legs, etc. */
+    dlog('CHECKPOINT 3 — enumeration');
+    dlog('  raw candidates:', enumRes.candidates.length);
+    dlog('  diagnostics:', enumRes.diagnostics);
+    if (enumRes.candidates.length && enumRes.candidates[0]) {
+      var sc = enumRes.candidates[0];
+      dlog('  sample candidate (first):',
+           sc.p1_display + ' × ' + sc.p2_display + ' [' + sc.team + ']',
+           '| slots ' + sc.tonight_slots.join('_'),
+           '| r_binary=' + (sc.r_binary == null ? 'null' : sc.r_binary.toFixed(3)));
+    }
+
     setStatus('Enumerated ' + enumRes.candidates.length + ' candidates (' + enumRes.diagnostics.combos_emitted +
       ' combos emitted, ' + enumRes.diagnostics.pairs_no_data + ' pairs without Phase-1 data). DK pricing top-|r|...', 'ok');
 
@@ -406,8 +489,14 @@
     }
     /* Header: pair × EV% */
     h += '<div style="display:flex;justify-content:space-between;align-items:start;gap:8px;margin-bottom:8px">';
+    /* Prefer the diacritic display form for the header; fall back to
+       the ASCII canonical that's used for joining when display isn't
+       available (e.g. older cached candidate records from before the
+       diacritic-fix deploy). */
+    var p1Show = c.p1_display || c.p1;
+    var p2Show = c.p2_display || c.p2;
     h += '<div>' +
-           '<div style="font-size:12px;font-weight:700">' + c.p1 + ' &times; ' + c.p2 + '</div>' +
+           '<div style="font-size:12px;font-weight:700">' + p1Show + ' &times; ' + p2Show + '</div>' +
            '<div style="font-size:9px;color:var(--mu);font-family:Space Mono,monospace">' +
              (c.team || '?') + ' &middot; ' + (c.game_label || '?') +
              ' &middot; <span style="color:' + (c.lineup_status === 'confirmed' ? 'var(--ac)' : 'var(--ac2)') + '">' + c.lineup_status + '</span>' +
@@ -424,14 +513,14 @@
     /* Legs box: two teammate legs + combined hit rate. */
     h += '<div style="background:var(--s2);border-radius:6px;padding:7px 9px;margin-bottom:8px">';
     h += '<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0">' +
-           '<span class="leg ' + legSideCls(c.leg1_full) + '" style="font-size:10px">' + c.leg1_full + ' &middot; ' + c.p1 + '</span>' +
+           '<span class="leg ' + legSideCls(c.leg1_full) + '" style="font-size:10px">' + c.leg1_full + ' &middot; ' + p1Show + '</span>' +
            '<div style="display:flex;align-items:center;gap:6px">' +
              '<span style="font-size:10px;font-family:Space Mono,monospace;color:var(--mu)">FV ' + fmtAm(c.fv_p1) + '</span>' +
              '<span style="font-size:9px;font-family:Space Mono,monospace;color:var(--ac2)">' + hr1 + '</span>' +
            '</div>' +
          '</div>';
     h += '<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0">' +
-           '<span class="leg ' + legSideCls(c.leg2_full) + '" style="font-size:10px">' + c.leg2_full + ' &middot; ' + c.p2 + '</span>' +
+           '<span class="leg ' + legSideCls(c.leg2_full) + '" style="font-size:10px">' + c.leg2_full + ' &middot; ' + p2Show + '</span>' +
            '<div style="display:flex;align-items:center;gap:6px">' +
              '<span style="font-size:10px;font-family:Space Mono,monospace;color:var(--mu)">FV ' + fmtAm(c.fv_p2) + '</span>' +
              '<span style="font-size:9px;font-family:Space Mono,monospace;color:var(--ac2)">' + hr2 + '</span>' +
@@ -488,7 +577,11 @@
      prompt itself reads cleanly — the raw candidate has 45+ fields. */
   function projectCandidateForInsight(c) {
     return {
-      p1: c.p1, p2: c.p2,
+      /* Use display names (with diacritics) for the model — humans read
+         names, and the prompt's commentary reads better with proper
+         orthography. The canonical c.p1 / c.p2 stay accessible if any
+         downstream caller needs them. */
+      p1: c.p1_display || c.p1, p2: c.p2_display || c.p2,
       team: c.team, gameLabel: c.game_label,
       mode: c.mode, fallback: c.fallback,
       leg1Full: c.leg1_full, leg2Full: c.leg2_full,

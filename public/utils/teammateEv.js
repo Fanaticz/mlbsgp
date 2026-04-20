@@ -60,16 +60,28 @@
   }
 
   /* Look up FV odds for one (player, canonical_stat, threshold, direction).
-     Returns the American odds (number) or null if absent. */
+     Returns the American odds (number) or null if absent.
+
+     Defensive ASCII-fold on the player key. Server-side OCR
+     normalization in server.js already folds, but folding here too
+     handles direct-call usage (smoke drivers, future code paths) and
+     stays idempotent on already-folded input. The fvByPlayer index
+     itself is also assumed-folded — built by fvIndexFromExtractor
+     which keys off players[i].player, which the chunk-3 server-side
+     normalizeBatterRows now folds. */
   function lookupFv(fvByPlayer, player, statFull, threshold, direction) {
-    var pRec = fvByPlayer && fvByPlayer[player];
+    if (!fvByPlayer) return null;
+    var fold = (typeof window !== 'undefined' && window.nameNormalize && window.nameNormalize.foldAscii) ||
+               (typeof require === 'function' ? require('./nameNormalize.js').foldAscii : null);
+    var key = fold ? fold(player) : (player || '');
+    var pRec = fvByPlayer[key] || fvByPlayer[player];
     if (!pRec) return null;
     var sRec = pRec[statFull];
     if (!sRec) return null;
     var tRec = sRec[threshold];
     if (!tRec) return null;
-    var key = (direction === 'Over') ? 'over_fv' : 'under_fv';
-    var v = tRec[key];
+    var fvKey = (direction === 'Over') ? 'over_fv' : 'under_fv';
+    var v = tRec[fvKey];
     return (v == null || isNaN(v)) ? null : Number(v);
   }
 
@@ -147,12 +159,24 @@
             if (!pair) { diag.pairs_no_data++; continue; }
             if ((pair.n_total || 0) < minPairGames) { diag.pairs_below_threshold++; continue; }
 
-            // Order tonight's slots to match pair.p1/p2
+            // Order tonight's slots to match pair.p1/p2.
+            // Both sides are ASCII-folded: pair.p1/p2 were folded at
+            // dataset build time; a.player/b.player are folded at the
+            // lineup endpoint boundary (server.js). The displayName
+            // fields preserve the original diacritic form for UI.
             var p1 = pair.p1, p2 = pair.p2;
-            var slotP1, slotP2;
-            if (a.player === p1 && b.player === p2) { slotP1 = a.slot; slotP2 = b.slot; }
-            else if (a.player === p2 && b.player === p1) { slotP1 = b.slot; slotP2 = a.slot; }
-            else { continue; }  // name mismatch (rare: diacritic / suffix drift)
+            var slotP1, slotP2, p1Display, p2Display;
+            if (a.player === p1 && b.player === p2) {
+              slotP1 = a.slot; slotP2 = b.slot;
+              p1Display = a.displayName || a.player;
+              p2Display = b.displayName || b.player;
+            } else if (a.player === p2 && b.player === p1) {
+              slotP1 = b.slot; slotP2 = a.slot;
+              p1Display = b.displayName || b.player;
+              p2Display = a.displayName || a.player;
+            } else {
+              continue;  // post-fold this should essentially never fire
+            }
             var tonightSlots = [slotP1, slotP2];
             var conf = tp.slotMatchConfidence(pair, tonightSlots);
 
@@ -191,7 +215,11 @@
                 game_label: (game.away_team_abbr || '?') + ' @ ' + (game.home_team_abbr || '?'),
                 lineup_status: game.status,
                 // Players + slots
+                // p1 / p2 are ASCII canonical (used as join keys for
+                // any downstream re-lookup); p1_display / p2_display
+                // preserve the original diacritic forms for UI render.
                 p1: p1, p2: p2,
+                p1_display: p1Display, p2_display: p2Display,
                 p1_slot: slotP1, p2_slot: slotP2,
                 tonight_slots: tonightSlots,
                 most_common_slots: pair.most_common_slots || null,
