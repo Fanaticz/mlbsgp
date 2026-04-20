@@ -1271,8 +1271,10 @@ def find_sgps(legs, enum_size=2):
             # Per-leg DK pricing (trueOdds = vigged decimal per leg) is needed
             # for the DK-hold / correlation-price sanity line on 3-leg cards.
             # Kept out of the 2-leg shape to stay byte-for-byte back-compat.
+            # _price_combo returns selectionsForYourBet as `legInfo`; each
+            # entry there carries trueOdds as the vigged decimal.
             if enum_size == 3:
-                entry["leg_true_odds"] = [lg.get("trueOdds") for lg in price.get("legs", [])]
+                entry["leg_true_odds"] = [lg.get("trueOdds") for lg in price.get("legInfo", [])]
             priced_combos_out.append(entry)
 
         results[pitcher] = {**base, combos_key: priced_combos_out}
