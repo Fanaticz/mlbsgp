@@ -9,6 +9,17 @@
 :root{--bg:#0d0f14;--s1:#161920;--s2:#1e2230;--b1:#2a2f3f;--b2:#363d52;--tx:#dde1f0;--mu:#6b7490;--ac:#4ade80;--ac2:#f59e0b;--ac3:#60a5fa;--red:#f87171;--cyan:#22d3ee;}
 *{box-sizing:border-box;margin:0;padding:0;}
 body{background:var(--bg);color:var(--tx);font-family:'Inter',sans-serif;min-height:100vh;}
+/* Sport toggle bar — sits above the per-sport nav. Uses a pill-button
+   style (same Space Mono + subtle border as existing badges) so it reads
+   as "mode switcher" rather than "tab". Active sport gets the accent-
+   green treatment that MLB nav-tabs already use. */
+.sport-bar{display:flex;gap:6px;padding:8px 22px 8px 24px;background:var(--bg);border-bottom:1px solid var(--b1);align-items:center;}
+.sport-bar .sport-label{font-size:10px;color:var(--mu);font-family:'Space Mono',monospace;letter-spacing:.8px;margin-right:4px;}
+.sport-btn{display:inline-flex;align-items:center;gap:7px;padding:5px 14px;font-size:11px;font-weight:600;font-family:'Space Mono',monospace;letter-spacing:.6px;background:transparent;border:1px solid var(--b1);border-radius:16px;color:var(--mu);cursor:pointer;transition:border-color .15s,color .15s,background .15s;}
+.sport-btn:hover{border-color:var(--b2);color:var(--tx);}
+.sport-btn.active{color:var(--ac);border-color:var(--ac);background:rgba(74,222,128,.08);}
+.sport-btn .sport-dot{width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.35;}
+.sport-btn.active .sport-dot{opacity:1;}
 .nav{display:flex;background:var(--s1);border-bottom:1px solid var(--b1);padding:0 24px;position:sticky;top:0;z-index:100;}
 .nav-tab{padding:13px 18px;font-size:13px;font-weight:500;cursor:pointer;border:none;background:transparent;color:var(--mu);border-bottom:2px solid transparent;font-family:'Inter',sans-serif;}
 .nav-tab.active{color:var(--ac);border-bottom-color:var(--ac);}
@@ -194,14 +205,25 @@ h1 em{color:var(--ac);font-style:normal;}
     <div id="appLoadingText" style="font-size:12px;color:var(--mu);font-family:'Space Mono',monospace">Loading historical data...</div>
   </div>
 </div>
-<div class="nav">
+<!-- Sport toggle. State is mirrored in the URL as ?sport=mlb (default) or
+     ?sport=nba so deep links and refreshes stay on the user's chosen sport.
+     Phase 2 only: NBA side is a placeholder shell; Phase 3 populates it. -->
+<div class="sport-bar" id="sportBar">
+  <span class="sport-label">SPORT</span>
+  <button class="sport-btn active" id="sportBtnMlb" type="button" onclick="setSport('mlb')" aria-pressed="true"><span class="sport-dot"></span>MLB</button>
+  <button class="sport-btn" id="sportBtnNba" type="button" onclick="setSport('nba')" aria-pressed="false"><span class="sport-dot"></span>NBA</button>
+</div>
+<div class="nav" id="navMlb">
   <button class="nav-tab active" onclick="showPage('global')">Global</button>
   <button class="nav-tab" onclick="showPage('pitcher')">Pitcher Lookup</button>
   <button class="nav-tab" onclick="showPage('teammate')">Teammate Lookup</button>
   <button class="nav-tab" onclick="showPage('evfinder')">+EV Finder</button>
   <button class="nav-tab" onclick="showPage('tmev')">Teammate +EV</button>
 </div>
-<div class="header">
+<div class="nav" id="navNba" style="display:none">
+  <button class="nav-tab active" data-nba-tab="evfinder" onclick="showNbaPage('evfinder')">NBA +EV Finder</button>
+</div>
+<div class="header" id="headerMlb">
   <div class="badge"><span class="dot"></span> <span id="hdrBadge">Loading historical data...</span></div>
   <h1>Pitcher Prop <em>Correlations</em></h1>
   <div class="stats-row">
@@ -209,6 +231,15 @@ h1 em{color:var(--ac);font-style:normal;}
     <div class="stat"><span class="n" id="hdrTriples">--</span><span class="l">3-LEG COMBOS</span></div>
     <div class="stat"><span class="n" id="hdrPitchers">--</span><span class="l">PITCHERS</span></div>
     <div class="stat"><span class="n">K - ER - BB - H - OUTS</span><span class="l">ALL LINES</span></div>
+  </div>
+</div>
+<div class="header" id="headerNba" style="display:none">
+  <div class="badge"><span class="dot"></span> <span id="nbaHdrBadge">Data loads per upload</span></div>
+  <h1>NBA Prop <em>Correlations</em></h1>
+  <div class="stats-row">
+    <div class="stat"><span class="n" id="nbaHdrEntries">--</span><span class="l">CORRELATION ENTRIES</span></div>
+    <div class="stat"><span class="n" id="nbaHdrPlayers">--</span><span class="l">PLAYERS</span></div>
+    <div class="stat"><span class="n" id="nbaHdrSeason">--</span><span class="l">SEASON</span></div>
   </div>
 </div>
 <div id="page-global" class="page active">
@@ -369,6 +400,18 @@ h1 em{color:var(--ac);font-style:normal;}
     <span id="tmevCount" style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace;margin-left:auto"></span>
   </div>
   <div id="tmevResults"></div>
+</div>
+<!-- NBA pages. Phase 2 stops at the placeholder below; Phase 3 replaces
+     #page-nba-evfinder's inner content with the correlations upload card,
+     FV sheet drop zone, filter bar, and candidate card grid. Keeping the
+     nba-page class lets setSport scope NBA activation without tripping
+     the existing MLB .page selectors. -->
+<div id="page-nba-evfinder" class="page nba-page">
+  <div class="empty" style="padding:56px 24px;text-align:center;color:var(--mu);font-family:'Space Mono',monospace;line-height:1.7">
+    <div style="font-size:14px;color:var(--tx);font-weight:700;margin-bottom:10px;letter-spacing:.4px">NBA +EV FINDER</div>
+    <div style="font-size:11px">Shell only &middot; Phase 3 will fill this tab with:<br>&rarr; correlations xlsx upload card<br>&rarr; FV sheet drop zone<br>&rarr; filter controls (MIN EV%, MIN GAMES, MAX P_VALUE, prop multi-select)<br>&rarr; candidate cards (EV% / DK SGP / model joint / edge pp)</div>
+    <div style="margin-top:14px;font-size:10px;color:var(--b2)">Upload endpoint at /api/nba/upload-correlations is live (Phase 1). Data dir: /data/nba/.</div>
+  </div>
 </div>
 <div class="tm-overlay" id="tmOverlay" onclick="tmClose()"></div>
 <div class="tm-drawer" id="tmDrawer"><button class="tm-close" onclick="tmClose()">&#10005;</button><div id="tmDrawerBody"></div></div>
@@ -2182,13 +2225,78 @@ var SMAP={SO:'Strikeout',ER:'Earned',BB:'Walk',H:'Hits',OUTS:'Outs'};
 var SKEY={'Strikeout':'SO','Earned':'ER','Walk':'BB','Hits':'H','Outs':'OUTS'};
 function statOf(leg){var keys=Object.keys(SKEY);for(var i=0;i<keys.length;i++){if(leg.indexOf(keys[i])>=0)return SKEY[keys[i]];}return null;}
 function getRawCorr(rc,leg1,leg2){if(!rc)return null;var s1=statOf(leg1);var s2=statOf(leg2);if(!s1||!s2)return null;var k1=s1+'_'+s2;var k2=s2+'_'+s1;if(rc[k1]!==undefined)return rc[k1];if(rc[k2]!==undefined)return rc[k2];return null;}
+/* Sport toggle (Phase 2). MLB stays the default so un-parameterised URLs
+   keep behaving exactly as before. NBA side is a shell in this phase —
+   its page content fills in during Phase 3. */
+function getSportFromUrl(){
+  var m = window.location.search.match(/[?&]sport=(mlb|nba)(?:&|$)/i);
+  return m ? m[1].toLowerCase() : 'mlb';
+}
+function setSport(sport){
+  if(sport !== 'nba') sport = 'mlb';
+  document.body.classList.toggle('sport-mlb', sport==='mlb');
+  document.body.classList.toggle('sport-nba', sport==='nba');
+  var show = function(id, on){var el=document.getElementById(id); if(el) el.style.display = on ? '' : 'none';};
+  show('navMlb',    sport==='mlb');
+  show('navNba',    sport==='nba');
+  show('headerMlb', sport==='mlb');
+  show('headerNba', sport==='nba');
+  var btnMlb=document.getElementById('sportBtnMlb');
+  var btnNba=document.getElementById('sportBtnNba');
+  if(btnMlb){btnMlb.classList.toggle('active', sport==='mlb'); btnMlb.setAttribute('aria-pressed', sport==='mlb');}
+  if(btnNba){btnNba.classList.toggle('active', sport==='nba'); btnNba.setAttribute('aria-pressed', sport==='nba');}
+  /* Swap which .page is active. We deactivate everything, then re-activate
+     the default page for the chosen sport. MLB has 5 pages and we remember
+     the last-opened one so toggling back to MLB returns to wherever the
+     user was. NBA has exactly one tab in v1. */
+  document.querySelectorAll('.page').forEach(function(e){e.classList.remove('active');});
+  if(sport === 'nba'){
+    /* Suppress the MLB "Loading historical data…" blocker — NBA doesn't
+       need those aggregates. MLB load still runs in the background so
+       toggling back to MLB is instant. */
+    var al = document.getElementById('appLoading'); if(al) al.style.display = 'none';
+    var nba=document.getElementById('page-nba-evfinder'); if(nba) nba.classList.add('active');
+    showNbaPage('evfinder');
+    if(window.nbaTab && typeof window.nbaTab.onActivate==='function') window.nbaTab.onActivate();
+  } else {
+    var remembered = window._MLB_LAST_PAGE || 'global';
+    var el = document.getElementById('page-' + remembered) || document.getElementById('page-global');
+    if(el) el.classList.add('active');
+    /* Re-sync MLB nav-tab active state to match the page we just activated. */
+    var order=['global','pitcher','teammate','evfinder','tmev'];
+    var active = remembered || 'global';
+    document.querySelectorAll('#navMlb .nav-tab').forEach(function(t,i){t.classList.toggle('active', order[i]===active);});
+  }
+  /* Persist to URL without pushing a history entry — prevents back-button
+     from ping-ponging between sport toggles. Default (mlb) drops the param. */
+  try {
+    var u = new URL(window.location.href);
+    if(sport === 'nba') u.searchParams.set('sport','nba');
+    else u.searchParams.delete('sport');
+    window.history.replaceState({}, '', u.toString());
+  } catch(_){}
+}
+function showNbaPage(p){
+  document.querySelectorAll('#navNba .nav-tab').forEach(function(t){t.classList.remove('active');});
+  var btn = document.querySelector('#navNba .nav-tab[data-nba-tab="'+p+'"]');
+  if(btn) btn.classList.add('active');
+  document.querySelectorAll('.nba-page').forEach(function(e){e.classList.remove('active');});
+  var tgt = document.getElementById('page-nba-'+p);
+  if(tgt) tgt.classList.add('active');
+}
+/* Apply the URL-derived sport once the DOM is ready so the first paint
+   matches the deep link. Runs independently of the existing data-load
+   DOMContentLoaded handler above. */
+window.addEventListener('DOMContentLoaded', function(){ setSport(getSportFromUrl()); });
 function showPage(p){
   document.querySelectorAll('.page').forEach(function(e){e.classList.remove('active');});
-  /* Order MUST match the nav-tab button order above exactly — the
-     active-state index below relies on positional alignment. */
+  /* Order MUST match the MLB nav-tab button order above exactly — the
+     active-state index below relies on positional alignment. Scoped to
+     #navMlb so the NBA nav-tab(s) aren't included. */
   var order=['global','pitcher','teammate','evfinder','tmev'];
-  document.querySelectorAll('.nav-tab').forEach(function(t,i){t.classList.toggle('active',order[i]===p);});
+  document.querySelectorAll('#navMlb .nav-tab').forEach(function(t,i){t.classList.toggle('active',order[i]===p);});
   document.getElementById('page-'+p).classList.add('active');
+  window._MLB_LAST_PAGE = p;
   // Lazy-load teammate data the first time the tab is opened; the 30MB
   // scheme file and 1.3MB slot baseline are too heavy to pull on boot.
   // Teammate +EV needs the same dataset — reuse teammateLazyLoad so
