@@ -295,6 +295,103 @@ h1 em{color:var(--ac);font-style:normal;}
 <div class="tm-overlay" id="tmOverlay" onclick="tmClose()"></div>
 <div class="tm-drawer" id="tmDrawer"><button class="tm-close" onclick="tmClose()">&#10005;</button><div id="tmDrawerBody"></div></div>
 <script>
+/* ============================================================
+   Teammate Lookup tab — self-contained behavior layer.
+   Reads only DOM + its own lazy-loaded JSON blobs; does not
+   share state with the pitcher-side renderers.
+   ============================================================ */
+
+/* --- global state (attached to window so lazy-load survives tab switches) --- */
+window.TEAMMATE_LOADED  = window.TEAMMATE_LOADED  || false;
+window.TEAMMATE_LOADING = window.TEAMMATE_LOADING || false;
+window.TEAMMATE_DATA    = window.TEAMMATE_DATA    || null;   // pooled_static scheme
+window.SLOT_BASELINES   = window.SLOT_BASELINES   || null;   // slot_pair_baselines
+
+/* --- Color scale — mirrors pitcher Global tab thresholds
+       (rCls/rCol in index.html ~line 1371) so correlation cells look
+       identical across tabs. Thresholds: strong +0.30, moderate +0.15,
+       weak gray, negative red. Returned value is CSS var reference for
+       text; tmRBg returns a matching translucent background tint. */
+function tmRColor(r){
+  if(r===null||r===undefined||isNaN(r))return 'var(--mu)';
+  if(r>=0.30)return 'var(--ac)';
+  if(r>=0.15)return 'var(--ac2)';
+  if(r<0)    return 'var(--red)';
+  return 'var(--mu)';
+}
+function tmRBg(r){
+  if(r===null||r===undefined||isNaN(r))return 'transparent';
+  if(r>=0.30)return 'rgba(74,222,128,.14)';   /* green tint */
+  if(r>=0.15)return 'rgba(245,158,11,.12)';   /* amber tint */
+  if(r<0)    return 'rgba(248,113,113,.12)';  /* red tint */
+  return 'rgba(107,116,144,.08)';             /* gray */
+}
+
+/* --- Team dropdown: collect unique pair.t across all pairs, sort, and
+       inject into #tmTeam. Idempotent — called after data loads, safe
+       to re-invoke if we ever swap schemes at runtime. */
+function tmPopulateTeamDropdown(){
+  var sel = document.getElementById('tmTeam');
+  if(!sel || !window.TEAMMATE_DATA) return;
+  var teams = {};
+  var pairs = window.TEAMMATE_DATA.pairs || {};
+  for(var k in pairs){ if(pairs[k] && pairs[k].t) teams[pairs[k].t] = true; }
+  var sorted = Object.keys(teams).sort();
+  /* Preserve any already-selected value across re-populate. */
+  var prev = sel.value || '';
+  var html = '<option value="">All teams</option>';
+  for(var i=0;i<sorted.length;i++){
+    html += '<option value="'+sorted[i].replace(/"/g,'&quot;')+'">'+sorted[i]+'</option>';
+  }
+  sel.innerHTML = html;
+  if(prev && teams[prev]) sel.value = prev;
+}
+
+/* --- Lazy loader: pulled on first Teammate tab open (see showPage()).
+       Fetches slot_pair_baselines.json (1.3 MB) and
+       teammate_aggregates_pooled_static.json (30 MB) in parallel. Errors
+       render a visible message in the #tmBody area so a broken file
+       surfaces instead of leaving the tab silently empty.
+       Dynamic bucket schemes are deferred — Phase 1 UI runs entirely
+       off the static file to keep total bytes down. */
+async function teammateLazyLoad(){
+  if(window.TEAMMATE_LOADED || window.TEAMMATE_LOADING) return;
+  window.TEAMMATE_LOADING = true;
+  var body = document.getElementById('tmBody');
+  if(body){
+    body.innerHTML = '<div class="tm-loadmsg"><span class="pulse"></span> Loading teammate correlations &amp; slot baselines...</div>';
+  }
+  try{
+    var results = await Promise.all([
+      fetch('data/slot_pair_baselines.json').then(function(r){
+        if(!r.ok) throw new Error('slot_pair_baselines.json HTTP '+r.status);
+        return r.json();
+      }),
+      fetch('data/teammate_aggregates_pooled_static.json').then(function(r){
+        if(!r.ok) throw new Error('teammate_aggregates_pooled_static.json HTTP '+r.status);
+        return r.json();
+      }),
+    ]);
+    window.SLOT_BASELINES = results[0];
+    window.TEAMMATE_DATA  = results[1];
+    window.TEAMMATE_LOADED = true;
+    tmPopulateTeamDropdown();
+    if(typeof tmRender === 'function') tmRender();
+    else if(body){
+      body.innerHTML = '<div class="tm-loadmsg">Data loaded: '+
+        (window.TEAMMATE_DATA.n_pairs||0)+' pairs. Renderer pending (chunk 2).</div>';
+    }
+  }catch(err){
+    console.error('[teammate] load failed', err);
+    if(body){
+      body.innerHTML = '<div class="tm-loadmsg" style="color:var(--red)">'+
+        'Failed to load teammate data: '+(err && err.message ? err.message : err)+'</div>';
+    }
+  }finally{
+    window.TEAMMATE_LOADING = false;
+  }
+}
+</script>
 /* ===== +EV Finder: unified flow =====
    1. Upload FV sheet → OCR extract legs (existing /api/extract)
    2. Call /api/dk/find-sgps → backend finds DK game, matches legs, prices combos
