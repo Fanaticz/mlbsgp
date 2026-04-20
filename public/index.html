@@ -643,6 +643,356 @@ function tmRender(){
   }
   body.innerHTML = html;
 }
+
+/* ============================================================
+   Chunk 3: shrinkage resolver, cross-stat matrix, detail drawer.
+   ============================================================ */
+
+/* Shrinkage constants — match build_teammate_aggregates.py so Blended
+   math is consistent with what the aggregator files advertise. Pulled
+   from window.TEAMMATE_DATA at call time with these defaults as the
+   fallback in case the file's metadata is absent. */
+var _TM_K_PAIR_DEFAULT       = 80;
+var _TM_BLEND_MIN_DEFAULT    = 30;
+function _tmKPair(){
+  return (window.TEAMMATE_DATA && window.TEAMMATE_DATA.k_pair) || _TM_K_PAIR_DEFAULT;
+}
+function _tmBlendMin(){
+  return (window.TEAMMATE_DATA && window.TEAMMATE_DATA.blend_min_games_pair) || _TM_BLEND_MIN_DEFAULT;
+}
+
+/* Leg-string parser — "Over 0.5 RBI" -> {direction, thresh, stat} */
+function _tmParseLeg(leg){
+  if(!leg || typeof leg !== 'string') return null;
+  var parts = leg.split(' ');
+  if(parts.length < 3) return null;
+  return {direction: parts[0], thresh: parseFloat(parts[1]), stat: parts.slice(2).join(' ')};
+}
+
+/* Materialize an object view of a pair's positional combo entry.
+   Returns null if the entry is null/skipped. Carries both the raw
+   values (r_binary/r_margin/hit1/hit2/both) and the leg-derived stat
+   metadata so downstream can match against slot baselines without
+   re-parsing legs repeatedly. */
+function _tmComboView(pair, idx){
+  var spec = (window.TEAMMATE_DATA && window.TEAMMATE_DATA.combo_spec) || [];
+  var raw  = (pair.combos_2 && pair.combos_2[idx]) || null;
+  if(!raw) return null;
+  var legs = spec[idx] || [null, null];
+  var p1 = _tmParseLeg(legs[0]);
+  var p2 = _tmParseLeg(legs[1]);
+  return {
+    idx:      idx,
+    leg1:     legs[0], leg2: legs[1],
+    stat1:    p1 ? p1.stat : null,
+    stat2:    p2 ? p2.stat : null,
+    thresh1:  p1 ? p1.thresh : null,
+    thresh2:  p2 ? p2.thresh : null,
+    dir1:     p1 ? p1.direction : null,
+    dir2:     p2 ? p2.direction : null,
+    r_binary: raw[0],
+    r_margin: raw[1],
+    hit1:     raw[2],
+    hit2:     raw[3],
+    both:     raw[4],
+  };
+}
+
+/* Look up a slot-pair baseline combo matching the given combo's
+   (leg1, leg2) strings. Returns the baseline dict or null. */
+function _tmBaselineForCombo(targetSlots, combo){
+  if(!window.SLOT_BASELINES || !targetSlots || !combo) return null;
+  var key = targetSlots[0]+'_'+targetSlots[1];
+  var sp = window.SLOT_BASELINES.slot_pairs && window.SLOT_BASELINES.slot_pairs[key];
+  if(!sp || !sp.combos_2) return null;
+  for(var i=0;i<sp.combos_2.length;i++){
+    var c = sp.combos_2[i];
+    if(c && c.leg1===combo.leg1 && c.leg2===combo.leg2) return c;
+  }
+  return null;
+}
+
+/* --- Core shrinkage resolver. Generic on targetSlots so Phase 2 can
+   pass tonight's actual lineup slots instead of the pair's historical
+   default. Phase 1 callers leave targetSlots undefined and fall back
+   to pair.most_common_slots.
+
+   Returns {r_binary, r_margin, baseline, w_player, fallback}:
+     * r_binary / r_margin: the resolved correlation under the active mode
+     * baseline: the slot baseline dict used (may be null in player mode)
+     * w_player: weight on specific-pair data (0..1; 0 in global/fallback)
+     * fallback: true when blended collapsed to pure baseline because
+                 pair.n_total < BLEND_MIN_GAMES_PAIR or baseline missing.
+*/
+function resolvePairR(pair, combo, targetSlots, mode){
+  if(!combo) return {r_binary:null, r_margin:null, baseline:null, w_player:0, fallback:false};
+  mode = mode || 'player';
+  var slots = targetSlots || pair.most_common_slots || null;
+
+  if(mode === 'player'){
+    return {r_binary: combo.r_binary, r_margin: combo.r_margin,
+            baseline: null, w_player: 1, fallback: false};
+  }
+
+  var base = _tmBaselineForCombo(slots, combo);
+  if(mode === 'global'){
+    if(!base) return {r_binary: 0, r_margin: 0, baseline: null, w_player: 0, fallback: true};
+    return {r_binary: base.r_binary, r_margin: base.r_margin,
+            baseline: base, w_player: 0, fallback: false};
+  }
+
+  /* blended */
+  var nTotal = pair.n_total || 0;
+  var minN   = _tmBlendMin();
+  if(!base || nTotal < minN){
+    return {r_binary: base ? base.r_binary : 0,
+            r_margin: base ? base.r_margin : 0,
+            baseline: base, w_player: 0, fallback: true};
+  }
+  var k = _tmKPair();
+  var w = nTotal / (nTotal + k);
+  function blend(a, b){
+    if(a==null && b==null) return null;
+    if(a==null) return b;
+    if(b==null) return a;
+    return w*a + (1-w)*b;
+  }
+  return {r_binary: blend(combo.r_binary, base.r_binary),
+          r_margin: blend(combo.r_margin, base.r_margin),
+          baseline: base, w_player: w, fallback: false};
+}
+
+/* --- 9x9 cross-stat matrix cell resolver.
+   For cell (stat_i, stat_j), find the best-matching combo from the
+   pair's combos_2 to represent that cell, then route through
+   resolvePairR to apply the active mode's shrinkage.
+   Preference order:
+     1. Over-Over combo at 0.5/0.5 thresholds
+     2. Over-Over combo at the smallest available thresholds
+     3. Any combo matching (stat_i, stat_j) regardless of direction
+*/
+function _tmMatrixCell(pair, stat_i, stat_j, mode, targetSlots){
+  var spec = (window.TEAMMATE_DATA && window.TEAMMATE_DATA.combo_spec) || [];
+  var candidates = [];
+  for(var idx=0; idx<spec.length; idx++){
+    var cv = _tmComboView(pair, idx);
+    if(!cv) continue;
+    if(cv.stat1 !== stat_i || cv.stat2 !== stat_j) continue;
+    candidates.push(cv);
+  }
+  if(!candidates.length) return {found:false};
+
+  function score(c){
+    /* lower is better */
+    var s = 0;
+    if(c.dir1 !== 'Over' || c.dir2 !== 'Over') s += 100;
+    if(c.thresh1 === 0.5 && c.thresh2 === 0.5) s += 0;
+    else s += (c.thresh1||0) + (c.thresh2||0);
+    return s;
+  }
+  candidates.sort(function(a,b){return score(a)-score(b);});
+  var pick = candidates[0];
+  var res = resolvePairR(pair, pick, targetSlots, mode);
+  return {
+    found:    true,
+    r_binary: res.r_binary,
+    r_margin: res.r_margin,
+    thresh1:  pick.thresh1,
+    thresh2:  pick.thresh2,
+    dir1:     pick.dir1,
+    dir2:     pick.dir2,
+    leg1:     pick.leg1,
+    leg2:     pick.leg2,
+    fallback: res.fallback,
+    w_player: res.w_player,
+  };
+}
+
+/* Canonical R x RBI combo for the "slot baseline context" line in the
+   drawer header. Tries p1-R/p2-RBI first, then the reverse direction. */
+function _tmCanonicalRRBI(pair){
+  var spec = (window.TEAMMATE_DATA && window.TEAMMATE_DATA.combo_spec) || [];
+  function find(s1, s2){
+    for(var i=0;i<spec.length;i++){
+      var cv = _tmComboView(pair, i);
+      if(!cv) continue;
+      if(cv.stat1===s1 && cv.stat2===s2 && cv.dir1==='Over' && cv.dir2==='Over' &&
+         cv.thresh1===0.5 && cv.thresh2===0.5) return cv;
+    }
+    return null;
+  }
+  return find('R','RBI') || find('RBI','R');
+}
+
+/* --- Upgrade chunk 2's _tmBestCombo so Blended mode actually uses the
+   shrinkage pipeline instead of raw pair r. Player mode unchanged;
+   Global mode keeps its slot-baseline scan (faster than going through
+   resolvePairR on every pair combo). */
+window._tmBestCombo = function(pair, mode){
+  if(mode==='global'){
+    var base = _tmSlotBaselineCombos(pair);
+    if(!base || !base.length) return null;
+    var best = null;
+    for(var i=0;i<base.length;i++){
+      var c = base[i];
+      if(!c || c.r_binary===null || c.r_binary===undefined) continue;
+      if(!best || Math.abs(c.r_binary) > Math.abs(best.r)){
+        best = {leg1:c.leg1, leg2:c.leg2, r:c.r_binary};
+      }
+    }
+    return best;
+  }
+  var spec = (window.TEAMMATE_DATA && window.TEAMMATE_DATA.combo_spec) || [];
+  var bestP = null;
+  for(var j=0;j<spec.length;j++){
+    var cv = _tmComboView(pair, j);
+    if(!cv) continue;
+    var r;
+    if(mode==='blended'){
+      var res = resolvePairR(pair, cv, undefined, 'blended');
+      r = res.r_binary;
+    }else{
+      r = cv.r_binary;
+    }
+    if(r===null || r===undefined) continue;
+    if(!bestP || Math.abs(r) > Math.abs(bestP.r)){
+      bestP = {leg1: cv.leg1, leg2: cv.leg2, r: r};
+    }
+  }
+  return bestP;
+};
+
+/* ============================================================
+   Detail drawer: cross-stat matrix, slot usage, year breakdown.
+   ============================================================ */
+
+var _TM_STATS = ['H','R','RBI','HR','TB','BB','SB','SO','HRR'];
+
+function tmOpenDrawer(p1, p2, team){
+  var drawer = document.getElementById('tmDrawer');
+  var overlay= document.getElementById('tmOverlay');
+  var body   = document.getElementById('tmDrawerBody');
+  if(!drawer || !body) return;
+
+  var key = p1+'||'+p2+'||'+team;
+  var pair = window.TEAMMATE_DATA && window.TEAMMATE_DATA.pairs && window.TEAMMATE_DATA.pairs[key];
+  if(!pair){
+    body.innerHTML = '<div style="color:var(--red);font-family:Space Mono,monospace;font-size:12px">Pair not found: '+_tmEscAttr(key)+'</div>';
+    drawer.classList.add('open');
+    if(overlay) overlay.classList.add('open');
+    return;
+  }
+  var mode = window.TM_MODE || 'blended';
+  var html = '';
+
+  /* Header */
+  html += '<div style="margin-bottom:14px;padding-right:30px">';
+  html += '<h3>'+_tmEscAttr(pair.p1)+' <span style="color:var(--mu);font-weight:400">+</span> '+_tmEscAttr(pair.p2)+'</h3>';
+  html += '<div class="sub">'+_tmEscAttr(pair.t)+' &middot; mode: <span style="color:var(--cyan)">'+mode.toUpperCase()+'</span></div>';
+  html += '</div>';
+
+  /* Summary cards */
+  var adjPct = Math.round((pair.adjacency||0)*100);
+  html += '<div class="tm-sec"><div class="tm-kv">'
+       +  '<div><div class="k">GAMES</div><div class="v">'+(pair.n_total||0)+'</div></div>'
+       +  '<div><div class="k">SLOT GAP</div><div class="v">'+(pair.slot_gap_mean!=null?pair.slot_gap_mean.toFixed(1):'--')+'</div></div>'
+       +  '<div><div class="k">ADJACENCY</div><div class="v">'+adjPct+'%</div></div>'
+       +  '</div></div>';
+
+  /* Slot baseline context line — uses R-RBI as representative combo. */
+  var rrbi = _tmCanonicalRRBI(pair);
+  if(rrbi){
+    var slotsStr = pair.most_common_slots ? (pair.most_common_slots[0]+'_'+pair.most_common_slots[1]) : '?';
+    var playerRes   = resolvePairR(pair, rrbi, undefined, 'player');
+    var globalRes   = resolvePairR(pair, rrbi, undefined, 'global');
+    var blendedRes  = resolvePairR(pair, rrbi, undefined, 'blended');
+    var wPct = Math.round((blendedRes.w_player||0)*100);
+    var basePct = 100 - wPct;
+    function fmtR(v){return (v==null?'--':((v>=0?'+':'')+v.toFixed(3)));}
+    var blendLabel = blendedRes.fallback
+      ? 'blended falls back to baseline (n &lt; '+_tmBlendMin()+')'
+      : 'blended ('+wPct+'% player / '+basePct+'% baseline) = <strong>'+fmtR(blendedRes.r_binary)+'</strong>';
+    html += '<div class="tm-sec"><div class="title">SLOT BASELINE CONTEXT — R x RBI</div>';
+    html += '<div class="tm-context">This pair most often at <strong>'+slotsStr+'</strong> ('+(pair.top_slot_pair_n||0)+' games). '
+         +  'Slot baseline R-RBI = <strong>'+fmtR(globalRes.r_binary)+'</strong>, '
+         +  'this pair specific = <strong>'+fmtR(playerRes.r_binary)+'</strong>, '
+         +  blendLabel+'.</div></div>';
+  }
+
+  /* Cross-stat matrix. Binary r on top line, margin r small underneath. */
+  html += '<div class="tm-sec"><div class="title">CROSS-STAT MATRIX &mdash; '+mode.toUpperCase()+' (r<sub>binary</sub> / r<sub>margin</sub>)</div>';
+  html += '<div class="tm-matrix" style="grid-template-columns:auto repeat('+_TM_STATS.length+',minmax(36px,1fr))">';
+  /* header row: col stats (p2's stat) */
+  html += '<div class="tm-mh" style="color:var(--ac3)">p1 &darr; / p2 &rarr;</div>';
+  for(var hi=0; hi<_TM_STATS.length; hi++) html += '<div class="tm-mh">'+_TM_STATS[hi]+'</div>';
+  /* body rows */
+  for(var ri=0; ri<_TM_STATS.length; ri++){
+    var si = _TM_STATS[ri];
+    html += '<div class="tm-ml">'+si+'</div>';
+    for(var ci=0; ci<_TM_STATS.length; ci++){
+      var sj = _TM_STATS[ci];
+      var cell = _tmMatrixCell(pair, si, sj, mode);
+      if(!cell.found){
+        html += '<div class="tm-mc" style="color:var(--b2)">&mdash;</div>';
+        continue;
+      }
+      var rb = cell.r_binary;
+      var rm = cell.r_margin;
+      var bg = tmRBg(rb);
+      var fg = tmRColor(rb);
+      var fgm= tmRColor(rm);
+      var tip = _tmEscAttr((cell.leg1||si)+' x '+(cell.leg2||sj)+
+                 ' — rb='+(rb==null?'--':rb.toFixed(3))+' rm='+(rm==null?'--':rm.toFixed(3)));
+      var rbTxt = (rb==null?'--':(rb>=0?'+':'')+rb.toFixed(2));
+      var rmTxt = (rm==null?'--':(rm>=0?'+':'')+rm.toFixed(2));
+      html += '<div class="tm-mc" title="'+tip+'" style="background:'+bg+';color:'+fg+'">'
+           +  rbTxt+'<span class="rm" style="color:'+fgm+'">'+rmTxt+'</span></div>';
+    }
+  }
+  html += '</div></div>';
+
+  /* Slot usage histogram — top 8 configs by count. */
+  if(pair.slot_usage){
+    var entries = [];
+    for(var su in pair.slot_usage){ entries.push([su, pair.slot_usage[su]]); }
+    entries.sort(function(a,b){return b[1]-a[1];});
+    var top = entries.slice(0,8);
+    var maxN = top.length ? top[0][1] : 1;
+    var topKey = pair.top_slot_pair || (top[0] && top[0][0]);
+    html += '<div class="tm-sec"><div class="title">SLOT USAGE — TOP 8 CONFIGS (p1 &rarr; p2 slots)</div>';
+    html += '<div class="tm-slotgrid">';
+    for(var ti=0;ti<top.length;ti++){
+      var sk = top[ti][0], sv = top[ti][1];
+      var pct = Math.round((sv/Math.max(pair.n_total,1))*100);
+      html += '<div class="tm-slotcell'+(sk===topKey?' top':'')+'"><div class="slots">'+sk.replace('_',' &rarr; ')+'</div><div class="n">'+sv+'g &middot; '+pct+'%</div></div>';
+    }
+    html += '</div></div>';
+  }
+
+  /* Year breakdown — non-zero years only. */
+  if(pair.n_by_year){
+    var parts = [];
+    ['2023','2024','2025','2026'].forEach(function(y){
+      var n = pair.n_by_year[y] || 0;
+      if(n > 0) parts.push('<span class="y">\''+y.slice(2)+'</span>'+n);
+    });
+    if(parts.length){
+      html += '<div class="tm-sec"><div class="title">YEAR BREAKDOWN</div>';
+      html += '<div class="tm-years">'+parts.join(' &middot; ')+'</div></div>';
+    }
+  }
+
+  body.innerHTML = html;
+  drawer.classList.add('open');
+  if(overlay) overlay.classList.add('open');
+}
+
+function tmClose(){
+  var drawer = document.getElementById('tmDrawer');
+  var overlay= document.getElementById('tmOverlay');
+  if(drawer)  drawer.classList.remove('open');
+  if(overlay) overlay.classList.remove('open');
+}
 </script>
 /* ===== +EV Finder: unified flow =====
    1. Upload FV sheet → OCR extract legs (existing /api/extract)
