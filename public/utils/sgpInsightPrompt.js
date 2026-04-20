@@ -136,9 +136,15 @@ function _buildSGP3InsightPrompt(sgp) {
   lines.push('');
   lines.push('=== PRICING ===');
   lines.push('DK SGP price: ' + am(sgp.dkSGP));
-  lines.push('Fair Value (correlation-adjusted, pairwise): ' + am(sgp.fvCorr));
-  lines.push('EV%: ' + sgp.evPct.toFixed(1) + '%');
-  lines.push('Model joint probability (blended 3-way empirical): ' + (sgp.fvP * 100).toFixed(1) + '%');
+  lines.push('Fair Value (FV-correlated joint, pairwise Fréchet): ' + am(sgp.fvCorr));
+  lines.push('Primary EV% (vs FV): ' + sgp.evPct.toFixed(1) + '%   — this is the decision number; computed from user-supplied FV × DK decimal');
+  if (sgp.evPctModel !== null && sgp.evPctModel !== undefined) {
+    lines.push('Secondary EV% (vs aggregates model): ' + sgp.evPctModel.toFixed(1) + '%   — computed from the blended empirical 3-way joint × DK decimal');
+  }
+  lines.push('FV-correlated joint probability (pairwise Fréchet on FV marginals): ' + (sgp.fvP * 100).toFixed(1) + '%');
+  if (sgp.pModel !== null && sgp.pModel !== undefined) {
+    lines.push('Aggregates blended 3-way joint (what MODEL JOINT on the card shows): ' + (sgp.pModel * 100).toFixed(1) + '%');
+  }
   if (sgp.dkHoldPct !== null && sgp.dkHoldPct !== undefined) {
     lines.push('DK correlation premium vs independent-product: ' + sgp.dkHoldPct.toFixed(1) + '%' +
                '   (positive means DK prices the SGP SHORTER than the product of its own vigged per-leg prices — i.e. DK models the legs as positively correlated)');
@@ -185,8 +191,8 @@ function _buildSGP3InsightPrompt(sgp) {
   lines.push('');
 
   lines.push('=== INSTRUCTIONS ===');
-  lines.push('Ground truth for the 3-way joint probability is the BLENDED empirical rate (shown above), not the pairwise-corrected fair value.');
-  lines.push('The pairwise r values tell you WHY the legs move together but the actual model joint is the shrunk empirical rate.');
+  lines.push('Primary EV% for the play decision is the FV-based number. The user supplied FV because they believe their fair-value sheet is sharper than pure aggregate history; a model-based EV that disagrees with FV-based EV is a useful divergence signal, not a substitute.');
+  lines.push('The aggregates-based EV (secondary) is the "what the history-only model would think if FV were absent" view. When the two EVs disagree materially (> 15pp), call that out — it indicates FV and aggregates see this combo differently, and the user should weigh whether their FV already priced in what the aggregates are seeing.');
   lines.push('Key risks specific to 3-leg:');
   lines.push('  - Pitcher-quality confounding: an ace has a high all-3-hit rate because the pitcher is good, not necessarily because of intrinsic correlation between the specific thresholds. DK\'s per-leg prices already reflect pitcher quality, so part of the apparent edge may be double-counted. Heavier shrinkage toward global mitigates but does not eliminate this.');
   lines.push('  - Empirical 3-way rates from 15-40 effective starts have high variance. A 10pp edge on n_eff=20 is noisy; the same edge on n_eff=40 is meaningful.');
@@ -197,7 +203,7 @@ function _buildSGP3InsightPrompt(sgp) {
   lines.push('{"verdict":"PLAY","headline":"Short takeaway","explanation":"2-3 sentences.","edge":"1 sentence on what gives this value.","risk":"1 sentence on the main risk.","confidence":8}');
   lines.push('');
   lines.push('Rules:');
-  lines.push('- verdict: "PLAY" (EV% > 10 AND empirical blended joint well above DK implied AND n_eff >= 20), "MARGINAL" (thin EV, borderline sample, or DK\'s correlation premium already absorbs most of the signal), "SKIP" (negative EV or the edge is plausibly pitcher-quality-confounding rather than correlation-structure)');
+  lines.push('- verdict reads from the PRIMARY (FV-based) EV%: "PLAY" (primary EV% > 10 AND n_eff >= 20 AND model EV agrees at least in sign), "MARGINAL" (thin primary EV, borderline sample, or the two EVs disagree materially), "SKIP" (primary EV% is negative or the edge is plausibly pitcher-quality-confounding)');
   lines.push('- headline: max 12 words');
   lines.push('- explanation: 2-3 sentences — cover EV, empirical vs DK implied, sample size, and any red flag');
   lines.push('- edge: 1 sentence — what specifically makes this worth playing (or not)');
