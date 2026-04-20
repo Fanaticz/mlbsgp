@@ -174,25 +174,134 @@
       .catch(function (e) { setStatus('<span style="color:var(--red)">Rollback error: ' + (e.message || e) + '</span>'); });
   }
 
-  /* Drag/drop wiring for the correlations drop zone. Idempotent via the
-     _wired flag — onActivate may fire many times but we only bind once. */
+  /* ---------- FV sheet upload (POSTs to /api/extract-nba, Phase 4) ---------- */
+
+  /* FV rows, keyed by player → array of props. Structure mirrors what the
+     batter-FV OCR returns in MLB:
+       { "Player Name": [ {stat, threshold, over_fv, under_fv, ...}, ... ] }
+     Populated on successful /api/extract-nba response. Until Phase 4 ships
+     the endpoint, this stays null and a clear status message tells the user
+     "OCR not deployed yet". */
+  state.fv = null;
+
+  function setFvStatus(html) {
+    var el = document.getElementById('nbaFvStatus');
+    if (el) el.innerHTML = html;
+  }
+
+  function handleFvImage(file) {
+    if (!file) return;
+    if (file.type && file.type.indexOf('image/') !== 0) {
+      setFvStatus('<span style="color:var(--red)">File must be an image (got ' + (file.type || 'unknown') + ')</span>');
+      return;
+    }
+    setFvStatus('<span style="color:var(--ac2)">OCR &middot; extracting NBA prop legs...</span>');
+    var img = new Image();
+    img.onload = function () {
+      var MAX = 2000, w = img.width, h = img.height;
+      if (w > MAX || h > MAX) { var s = MAX / Math.max(w, h); w = Math.round(w * s); h = Math.round(h * s); }
+      var c = document.createElement('canvas'); c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      var dataUrl = c.toDataURL('image/jpeg', 0.85);
+      postFvImage(dataUrl.split(',')[1], 'image/jpeg');
+    };
+    img.onerror = function () {
+      var reader = new FileReader();
+      reader.onload = function (e) { postFvImage(e.target.result.split(',')[1], file.type || 'image/png'); };
+      reader.readAsDataURL(file);
+    };
+    img.src = URL.createObjectURL(file);
+  }
+
+  function postFvImage(b64, mime) {
+    fetch('/api/extract-nba', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ image: b64, mime: mime }),
+    }).then(function (r) {
+      if (r.status === 404) {
+        setFvStatus('<span style="color:var(--ac2)">NBA OCR endpoint not yet deployed (lands in Phase 4). Use DEV button below for synthetic smoke testing.</span>');
+        return null;
+      }
+      return r.json().then(function (j) { return { status: r.status, body: j }; });
+    }).then(function (res) {
+      if (!res) return;
+      var j = res.body || {};
+      if (!j.players || !j.players.length) {
+        setFvStatus('<span style="color:var(--red)">OCR extracted no NBA props: ' + (j.error || 'empty response') + '</span>');
+        return;
+      }
+      state.fv = indexFvPlayers(j.players);
+      setFvStatus('<span style="color:var(--ac)">&#10003; FV: ' + j.players.length + ' players parsed' + (j.unmatched_markets && j.unmatched_markets.length ? ' &middot; ' + j.unmatched_markets.length + ' unsupported-prop rows' : '') + '</span>');
+      if (typeof runPipeline === 'function') runPipeline();
+    }).catch(function (e) { setFvStatus('<span style="color:var(--red)">OCR error: ' + (e.message || e) + '</span>'); });
+  }
+
+  /* Build { player -> { stat -> { threshold -> { over_fv, under_fv, … } } } }
+     for O(1) lookups in the enumerator. Matches what batter OCR already
+     emits in the MLB flow so Phase 4's NBA OCR can reuse the same shape. */
+  function indexFvPlayers(players) {
+    var idx = {};
+    for (var i = 0; i < players.length; i++) {
+      var p = players[i];
+      var propMap = {};
+      for (var k = 0; k < (p.props || []).length; k++) {
+        var pr = p.props[k];
+        if (!propMap[pr.stat]) propMap[pr.stat] = {};
+        propMap[pr.stat][pr.threshold] = pr;
+      }
+      idx[p.player] = { player: p.player, team: p.team || null, game: p.game || null, props: propMap };
+    }
+    return idx;
+  }
+
+  /* Idempotent wiring of both drop zones (correlations + FV). */
   var _wired = false;
   function wireDom() {
     if (_wired) return;
-    var dz = document.getElementById('nbaCorrDrop');
-    if (!dz) return;
-    dz.addEventListener('click', function () { var i = document.getElementById('nbaCorrFile'); if (i) i.click(); });
-    dz.addEventListener('dragover', function (e) { e.preventDefault(); dz.style.borderColor = 'var(--cyan)'; dz.style.background = 'rgba(34,211,238,.08)'; });
-    dz.addEventListener('dragleave', function () { dz.style.borderColor = 'var(--b2)'; dz.style.background = 'var(--s2)'; });
-    dz.addEventListener('drop', function (e) {
-      e.preventDefault();
-      dz.style.borderColor = 'var(--b2)';
-      dz.style.background = 'var(--s2)';
-      var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-      if (f) postCorrFile(f);
+    var bindDrop = function (zoneId, fileId, handler, accept) {
+      var dz = document.getElementById(zoneId);
+      if (!dz) return;
+      dz.addEventListener('click', function () { var i = document.getElementById(fileId); if (i) i.click(); });
+      dz.addEventListener('dragover', function (e) { e.preventDefault(); dz.style.borderColor = 'var(--cyan)'; dz.style.background = 'rgba(34,211,238,.08)'; });
+      dz.addEventListener('dragleave', function () { dz.style.borderColor = 'var(--b2)'; dz.style.background = 'var(--s2)'; });
+      dz.addEventListener('drop', function (e) {
+        e.preventDefault();
+        dz.style.borderColor = 'var(--b2)';
+        dz.style.background = 'var(--s2)';
+        var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (!f) return;
+        if (accept === 'image' && f.type && f.type.indexOf('image/') !== 0) return;
+        handler(f);
+      });
+    };
+    bindDrop('nbaCorrDrop', 'nbaCorrFile', postCorrFile, 'xlsx');
+    bindDrop('nbaFvDrop', 'nbaFvFile', handleFvImage, 'image');
+    /* Paste-from-clipboard support (NBA tab only). */
+    document.addEventListener('paste', function (e) {
+      var pageEl = document.getElementById('page-nba-evfinder');
+      if (!pageEl || !pageEl.classList.contains('active')) return;
+      var items = e.clipboardData && e.clipboardData.items;
+      if (!items) return;
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].type && items[i].type.indexOf('image/') === 0) {
+          var f = items[i].getAsFile();
+          if (f) { handleFvImage(f); e.preventDefault(); return; }
+        }
+      }
     });
     _wired = true;
   }
+
+  function onFvUpload(ev) {
+    var f = ev.target.files && ev.target.files[0];
+    if (f) handleFvImage(f);
+    ev.target.value = '';
+  }
+
+  /* Forward declaration — defined in Edit 5 (enumeration). Calls to it are
+     guarded by typeof checks so earlier edits work without an error. */
+  var runPipeline;
 
   function onActivate() {
     wireDom();
@@ -207,6 +316,7 @@
     reload: function () { return reload().then(renderCorrMeta); },
     onCorrUpload: onCorrUpload,
     onRollback: onRollback,
+    onFvUpload: onFvUpload,
     _state: state,
   };
 })();

@@ -423,6 +423,22 @@ h1 em{color:var(--ac);font-style:normal;}
     </div>
     <div id="nbaCorrStatus" style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace;min-height:16px"></div>
   </div>
+  <!-- FV sheet upload. Mirrors the MLB batter +EV drop zone pattern but
+       POSTs to /api/extract-nba which lands in Phase 4 (NBA OCR). Until
+       then the error surface is a clean "endpoint not yet deployed"
+       message rather than a silent failure. -->
+  <div class="ctrl" style="flex-direction:column;align-items:stretch;gap:10px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span style="font-size:13px;color:var(--cyan);font-family:Syne,sans-serif;font-weight:700">NBA FV SHEET</span>
+      <span style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace">upload per slate &rarr; OCR extracts prop legs &rarr; candidates render below</span>
+    </div>
+    <div id="nbaFvDrop" style="border:2px dashed var(--b2);border-radius:9px;padding:22px 16px;text-align:center;cursor:pointer;transition:all .15s;background:var(--s2)">
+      <div style="font-size:13px;color:var(--tx);font-weight:600;margin-bottom:4px">Drag &amp; drop your NBA FV sheet screenshot</div>
+      <div style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace">or paste with Ctrl+V &middot; or click to pick a file</div>
+      <input type="file" id="nbaFvFile" accept="image/*" style="display:none" onchange="window.nbaTab&amp;&amp;window.nbaTab.onFvUpload(event)">
+    </div>
+    <div id="nbaFvStatus" style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace;min-height:16px"></div>
+  </div>
   <div id="nbaBody"></div>
 </div>
 <div class="tm-overlay" id="tmOverlay" onclick="tmClose()"></div>
