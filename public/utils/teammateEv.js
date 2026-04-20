@@ -110,6 +110,27 @@
     var mode          = (args && args.mode) || 'blended';
     var minPairGames  = args && args.minPairGames != null ? args.minPairGames : 30;
     var skipStatuses  = (args && args.skipStatuses) || { awaiting: 1 };
+    /* No-FV browsing mode: emit candidates where NEITHER leg has FV in
+       the sheet. These become CORR-ONLY candidates at finalize time —
+       both legs use DK's no-vig marginal prices as "fair". Edge claim
+       is purely correlation (pair-specific r vs DK's generic SGP
+       boost); marginal-probability edge cannot be claimed because the
+       marginals are themselves derived from DK.
+       Default false — existing OCR-upload flow keeps prior behavior
+       (skip on both-missing). */
+    var allowCorrOnly = !!(args && args.allowCorrOnly);
+    /* Pre-DK-pricing signal filter. When > 0, combos whose resolved
+       r_binary falls below this threshold are skipped before they
+       reach the DK batch — protects the 110s DK deadline on team
+       scans that could otherwise produce thousands of low-signal
+       candidates. Does NOT apply to full-FV or hybrid candidates
+       where the user's FV bias anchors the edge claim. */
+    var minAbsR       = args && args.minAbsR != null ? args.minAbsR : 0;
+    /* Optional team allow-list so a "scan this team" button can limit
+       enumeration scope before DK pricing fan-out. Undefined / empty
+       array means "all teams". Matches lineup.home_team /
+       away_team (full name, post-fold). */
+    var teamFilter    = (args && args.teamFilter) || null;
 
     if (!teammateData || !teammateData.pairs) {
       throw new Error('enumerateCandidates: teammateData.pairs required');
@@ -151,9 +172,16 @@
          intentionally retired — they used to mean "dropped because" and
          would be misleading now that those combos actually emit. */
       combos_no_fv_both:          0,
+      /* combos_corr_only_emitted: both legs missing FV but allowCorrOnly
+         was set — emitted as type='corr_only'. In no-FV browsing mode,
+         this is the dominant bucket. */
+      combos_corr_only_emitted:   0,
       combos_emitted_full_fv:     0,
       combos_hybrid_p1_missing:   0,
       combos_hybrid_p2_missing:   0,
+      /* combos_below_min_r: dropped by the pre-DK minAbsR filter to
+         protect DK-pricing throughput on team scans. */
+      combos_below_min_r:         0,
       combos_emitted:      0,
     };
 
@@ -171,6 +199,11 @@
       for (var si = 0; si < sides.length; si++) {
         var team = sides[si].team, lineup = sides[si].lineup;
         if (!team || lineup.length < 2) continue;
+        /* teamFilter opt-in scope limiter used by No-FV "scan team"
+           button. When set, anything outside the selected team(s) is
+           skipped before pair enumeration — avoids fanning out DK
+           pricing across teams the user didn't ask about. */
+        if (teamFilter && teamFilter.length && teamFilter.indexOf(team) < 0) continue;
 
         // Unique unordered pairs of batters in this lineup
         for (var i = 0; i < lineup.length; i++) {
@@ -223,22 +256,25 @@
               var fv1 = lookupFv(fvByPlayer, p1, t1.statFull, t1.threshold, t1.direction);
               var fv2 = lookupFv(fvByPlayer, p2, t2.statFull, t2.threshold, t2.direction);
 
-              /* Hybrid mode (see commits A-C on claude/teammate-hybrid-plus-fixes).
-                 If BOTH legs have FV: full-FV candidate (unchanged
-                 behavior). If exactly ONE leg has FV: hybrid candidate —
-                 the missing side gets DK no-vig fair computed at
-                 finalizeCandidate time once per-leg DK prices are in
-                 hand. If neither has FV: no anchor, skip. */
-              if (fv1 == null && fv2 == null) {
-                diag.combos_no_fv_both++;
-                continue;
-              }
-
+              /* Three-way candidate-type resolution:
+                   both FV present → full_fv (edge = marginal + correlation)
+                   exactly one     → hybrid   (edge = correlation-only via
+                                               one side's DK no-vig)
+                   neither + allow → corr_only (edge = correlation-only
+                                                via BOTH sides' DK no-vig;
+                                                "No-FV browsing" mode)
+                   neither + deny  → skip (existing OCR-upload behavior)
+              */
               var candType, missingLeg;
               if (fv1 != null && fv2 != null) {
                 candType = 'full_fv';
                 missingLeg = null;
                 diag.combos_emitted_full_fv++;
+              } else if (fv1 == null && fv2 == null) {
+                if (!allowCorrOnly) { diag.combos_no_fv_both++; continue; }
+                candType = 'corr_only';
+                missingLeg = 'both';
+                diag.combos_corr_only_emitted++;
               } else if (fv1 == null) {
                 candType = 'hybrid';
                 missingLeg = 'p1';
@@ -255,6 +291,19 @@
                 slotBaselines: slotBaselines,
                 teammateData: teammateData,
               });
+
+              /* Pre-DK-pricing signal floor. When minAbsR > 0, drop
+                 candidates whose resolved r falls below the threshold
+                 rather than spending a DK pricing call on them.
+                 Primary use: No-FV team scans where enumeration can
+                 balloon to thousands of combos per team. A candidate
+                 with |r| < 0.10 is effectively "DK's independent
+                 pricing is approximately correct" and will almost
+                 never surface a meaningful edge. */
+              if (minAbsR > 0) {
+                var rabs = (res.r_binary == null || isNaN(res.r_binary)) ? 0 : Math.abs(res.r_binary);
+                if (rabs < minAbsR) { diag.combos_below_min_r++; continue; }
+              }
 
               candidates.push({
                 // Identity
@@ -368,6 +417,35 @@
         leg_under_american: under,
         direction:    dir,
         novig_fair_prob: pFair,
+      };
+    } else if (cand.type === 'corr_only') {
+      /* No-FV browsing mode: BOTH legs' fair probabilities come from
+         DK two-way no-vig. Edge claim is purely correlation (model's
+         Fréchet joint vs DK's independent-like SGP boost). Requires
+         both DK prices to be usable on both legs; any one side
+         missing or out-of-bounds kills the candidate. */
+      if (!dkLegPrices) return null;
+      var pFair1 = computeNoVigFair(
+        dkLegPrices.leg_a_over_american, dkLegPrices.leg_a_under_american, cand.direction1);
+      var pFair2 = computeNoVigFair(
+        dkLegPrices.leg_b_over_american, dkLegPrices.leg_b_under_american, cand.direction2);
+      if (pFair1 == null || pFair2 == null) return null;
+      p_leg1 = pFair1;
+      p_leg2 = pFair2;
+      novig_source = {
+        missing: 'both',
+        leg_a: {
+          over_american:  dkLegPrices.leg_a_over_american,
+          under_american: dkLegPrices.leg_a_under_american,
+          direction:      cand.direction1,
+          novig_fair_prob: pFair1,
+        },
+        leg_b: {
+          over_american:  dkLegPrices.leg_b_over_american,
+          under_american: dkLegPrices.leg_b_under_american,
+          direction:      cand.direction2,
+          novig_fair_prob: pFair2,
+        },
       };
     }
 
