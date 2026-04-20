@@ -2,6 +2,29 @@
 
 Run through this once tomorrow's slate loads. Stop and investigate at the first step that doesn't match the expected output.
 
+## Regression guards (run any time the NBA EV pipeline is touched)
+
+These two standalone scripts are load-bearing. Do NOT delete them. They
+exist because past bugs are cheaper to catch at commit time than after a
+deploy.
+
+```bash
+# Verify buildCandidate uses fv_corr_prob for EV% (not p_joint).
+# Fixed in a5b5442. Expected final line: "VERDICT: CORRECT — EV uses fv_corr_prob"
+node scripts/nba_ev_formula_check.js
+
+# Verify null-EV candidates sort/filter/paginate correctly. Locked in
+# by Phase 3 rider 1. Expected final line: "ALL NULL-EV GUARDS PASS"
+node scripts/nba_null_ev_sort_check.js
+
+# NBA OCR normalizer + market table + groupNbaPlayers. Landed in
+# Phase 4 Edit 4. Expected final line: "ALL NBA OCR NORMALIZE TESTS PASS"
+node scripts/nba_ocr_normalize_tests.js
+```
+
+Neither needs jsdom or a running server — both eval the NBA module in a
+stub-DOM context and exercise the pure math/sort/filter paths.
+
 ## 0. Boot
 
 ```bash

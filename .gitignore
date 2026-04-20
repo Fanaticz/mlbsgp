@@ -7,3 +7,8 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+# NBA correlations data lives in the Railway Volume (/data/nba/ in prod)
+# or a user-chosen NBA_DATA_DIR locally. Never commit xlsx dumps or parsed
+# gz snapshots — they're ephemeral and belong to the running environment.
+/data/
+nba_data_local/

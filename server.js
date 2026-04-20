@@ -726,6 +726,313 @@ app.post('/api/extract-batter', async (req, res) => {
   }
 });
 
+// ===== NBA FV sheet OCR =====
+// Mirrors /api/extract-batter. Client sends { image: base64, mime } and
+// gets back { players, unmatched_markets, ocr_stats, sample_rows } — same
+// shape nbaEvTab.js already expects. Supported props (from the Phase 1
+// correlations data): Points, Rebounds, Assists, 3-Pointers Made. The
+// other NBA prop markets (Steals, Blocks, Turnovers, PRA, PR, PA,
+// Double-Double, Triple-Double) are extracted but flagged as
+// "no correlation data" so the user knows why they don't produce cards.
+//
+// Edit 1 (this commit): endpoint shell + Anthropic Vision call. Prompt
+// and NBA market table land in Edit 2; normalization/grouping in Edit 3;
+// synthetic tests in Edit 4. Until Edit 2 ships a real prompt, the
+// endpoint will return the Vision model's raw rows without NBA-specific
+// validation — enough to unblock the client's 404 and let us iterate
+// the prompt on real sheets.
+
+/* NBA canonical prop vocabulary. Order matters — combo markets are
+   listed FIRST so patterns like "Points + Rebounds + Assists" don't
+   collide with a later single-stat "Points" regex. Unsupported markets
+   (Steals / Blocks / Turnovers / combos) are extracted and flagged with
+   supported:false so the UI can show the user which FV-sheet rows
+   weren't usable for correlation enumeration. Supported set is strictly
+   the 4 props with correlation data per the Phase 1 NBA v1 schema. */
+const NBA_STAT_FROM_MARKET = [
+  /* Combo markets first — "Triple-Double" / "Double-Double" / "PRA" /
+     "PR" / "PA" / "RA". These are tracked for diagnostic visibility
+     (user knows they uploaded them) but produce no candidates. */
+  { re: /triple[-\s]*double/i,                                   stat: 'Triple-Double', supported: false },
+  { re: /double[-\s]*double/i,                                   stat: 'Double-Double', supported: false },
+  { re: /points?\s*\+\s*rebounds?\s*\+\s*assists?|\bpra\b/i,     stat: 'PRA',           supported: false },
+  { re: /points?\s*\+\s*rebounds?/i,                             stat: 'PR',            supported: false },
+  { re: /points?\s*\+\s*assists?/i,                              stat: 'PA',            supported: false },
+  { re: /rebounds?\s*\+\s*assists?/i,                            stat: 'RA',            supported: false },
+  /* Supported single-stat markets (have correlation data). */
+  { re: /(3[-\s]?(?:pointers?|pts?)\s*made|threes?\s*made|\b3pm\b)/i, stat: '3-Pointers Made', supported: true },
+  { re: /\brebounds?\b/i,                                         stat: 'Rebounds',       supported: true },
+  { re: /\bassists?\b/i,                                          stat: 'Assists',        supported: true },
+  { re: /\bpoints?\b/i,                                           stat: 'Points',         supported: true },
+  /* Unsupported singles — no correlation data. */
+  { re: /\bsteals?\b/i,                                           stat: 'Steals',         supported: false },
+  { re: /\bblocks?\b/i,                                           stat: 'Blocks',         supported: false },
+  { re: /\bturnovers?\b/i,                                        stat: 'Turnovers',      supported: false },
+];
+
+/* Normalize a raw market string to { stat, supported } or null if
+   unrecognized. Shared by the OCR normalizer and the unit tests in
+   Edit 4 — keep this pure, no DOM/network. */
+function matchNbaMarket(market) {
+  if (!market) return null;
+  const s = String(market);
+  for (const m of NBA_STAT_FROM_MARKET) {
+    if (m.re.test(s)) return { stat: m.stat, supported: m.supported };
+  }
+  return null;
+}
+
+const NBA_FV_PROMPT = `You are extracting NBA player prop bets from a screenshot of a spreadsheet. Return ONLY valid JSON, no prose, no markdown fences.
+
+The table header row contains columns like: league, date, time, game, team, market, bet_name, L/U, book, L, M, odds, limit, books_count, avg_odds, avg_fv, avg_hold, fbc, ev, qk.
+
+The "L/U" narrow column (single letter L or U, often colored) sits between bet_name and book. EVERY column to its right is shifted one slot, so you MUST read by header text, not by counting positions from the left edge.
+
+YOUR TASK: For each data row, return ONE JSON object with cell values from that single row. Do NOT normalize, do NOT combine columns, do NOT infer from other rows.
+
+═══ FIELDS TO RETURN (per row) ═══
+- L: integer in the "L" column (the small row index)
+- player: player name (everything in bet_name BEFORE the word "Over"/"Under")
+- team: short code from the "team" column (e.g. "BOS", "LAL"). If no team column, return ""
+- game: text from the "game" column (e.g. "CLE@BOS"). If no game column, return ""
+- market: EXACT "market" column text. Examples: "Player Points", "Player Rebounds", "Player Assists", "Player 3-Pointers Made", "Player 3-Pt Made", "Player Steals", "Player Blocks", "Player Turnovers", "Player Points + Rebounds + Assists", "Player PRA", "Player Double-Double", "Player Triple-Double"
+- bet_name: EXACT "bet_name" column text. Examples: "Donovan Mitchell Over 27.5", "Jayson Tatum Under 8.5"
+- direction: "Over" or "Under" — read literally from this row's bet_name
+- line: numeric line from bet_name (e.g. 27.5, 8.5, 1.5) as a number
+- avg_odds: EXACT "avg_odds" text as a STRING, a signed pair like "+135 / -170", "-140 / +120". Empty → ""
+- avg_fv: SINGLE signed integer under "avg_fv". ONE number, not a pair.
+- books_count: unsigned integer under "books_count". 0 if empty/non-numeric.
+
+═══ MANDATORY SELF-CHECK BEFORE EMITTING EACH ROW ═══
+(a) avg_fv is a SINGLE integer — NO "/" character, NO second number.
+(b) avg_fv is NOT equal to either half of avg_odds for this row.
+(c) avg_fv is NEVER a word like "DraftKings"/"FanDuel" (that's the book column).
+(d) avg_fv is NEVER "L"/"U" (that's the L/U column).
+(e) market, bet_name, direction, avg_odds, avg_fv all come from the SAME row as L.
+
+═══ OVER vs UNDER ═══
+For each row independently, read the exact word after the player name in bet_name. Do NOT infer from avg_fv sign. The same player often has many rows — one for each (stat, threshold, direction).
+
+═══ WORKED EXAMPLES ═══
+CORRECT:
+{"L":1,"player":"Donovan Mitchell","team":"CLE","game":"CLE@BOS","market":"Player Points","bet_name":"Donovan Mitchell Over 27.5","direction":"Over","line":27.5,"avg_odds":"+135 / -170","avg_fv":120,"books_count":7}
+
+CORRECT (combo market, extracted but flagged downstream):
+{"L":14,"player":"Jayson Tatum","team":"BOS","game":"CLE@BOS","market":"Player Points + Rebounds + Assists","bet_name":"Jayson Tatum Over 40.5","direction":"Over","line":40.5,"avg_odds":"-115 / -105","avg_fv":-108,"books_count":6}
+
+WRONG — avg_fv copied from avg_odds pair:
+{"L":1,"player":"Donovan Mitchell","bet_name":"Donovan Mitchell Over 27.5","avg_odds":"+135 / -170","avg_fv":-170,"books_count":7}
+  — avg_fv was the second half of avg_odds. ALWAYS WRONG.
+
+═══ OUTPUT ═══
+Return exactly this JSON shape, nothing else:
+{"rows":[{"L":1,"player":"...","team":"...","game":"...","market":"...","bet_name":"...","direction":"Over","line":27.5,"avg_odds":"+X / -Y","avg_fv":123,"books_count":7}, ...]}`;
+
+/* normalizeNbaRows: takes the raw OCR rows array, validates each row,
+   canonicalizes the market via matchNbaMarket, and returns the
+   collapsed per-(player, leg) list + an unmatched diagnostic array.
+   Mirrors normalizeBatterRows in structure so the Edit 1 handler can
+   swap between the two without shape changes. Fallthrough logic:
+     - missing player/market/direction/line/avg_fv → drop, counted reason
+     - unsupported market (Steals, PRA, etc.) → drop, reason=unsupported_prop
+     - avg_fv equals either half of avg_odds pair → flagged as suspicious
+       but kept (user sees a warning on the card)
+     - duplicate (player, L) → second occurrence dropped
+     - duplicate (player, leg) after first-pass → collapsed by
+       (books_count desc, L desc), same tiebreak as pitcher/batter paths. */
+function normalizeNbaRows(rows) {
+  if (!Array.isArray(rows)) return { rows: [], unmatched: [] };
+  const out = [];
+  const unmatched = [];
+  const seen = new Set();
+  rows.forEach((r, idx) => {
+    if (!r || typeof r !== 'object') return;
+    let direction = canonDirection(r.direction);
+    let line = (r.line !== undefined && r.line !== null && r.line !== '') ? Number(r.line) : NaN;
+    if (!direction || !isFinite(line)) {
+      const parsed = parseBetNameDirection(r.bet_name);
+      if (parsed) {
+        if (!direction) direction = parsed.direction;
+        if (!isFinite(line)) line = parsed.line;
+      }
+    }
+    const player = (r.player || r.batter || r.pitcher || '').trim();
+    if (!player) { unmatched.push({ L: r.L, bet_name: r.bet_name, market: r.market, reason: 'no player name' }); return; }
+    const market = (r.market || '').trim();
+    const cls = matchNbaMarket(market);
+    if (!cls) { unmatched.push({ L: r.L, player, bet_name: r.bet_name, market, reason: 'unknown NBA market' }); return; }
+    if (!cls.supported) { unmatched.push({ L: r.L, player, bet_name: r.bet_name, market, stat: cls.stat, reason: 'unsupported_prop (no correlation data)' }); return; }
+    if (!direction || !isFinite(line)) { unmatched.push({ L: r.L, player, bet_name: r.bet_name, market, reason: 'missing direction/line' }); return; }
+    const fv = Number(r.avg_fv);
+    if (!isFinite(fv)) { unmatched.push({ L: r.L, player, bet_name: r.bet_name, market, reason: 'avg_fv not numeric' }); return; }
+    /* Column-drift guard: avg_fv shouldn't equal either half of
+       avg_odds. Same check the batter path uses to catch the
+       "DraftKings" / -309 bugs. */
+    const avgOddsRaw = String(r.avg_odds == null ? '' : r.avg_odds);
+    const oddsPair = avgOddsRaw.match(/([+-]?\d+)\s*\/\s*([+-]?\d+)/);
+    let fvSuspicious = false;
+    if (oddsPair) {
+      const oa = Number(oddsPair[1]); const ob = Number(oddsPair[2]);
+      if (fv === oa || fv === ob) {
+        fvSuspicious = true;
+        console.warn('[nba suspicious_fv] L=' + (r.L != null ? r.L : '?') + ' ' + (r.bet_name || player) + ': avg_fv=' + fv + ' matches avg_odds pair (' + oa + '/' + ob + ')');
+      }
+    }
+    const rowIdRaw = (r.L !== undefined && r.L !== null && r.L !== '') ? r.L : ('idx' + idx);
+    const key = player + '|' + String(rowIdRaw);
+    if (seen.has(key)) return;
+    seen.add(key);
+    const L = Number.isFinite(Number(rowIdRaw)) ? Number(rowIdRaw) : -1;
+    const booksCount = Number(r.books_count);
+    out.push({
+      player,
+      team: (r.team || '').trim() || null,
+      game: (r.game || '').trim() || null,
+      stat: cls.stat,
+      threshold: line,
+      direction,
+      leg: direction + ' ' + line + ' ' + cls.stat,
+      avg_fv: fv,
+      avg_odds: avgOddsRaw || null,
+      _fv_suspicious: fvSuspicious,
+      _L: L,
+      _books: Number.isFinite(booksCount) ? booksCount : 0,
+    });
+  });
+  /* Collapse duplicate (player, leg) by (books desc, L desc) — prefer
+     the row with more books (sharper FV) and newer L (sheet usually
+     appended). Averaging would mix potentially-wrong values; pick one. */
+  const groups = new Map();
+  for (const r of out) {
+    const k = r.player + '|' + r.leg;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(r);
+  }
+  const collapsed = [];
+  for (const [, rs] of groups) {
+    if (rs.length === 1) { collapsed.push(rs[0]); continue; }
+    rs.sort((a, b) => (b._books - a._books) || (b._L - a._L));
+    collapsed.push(rs[0]);
+  }
+  return { rows: collapsed, unmatched };
+}
+
+/* groupNbaPlayers: merge Over+Under rows for the same (player, stat,
+   threshold) into one prop record, nest by player. Same output shape
+   as groupBatterPlayers so nbaEvTab.js's indexFvPlayers handles it
+   without a sport-specific branch. Sparse sides are OK — if only Over
+   is on the sheet, Under fields stay null. */
+function groupNbaPlayers(normRows) {
+  const players = new Map();
+  for (const r of normRows) {
+    if (!players.has(r.player)) {
+      players.set(r.player, { player: r.player, team: r.team || null, game: r.game || null, propsByKey: new Map() });
+    }
+    const p = players.get(r.player);
+    if (!p.team && r.team) p.team = r.team;
+    if (!p.game && r.game) p.game = r.game;
+    const propKey = r.stat + '|' + r.threshold;
+    if (!p.propsByKey.has(propKey)) {
+      p.propsByKey.set(propKey, {
+        stat: r.stat, threshold: r.threshold,
+        over_fv: null, over_avg_odds: null, over_books_count: null, over_L: null, over_fv_suspicious: false,
+        under_fv: null, under_avg_odds: null, under_books_count: null, under_L: null, under_fv_suspicious: false,
+      });
+    }
+    const prop = p.propsByKey.get(propKey);
+    const side = r.direction === 'Over' ? 'over' : 'under';
+    prop[side + '_fv'] = r.avg_fv;
+    prop[side + '_avg_odds'] = r.avg_odds;
+    prop[side + '_books_count'] = r._books;
+    prop[side + '_L'] = r._L;
+    prop[side + '_fv_suspicious'] = r._fv_suspicious;
+  }
+  const out = [];
+  for (const p of players.values()) {
+    const props = [...p.propsByKey.values()].sort((a, b) => (a.stat < b.stat ? -1 : a.stat > b.stat ? 1 : a.threshold - b.threshold));
+    out.push({ player: p.player, team: p.team, game: p.game, props });
+  }
+  out.sort((a, b) => a.player.localeCompare(b.player));
+  return out;
+}
+
+app.post('/api/extract-nba', async (req, res) => {
+  try {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not set on server' });
+
+    const { image, mime } = req.body || {};
+    if (!image) return res.status(400).json({ error: 'Missing image (base64) in body' });
+
+    const body = {
+      model: 'claude-opus-4-6',
+      max_tokens: 4000,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: mime || 'image/png', data: image } },
+          { type: 'text', text: NBA_FV_PROMPT }
+        ]
+      }]
+    };
+
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify(body)
+    });
+
+    const j = await r.json();
+    if (j.error) return res.status(500).json({ error: j.error.message || 'Anthropic API error', detail: j.error });
+
+    const txt = j.content && j.content[0] && j.content[0].text || '';
+    const m = txt.match(/\{[\s\S]*\}/);
+    if (!m) return res.status(500).json({ error: 'Could not parse JSON from model output', raw: txt });
+
+    try {
+      const parsed = JSON.parse(m[0]);
+      const rawRowCount = Array.isArray(parsed.rows) ? parsed.rows.length : 0;
+      const { rows: normRows, unmatched } = normalizeNbaRows(parsed.rows);
+      /* Schema-drift guard: if >20% of rows had non-numeric avg_fv the
+         OCR probably misread the column layout (same bug class the
+         batter endpoint guards against). Refuse to return a poisoned
+         set; surface a sample for client-side diagnosis. */
+      const badFvCount = unmatched.filter(u => u.reason === 'avg_fv not numeric').length;
+      const badFvPct = rawRowCount > 0 ? badFvCount / rawRowCount : 0;
+      if (rawRowCount >= 10 && badFvPct > 0.20) {
+        return res.status(422).json({
+          error: 'OCR misread the NBA sheet column layout — ' + badFvCount +
+                 ' of ' + rawRowCount + ' rows (' + (badFvPct * 100).toFixed(0) +
+                 '%) had non-numeric avg_fv. Check the FV column position vs NBA_FV_PROMPT.',
+          bad_fv_count: badFvCount,
+          total_row_count: rawRowCount,
+          sample_bad_rows: unmatched.filter(u => u.reason === 'avg_fv not numeric').slice(0, 5),
+        });
+      }
+      const players = groupNbaPlayers(normRows);
+      return res.json({
+        players,
+        unmatched_markets: unmatched,
+        ocr_stats: {
+          raw_row_count: rawRowCount,
+          normalized_row_count: normRows.length,
+          bad_fv_count: badFvCount,
+          unsupported_prop_count: unmatched.filter(u => u.reason && u.reason.indexOf('unsupported_prop') === 0).length,
+        },
+        sample_rows: (parsed.rows || []).slice(0, 3),
+      });
+    } catch (e) {
+      return res.status(500).json({ error: 'JSON parse error: ' + e.message, raw: m[0] });
+    }
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
 // ===== SGP AI Insight =====
 app.post('/api/sgp-insight', async (req, res) => {
   try {
@@ -1164,6 +1471,168 @@ app.get('/api/lineups', async (req, res) => {
     return res.json(body);
   } catch (e) {
     return res.status(500).json({ error: 'lineups fetch failed: ' + e.message });
+  }
+});
+
+// ===== NBA correlations: daily xlsx upload + persistence =====
+// Railway Volume is mounted at /data; our bucket is /data/nba/. The dir
+// is created on first upload if missing. For local dev the path is
+// overridable via NBA_DATA_DIR so tests/CI don't need /data access.
+//
+// Cold start (empty volume): /api/nba/correlations and /meta return a
+// placeholder with status='empty' + a 200 code so the UI can render a
+// "no data yet" card without pretending there's an error. We refuse to
+// bundle a default xlsx — staleness ambiguity is worse than an empty state.
+//
+// Upload path runs the Python parser as a subprocess. It receives the
+// xlsx bytes on stdin, validates the 18-column schema, rejects non-same-
+// player rows, and writes both the parsed JSON and a meta sidecar. Same
+// subprocess pattern as dk_api.py; reuse the python3 invocation style.
+
+const multer = require('multer');
+const fs = require('fs');
+const NBA_DATA_DIR = process.env.NBA_DATA_DIR || '/data/nba';
+const NBA_PARSE_PY = path.join(__dirname, 'scripts', 'nba_parse_correlations.py');
+const NBA_CURRENT_FILE = 'correlations_current.json.gz';
+const NBA_META_FILE = 'correlations_meta.json';
+/* 10 MB cap is for the upload bytes on the wire. matches the spec + the
+   Python-side MAX_BYTES guard. Raising this would require bumping the
+   Python guard in lockstep. */
+const NBA_UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
+
+/* Multer memoryStorage: keeps the xlsx bytes in-process so we can pipe them
+   to the Python parser on stdin. No temp file on disk, no race with
+   concurrent uploads. We never accept more than one file per request and
+   reject any request whose declared multipart field isn't named 'file'. */
+const nbaUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: NBA_UPLOAD_MAX_BYTES, files: 1, fields: 4 },
+});
+
+function nbaRunPython(args, stdinBuf) {
+  return new Promise((resolve, reject) => {
+    const proc = require('child_process').spawn('python3', [NBA_PARSE_PY, ...args], {
+      timeout: 60000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, NBA_DATA_DIR },
+    });
+    let stdout = '', stderr = '';
+    proc.stdout.on('data', d => { stdout += d; });
+    proc.stderr.on('data', d => { stderr += d; });
+    proc.on('error', err => reject(err));
+    proc.on('close', code => {
+      if (code !== 0) {
+        return reject(new Error(stderr || ('nba_parse_correlations.py exited ' + code)));
+      }
+      const line = stdout.trim().split('\n').pop() || '';
+      try { resolve(JSON.parse(line)); }
+      catch (e) { reject(new Error('parser emitted unparseable JSON: ' + line.slice(0, 300))); }
+    });
+    if (stdinBuf) proc.stdin.write(stdinBuf);
+    proc.stdin.end();
+  });
+}
+
+function nbaEmptyMeta() {
+  return {
+    status: 'empty',
+    uploaded_at: null,
+    season: null,
+    source_filename: null,
+    row_count: 0,
+    distinct_players: 0,
+  };
+}
+
+/* POST /api/nba/upload-correlations
+   Body: multipart/form-data with field `file` (xlsx, <=10MB).
+   On success: 200 { ok:true, uploaded_at, row_count, distinct_players, ... }
+   On client error (bad file / schema / size): 400 { ok:false, error }
+   On server error (python fails hard): 500 { error }. Existing data stays
+   untouched because the parser only writes after validation passes. */
+app.post('/api/nba/upload-correlations', (req, res, next) => {
+  nbaUpload.single('file')(req, res, function (err) {
+    if (err) {
+      const status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+      return res.status(status).json({ ok: false, error: 'Upload rejected: ' + err.message });
+    }
+    next();
+  });
+}, async (req, res) => {
+  try {
+    if (!req.file || !req.file.buffer || !req.file.buffer.length) {
+      return res.status(400).json({ ok: false, error: 'No file received (expected multipart field name "file")' });
+    }
+    const fname = req.file.originalname || 'uploaded.xlsx';
+    if (!fname.toLowerCase().endsWith('.xlsx')) {
+      return res.status(400).json({ ok: false, error: 'File must be .xlsx (got ' + fname + ')' });
+    }
+    const result = await nbaRunPython(
+      ['--out-dir', NBA_DATA_DIR, '--source-filename', fname],
+      req.file.buffer,
+    );
+    if (!result.ok) {
+      return res.status(422).json(result);
+    }
+    return res.json(result);
+  } catch (e) {
+    return res.status(500).json({ error: 'nba upload failed: ' + e.message });
+  }
+});
+
+/* GET /api/nba/correlations
+   Serves the gzipped parsed dataset. Sets Content-Encoding:gzip so the
+   browser inflates transparently. On cold-start (no file yet) responds
+   200 with {status:'empty', entries:[], by_player:{}} — UI renders an
+   "upload your xlsx" card rather than an error. */
+app.get('/api/nba/correlations', (req, res) => {
+  const p = path.join(NBA_DATA_DIR, NBA_CURRENT_FILE);
+  fs.stat(p, (err, st) => {
+    if (err || !st.isFile()) {
+      return res.json({
+        schema_version: 1,
+        status: 'empty',
+        season: null,
+        uploaded_at: null,
+        entries: [],
+        by_player: {},
+      });
+    }
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Encoding', 'gzip');
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    fs.createReadStream(p).pipe(res);
+  });
+});
+
+/* GET /api/nba/correlations/meta
+   Serves the sidecar meta (small, uncompressed JSON). Cold start returns
+   a placeholder with status='empty'. UI binds to this for the "Last
+   updated" line above the upload card. */
+app.get('/api/nba/correlations/meta', (req, res) => {
+  const p = path.join(NBA_DATA_DIR, NBA_META_FILE);
+  fs.readFile(p, 'utf8', (err, buf) => {
+    if (err) return res.json(nbaEmptyMeta());
+    try {
+      const meta = JSON.parse(buf);
+      meta.status = 'ok';
+      return res.json(meta);
+    } catch (_) {
+      return res.json(nbaEmptyMeta());
+    }
+  });
+});
+
+/* POST /api/nba/correlations/rollback
+   Restores the most recent file from correlations_history/. The UI wraps
+   this in a confirmation prompt — no additional guard here. */
+app.post('/api/nba/correlations/rollback', async (_req, res) => {
+  try {
+    const result = await nbaRunPython(['--action', 'rollback', '--out-dir', NBA_DATA_DIR]);
+    if (!result.ok) return res.status(400).json(result);
+    return res.json(result);
+  } catch (e) {
+    return res.status(500).json({ error: 'nba rollback failed: ' + e.message });
   }
 });
 
