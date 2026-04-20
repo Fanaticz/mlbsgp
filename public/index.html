@@ -179,6 +179,7 @@ h1 em{color:var(--ac);font-style:normal;}
 .tm-loadmsg .pulse{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--ac);margin-right:8px;vertical-align:middle;animation:pulse 1.2s infinite;}
 @media(max-width:768px){.tm-drawer{width:100%;}.tm-kv{grid-template-columns:repeat(3,1fr);}.tm-mh,.tm-mc,.tm-ml{font-size:8px;padding:2px 3px;}.tm-mc .rm{font-size:7px;}}
 </style>
+<script src="/utils/sgpMath.js"></script>
 <script src="/utils/sgpInsightPrompt.js"></script>
 </head>
 <body>
@@ -1065,8 +1066,11 @@ function evSetCorrMode(m){
 }
 
 /* ---------- shared helpers (American↔Probability, stat category, correlation) ---------- */
-function americanToProb(o){o=parseFloat(o);if(!o||isNaN(o))return null;return o>0?100/(o+100):-o/(-o+100);}
-function probToAmerican(p){if(p<=0||p>=1)return null;return p>=0.5?Math.round(-p/(1-p)*100):Math.round((1-p)/p*100);}
+/* Sourced from /utils/sgpMath.js (single source of truth shared with
+   teammateEv.js). Local var bindings preserve the existing call-sites
+   verbatim — pitcher behavior unchanged. */
+var americanToProb = window.sgpMath.americanToProb;
+var probToAmerican = window.sgpMath.probToAmerican;
 function fmtAm(o){if(o===null||isNaN(o))return '--';return(o>0?'+':'')+o;}
 function statCat(leg){if(leg.indexOf('Strikeout')>=0)return 'SO';if(leg.indexOf('Earned Run')>=0)return 'ER';if(leg.indexOf('Walk')>=0)return 'BB';if(leg.indexOf('Hit')>=0)return 'H';if(leg.indexOf('Out')>=0)return 'OUTS';return '';}
 var _NF=Object.create(null);
@@ -1236,7 +1240,9 @@ function rCorrTooltip(res){
   return 'player '+fmt4(res.rPlayer)+' → shrunk toward global '+fmt4(res.rGlobal)+
          ' ('+wp+'% player / '+wg+'% global, n_eff='+Math.round(res.n)+kStr+') → '+fmt4(res.r);
 }
-function jointFrechet(pa,pb,r){if(r===null||r===undefined||isNaN(r))r=0;var pab=pa*pb;if(r>=0){return pab+r*(Math.min(pa,pb)-pab);}return pab+r*(pab-Math.max(0,pa+pb-1));}
+/* Sourced from /utils/sgpMath.js (single source of truth shared with
+   teammateEv.js). Pitcher EV math unchanged. */
+var jointFrechet = window.sgpMath.jointFrechet;
 
 /* ---------- AI Insight state + handlers ---------- */
 var _SGP_DATA=[];
