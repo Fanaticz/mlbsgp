@@ -1,5 +1,19 @@
 #!/usr/bin/env node
-/* Phase 3 EV-formula verification: p_joint vs 1/decimal(FV_CORR).
+/* DO NOT DELETE — load-bearing regression guard.
+ *
+ * This script is the exact fixture that caught the EV-formula bug fixed
+ * in a5b5442 (buildCandidate was using p_joint instead of fv_corr_prob
+ * for the headline EV%). Keep it in the repo permanently. A future
+ * contributor or Code session may mistake this for "unused dev harness"
+ * and remove it — don't. Run it any time buildCandidate or the card
+ * renderer is touched.
+ *
+ * Invocation:
+ *   node scripts/nba_ev_formula_check.js
+ * Expected final line:
+ *   VERDICT: CORRECT — EV uses fv_corr_prob
+ *
+ * Phase 3 EV-formula verification: p_joint vs 1/decimal(FV_CORR).
  *
  * The user's spec + the MLB bug context disagree about whether EV% at
  * the top of a card should be computed from model_joint (= p_joint from
