@@ -299,9 +299,127 @@
     ev.target.value = '';
   }
 
-  /* Forward declaration — defined in Edit 5 (enumeration). Calls to it are
-     guarded by typeof checks so earlier edits work without an error. */
-  var runPipeline;
+  /* ---------- EV math (Edit 5) ---------- */
+
+  /* American odds → decimal. Handles both signs. */
+  function amToDec(a) {
+    a = Number(a); if (!isFinite(a) || a === 0) return null;
+    return a > 0 ? 1 + a / 100 : 1 + 100 / (-a);
+  }
+  /* Decimal → American (rounded). */
+  function decToAm(d) {
+    d = Number(d); if (!isFinite(d) || d <= 1) return null;
+    return d >= 2 ? Math.round((d - 1) * 100) : -Math.round(100 / (d - 1));
+  }
+  /* Binary-phi reconstruction of joint probability from correlation + marginals.
+     Clamped to keep sqrt stable at extremes. Used for the FV CORR display
+     (what the SGP should price at if you trust FV marginals + the data's r). */
+  function jointFromPhi(r, p1, p2) {
+    if (r == null || !isFinite(r) || !isFinite(p1) || !isFinite(p2)) return null;
+    var a = Math.max(0.001, Math.min(0.999, p1));
+    var b = Math.max(0.001, Math.min(0.999, p2));
+    var j = r * Math.sqrt(a * (1 - a) * b * (1 - b)) + a * b;
+    return Math.max(0.001, Math.min(0.999, j));
+  }
+
+  /* Return the FV row from state.fv for a (player, prop, line) triple, or
+     null if no match. Line matching is exact (0.5 / 1.5 etc). Side stored
+     as 'over'/'under' per Phase 1 normalization. */
+  function findFv(fvIndex, player, prop, line, side) {
+    if (!fvIndex || !fvIndex[player]) return null;
+    var byStat = fvIndex[player].props[prop];
+    if (!byStat) return null;
+    var row = byStat[line];
+    if (!row) return null;
+    return {
+      fv_american: side === 'over' ? row.over_fv : row.under_fv,
+      dk_over_american: row.over_dk_american || null,
+      dk_under_american: row.under_dk_american || null,
+    };
+  }
+
+  /* Pure: build candidates from (correlations, fvIndex, filters, confirmedSet).
+     Each correlation entry becomes 0 or 1 candidate depending on whether
+     both legs have FV + pass leg-level filters. DK prices are expected to
+     already be attached to fvIndex rows (dk_over_american, dk_under_american)
+     and to the candidate's dk_sgp_american by the caller (harness or Phase 4
+     OCR+DK path). Candidates missing DK SGP are still emitted but flagged
+     so the renderer can show them in a muted state. */
+  function enumerateCandidates(correlations, fvIndex, filters, confirmedSet) {
+    var out = [];
+    if (!correlations || !correlations.entries || !fvIndex) return out;
+    var players = Object.keys(fvIndex);
+    for (var i = 0; i < players.length; i++) {
+      var player = players[i];
+      var idxs = (correlations.by_player && correlations.by_player[player]) || [];
+      for (var k = 0; k < idxs.length; k++) {
+        var e = correlations.entries[idxs[k]];
+        if (!e) continue;
+        if (!filters.props[e.leg1.prop] || !filters.props[e.leg2.prop]) continue;
+        if (e.n_games < filters.minGames) continue;
+        if (e.p_value > filters.maxPValue) continue;
+        /* Phase 5 will populate confirmedSet from /api/nba/games. Until
+           then, confirmedOnly silently gates nothing (treat all players
+           as confirmed). A non-null confirmedSet flips it on. */
+        if (filters.confirmedOnly && confirmedSet && !confirmedSet.has(player)) continue;
+        var fv1 = findFv(fvIndex, player, e.leg1.prop, e.leg1.line, e.leg1.side);
+        var fv2 = findFv(fvIndex, player, e.leg2.prop, e.leg2.line, e.leg2.side);
+        if (!fv1 || !fv2 || fv1.fv_american == null || fv2.fv_american == null) continue;
+        out.push(buildCandidate(player, fvIndex[player], e, fv1, fv2));
+      }
+    }
+    return out;
+  }
+
+  function buildCandidate(player, fvPlayer, entry, fv1, fv2) {
+    var fvDec1 = amToDec(fv1.fv_american);
+    var fvDec2 = amToDec(fv2.fv_american);
+    var p1 = fvDec1 ? 1 / fvDec1 : null;
+    var p2 = fvDec2 ? 1 / fvDec2 : null;
+    var fvCorrProb = jointFromPhi(entry.r_adj, p1, p2);
+    var modelJoint = entry.p_joint;
+    var dkSgpAm = entry.dk_sgp_american != null ? entry.dk_sgp_american : null;
+    var dkSgpDec = dkSgpAm != null ? amToDec(dkSgpAm) : null;
+    var dkImplied = dkSgpDec ? 1 / dkSgpDec : null;
+    var evPct = (dkSgpDec != null) ? (modelJoint * dkSgpDec - 1) : null;
+    var edgePp = (dkImplied != null) ? (modelJoint - dkImplied) * 100 : null;
+    return {
+      id: player + '|' + entry.leg1.prop + entry.leg1.line + entry.leg1.side + '|' + entry.leg2.prop + entry.leg2.line + entry.leg2.side,
+      player: player,
+      team: fvPlayer.team,
+      game: fvPlayer.game,
+      leg1: Object.assign({}, entry.leg1, { fv_american: fv1.fv_american, dk_over_american: fv1.dk_over_american, dk_under_american: fv1.dk_under_american, base_rate: entry.hit_rate_1 }),
+      leg2: Object.assign({}, entry.leg2, { fv_american: fv2.fv_american, dk_over_american: fv2.dk_over_american, dk_under_american: fv2.dk_under_american, base_rate: entry.hit_rate_2 }),
+      entry: entry,
+      dk_sgp_american: dkSgpAm,
+      dk_sgp_decimal: dkSgpDec,
+      dk_implied: dkImplied,
+      fv_corr_prob: fvCorrProb,
+      fv_corr_american: fvCorrProb ? decToAm(1 / fvCorrProb) : null,
+      model_joint: modelJoint,
+      edge_pp: edgePp,
+      ev_pct: evPct,
+    };
+  }
+
+  function applyEvFilter(cands, minEvPct) {
+    var min = minEvPct / 100;
+    return cands.filter(function (c) { return c.ev_pct != null && c.ev_pct >= min; });
+  }
+
+  /* Forward-declared renderer; defined in Edit 6. */
+  var renderResults;
+
+  /* Main pipeline entry. Rebuilds state.candidates from the current inputs.
+     Cheap enough to call on every filter change — the FV + DK fetches are
+     the expensive legs and those happen at upload time, not here. */
+  function runPipeline(opts) {
+    if (!state.correlations || !state.fv) { state.candidates = []; if (typeof renderResults === 'function') renderResults(); return; }
+    var all = enumerateCandidates(state.correlations, state.fv, state.filters, state.confirmedSet);
+    state.candidatesAll = all;
+    state.candidates = applyEvFilter(all, state.filters.minEvPct);
+    if (typeof renderResults === 'function') renderResults();
+  }
 
   /* ---------- Filters (Edit 4) ---------- */
 
@@ -378,6 +496,9 @@
     onFvUpload: onFvUpload,
     onFilter: onFilter,
     onPropBtn: onPropBtn,
+    /* Exposed for the dev harness (Edit 8) + ad-hoc testing from DevTools. */
+    _math: { amToDec: amToDec, decToAm: decToAm, jointFromPhi: jointFromPhi, enumerateCandidates: enumerateCandidates, applyEvFilter: applyEvFilter },
+    _runPipeline: runPipeline,
     _state: state,
   };
 })();
