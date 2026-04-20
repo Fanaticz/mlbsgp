@@ -2156,8 +2156,72 @@ function card3EV(c,idx){
   });
   html+='</div>';
 
-  /* Math block + badges placeholder — replaced by Edit 3 and Edit 4. */
-  html+='<div style="font-size:10px;color:var(--mu);margin-top:4px">(math block + badges rendering in follow-up Edits)</div>';
+  /* "All three hit" empirical joint — primary model number. Format:
+        All three hit (J/N starts · n_eff=X)        57.3%
+     J = round(all3 × n_raw), N = n_raw. n_eff shown secondarily because
+     it's the statistically honest sample size that drives the shrinkage
+     but raw is the intuitive "starts observed" number. If shrinkage
+     heavily pulled toward global, the rendered pBlend% will diverge from
+     the empirical — that's signalled by the source label in the header. */
+  var pEmp=calc.all3.pPlayer;
+  var pBlend=calc.all3.pBlend;
+  var nRaw=calc.all3.nRaw||calc.nRaw||0;
+  var nEff=calc.all3.nEff||0;
+  var jointNumerStr='';
+  if(pEmp!=null&&nRaw){jointNumerStr=Math.round(pEmp*nRaw)+'/'+nRaw+' starts';}else if(nRaw){jointNumerStr=nRaw+' starts';}else{jointNumerStr='no data';}
+  var nEffStr=nEff?' · n_eff='+nEff.toFixed(1):'';
+  var pBlendStr=pBlend!=null?(pBlend*100).toFixed(1)+'%':'—';
+  var pEmpStr=pEmp!=null?(pEmp*100).toFixed(1)+'%':'—';
+  html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 9px;background:rgba(34,197,94,.06);border-radius:6px;margin-bottom:6px">';
+  html+='<div style="font-size:10px"><span style="color:var(--tx);font-weight:600">All three hit</span> <span style="color:var(--mu);font-family:Space Mono,monospace">('+jointNumerStr+nEffStr+')</span></div>';
+  html+='<div style="text-align:right"><div style="font-size:14px;font-weight:700;font-family:Space Mono,monospace;color:var(--ac)">'+pBlendStr+'</div>';
+  if(pEmp!=null&&pBlend!=null&&Math.abs(pEmp-pBlend)>0.005){html+='<div style="font-size:8px;color:var(--mu);font-family:Space Mono,monospace">emp '+pEmpStr+'</div>';}
+  html+='</div></div>';
+
+  /* DK SGP + FV CORR (pairwise-corrected) side by side. */
+  html+='<div class="hr4" style="grid-template-columns:repeat(4,1fr);margin-bottom:6px">';
+  html+='<div class="hi"><div class="hv" style="color:var(--cyan);font-size:15px">'+c.dkOdds+'</div><div class="hl">DK SGP</div></div>';
+  html+='<div class="hi"><div class="hv" style="color:var(--ac);font-size:15px">'+fmtAm(calc.fvCorrOdds)+'</div><div class="hl">FV CORR</div></div>';
+  html+='<div class="hi"><div class="hv" style="color:var(--mu);font-size:13px">'+calc.qkPct.toFixed(2)+'u</div><div class="hl">QK</div></div>';
+  html+='<div class="hi"><div class="hv" style="color:var(--mu);font-size:13px">'+calc.kellyPct.toFixed(1)+'%</div><div class="hl">KELLY</div></div>';
+  html+='</div>';
+
+  /* Pairwise r summary: K×ER +0.26, K×Outs +0.16, Outs×ER +0.44 (avg +0.29).
+     Uses the shorter stat-category abbreviations (SO→K, ER, Outs) so the
+     line fits on one row. */
+  var statAbbr=function(leg){var s=statCat(leg);return s==='SO'?'K':s==='OUTS'?'Outs':s;};
+  var pairLine='';var valid=calc.pairDetails.filter(function(p){return p.r!=null;});
+  if(valid.length){
+    pairLine=valid.map(function(p){return statAbbr(p.a)+'×'+statAbbr(p.b)+' '+(p.r>=0?'+':'')+p.r.toFixed(2);}).join(', ');
+    var avg=valid.reduce(function(s,p){return s+p.r;},0)/valid.length;
+    pairLine+=' (avg '+(avg>=0?'+':'')+avg.toFixed(2)+')';
+  }else{pairLine='no pairwise r available';}
+  html+='<div style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace;margin-bottom:6px">Pairwise r: '+pairLine+'</div>';
+
+  /* MODEL / DK / EDGE row. pp = percentage points (not %). This is the
+     key sanity check — if MODEL and DK are near-identical, the EV is
+     pure odds amplification and fragile. Large edges (|pp|>8) get an
+     accent color as the "look twice" cue. */
+  var edgePp=calc.edgePp;
+  var edgeColor=Math.abs(edgePp)>=8?'var(--ac2)':edgePp>=0?'var(--ac)':'var(--red)';
+  html+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:6px;background:var(--s2);border-radius:6px;margin-bottom:6px">';
+  html+='<div style="text-align:center"><div style="font-size:13px;font-weight:700;font-family:Space Mono,monospace;color:var(--ac)">'+(calc.pModel*100).toFixed(1)+'%</div><div style="font-size:8px;color:var(--mu);font-family:Space Mono,monospace">MODEL JOINT</div></div>';
+  html+='<div style="text-align:center"><div style="font-size:13px;font-weight:700;font-family:Space Mono,monospace;color:var(--cyan)">'+(calc.pDK*100).toFixed(1)+'%</div><div style="font-size:8px;color:var(--mu);font-family:Space Mono,monospace">DK IMPLIED</div></div>';
+  html+='<div style="text-align:center"><div style="font-size:13px;font-weight:700;font-family:Space Mono,monospace;color:'+edgeColor+'">'+(edgePp>=0?'+':'')+edgePp.toFixed(1)+'pp</div><div style="font-size:8px;color:var(--mu);font-family:Space Mono,monospace">EDGE</div></div>';
+  html+='</div>';
+
+  /* DK correlation premium — per-leg vigged implied prob product vs SGP
+     combined implied. Positive = DK priced as positively correlated;
+     negative = shorter than independent. Labeled "DK corr" to avoid
+     confusing users who expect "hold" to mean book overround on a single
+     market. Muted one-line display below the math block. */
+  if(calc.dkHoldPct!=null){
+    var holdStr=(calc.dkHoldPct>=0?'+':'')+calc.dkHoldPct.toFixed(1)+'%';
+    html+='<div style="font-size:9px;color:var(--mu);font-family:Space Mono,monospace;margin-bottom:6px" title="DK SGP implied vs product of DK\'s per-leg vigged implied probs. Positive = DK prices this triplet as more likely than independent (correlation priced in). Negative = SGP shorter than independent.">DK corr premium: '+holdStr+'</div>';
+  }
+
+  /* Badges + AI Insights land in Edit 4. */
+  html+='<div style="font-size:10px;color:var(--mu);margin-top:4px">(badges + AI Insights in final Edit)</div>';
   html+='</div>';
   return html;
 }
