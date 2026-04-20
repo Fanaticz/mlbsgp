@@ -439,6 +439,24 @@ h1 em{color:var(--ac);font-style:normal;}
     </div>
     <div id="nbaFvStatus" style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace;min-height:16px"></div>
   </div>
+  <!-- Filter bar. NO mode toggle — NBA is player-only per spec.
+       Defaults: MIN EV% +3%, MIN GAMES 30, MAX P_VALUE 0.10,
+       props all-on, confirmed-starter ON. Changes re-run the
+       client-side filter over the current candidate set, not the
+       enumeration (OCR + DK calls are the expensive legs). -->
+  <div class="ctrl" id="nbaFilterBar" style="flex-wrap:wrap;gap:10px;align-items:center">
+    <div class="tm-slider"><span class="tm-label">MIN EV%</span><input type="range" id="nbaMinEv" min="-10" max="30" step="1" value="3" oninput="window.nbaTab&amp;&amp;window.nbaTab.onFilter()"><span class="v" id="nbaMinEvV">+3%</span></div>
+    <div class="tm-slider"><span class="tm-label">MIN GAMES</span><input type="range" id="nbaMinGames" min="10" max="82" step="1" value="30" oninput="window.nbaTab&amp;&amp;window.nbaTab.onFilter()"><span class="v" id="nbaMinGamesV">30</span></div>
+    <div class="tm-slider"><span class="tm-label">MAX P_VALUE</span><input type="range" id="nbaMaxP" min="1" max="100" step="1" value="10" oninput="window.nbaTab&amp;&amp;window.nbaTab.onFilter()"><span class="v" id="nbaMaxPV">0.10</span></div>
+    <div id="nbaPropBtns" style="display:inline-flex;gap:4px;flex-wrap:wrap">
+      <button class="fb active" data-nba-prop="Points" type="button" onclick="window.nbaTab&amp;&amp;window.nbaTab.onPropBtn(this)">PTS</button>
+      <button class="fb active" data-nba-prop="Rebounds" type="button" onclick="window.nbaTab&amp;&amp;window.nbaTab.onPropBtn(this)">REB</button>
+      <button class="fb active" data-nba-prop="Assists" type="button" onclick="window.nbaTab&amp;&amp;window.nbaTab.onPropBtn(this)">AST</button>
+      <button class="fb active" data-nba-prop="3-Pointers Made" type="button" onclick="window.nbaTab&amp;&amp;window.nbaTab.onPropBtn(this)">3PM</button>
+    </div>
+    <label class="tm-toggle"><input type="checkbox" id="nbaConfirmedOnly" checked onchange="window.nbaTab&amp;&amp;window.nbaTab.onFilter()"><span>CONFIRMED STARTER</span></label>
+    <span id="nbaCandCount" style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace;margin-left:auto"></span>
+  </div>
   <div id="nbaBody"></div>
 </div>
 <div class="tm-overlay" id="tmOverlay" onclick="tmClose()"></div>

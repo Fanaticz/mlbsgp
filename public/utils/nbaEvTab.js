@@ -303,10 +303,69 @@
      guarded by typeof checks so earlier edits work without an error. */
   var runPipeline;
 
+  /* ---------- Filters (Edit 4) ---------- */
+
+  /* Live filter state. Kept in sync with the DOM on every control event.
+     Defaults match the v1 spec: aggressive enough to keep noise out of
+     a first scan (MIN_GAMES 30, MAX_P_VALUE 0.10) but not so aggressive
+     they'd suppress moderately-sampled signals. Prop multi-select is
+     initialized with all 4 supported NBA props on. */
+  state.filters = {
+    minEvPct: 3,       // percent, e.g. 3 => EV% >= +3%
+    minGames: 30,
+    maxPValue: 0.10,
+    props: { 'Points': true, 'Rebounds': true, 'Assists': true, '3-Pointers Made': true },
+    confirmedOnly: true,
+  };
+
+  function readFilterDom() {
+    var f = state.filters;
+    var el;
+    if ((el = document.getElementById('nbaMinEv')))       f.minEvPct = Number(el.value);
+    if ((el = document.getElementById('nbaMinGames')))    f.minGames = Number(el.value);
+    if ((el = document.getElementById('nbaMaxP')))        f.maxPValue = Number(el.value) / 100;
+    if ((el = document.getElementById('nbaConfirmedOnly'))) f.confirmedOnly = !!el.checked;
+    /* Prop buttons: the .active class on the <button> is the source of
+       truth. readFilterDom reads it back so programmatic toggles via
+       onPropBtn stay in sync. */
+    var btns = document.querySelectorAll('#nbaPropBtns [data-nba-prop]');
+    f.props = {};
+    btns.forEach(function (b) { f.props[b.getAttribute('data-nba-prop')] = b.classList.contains('active'); });
+    return f;
+  }
+
+  function renderFilterLabels() {
+    var f = state.filters;
+    var set = function (id, v) { var el = document.getElementById(id); if (el) el.textContent = v; };
+    set('nbaMinEvV', (f.minEvPct >= 0 ? '+' : '') + f.minEvPct + '%');
+    set('nbaMinGamesV', String(f.minGames));
+    set('nbaMaxPV', f.maxPValue.toFixed(2));
+  }
+
+  function onFilter() {
+    readFilterDom();
+    renderFilterLabels();
+    if (typeof runPipeline === 'function') runPipeline({ filtersOnly: true });
+  }
+
+  function onPropBtn(btn) {
+    if (!btn) return;
+    btn.classList.toggle('active');
+    /* Refuse to let the user disable every prop — an empty prop filter
+       silently kills all candidates, which reads as "nothing found" when
+       it's really "nothing allowed". Reactivate the clicked button if
+       it was the last one on. */
+    var anyOn = false;
+    document.querySelectorAll('#nbaPropBtns [data-nba-prop]').forEach(function (b) { if (b.classList.contains('active')) anyOn = true; });
+    if (!anyOn) btn.classList.add('active');
+    onFilter();
+  }
+
   function onActivate() {
     wireDom();
     renderHeaderStats();
     renderCorrMeta();
+    renderFilterLabels();
     if (!state._activated) { state._activated = true; reload().then(renderCorrMeta); return; }
     reload().then(renderCorrMeta);
   }
@@ -317,6 +376,8 @@
     onCorrUpload: onCorrUpload,
     onRollback: onRollback,
     onFvUpload: onFvUpload,
+    onFilter: onFilter,
+    onPropBtn: onPropBtn,
     _state: state,
   };
 })();
