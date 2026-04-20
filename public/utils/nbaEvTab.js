@@ -380,42 +380,118 @@
      and to the candidate's dk_sgp_american by the caller (harness or Phase 4
      OCR+DK path). Candidates missing DK SGP are still emitted but flagged
      so the renderer can show them in a muted state. */
+  /* Canonical key for a (prop, side) leg pair, order-invariant. Correlation
+     is symmetric between leg1/leg2, so ('Points','over','Rebounds','over')
+     and ('Rebounds','over','Points','over') must produce the same key —
+     otherwise the pair-index would need two lookups per query. */
+  function _legKey(prop, side) { return prop + '|' + side; }
+  function pairKey(propA, sideA, propB, sideB) {
+    var a = _legKey(propA, sideA), b = _legKey(propB, sideB);
+    return a < b ? a + '||' + b : b + '||' + a;
+  }
+
+  /* Build a line-ignorant lookup: `foldedPlayer###pairKey` →
+     [entry indices]. Each bucket holds every correlation entry that
+     shares that (prop, side) pair for that player, regardless of line.
+     Called lazily from enumerateCandidates so pre-existing fixtures
+     that only populate by_player still work without modification. */
+  function buildPairIndex(correlations) {
+    if (!correlations || !correlations.entries) return;
+    var idx = {};
+    correlations.entries.forEach(function (e, i) {
+      if (!e || !e.leg1 || !e.leg2 || !e.player) return;
+      var fk = foldKey(e.player);
+      var key = fk + '###' + pairKey(e.leg1.prop, e.leg1.side, e.leg2.prop, e.leg2.side);
+      (idx[key] = idx[key] || []).push(i);
+    });
+    correlations.pairIndex = idx;
+  }
+
+  /* Flatten a FV player's props map into a list of per-side legs:
+     [{ stat, threshold, side, fv_american, dk_over/under_american }, ...].
+     Sides with null fv_american are dropped. */
+  function _flattenFvLegs(fvP) {
+    var legs = [];
+    var props = (fvP && fvP.props) || {};
+    Object.keys(props).forEach(function (stat) {
+      Object.keys(props[stat]).forEach(function (thresh) {
+        var row = props[stat][thresh];
+        var th = Number(thresh);
+        if (row.over_fv != null) legs.push({ stat: stat, threshold: th, side: 'over', fv_american: row.over_fv, dk_over_american: row.over_dk_american || null, dk_under_american: row.under_dk_american || null });
+        if (row.under_fv != null) legs.push({ stat: stat, threshold: th, side: 'under', fv_american: row.under_fv, dk_over_american: row.over_dk_american || null, dk_under_american: row.under_dk_american || null });
+      });
+    });
+    return legs;
+  }
+
+  /* From a list of candidate correlation entries sharing the same
+     (prop, side) pair for this player, pick the one whose lines are
+     closest to (fvA.threshold, fvB.threshold). Sum-of-absolute-line-
+     differences. Tiebreak: highest n_games. Returns { entry, exact,
+     corrA_line, corrB_line } or null. */
+  function pickBestEntry(entries, idxs, fvA, fvB) {
+    var best = null, bestDrift = Infinity, bestN = -1;
+    for (var i = 0; i < idxs.length; i++) {
+      var e = entries[idxs[i]];
+      if (!e) continue;
+      /* The entry's leg1/leg2 order is not guaranteed to match fvA/fvB.
+         Resolve which entry leg corresponds to fvA vs fvB by prop+side. */
+      var corrA, corrB;
+      if (e.leg1.prop === fvA.stat && e.leg1.side === fvA.side) { corrA = e.leg1; corrB = e.leg2; }
+      else if (e.leg2.prop === fvA.stat && e.leg2.side === fvA.side) { corrA = e.leg2; corrB = e.leg1; }
+      else continue; // defensive — pair-index shouldn't emit mismatches
+      var drift = Math.abs(corrA.line - fvA.threshold) + Math.abs(corrB.line - fvB.threshold);
+      var n = e.n_games || 0;
+      if (drift < bestDrift || (drift === bestDrift && n > bestN)) {
+        bestDrift = drift; bestN = n;
+        best = { entry: e, exact: drift === 0, corrA_line: corrA.line, corrB_line: corrB.line };
+      }
+    }
+    return best;
+  }
+
+  /* Line-ignorant enumeration. For each FV player, iterate all unordered
+     pairs of FV legs with different stats (6 × 4 = 24 combos when all 4
+     supported props are on the sheet). For each pair, look up matching
+     correlation entries via the pair index, pick the closest-line entry,
+     build a candidate that carries the FV lines (what the user bets)
+     plus the correlation lines (for the LINE DRIFT display).
+
+     Filter semantics unchanged — filters apply AFTER entry selection so
+     the closest-line pick isn't distorted by n_games/p_value gates. */
   function enumerateCandidates(correlations, fvIndex, filters, confirmedSet) {
     var out = [];
     if (!correlations || !correlations.entries || !fvIndex) return out;
-    /* Prefer the folded index if present. Built lazily in runPipeline +
-       populated on correlation-load so the hot path here stays branch-free.
-       Raw-name lookup is kept as a fallback so pre-Phase-4 regression tests
-       (which build fixtures with correlations.by_player only) still work. */
-    var foldedIdx = correlations.foldedByPlayer || null;
-    var players = Object.keys(fvIndex);
-    for (var i = 0; i < players.length; i++) {
-      var player = players[i];
-      var fvP = fvIndex[player];
-      var fk = (fvP && fvP.foldedKey) ? fvP.foldedKey : foldKey(player);
-      var idxs = (foldedIdx && foldedIdx[fk]) || (correlations.by_player && correlations.by_player[player]) || [];
-      for (var k = 0; k < idxs.length; k++) {
-        var e = correlations.entries[idxs[k]];
-        if (!e) continue;
-        if (!filters.props[e.leg1.prop] || !filters.props[e.leg2.prop]) continue;
-        if (e.n_games < filters.minGames) continue;
-        if (e.p_value > filters.maxPValue) continue;
-        /* Phase 5 will populate confirmedSet from /api/nba/games. Until
-           then, confirmedOnly silently gates nothing (treat all players
-           as confirmed). A non-null confirmedSet flips it on. */
-        if (filters.confirmedOnly && confirmedSet && !confirmedSet.has(player)) continue;
-        var fv1 = findFv(fvIndex, player, e.leg1.prop, e.leg1.line, e.leg1.side);
-        var fv2 = findFv(fvIndex, player, e.leg2.prop, e.leg2.line, e.leg2.side);
-        if (!fv1 || !fv2 || fv1.fv_american == null || fv2.fv_american == null) continue;
-        out.push(buildCandidate(player, fvIndex[player], e, fv1, fv2));
+    if (!correlations.pairIndex) buildPairIndex(correlations);
+    var pairIdx = correlations.pairIndex || {};
+    Object.keys(fvIndex).forEach(function (rawName) {
+      var fvP = fvIndex[rawName];
+      var foldedPlayer = fvP.foldedKey || foldKey(rawName);
+      var legs = _flattenFvLegs(fvP);
+      for (var i = 0; i < legs.length; i++) {
+        for (var j = i + 1; j < legs.length; j++) {
+          var a = legs[i], b = legs[j];
+          if (a.stat === b.stat) continue; // same-stat pairs aren't useful
+          if (!filters.props[a.stat] || !filters.props[b.stat]) continue;
+          var key = foldedPlayer + '###' + pairKey(a.stat, a.side, b.stat, b.side);
+          var idxs = pairIdx[key];
+          if (!idxs || !idxs.length) continue;
+          var picked = pickBestEntry(correlations.entries, idxs, a, b);
+          if (!picked) continue;
+          var e = picked.entry;
+          if (e.n_games < filters.minGames) continue;
+          if (e.p_value > filters.maxPValue) continue;
+          if (filters.confirmedOnly && confirmedSet && !confirmedSet.has(rawName)) continue;
+          out.push(buildCandidate(rawName, fvP, e, a, b, picked));
+        }
       }
-    }
+    });
     return out;
   }
 
-  function buildCandidate(player, fvPlayer, entry, fv1, fv2) {
-    var fvDec1 = amToDec(fv1.fv_american);
-    var fvDec2 = amToDec(fv2.fv_american);
+  function buildCandidate(player, fvPlayer, entry, fvA, fvB, picked) {
+    var fvDec1 = amToDec(fvA.fv_american);
+    var fvDec2 = amToDec(fvB.fv_american);
     var p1 = fvDec1 ? 1 / fvDec1 : null;
     var p2 = fvDec2 ? 1 / fvDec2 : null;
     var fvCorrProb = jointFromPhi(entry.r_adj, p1, p2);
@@ -423,26 +499,31 @@
     var dkSgpAm = entry.dk_sgp_american != null ? entry.dk_sgp_american : null;
     var dkSgpDec = dkSgpAm != null ? amToDec(dkSgpAm) : null;
     var dkImplied = dkSgpDec ? 1 / dkSgpDec : null;
-    /* CRITICAL: EV% at the top of the card reflects the FV-DERIVED joint,
-       NOT the correlation-data p_joint. This mirrors the MLB fix:
-       scoring a bet as "+EV" means our best estimate of the true
-       probability (FV marginals + correlation) beats DK's implied price.
-       p_joint stays visible on the card in the MODEL JOINT / EDGE row
-       as diagnostic context ("what does the historical correlation data
-       say?"), but the headline EV% is what tells the user to bet or skip.
-       DO NOT revert to evPct = modelJoint * dkSgpDec − 1 — that is the
-       bug that was just fixed on the MLB side. If fv_corr_prob is null
-       (r_adj missing, degenerate FV), EV% is null and the card renders
-       as '--' rather than silently falling back to the model path. */
+    /* CRITICAL (regression-guarded by nba_ev_formula_check.js): EV% at
+       the top of the card reflects the FV-DERIVED joint, NOT the
+       correlation-data p_joint. DO NOT change to modelJoint * dkSgpDec
+       - 1 — that's the bug fixed in a5b5442.  The line-ignorant matching
+       change affects what we DISPLAY (MODEL JOINT / EDGE / corr lines),
+       not how EV is computed. EV remains FV-based, so cards with the
+       [LINE DRIFT] badge still have a trustworthy EV% headline. */
     var evPct = (dkSgpDec != null && fvCorrProb != null) ? (fvCorrProb * dkSgpDec - 1) : null;
     var edgePp = (dkImplied != null) ? (modelJoint - dkImplied) * 100 : null;
+    /* Figure out which correlation leg matches fvA vs fvB so we can
+       attribute hit rates correctly. Same resolution pickBestEntry
+       did, repeated here because we don't pass the matched-leg objects
+       through — just the lines. */
+    var corrHr1 = (entry.leg1.prop === fvA.stat && entry.leg1.side === fvA.side) ? entry.hit_rate_1 : entry.hit_rate_2;
+    var corrHr2 = (entry.leg1.prop === fvA.stat && entry.leg1.side === fvA.side) ? entry.hit_rate_2 : entry.hit_rate_1;
+    var corrLineA = (picked && picked.corrA_line != null) ? picked.corrA_line : null;
+    var corrLineB = (picked && picked.corrB_line != null) ? picked.corrB_line : null;
+    var exactMatch = !!(picked && picked.exact);
     return {
-      id: player + '|' + entry.leg1.prop + entry.leg1.line + entry.leg1.side + '|' + entry.leg2.prop + entry.leg2.line + entry.leg2.side,
+      id: player + '|' + fvA.stat + fvA.threshold + fvA.side + '|' + fvB.stat + fvB.threshold + fvB.side,
       player: player,
       team: fvPlayer.team,
       game: fvPlayer.game,
-      leg1: Object.assign({}, entry.leg1, { fv_american: fv1.fv_american, dk_over_american: fv1.dk_over_american, dk_under_american: fv1.dk_under_american, base_rate: entry.hit_rate_1 }),
-      leg2: Object.assign({}, entry.leg2, { fv_american: fv2.fv_american, dk_over_american: fv2.dk_over_american, dk_under_american: fv2.dk_under_american, base_rate: entry.hit_rate_2 }),
+      leg1: { prop: fvA.stat, side: fvA.side, line: fvA.threshold, fv_american: fvA.fv_american, dk_over_american: fvA.dk_over_american, dk_under_american: fvA.dk_under_american, base_rate: corrHr1 },
+      leg2: { prop: fvB.stat, side: fvB.side, line: fvB.threshold, fv_american: fvB.fv_american, dk_over_american: fvB.dk_over_american, dk_under_american: fvB.dk_under_american, base_rate: corrHr2 },
       entry: entry,
       dk_sgp_american: dkSgpAm,
       dk_sgp_decimal: dkSgpDec,
@@ -452,6 +533,11 @@
       model_joint: modelJoint,
       edge_pp: edgePp,
       ev_pct: evPct,
+      /* Line-drift metadata. Exact match when corr lines == FV lines.
+         Approx match otherwise — UI surfaces with a LINE DRIFT badge. */
+      corr_line1: corrLineA,
+      corr_line2: corrLineB,
+      exact_line_match: exactMatch,
     };
   }
 
@@ -743,6 +829,10 @@
     var all = enumerateCandidates(state.correlations, state.fv, PERMISSIVE_FILTERS, null);
     funnel.enumerated = all.length;
     funnel.dk_priced = all.filter(function (c) { return c.dk_sgp_american != null; }).length;
+    /* Split enumerated count by line-match quality so the diagnostic
+       panel can show "exact vs approximate" without another pass. */
+    funnel.exact_match = all.filter(function (c) { return c.exact_line_match === true; }).length;
+    funnel.approx_match = all.length - funnel.exact_match;
     state.funnel = funnel;
     state.candidatesAll = all;
     /* FIRST-LOOK MODE: no applyEvFilter — render everything. Sort + page
