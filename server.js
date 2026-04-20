@@ -419,6 +419,295 @@ app.post('/api/dk/price', async (req, res) => {
   }
 });
 
+// ===== MLB Lineups =====
+// GET /api/lineups?date=YYYY-MM-DD
+// Pulls tonight's slate + batting orders from the free MLB Stats API.
+//
+// Endpoints used:
+//   https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=<DATE>&hydrate=probablePitcher,lineups,team
+//   https://statsapi.mlb.com/api/v1/game/<gamePk>/boxscore
+//   https://statsapi.mlb.com/api/v1/schedule?sportId=1&teamId=<ID>&startDate=<D-3>&endDate=<D-1>
+//     (used to locate a projected-lineup source when tonight's lineup isn't posted yet)
+//
+// Status values returned:
+//   confirmed  — MLB has posted both full 9-batter orders in the schedule hydrate
+//   projected  — hydrate was empty, so we fell back to the team's most recent played
+//                game's batting order as a guess
+//   awaiting   — no hydrate lineup and no recent played game found (early in season
+//                or for a team that just returned from an off-day)
+//
+// Cache: per-date, 10-minute TTL. Long enough to absorb refresh clicks, short
+// enough that a confirmed lineup shows up quickly after MLB posts it.
+
+const LINEUP_CACHE = new Map();          // key: date, val: { ts, body }
+const LINEUP_CACHE_TTL_MS = 10 * 60 * 1000;
+const BOXSCORE_CACHE = new Map();        // key: gamePk, val: { ts, data }
+const BOXSCORE_CACHE_TTL_MS = 60 * 60 * 1000;
+const PERSON_CACHE = new Map();          // key: personId, val: { batSide, primaryPosition, fullName }
+
+async function mlbApi(pathAndQuery) {
+  const url = 'https://statsapi.mlb.com' + pathAndQuery;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('MLB Stats API ' + r.status + ' on ' + pathAndQuery);
+  return r.json();
+}
+
+async function getBoxscore(gamePk) {
+  const hit = BOXSCORE_CACHE.get(gamePk);
+  if (hit && Date.now() - hit.ts < BOXSCORE_CACHE_TTL_MS) return hit.data;
+  const j = await mlbApi('/api/v1/game/' + gamePk + '/boxscore');
+  BOXSCORE_CACHE.set(gamePk, { ts: Date.now(), data: j });
+  return j;
+}
+
+// Batched person lookup. Boxscore person records are stripped down (no
+// batSide) and hitting /api/v1/people/<id> 180 times per slate is abusive,
+// so we cache per-ID forever and fetch missing IDs in chunks of 100.
+async function enrichPeople(personIds) {
+  const missing = [];
+  for (const id of personIds) { if (id != null && !PERSON_CACHE.has(id)) missing.push(id); }
+  if (!missing.length) return;
+  const CHUNK = 100;
+  for (let i = 0; i < missing.length; i += CHUNK) {
+    const ids = missing.slice(i, i + CHUNK);
+    try {
+      const j = await mlbApi('/api/v1/people?personIds=' + ids.join(','));
+      for (const p of (j.people || [])) {
+        PERSON_CACHE.set(p.id, {
+          batSide: (p.batSide && p.batSide.code) || null,
+          primaryPosition: (p.primaryPosition && p.primaryPosition.abbreviation) || null,
+          fullName: p.fullName || null,
+        });
+      }
+    } catch (e) {
+      if (DEBUG) console.warn('[lineups] person enrich failed for', ids.length, 'ids:', e.message);
+    }
+  }
+}
+
+// Build a { personId -> { position, hand } } lookup for a game from its
+// boxscore. batSide lives on the nested `person` object; the top-level
+// `position` is this player's position in THIS game.
+function extractPlayerMetaFromBoxscore(box, side) {
+  const out = {};
+  const team = box && box.teams && box.teams[side];
+  if (!team || !team.players) return out;
+  for (const key of Object.keys(team.players)) {
+    const p = team.players[key];
+    if (!p || !p.person) continue;
+    const person = p.person;
+    out[person.id] = {
+      fullName: person.fullName || null,
+      position: (p.position && p.position.abbreviation) || null,
+      hand: (person.batSide && person.batSide.code) || null,
+      battingOrder: p.battingOrder ? parseInt(p.battingOrder, 10) : null,
+    };
+  }
+  return out;
+}
+
+function normalizeHydratePlayer(p, slot, metaById) {
+  if (!p) return null;
+  const id = p.id || (p.person && p.person.id) || null;
+  const meta = id != null ? (metaById[id] || {}) : {};
+  return {
+    player: p.fullName || (p.person && p.person.fullName) || meta.fullName || null,
+    slot,
+    position: (p.primaryPosition && p.primaryPosition.abbreviation) || meta.position || null,
+    hand: (p.batSide && p.batSide.code) || meta.hand || null,
+    mlbam_id: id,
+  };
+}
+
+// Pre-game lineup from a boxscore (projected-lineup fallback). battingOrder in
+// boxscore is "100"/"200"/.../"900" for slots 1-9, starter vs. substitute
+// encoded in the trailing two digits. We only keep starters (orderPos ending
+// in "00") and take the first 9 by ascending order.
+function lineupFromBoxscore(box, side) {
+  const team = box && box.teams && box.teams[side];
+  if (!team || !team.players) return [];
+  const starters = [];
+  for (const key of Object.keys(team.players)) {
+    const p = team.players[key];
+    if (!p || !p.battingOrder) continue;
+    const bo = parseInt(p.battingOrder, 10);
+    if (!Number.isFinite(bo) || bo % 100 !== 0) continue; // keep slot-100 starters only
+    starters.push({
+      slot: bo / 100,
+      player: p.person && p.person.fullName,
+      position: (p.position && p.position.abbreviation) || null,
+      hand: (p.person && p.person.batSide && p.person.batSide.code) || null,
+      mlbam_id: p.person && p.person.id,
+    });
+  }
+  starters.sort((a, b) => a.slot - b.slot);
+  return starters.slice(0, 9);
+}
+
+function shiftDateYmd(dateStr, days) {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+// Look back up to 3 days for a team's most recent completed game; return its
+// gamePk or null. We go day-by-day (rather than one 3-day range call) so the
+// most-recent game wins even when MLB returns dates in ascending order.
+async function findRecentGameForTeam(teamId, beforeDate) {
+  for (let back = 1; back <= 3; back++) {
+    const d = shiftDateYmd(beforeDate, -back);
+    try {
+      const j = await mlbApi(
+        '/api/v1/schedule?sportId=1&teamId=' + teamId + '&date=' + d
+      );
+      const dates = j.dates || [];
+      for (const dd of dates) {
+        for (const g of (dd.games || [])) {
+          const state = g.status && g.status.abstractGameState;
+          // Only "Final" games have a batting order we can trust as the most
+          // recent posted lineup. "Postponed" or "Cancelled" won't.
+          if (state === 'Final') return g.gamePk;
+        }
+      }
+    } catch (_) { /* swallow and try the next day back */ }
+  }
+  return null;
+}
+
+async function buildGameEntry(g) {
+  const homeTeam = g.teams.home.team || {};
+  const awayTeam = g.teams.away.team || {};
+  const homeTeamId = homeTeam.id;
+  const awayTeamId = awayTeam.id;
+  const hydrateHome = (g.lineups && g.lineups.homePlayers) || [];
+  const hydrateAway = (g.lineups && g.lineups.awayPlayers) || [];
+
+  // Pull a boxscore for position/hand enrichment when lineups ARE posted —
+  // hydrate player shapes vary and often omit batSide. We also reuse the
+  // boxscore for projected-lineup fallback below if hydrate is empty.
+  let box = null;
+  try { box = await getBoxscore(g.gamePk); } catch (_) { box = null; }
+  const homeMeta = box ? extractPlayerMetaFromBoxscore(box, 'home') : {};
+  const awayMeta = box ? extractPlayerMetaFromBoxscore(box, 'away') : {};
+
+  let homeLineup = hydrateHome.map((p, i) => normalizeHydratePlayer(p, i + 1, homeMeta)).filter(Boolean);
+  let awayLineup = hydrateAway.map((p, i) => normalizeHydratePlayer(p, i + 1, awayMeta)).filter(Boolean);
+
+  let status = 'awaiting';
+  if (homeLineup.length === 9 && awayLineup.length === 9) {
+    status = 'confirmed';
+  } else {
+    // Projected fallback: replace whichever side is empty with that team's
+    // most recent completed game's lineup. Each side is handled independently
+    // because a split-squad scenario (or just late-posting home team) can
+    // leave one side confirmed while the other isn't.
+    const needs = [];
+    if (homeLineup.length !== 9 && homeTeamId != null) needs.push({ side: 'home', teamId: homeTeamId });
+    if (awayLineup.length !== 9 && awayTeamId != null) needs.push({ side: 'away', teamId: awayTeamId });
+    let anyProjected = false;
+    for (const n of needs) {
+      const recentPk = await findRecentGameForTeam(n.teamId, String(g.gameDate || '').slice(0, 10) || null);
+      if (!recentPk) continue;
+      let recentBox;
+      try { recentBox = await getBoxscore(recentPk); } catch (_) { continue; }
+      const lineup = lineupFromBoxscore(recentBox, n.side);
+      if (lineup.length === 9) {
+        if (n.side === 'home') homeLineup = lineup; else awayLineup = lineup;
+        anyProjected = true;
+      }
+    }
+    if (homeLineup.length === 9 && awayLineup.length === 9 && anyProjected) status = 'projected';
+  }
+
+  return {
+    game_id: String(g.gamePk),
+    home_team: homeTeam.name || null,
+    away_team: awayTeam.name || null,
+    home_team_abbr: homeTeam.abbreviation || null,
+    away_team_abbr: awayTeam.abbreviation || null,
+    game_time: g.gameDate || null,
+    home_lineup: homeLineup,
+    away_lineup: awayLineup,
+    home_sp: (g.teams.home.probablePitcher && g.teams.home.probablePitcher.fullName) || null,
+    away_sp: (g.teams.away.probablePitcher && g.teams.away.probablePitcher.fullName) || null,
+    status,
+  };
+}
+
+async function buildLineupsForDate(date) {
+  const sched = await mlbApi(
+    '/api/v1/schedule?sportId=1&date=' + encodeURIComponent(date) +
+    '&hydrate=probablePitcher,lineups,team'
+  );
+  const games = [];
+  for (const d of (sched.dates || [])) {
+    for (const g of (d.games || [])) {
+      // Skip obvious non-regular-game rows (spring training, exhibition, all-star).
+      // gameType 'R' = regular, 'P' = postseason, 'F'/'D'/'L'/'W' = wildcard/division/league/world series.
+      // We accept all of those; skip only 'S' (spring) and 'E' (exhibition).
+      if (g.gameType === 'S' || g.gameType === 'E') continue;
+      try {
+        games.push(await buildGameEntry(g));
+      } catch (e) {
+        if (DEBUG) console.warn('[lineups] skipped game', g.gamePk, e.message);
+      }
+    }
+  }
+
+  // Second pass: enrich any player whose batSide wasn't set (projected
+  // lineups come from boxscore.person which is stripped down — the real
+  // batSide only lives on /api/v1/people). One batched call covers every
+  // batter across the slate.
+  const idsNeeded = [];
+  for (const gm of games) {
+    for (const side of ['home_lineup', 'away_lineup']) {
+      for (const p of gm[side]) {
+        if (p.mlbam_id != null && (p.hand == null || p.position == null)) {
+          idsNeeded.push(p.mlbam_id);
+        }
+      }
+    }
+  }
+  if (idsNeeded.length) {
+    await enrichPeople(idsNeeded);
+    for (const gm of games) {
+      for (const side of ['home_lineup', 'away_lineup']) {
+        for (const p of gm[side]) {
+          const meta = p.mlbam_id != null ? PERSON_CACHE.get(p.mlbam_id) : null;
+          if (!meta) continue;
+          if (p.hand == null) p.hand = meta.batSide;
+          if (p.position == null) p.position = meta.primaryPosition;
+        }
+      }
+    }
+  }
+
+  return {
+    date,
+    lineups_confirmed_at: new Date().toISOString(),
+    games,
+  };
+}
+
+app.get('/api/lineups', async (req, res) => {
+  const date = (String(req.query.date || '').trim()) ||
+               new Date().toISOString().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+  }
+  const cached = LINEUP_CACHE.get(date);
+  if (cached && Date.now() - cached.ts < LINEUP_CACHE_TTL_MS) {
+    return res.json(cached.body);
+  }
+  try {
+    const body = await buildLineupsForDate(date);
+    LINEUP_CACHE.set(date, { ts: Date.now(), body });
+    return res.json(body);
+  } catch (e) {
+    return res.status(500).json({ error: 'lineups fetch failed: ' + e.message });
+  }
+});
+
 app.get('/healthz', (_req, res) => res.send('ok'));
 
 app.listen(PORT, '0.0.0.0', () => console.log('Listening on 0.0.0.0:' + PORT));
