@@ -2114,12 +2114,50 @@ function _build3LegSgpData(c){
    a minimal placeholder per combo; each subsequent Edit replaces one
    section of the HTML output. */
 function card3EV(c,idx){
-  var ev=c.calc.evPct;
+  var calc=c.calc;
+  var ev=calc.evPct;
   var evColor=ev>=10?'var(--ac)':ev>=0?'var(--ac2)':'var(--red)';
   var cls=ev>=10?'str':ev>=0?'mod':'neg';
+  var pdC=D.pitchers[c.pitcher]||null;
+  var all3src=calc.all3.source;
+  /* Source label reflects the resolved shrinkage path, not just CORR_MODE —
+     e.g. "blended→global" on low-sample triplets, "player(no-global)" when
+     the global baseline is missing. Gives users a one-glance read on
+     whether the pBlend on this card is a real blend or a fallback. */
+  var srcLabel=all3src==='blended'?'BLENDED':all3src==='global(no-player)'?'GLOBAL (no player data)':all3src==='player(no-global)'?'PLAYER (no global data)':all3src==='blended(low-sample)'?'BLENDED → GLOBAL (n_eff<'+BLEND_MIN_STARTS_3WAY+')':all3src.toUpperCase();
+
   var html='<div class="card '+cls+'" id="sgp-card-'+idx+'">';
-  html+='<div style="font-size:12px;color:var(--mu);font-family:Space Mono,monospace">'+c.pitcher+' [3-leg] · EV <b style="color:'+evColor+'">'+(ev>=0?'+':'')+ev.toFixed(1)+'%</b> · '+c.dkOdds+'</div>';
-  html+='<div style="font-size:10px;color:var(--mu);margin-top:4px">(header/legs/math/badges rendering in follow-up Edits)</div>';
+
+  /* Header: pitcher name, game, size + source tag, big EV% on right. */
+  html+='<div style="display:flex;justify-content:space-between;align-items:start;gap:8px;margin-bottom:8px">';
+  html+='<div>';
+  html+='<div style="font-size:12px;font-weight:700">'+c.pitcher+' <span style="font-size:9px;color:var(--cyan);font-family:Space Mono,monospace;margin-left:4px">[3-LEG]</span></div>';
+  html+='<div style="font-size:9px;color:var(--mu);font-family:Space Mono,monospace">'+(c.game||'')+' · '+srcLabel+'</div>';
+  html+='</div>';
+  html+='<div style="text-align:right"><div style="font-size:20px;font-weight:800;font-family:Space Mono,monospace;color:'+evColor+'">'+(ev>=0?'+':'')+ev.toFixed(1)+'%</div><div style="font-size:8px;color:var(--mu);font-family:Space Mono,monospace">EV</div></div>';
+  html+='</div>';
+
+  /* Leg list: one row per leg with FV odds + base-rate chip. Base rate
+     comes from the triplet row's own hit1/hit2/hit3 (direction-flipped
+     if needed), not the pairwise combos_2 — keeps the card's marginal
+     numbers consistent with the joint number below. */
+  html+='<div style="background:var(--s2);border-radius:6px;padding:7px 9px;margin-bottom:8px">';
+  calc.legs.forEach(function(l){
+    var lcls=l.leg.indexOf('Over')===0?'ov':'un';
+    var fvWarn=l.fvSuspicious?'<span title="OCR may have mis-extracted FV — verify" style="color:var(--ac2);font-size:11px;cursor:help;margin-right:2px">&#9888;</span>':'';
+    var baseStr=l.baseRate!=null?l.baseRate.toFixed(1)+'%':'—';
+    html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0">';
+    html+='<span class="leg '+lcls+'" style="font-size:10px">'+l.leg+'</span>';
+    html+='<div style="display:flex;align-items:center;gap:8px">';
+    html+=fvWarn;
+    html+='<span style="font-size:10px;font-family:Space Mono,monospace;color:'+(l.fvSuspicious?'var(--ac2)':'var(--mu)')+'">FV '+fmtAm(l.fv)+'</span>';
+    html+='<span style="font-size:9px;font-family:Space Mono,monospace;color:var(--ac2);background:rgba(250,204,21,.08);padding:1px 6px;border-radius:3px">base '+baseStr+'</span>';
+    html+='</div></div>';
+  });
+  html+='</div>';
+
+  /* Math block + badges placeholder — replaced by Edit 3 and Edit 4. */
+  html+='<div style="font-size:10px;color:var(--mu);margin-top:4px">(math block + badges rendering in follow-up Edits)</div>';
   html+='</div>';
   return html;
 }
