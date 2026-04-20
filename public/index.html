@@ -121,11 +121,16 @@ h1 em{color:var(--ac);font-style:normal;}
 .nba-card .nc-ev{margin-left:auto;text-align:right;}
 .nba-card .nc-ev .v{font-size:18px;font-weight:700;font-family:'Space Mono',monospace;}
 .nba-card .nc-ev .l{font-size:9px;color:var(--mu);font-family:'Space Mono',monospace;letter-spacing:.6px;}
-.nba-card .nc-leg{display:grid;grid-template-columns:1fr auto auto auto;gap:12px;padding:6px 0;border-top:1px solid var(--b1);font-family:'Space Mono',monospace;font-size:12px;}
+.nba-card .nc-leg{display:grid;grid-template-columns:1fr auto auto;gap:12px;padding:6px 0;border-top:1px solid var(--b1);font-family:'Space Mono',monospace;font-size:12px;}
 .nba-card .nc-leg .nc-lbl{color:var(--tx);font-weight:600;}
 .nba-card .nc-leg .nc-fv{color:var(--ac3);}
 .nba-card .nc-leg .nc-dk{color:var(--mu);font-size:11px;}
-.nba-card .nc-leg .nc-base{color:var(--tx);text-align:right;min-width:52px;}
+/* "Both hit (corr at X/Y, n=N)  MODEL 34.0%" summary row. Muted s2
+   background to visually group with the per-leg rows above it while
+   still standing apart as the aggregated-model surface. */
+.nba-card .nc-both{display:flex;align-items:baseline;justify-content:space-between;padding:8px 10px;margin-top:6px;background:var(--s2);border-radius:6px;font-family:'Space Mono',monospace;font-size:12px;}
+.nba-card .nc-both .nc-both-lbl{color:var(--tx);}
+.nba-card .nc-both .nc-both-val{color:var(--tx);font-weight:700;font-size:13px;}
 .nba-card .nc-joint{margin-top:8px;padding:8px 10px;background:var(--s2);border-radius:6px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;font-family:'Space Mono',monospace;font-size:11px;}
 .nba-card .nc-joint .nc-cell{display:flex;flex-direction:column;gap:2px;}
 .nba-card .nc-joint .nc-cell .nc-cval{font-size:14px;font-weight:700;color:var(--tx);}

@@ -567,10 +567,13 @@
   }
   function sideLabel(side) { return side === 'over' ? 'Over' : side === 'under' ? 'Under' : side; }
 
-  /* Render a single leg row inside a card. FV price, DK pair, base rate
-     from correlation data. DK pair is informational — the sgp price is
-     what drives EV. Missing DK single-leg prices render as "--" to keep
-     alignment. */
+  /* Render a single leg row inside a card. FV price + DK pair, no
+     per-leg base rate column. Base rate used to show the correlation
+     entry's hit_rate for this leg, but with line-ignorant matching the
+     correlation leg's line may differ from the FV line — rendering
+     "Over 22.5 Points ... 55.4%" would mislead the user (the 55.4%
+     was measured at a different line). Drift context lives on the
+     "Both hit" row instead. */
   function renderLegRow(leg) {
     var dkPair = '';
     if (leg.dk_over_american != null || leg.dk_under_american != null) {
@@ -582,7 +585,28 @@
       '<span class="nc-lbl">' + esc(sideLabel(leg.side)) + ' ' + esc(leg.line) + ' ' + esc(leg.prop) + '</span>' +
       '<span class="nc-fv">FV ' + fmtAm(leg.fv_american) + '</span>' +
       '<span class="nc-dk">' + esc(dkPair) + '</span>' +
-      '<span class="nc-base">' + fmtPct(leg.base_rate, 1) + '</span>' +
+      '</div>';
+  }
+
+  /* "Both hit" summary line between the leg rows and the DK-SGP/FV-CORR
+     price line. When lines drift (exact_line_match === false), shows
+     "Both hit (corr at 21.5/5.5, n=28)" so the user can see the
+     correlation lines the model joint was measured against vs the FV
+     lines they're actually betting. On exact matches, drops the
+     "corr at ..." clause so it reads "Both hit (n=28)". Right-side
+     value is MODEL JOINT — same number as the bottom diagnostic grid,
+     surfaced here for in-context readability. */
+  function renderBothHitLine(c) {
+    var e = c.entry || {};
+    var inner = [];
+    if (c.exact_line_match === false && c.corr_line1 != null && c.corr_line2 != null) {
+      inner.push('corr at ' + c.corr_line1 + '/' + c.corr_line2);
+    }
+    if (e.n_games != null) inner.push('n=' + e.n_games);
+    var label = 'Both hit' + (inner.length ? ' (' + inner.join(', ') + ')' : '');
+    return '<div class="nc-both">' +
+      '<span class="nc-both-lbl">' + esc(label) + '</span>' +
+      '<span class="nc-both-val">' + fmtPct(c.model_joint, 1) + ' <span style="color:var(--mu);font-size:10px;letter-spacing:.4px">MODEL</span></span>' +
       '</div>';
   }
 
@@ -626,10 +650,16 @@
       '</div>' +
       renderLegRow(c.leg1) +
       renderLegRow(c.leg2) +
-      renderJointRow(c) +
+      renderBothHitLine(c) +
       renderPricesRow(c) +
       renderStatsLine(c) +
       '<div class="nc-badges" data-nba-badges="' + esc(c.id) + '"></div>' +
+      /* MODEL JOINT / DK IMPLIED / EDGE diagnostic grid lives at the
+         bottom of the card so the "Both hit" line up top is the
+         prominent model-joint surface and this strip is explicitly
+         "supporting detail". Keeps the top half focused on the FV-based
+         decision (EV% headline + FV prices + model context). */
+      renderJointRow(c) +
       '</div>';
   }
 
@@ -650,12 +680,31 @@
     if (e.p_joint != null && e.p_independent != null && Math.abs(e.p_joint - e.p_independent) > 0.20) {
       out.push({ cls: 'danger', text: 'IMPLAUSIBLE GAP' });
     }
+    /* Line-drift flag — fires when the selected correlation entry's
+       lines differ from the FV lines the user is actually betting. EV%
+       is still FV-based (trustworthy), but MODEL JOINT / EDGE use the
+       entry as a line-approximation — surface that caveat explicitly. */
+    if (c.exact_line_match === false && c.corr_line1 != null && c.corr_line2 != null) {
+      var fvLines = c.leg1.line + '/' + c.leg2.line;
+      var corrLines = c.corr_line1 + '/' + c.corr_line2;
+      out.push({
+        cls: 'warn',
+        text: 'LINE DRIFT',
+        title: 'Correlation entry measured at lines ' + corrLines +
+               '. Tonight\'s bet is at ' + fvLines +
+               '. MODEL JOINT and EDGE use the historical correlation as approximation — treat as informational, not ground truth. EV% is computed from your FV directly and remains accurate.'
+      });
+    }
     return out;
   }
 
   function renderBadges(c) {
     return computeBadges(c).map(function (b) {
-      return '<span class="nc-bdg ' + b.cls + '">' + esc(b.text) + '</span>';
+      /* esc() handles the quote-escape needed for title attributes
+         (replaces " with &quot;). Tooltip visible in all major browsers
+         via the native title-attr hover behavior. */
+      var title = b.title ? ' title="' + esc(b.title) + '"' : '';
+      return '<span class="nc-bdg ' + b.cls + '"' + title + '>' + esc(b.text) + '</span>';
     }).join('');
   }
 
