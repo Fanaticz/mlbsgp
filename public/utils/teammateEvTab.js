@@ -207,11 +207,34 @@
 
   function callExtractBatter(b64, mime) {
     setStatus('Step 1/2 · Extracting batter props from the sheet via Claude Vision...');
+    /* Text-then-parse pattern. WebKit's bare Response.json() surfaces
+       'The string did not match the expected pattern' on non-JSON
+       responses — opaque. Railway timeouts return HTML error pages
+       after ~30s which trip this. Reading as text first lets us
+       preserve + surface the actual upstream response. */
     fetch('/api/extract-batter', {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ image: b64, mime: mime }),
     })
-      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        return r.text().then(function (rawText) {
+          var data;
+          try { data = JSON.parse(rawText); }
+          catch (err) {
+            throw new Error(
+              'OCR endpoint returned non-JSON (status ' + r.status +
+              '). First 200 chars: ' + rawText.slice(0, 200)
+            );
+          }
+          if (!r.ok) {
+            /* 422 from the new schema-drift abort gate in server.js
+               carries a specific diagnostic. Surface it verbatim. */
+            var msg = (data && data.error) || rawText.slice(0, 200);
+            throw new Error('OCR endpoint ' + r.status + ': ' + msg);
+          }
+          return data;
+        });
+      })
       .then(function (j) {
         if (j.error) { setStatus('Extract error: ' + j.error, 'err'); return; }
         var players = j.players || [];
@@ -225,6 +248,7 @@
            lineup endpoint that breaks the player-name join downstream. */
         dlog('CHECKPOINT 1 — OCR result');
         dlog('  players parsed:', players.length, '| props total:', propCount);
+        if (j.ocr_stats) dlog('  server ocr_stats:', j.ocr_stats);
         dlog('  unmatched_markets count:', (j.unmatched_markets || []).length);
         dlog('  distinct OCR player names:', players.map(function (p) { return p.player; }).sort());
         dlog('  distinct OCR teams:', Array.from(new Set(players.map(function (p) { return p.team || '(none)'; }))).sort());
@@ -236,7 +260,7 @@
         setStatus('Extracted ' + players.length + ' players / ' + propCount + ' props. Enumerating candidates...', 'ok');
         runPipeline();
       })
-      .catch(function (e) { setStatus('Network error: ' + e.message, 'err'); });
+      .catch(function (e) { setStatus(e.message, 'err'); });
   }
 
   function useSyntheticFv() {
@@ -768,6 +792,18 @@
         }
       }
     });
+    /* Synthetic FV link is hidden in production — the values are
+       hand-picked constants, not real fair values, and surfacing them
+       as "+EV candidates" would be misleading. Dev affordance kept
+       behind the ?tmev_dev=1 URL param so smoke tests + OCR-deferred
+       development can still exercise the full pipeline. */
+    var tmevDev = false;
+    try {
+      var _u2 = new URL(window.location.href);
+      tmevDev = _u2.searchParams.get('tmev_dev') === '1';
+    } catch (_) { /* non-http origin — ignore */ }
+    var synthWrap = $('tmevSynthWrap');
+    if (synthWrap && tmevDev) synthWrap.style.display = 'inline';
     var synth = $('tmevSynthLink');
     if (synth) synth.onclick = function (e) { e.preventDefault(); useSyntheticFv(); };
 
