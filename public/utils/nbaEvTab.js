@@ -250,7 +250,11 @@
         if (!propMap[pr.stat]) propMap[pr.stat] = {};
         propMap[pr.stat][pr.threshold] = pr;
       }
-      idx[p.player] = { player: p.player, team: p.team || null, game: p.game || null, props: propMap };
+      /* foldedKey is computed once at index time so the enumeration
+         hot path doesn't re-fold on every FV player read. Keys are
+         whatever the FV source (OCR or synthetic) emitted raw — foldedKey
+         is the normalized form used to join against correlations. */
+      idx[p.player] = { player: p.player, foldedKey: foldKey(p.player), team: p.team || null, game: p.game || null, props: propMap };
     }
     return idx;
   }
@@ -277,6 +281,10 @@
     };
     bindDrop('nbaCorrDrop', 'nbaCorrFile', postCorrFile, 'xlsx');
     bindDrop('nbaFvDrop', 'nbaFvFile', handleFvImage, 'image');
+    /* FIRST-LOOK MODE: hide the filter bar entirely. Dead controls
+       would just confuse. Restoring is a one-line removal once defaults
+       are tuned from the first-upload distribution. */
+    var fb = document.getElementById('nbaFilterBar'); if (fb) fb.style.display = 'none';
     /* Paste-from-clipboard support (NBA tab only). */
     document.addEventListener('paste', function (e) {
       var pageEl = document.getElementById('page-nba-evfinder');
@@ -338,6 +346,33 @@
     };
   }
 
+  /* Canonical fold-key for player-name joins. Reuses the shared
+     nameNormalize.foldKey (NFKD decomposition + strip combining marks +
+     lowercase + strip non-alphanumerics). Same helper MLB uses to
+     resolve Giménez/O'Hoppe-class mismatches. Defensive fallback just
+     lowercases if the script isn't loaded for some reason. */
+  function foldKey(name) {
+    if (window.nameNormalize && typeof window.nameNormalize.foldKey === 'function') {
+      return window.nameNormalize.foldKey(name);
+    }
+    return String(name == null ? '' : name).toLowerCase();
+  }
+
+  /* Build correlations.foldedByPlayer: foldedKey → [entry indices].
+     Idempotent (safe to call on every reload). Collisions are merged
+     by concat so a single folded key can point to entries from
+     multiple original-name variants (e.g. "Luka Doncic" + "Luka Dončić"
+     both folding to "luka doncic"). */
+  function buildFoldedIndex(correlations) {
+    if (!correlations || !correlations.by_player) return;
+    var folded = {};
+    Object.keys(correlations.by_player).forEach(function (rawName) {
+      var key = foldKey(rawName);
+      folded[key] = (folded[key] || []).concat(correlations.by_player[rawName]);
+    });
+    correlations.foldedByPlayer = folded;
+  }
+
   /* Pure: build candidates from (correlations, fvIndex, filters, confirmedSet).
      Each correlation entry becomes 0 or 1 candidate depending on whether
      both legs have FV + pass leg-level filters. DK prices are expected to
@@ -348,10 +383,17 @@
   function enumerateCandidates(correlations, fvIndex, filters, confirmedSet) {
     var out = [];
     if (!correlations || !correlations.entries || !fvIndex) return out;
+    /* Prefer the folded index if present. Built lazily in runPipeline +
+       populated on correlation-load so the hot path here stays branch-free.
+       Raw-name lookup is kept as a fallback so pre-Phase-4 regression tests
+       (which build fixtures with correlations.by_player only) still work. */
+    var foldedIdx = correlations.foldedByPlayer || null;
     var players = Object.keys(fvIndex);
     for (var i = 0; i < players.length; i++) {
       var player = players[i];
-      var idxs = (correlations.by_player && correlations.by_player[player]) || [];
+      var fvP = fvIndex[player];
+      var fk = (fvP && fvP.foldedKey) ? fvP.foldedKey : foldKey(player);
+      var idxs = (foldedIdx && foldedIdx[fk]) || (correlations.by_player && correlations.by_player[player]) || [];
       for (var k = 0; k < idxs.length; k++) {
         var e = correlations.entries[idxs[k]];
         if (!e) continue;
@@ -556,13 +598,60 @@
     renderResults();
   }
 
+  /* Pipeline funnel diagnostic (first-look mode companion). Renders
+     FV parse count, FV ∩ correlations match count + unmatched player
+     list, pairs enumerated, pairs DK-priced, pairs rendered. Collapsed
+     by default when no FV has been uploaded — nothing meaningful to
+     show. Matches #tmevDiagPanel s1/b1 visual vocabulary. */
+  function renderDiagnostics() {
+    var panel = document.getElementById('nbaDiag');
+    if (!panel) return;
+    var f = state.funnel;
+    if (!f || !state.fv) { panel.style.display = 'none'; panel.innerHTML = ''; return; }
+    panel.style.display = '';
+    var unmatchedList = '';
+    if (f.unmatched.length) {
+      var shown = f.unmatched.slice(0, 10);
+      var more = f.unmatched.length > shown.length ? '<li style="color:var(--b2)">…and ' + (f.unmatched.length - shown.length) + ' more</li>' : '';
+      unmatchedList =
+        '<div style="margin-top:10px"><div style="font-size:10px;color:var(--ac2);letter-spacing:.6px;margin-bottom:4px">UNMATCHED FV PLAYERS (' + f.unmatched.length + ')</div>' +
+        '<ul style="margin:0 0 0 16px;padding:0;font-size:11px;color:var(--tx);line-height:1.7">' +
+        shown.map(function (n) { return '<li>' + esc(n) + '</li>'; }).join('') + more + '</ul></div>';
+    }
+    /* Flag zero DK pricing separately. The Phase 3 dev harness attaches
+       DK on demand; Phase 4 OCR + Phase 5 DK wiring populate on real
+       uploads. Distinguishing "pairs enumerated but never priced" from
+       "pairs never enumerated" is the whole point of this funnel. */
+    var dkHint = (f.enumerated > 0 && f.dk_priced === 0)
+      ? ' <span style="color:var(--red)">← DK not wired (run DEV:SIM or wait for live pipeline)</span>' : '';
+    var rendered = Math.min(state.pageShown || state.pageSize || 30, (state.candidates || []).length);
+    panel.innerHTML =
+      '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px">' +
+        '<span style="font-size:11px;color:var(--cyan);font-weight:700;letter-spacing:.5px">PIPELINE FUNNEL</span>' +
+        '<span style="font-size:10px;color:var(--ac2)">FIRST-LOOK MODE · filters stripped</span>' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:auto 1fr;gap:4px 16px;font-size:11px;color:var(--tx)">' +
+        '<div style="color:var(--mu)">FV players parsed</div><div>' + f.fv_count + '</div>' +
+        '<div style="color:var(--mu)">FV ∩ Correlations match</div><div>' + f.matched.length + ' <span style="color:var(--b2)">/ ' + f.fv_count + '</span></div>' +
+        '<div style="color:var(--mu)">Pairs enumerated</div><div>' + f.enumerated + '</div>' +
+        '<div style="color:var(--mu)">DK priced</div><div>' + f.dk_priced + dkHint + '</div>' +
+        '<div style="color:var(--mu)">Rendered</div><div>' + rendered + ' <span style="color:var(--b2)">/ ' + f.enumerated + ' enumerated</span></div>' +
+      '</div>' +
+      unmatchedList;
+  }
+
   function renderResults() {
     var body = document.getElementById('nbaBody');
     var count = document.getElementById('nbaCandCount');
     if (!body) return;
     var cands = sortCandidates(state.candidates || []);
     state.candidates = cands;
-    if (count) count.textContent = cands.length + ' candidate' + (cands.length === 1 ? '' : 's');
+    /* Count banner shown on the (now-hidden) filter bar AND in the
+       top-right of the card list. Renders "Showing X of Y" so the user
+       sees both the paginated-render count and the total enumerated set. */
+    var rendered = Math.min(state.pageShown || state.pageSize || 30, cands.length);
+    if (count) count.textContent = 'Showing ' + rendered + ' of ' + cands.length + ' enumerated';
+    renderDiagnostics();
     if (!state.correlations || state.correlations.status === 'empty') {
       body.innerHTML = '<div class="nba-empty">No NBA correlations data uploaded yet. Drop your xlsx above to begin.</div>';
       return;
@@ -572,12 +661,23 @@
       return;
     }
     if (!cands.length) {
-      body.innerHTML = '<div class="nba-empty">No candidates matched the current filters. Loosen MIN EV%, MIN GAMES, or MAX P_VALUE to see more.</div>';
+      /* FIRST-LOOK MODE: filters are stripped, so zero candidates means
+         the pipeline itself produced nothing — not a too-tight filter.
+         Point the user at the diagnostic funnel instead of suggesting
+         they loosen sliders that don't exist in this mode. */
+      body.innerHTML = '<div class="nba-empty">No pairs enumerated from the current FV × correlations join. See the PIPELINE FUNNEL above for where the pipeline dropped out.</div>';
       return;
     }
     var shown = Math.min(state.pageShown, cands.length);
     var visible = cands.slice(0, shown);
-    var html = '<div class="nba-cards">' + visible.map(function (c) {
+    /* Count banner at the top of the card grid — visible replacement for
+       the filter-bar count which is hidden in first-look mode. */
+    var countBanner =
+      '<div style="display:flex;align-items:baseline;gap:8px;margin:4px 0 10px;font-family:Space Mono,monospace;font-size:11px">' +
+        '<span style="color:var(--cyan);font-weight:700;letter-spacing:.4px">SHOWING ' + shown + ' OF ' + cands.length + '</span>' +
+        '<span style="color:var(--mu)">enumerated candidates &middot; sorted by EV% desc</span>' +
+      '</div>';
+    var html = countBanner + '<div class="nba-cards">' + visible.map(function (c) {
       var cardHtml = renderCard(c);
       /* Inject badges after the placeholder div renderCard emitted. We
          render badges separately so card HTML stays a pure data->HTML
@@ -595,12 +695,59 @@
   /* Main pipeline entry. Rebuilds state.candidates from the current inputs.
      Cheap enough to call on every filter change — the FV + DK fetches are
      the expensive legs and those happen at upload time, not here. */
+  /* FIRST-LOOK MODE: all filters are stripped. Every enumerated pair
+     renders so we can see exactly what the pipeline produces without
+     a filter-defaults argument over what's "really there". MIN EV%,
+     MIN GAMES, MAX P_VALUE, prop multi-select, and confirmed-starter
+     gates are all bypassed. Pagination still caps the render at 30
+     cards — rendering 500+ cards at once would lag the tab.
+     Restore filter gating once we see the distribution of actual edges
+     on a real FV upload and know what defaults make sense. */
+  var PERMISSIVE_FILTERS = {
+    props: { 'Points': true, 'Rebounds': true, 'Assists': true, '3-Pointers Made': true },
+    minGames: 0,
+    maxPValue: 1.0,
+    confirmedOnly: false,
+  };
+
+  /* Walk the FV index → correlations join once, record who matched and
+     who didn't (for the diagnostic panel). Separate from enumeration so
+     this count includes players whose entries don't happen to pass the
+     FV leg-lookup in enumerateCandidates — i.e., we know the player is
+     in correlations even if none of their entries produced a card. */
+  function computeFunnel(correlations, fvIndex) {
+    var foldedIdx = correlations && correlations.foldedByPlayer;
+    var matched = [], unmatched = [];
+    Object.keys(fvIndex || {}).forEach(function (rawName) {
+      var fvP = fvIndex[rawName];
+      var fk = (fvP && fvP.foldedKey) ? fvP.foldedKey : foldKey(rawName);
+      var idxs = (foldedIdx && foldedIdx[fk]) || (correlations && correlations.by_player && correlations.by_player[rawName]) || [];
+      if (idxs.length) matched.push(rawName); else unmatched.push(rawName);
+    });
+    return { fv_count: Object.keys(fvIndex || {}).length, matched: matched, unmatched: unmatched, enumerated: 0, dk_priced: 0 };
+  }
+
   function runPipeline(opts) {
-    state.pageShown = state.pageSize; // any pipeline run resets pagination to page 1
-    if (!state.correlations || !state.fv) { state.candidates = []; if (typeof renderResults === 'function') renderResults(); return; }
-    var all = enumerateCandidates(state.correlations, state.fv, state.filters, state.confirmedSet);
+    state.pageShown = state.pageSize;
+    if (!state.correlations || !state.fv) {
+      state.candidates = []; state.candidatesAll = [];
+      state.funnel = { fv_count: 0, matched: [], unmatched: [], enumerated: 0, dk_priced: 0 };
+      if (typeof renderResults === 'function') renderResults();
+      return;
+    }
+    /* Build the folded-player index once per correlations-load. runPipeline
+       may fire many times (filter changes — now no-op, FV uploads, dev sim)
+       and we don't want to rebuild it on each call. */
+    if (!state.correlations.foldedByPlayer) buildFoldedIndex(state.correlations);
+    var funnel = computeFunnel(state.correlations, state.fv);
+    var all = enumerateCandidates(state.correlations, state.fv, PERMISSIVE_FILTERS, null);
+    funnel.enumerated = all.length;
+    funnel.dk_priced = all.filter(function (c) { return c.dk_sgp_american != null; }).length;
+    state.funnel = funnel;
     state.candidatesAll = all;
-    state.candidates = applyEvFilter(all, state.filters.minEvPct);
+    /* FIRST-LOOK MODE: no applyEvFilter — render everything. Sort + page
+       limits happen in renderResults. */
+    state.candidates = all;
     if (typeof renderResults === 'function') renderResults();
   }
 
