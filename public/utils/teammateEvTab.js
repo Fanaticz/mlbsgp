@@ -52,6 +52,17 @@
     dkMissing:      [],      // candidate ids that didn't get a DK match
     lastFilteredCount: null, // cached from render() for the diag panel
     mode:           'blended',
+    /* Pipeline mode governs what runPipeline/runScan does:
+         'noFv'    — browse all DK-priced pair candidates for the
+                     selected team using DK two-way no-vig as each
+                     leg's fair. No FV sheet required. DEFAULT.
+         'uploadFv' — existing OCR+FV-sheet flow. Candidates with
+                     both FVs are full_fv; one-side hybrid; neither
+                     falls through to corr_only as a fallback. */
+    pipelineMode:   'noFv',
+    minAbsR:        0.10,    // pre-DK signal floor for noFv team scans
+    scanTeam:       '',      // full name (empty = all teams)
+    hybridDroppedCount: 0,
     filters: {
       minEvPct: 3,
       minN:     30,
@@ -113,17 +124,19 @@
   }
 
   function populateGameAndTeamFilters() {
-    var teamSel = $('tmevTeam'), gameSel = $('tmevGame');
-    if (!teamSel || !gameSel || !S.lineups) return;
+    var teamSel = $('tmevTeam'), gameSel = $('tmevGame'), scanSel = $('tmevScanTeam');
+    if (!S.lineups) return;
     var teams = new Set(), games = [];
     (S.lineups.games || []).forEach(function (g) {
       if (g.home_team) teams.add(g.home_team);
       if (g.away_team) teams.add(g.away_team);
       games.push({ id: g.game_id, label: (g.away_team_abbr || '?') + ' @ ' + (g.home_team_abbr || '?') });
     });
-    teamSel.innerHTML = '<option value="">All teams</option>' +
-      [...teams].sort().map(function (t) { return '<option value="' + t + '">' + t + '</option>'; }).join('');
-    gameSel.innerHTML = '<option value="">All games</option>' +
+    var sortedTeams = [...teams].sort();
+    var teamOpts = sortedTeams.map(function (t) { return '<option value="' + t + '">' + t + '</option>'; }).join('');
+    if (teamSel) teamSel.innerHTML = '<option value="">All teams</option>' + teamOpts;
+    if (scanSel) scanSel.innerHTML = '<option value="">All teams (bigger, slower)</option>' + teamOpts;
+    if (gameSel) gameSel.innerHTML = '<option value="">All games</option>' +
       games.map(function (g) { return '<option value="' + g.id + '">' + g.label + '</option>'; }).join('');
   }
 
@@ -276,6 +289,47 @@
     runPipeline();
   }
 
+  /* ---------------- pipeline mode toggle ---------------- */
+  /* Flip between 'noFv' (DK-no-vig team browser) and 'uploadFv' (OCR
+     upload flow). Hides/shows the scan panel + upload card, and
+     updates the mode-button visual state. Does NOT clear candidates
+     already on screen — switching modes mid-session leaves prior
+     results visible for comparison until the next runPipeline/runScan. */
+  function setPipelineMode(m) {
+    if (m !== 'noFv' && m !== 'uploadFv') return;
+    S.pipelineMode = m;
+    var btnNoFv = $('tmevModeNoFv'), btnUpload = $('tmevModeUpload');
+    function setBtn(btn, active) {
+      if (!btn) return;
+      btn.style.background = active ? 'rgba(96,165,250,.14)' : 'transparent';
+      btn.style.color = active ? 'var(--ac3)' : 'var(--mu)';
+      btn.style.borderColor = active ? 'var(--ac3)' : 'var(--b1)';
+    }
+    setBtn(btnNoFv,   m === 'noFv');
+    setBtn(btnUpload, m === 'uploadFv');
+    var scanPanel = $('tmevScanPanel'), uploadPanel = $('tmevUploadPanel');
+    if (scanPanel)   scanPanel.style.display   = (m === 'noFv')    ? 'flex'  : 'none';
+    if (uploadPanel) uploadPanel.style.display = (m === 'uploadFv') ? 'block' : 'none';
+  }
+
+  function onMinRChange() {
+    var el = $('tmevMinR'); if (!el) return;
+    /* Slider is integer 0-50 representing 0.00-0.50 in steps of 0.01. */
+    S.minAbsR = Number(el.value) / 100;
+    var lbl = $('tmevMinRV'); if (lbl) lbl.textContent = S.minAbsR.toFixed(2);
+  }
+
+  /* No-FV scan entry point. User clicks "SCAN" to explicitly kick
+     off enumeration + DK pricing for the selected team (or all). */
+  async function runScan() {
+    var sel = $('tmevScanTeam');
+    S.scanTeam = sel ? sel.value : '';
+    S.fvIndex = {};           // empty — forces corr_only path in enumerator
+    S.fvSource = 'dk-novig';  // diag label; non-'ocr' so coverage panel shows correctly
+    S.ocrResponse = null;     // no OCR this run
+    runPipeline();
+  }
+
   /* ---------------- pipeline orchestration ---------------- */
   async function runPipeline() {
     if (!window.TEAMMATE_DATA || !window.SLOT_BASELINES) {
@@ -289,7 +343,12 @@
       return;
     }
     if (!S.lineups) { setStatus('Lineups not loaded yet — retry in a moment', 'err'); return; }
-    if (!S.fvIndex)  { setStatus('No FV data — upload a sheet or use synthetic FV', 'err'); return; }
+    /* No-FV browsing doesn't need a populated fvIndex (both legs come
+       from DK no-vig). Upload-FV mode still enforces the gate. */
+    if (S.pipelineMode !== 'noFv' && !S.fvIndex) {
+      setStatus('No FV data — upload a sheet, use synthetic FV, or switch to NO FV mode', 'err');
+      return;
+    }
 
     /* CHECKPOINT 2: FV ↔ lineup intersection BEFORE enumeration.
        This is the "is the join even going to find anything" check.
@@ -328,14 +387,24 @@
       dlog('  per-team FV coverage:', perTeamCoverage);
     }
 
-    var enumRes = TE.enumerateCandidates({
+    /* Mode-dependent enumeration args. No-FV mode enables corr_only
+       emission + applies the |r| floor + optional team scope limit
+       before DK fan-out. Upload-FV mode keeps the prior behavior
+       exactly (backward-compat). */
+    var enumArgs = {
       lineups:      S.lineups.games || [],
-      fvByPlayer:   S.fvIndex,
+      fvByPlayer:   S.fvIndex || {},
       teammateData: window.TEAMMATE_DATA,
       slotBaselines: window.SLOT_BASELINES,
       mode:         S.mode,
       minPairGames: S.filters.minN,
-    });
+    };
+    if (S.pipelineMode === 'noFv') {
+      enumArgs.allowCorrOnly = true;
+      enumArgs.minAbsR       = S.minAbsR;
+      if (S.scanTeam) enumArgs.teamFilter = [S.scanTeam];
+    }
+    var enumRes = TE.enumerateCandidates(enumArgs);
     S.candidatesRaw = enumRes.candidates;
     S.enumDiagnostics = enumRes.diagnostics;  // retained for #tmevDiagPanel
 
@@ -1077,6 +1146,13 @@
     if (S.activated) return;
     S.activated = true;
 
+    /* Initialize pipeline-mode visuals + panel visibility. Default is
+       No-FV browser — upload card stays hidden until the user
+       explicitly toggles to Upload FV mode. */
+    setPipelineMode(S.pipelineMode || 'noFv');
+    /* Sync the minAbsR slider display with its default value. */
+    onMinRChange();
+
     /* Drop + paste handlers. Modeled on the pitcher EV Finder tab's
        pattern (index.html:evDrop wiring). */
     var dz = $('tmevDrop');
@@ -1120,16 +1196,19 @@
   }
 
   window.teammateEvTab = {
-    onActivate:      onActivate,
-    refreshLineups:  refreshLineups,
-    handleUpload:    handleUpload,
-    setMode:         setMode,
-    onFilter:        onFilter,
-    useSyntheticFv:  useSyntheticFv,
-    _aiInsight:      loadAiInsight,
+    onActivate:        onActivate,
+    refreshLineups:    refreshLineups,
+    handleUpload:      handleUpload,
+    setMode:           setMode,
+    onFilter:          onFilter,
+    useSyntheticFv:    useSyntheticFv,
+    setPipelineMode:   setPipelineMode,
+    runScan:           runScan,
+    onMinRChange:      onMinRChange,
+    _aiInsight:        loadAiInsight,
     _projectForInsight: projectCandidateForInsight,
-    _render:         render,
-    _cardHtml:       cardHtml,
-    _state:          S,  // for debugging from the browser console
+    _render:           render,
+    _cardHtml:         cardHtml,
+    _state:            S,  // for debugging from the browser console
   };
 })();
