@@ -1843,19 +1843,196 @@ function evRenderResults(){
   window.scrollTo({top:document.getElementById('evResults').offsetTop-20,behavior:'smooth'});
 }
 
-/* ============ 3-leg render stub ============
-   WIP: the 2-leg path is production; the 3-leg render pipeline is under
-   construction. Backend (dk_api.py enum_size=3 + server forwarding) is live
-   and prompt builder is extended, but the frontend enumeration / card /
-   EV math block is still being authored. Flipping the toggle lands here
-   and shows a placeholder instead of crashing. Remove this stub when
-   evRenderResults3Leg proper lands. */
+/* ============ 3-leg compute helpers ============
+   Resolves the empirical 3-way joint hit rate (all3) for a specific
+   triplet of legs and blends it with the global triplet baseline under
+   heavier shrinkage than 2-leg. Returns the blended joint probability
+   used directly as the model joint in EV — the pairwise-corrected path
+   is retained only for display as "FV CORR" on the card. */
+
+/* Permutation-tolerant combo_3 lookup. Aggregates store triplets in a
+   canonical stat-category order (K→ER→BB→H→OUTS) from combo_spec.json.
+   Matched legs from DK come through dk_api.py stat-sorted the same way,
+   so the common case matches by position. We still try all 6 permutations
+   as a belt-and-suspenders guard against OCR ordering quirks that could
+   reorder the request. Returns the combo row or null. */
+function _findCombo3In(arr,a,b,c){
+  if(!arr||!arr.length)return null;
+  var perms=[[a,b,c],[a,c,b],[b,a,c],[b,c,a],[c,a,b],[c,b,a]];
+  for(var i=0;i<arr.length;i++){
+    var r=arr[i];
+    for(var p=0;p<6;p++){
+      var t=perms[p];
+      if(r.leg1===t[0]&&r.leg2===t[1]&&r.leg3===t[2])return r;
+    }
+  }
+  return null;
+}
+
+/* Shrinkage blend of player all3 toward global all3 for a specific triplet.
+   Below n_eff=15 (BLEND_MIN_STARTS_3WAY) route entirely to global — player
+   empirical at that sample is noise. At and above: player weight =
+   n_eff / (n_eff + K_3WAY), K_3WAY=80. Stiffer than pairwise K because
+   joint-frequency variance is higher than pairwise-frequency variance.
+
+   Returns {pBlend, pPlayer, pGlobal, wPlayer, wGlobal, nEff, nRaw, source}
+   where p* values are in [0,1] decimal probability (NOT the 0-100 %
+   representation stored in the aggregates — caller does not need to divide). */
+function resolveAll3(pd,a,b,c){
+  var nEff=(pd&&pd.n_starts_eff)||0;
+  var nRaw=(pd&&pd.n_starts_raw)||(pd&&pd.n_starts)||0;
+  var playerCombo=pd?_findCombo3In(pd.combos_3,a,b,c):null;
+  var globalCombo=D?_findCombo3In(D.global_3,a,b,c):null;
+  var pPlayer=(playerCombo&&playerCombo.all3!=null)?playerCombo.all3/100:null;
+  var pGlobal=(globalCombo&&globalCombo.all3!=null)?globalCombo.all3/100:null;
+  var base={pPlayer:pPlayer,pGlobal:pGlobal,nEff:nEff,nRaw:nRaw,playerCombo:playerCombo,globalCombo:globalCombo};
+  /* 100% global fallbacks */
+  if(pPlayer==null){
+    return Object.assign({pBlend:pGlobal,wPlayer:0,wGlobal:1,source:'global(no-player)'},base);
+  }
+  if(pGlobal==null){
+    /* No global baseline available — player-only is the best we have.
+       Flag source so the card can mark this as "no shrinkage applied". */
+    return Object.assign({pBlend:pPlayer,wPlayer:1,wGlobal:0,source:'player(no-global)'},base);
+  }
+  if(nEff<BLEND_MIN_STARTS_3WAY){
+    return Object.assign({pBlend:pGlobal,wPlayer:0,wGlobal:1,source:'blended(low-sample)'},base);
+  }
+  var wp=nEff/(nEff+K_3WAY);
+  var pBlend=wp*pPlayer+(1-wp)*pGlobal;
+  return Object.assign({pBlend:pBlend,wPlayer:wp,wGlobal:1-wp,source:'blended'},base);
+}
+
+/* Per-leg marginal hit rate from the triplet row itself (hit1/hit2/hit3),
+   with flipDir fallbacks for canonical vs requested direction. Returns
+   percent (0-100) to stay consistent with how the aggregates store them,
+   since _sgpHitRates etc. also return 0-100.  */
+function _legMarginalFrom3(combo,leg,slot){
+  if(!combo)return null;
+  var map={leg1:'hit1',leg2:'hit2',leg3:'hit3'};
+  var hitKey=map[slot];
+  if(combo[slot]===leg)return combo[hitKey];
+  /* direction flip: if the stored row's slot leg is the flipped form of
+     the requested leg, complement the hit rate */
+  if(combo[slot]===flipDir(leg))return combo[hitKey]!=null?100-combo[hitKey]:null;
+  return null;
+}
+
+/* Core 3-leg EV compute. Produces everything the card needs:
+   - legs[] with FV prob + base rate (from pd.combos_3)
+   - pairwise r values via resolveR (same blend pipeline as 2-leg cards)
+   - pPlayer / pGlobal / pBlend empirical 3-way joint (shrunk)
+   - pairwise-corrected FV joint (for "FV CORR" display column)
+   - DK implied joint, EDGE, EV, Kelly sizing
+   - DK hold / correlation premium (per-leg trueOdds product vs SGP decimal)
+   - sparsity flags for the warning badge */
+function evCompute3Leg(pitcher,pd,matched,indices,dkDecimal,legTrueOdds){
+  if(!indices||indices.length!==3)return null;
+  var rawLegs=indices.map(function(i){return matched[i];});
+  var legs=rawLegs.map(function(m){return{leg:m.leg,fv:m.avg_fv,fvSuspicious:!!m._fv_suspicious,p:americanToProb(m.avg_fv)};});
+  if(legs.some(function(l){return l.p===null;}))return null;
+
+  var a=legs[0].leg,b=legs[1].leg,c=legs[2].leg;
+  var all3Res=resolveAll3(pd,a,b,c);
+  /* Player combo row (if present) carries the best marginal hit rates for
+     the specific thresholds; fall back to global row, then to _legHitRate
+     (pairwise-derived marginals from combos_2/global_2). */
+  var pCombo=all3Res.playerCombo,gCombo=all3Res.globalCombo;
+  legs.forEach(function(l,idx){
+    var slot='leg'+(idx+1);
+    var pct=_legMarginalFrom3(pCombo,l.leg,slot);
+    if(pct==null)pct=_legMarginalFrom3(gCombo,l.leg,slot);
+    if(pct==null)pct=_legHitRate(pd,l.leg);
+    l.baseRate=pct;
+  });
+
+  /* Pairwise correlations for display + FV CORR secondary. Same resolveR
+     pipeline as 2-leg — routes through blend-aware logic and CORR_MODE.
+     We use binary r for the joint correction (consistent with 2-leg EV),
+     but the CARD shows the pairwise values with their tooltips. */
+  var pairDetails=[];
+  var logIndep=0;legs.forEach(function(x){logIndep+=Math.log(x.p);});
+  var corrSum=0;var missingPairs=0;var usedPairs=0;
+  for(var i=0;i<legs.length;i++){
+    for(var j=i+1;j<legs.length;j++){
+      var res=resolveR(pd,legs[i].leg,legs[j].leg);
+      var r=res.r;
+      var pa=legs[i].p,pb=legs[j].p;
+      if(r==null){missingPairs++;pairDetails.push({a:legs[i].leg,b:legs[j].leg,r:null,source:res.source});continue;}
+      var pab=Math.max(1e-6,Math.min(0.999999,jointFrechet(pa,pb,r)));
+      corrSum+=Math.log(pab)-Math.log(pa*pb);
+      usedPairs++;
+      pairDetails.push({a:legs[i].leg,b:legs[j].leg,r:r,source:res.source,rPlayer:res.rPlayer,rGlobal:res.rGlobal,wPlayer:res.wPlayer,wGlobal:res.wGlobal,n:res.n,k:res.k});
+    }
+  }
+  var pIndep=Math.exp(logIndep);
+  var pJointPairwise=Math.max(1e-6,Math.min(0.999999,Math.exp(logIndep+corrSum)));
+
+  /* Model joint = shrunk empirical all3. Falls back to pairwise-corrected
+     joint only if the triplet isn't in the aggregates at all (pBlend null). */
+  var pModel=(all3Res.pBlend!=null)?all3Res.pBlend:pJointPairwise;
+  var pDK=1/dkDecimal;
+  var evPct=(pModel*dkDecimal-1)*100;
+  var kelly=(pModel*dkDecimal-1)/(dkDecimal-1);
+
+  /* DK correlation premium: compare DK's combined SGP implied prob against
+     the product of DK's own per-leg vigged implied probs. Positive = DK
+     prices the SGP MORE likely than independent (it agrees the legs are
+     positively correlated); negative = SGP implied less likely (negative
+     corr or uncorrelated). Informational — helps user distinguish "model
+     sees correlation that DK hasn't priced" from "DK has already absorbed
+     the correlation signal". */
+  var dkHoldPct=null;
+  if(legTrueOdds&&legTrueOdds.length===3&&legTrueOdds.every(function(v){return v>0;})){
+    var pIndepDK=(1/legTrueOdds[0])*(1/legTrueOdds[1])*(1/legTrueOdds[2]);
+    if(pIndepDK>0)dkHoldPct=(pDK/pIndepDK-1)*100;
+  }
+
+  /* Sparsity proxy. Per spec: flag if any single pair would have n<30 in
+     the weaker-marginal direction, even when the triplet n looks ok. We
+     don't store per-pair overlap counts, so approximate via
+     min(baseRate, 100-baseRate) × n_raw for each leg — the legs' own
+     weakest direction is a lower bound on pair overlap. */
+  var nRaw=(pd&&pd.n_starts_raw)||(pd&&pd.n_starts)||0;
+  var weakestLegProxy=null;
+  legs.forEach(function(l){
+    if(l.baseRate==null)return;
+    var side=Math.min(l.baseRate,100-l.baseRate)/100*nRaw;
+    if(weakestLegProxy==null||side<weakestLegProxy)weakestLegProxy=side;
+  });
+  var sparsityWarn=(weakestLegProxy!=null&&weakestLegProxy<30);
+
+  return{
+    legs:legs,
+    pairDetails:pairDetails,
+    missingPairs:missingPairs,
+    usedPairs:usedPairs,
+    pIndep:pIndep,
+    pJointPairwise:pJointPairwise,
+    fvIndepOdds:probToAmerican(pIndep),
+    fvCorrOdds:probToAmerican(pJointPairwise),
+    all3:all3Res,
+    pModel:pModel,
+    pDK:pDK,
+    edgePp:(pModel-pDK)*100,
+    evPct:evPct,
+    kellyPct:Math.max(0,kelly)*100,
+    qkPct:Math.max(0,kelly*0.25)*100,
+    dkHoldPct:dkHoldPct,
+    sparsityWarn:sparsityWarn,
+    weakestLegProxy:weakestLegProxy,
+    nRaw:nRaw,
+  };
+}
+
+/* ============ 3-leg render stub (pending) ============
+   Replaced next commit. Left intentionally minimal so the compute
+   helpers above can land and be unit-sanity-checked independently. */
 function evRenderResults3Leg(){
   document.getElementById('evResults').innerHTML=
     '<div class="note" style="border-left-color:var(--ac2)">'+
-    '<b>3-leg mode is wired but the render pipeline is still in progress.</b><br>'+
-    'Backend is live (<code>enumSize:3</code> priced on DK) and the AI prompt builder handles 3-leg context. '+
-    'The enumeration + card render block lands next commit. Use 2-leg for now.'+
+    '<b>3-leg compute pipeline landed. Render pipeline pending next commit.</b><br>'+
+    'resolveAll3 / evCompute3Leg ready; card layout + filter + AI Insights wiring in progress.'+
     '</div>';
 }
 </script>
