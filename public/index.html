@@ -113,33 +113,37 @@ h1 em{color:var(--ac);font-style:normal;}
 /* NBA EV card styling. Shares the MLB pitcher-card visual vocabulary
    (rounded, s1 background, accent-cyan "EV%" corner) but uses Space
    Mono throughout the body for tabular odds alignment. */
-.nba-cards{display:flex;flex-direction:column;gap:12px;margin-top:12px;}
-.nba-card{background:var(--s1);border:1px solid var(--b1);border-radius:10px;padding:14px 16px;font-family:'Inter',sans-serif;}
-.nba-card .nc-head{display:flex;align-items:baseline;gap:10px;margin-bottom:8px;}
-.nba-card .nc-player{font-size:14px;font-weight:700;color:var(--tx);letter-spacing:-.2px;}
-.nba-card .nc-ctx{font-size:10px;color:var(--mu);font-family:'Space Mono',monospace;margin-top:2px;}
+.nba-cards{display:flex;flex-direction:column;gap:8px;margin-top:10px;}
+.nba-card{background:var(--s1);border:1px solid var(--b1);border-radius:9px;padding:9px 12px;font-family:'Inter',sans-serif;}
+.nba-card .nc-head{display:flex;align-items:baseline;gap:10px;margin-bottom:4px;}
+.nba-card .nc-player{font-size:13px;font-weight:700;color:var(--tx);letter-spacing:-.2px;}
+.nba-card .nc-ctx{font-size:10px;color:var(--mu);font-family:'Space Mono',monospace;margin-top:1px;}
 .nba-card .nc-ev{margin-left:auto;text-align:right;}
-.nba-card .nc-ev .v{font-size:18px;font-weight:700;font-family:'Space Mono',monospace;}
+.nba-card .nc-ev .v{font-size:16px;font-weight:700;font-family:'Space Mono',monospace;line-height:1;}
 .nba-card .nc-ev .l{font-size:9px;color:var(--mu);font-family:'Space Mono',monospace;letter-spacing:.6px;}
-.nba-card .nc-leg{display:grid;grid-template-columns:1fr auto auto;gap:12px;padding:6px 0;border-top:1px solid var(--b1);font-family:'Space Mono',monospace;font-size:12px;}
+.nba-card .nc-leg{display:grid;grid-template-columns:1fr auto auto;gap:10px;padding:3px 0;border-top:1px solid var(--b1);font-family:'Space Mono',monospace;font-size:12px;}
 .nba-card .nc-leg .nc-lbl{color:var(--tx);font-weight:600;}
 .nba-card .nc-leg .nc-fv{color:var(--ac3);}
 .nba-card .nc-leg .nc-dk{color:var(--mu);font-size:11px;}
-/* "Both hit (corr at X/Y, n=N)  MODEL 34.0%" summary row. Muted s2
-   background to visually group with the per-leg rows above it while
-   still standing apart as the aggregated-model surface. */
-.nba-card .nc-both{display:flex;align-items:baseline;justify-content:space-between;padding:8px 10px;margin-top:6px;background:var(--s2);border-radius:6px;font-family:'Space Mono',monospace;font-size:12px;}
+/* Both-hit summary row — tighter vertical padding vs pre-compact; keeps the
+   s2 background so the "aggregated model joint" read stays visually distinct
+   from the per-leg rows above and the dense/joint strips below. */
+.nba-card .nc-both{display:flex;align-items:baseline;justify-content:space-between;padding:4px 8px;margin-top:4px;background:var(--s2);border-radius:5px;font-family:'Space Mono',monospace;font-size:11px;}
 .nba-card .nc-both .nc-both-lbl{color:var(--tx);}
-.nba-card .nc-both .nc-both-val{color:var(--tx);font-weight:700;font-size:13px;}
-.nba-card .nc-joint{margin-top:8px;padding:8px 10px;background:var(--s2);border-radius:6px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;font-family:'Space Mono',monospace;font-size:11px;}
-.nba-card .nc-joint .nc-cell{display:flex;flex-direction:column;gap:2px;}
-.nba-card .nc-joint .nc-cell .nc-cval{font-size:14px;font-weight:700;color:var(--tx);}
-.nba-card .nc-joint .nc-cell .nc-clbl{font-size:9px;color:var(--mu);letter-spacing:.6px;}
-.nba-card .nc-prices{margin-top:6px;font-size:11px;color:var(--mu);font-family:'Space Mono',monospace;display:flex;gap:14px;flex-wrap:wrap;}
-.nba-card .nc-prices .nc-pv{color:var(--tx);}
-.nba-card .nc-stats{margin-top:6px;font-size:10px;color:var(--mu);font-family:'Space Mono',monospace;letter-spacing:.3px;}
-.nba-card .nc-badges{display:inline-flex;gap:6px;margin-top:8px;flex-wrap:wrap;}
-.nba-card .nc-bdg{font-size:9px;padding:2px 7px;border-radius:10px;font-family:'Space Mono',monospace;letter-spacing:.5px;font-weight:600;}
+.nba-card .nc-both .nc-both-val{color:var(--tx);font-weight:700;font-size:12px;}
+/* Dense single-line stats: DK SGP · FV CORR · r · p · n(tooltip). Replaces
+   the old stacked prices + stats rows. Flex+wrap so long DK miss reasons
+   fall to the next line gracefully without crowding. */
+.nba-card .nc-dense{margin-top:4px;font-size:11px;color:var(--mu);font-family:'Space Mono',monospace;display:flex;gap:10px;flex-wrap:wrap;align-items:baseline;}
+.nba-card .nc-dense .nc-pv{color:var(--tx);font-weight:600;}
+.nba-card .nc-dense .nc-n{cursor:help;border-bottom:1px dotted var(--b2);}
+.nba-card .nc-dense .nc-sep{color:var(--b2);}
+/* Inline MODEL / DK IMPLIED / EDGE strip — single line vs the old 3-column
+   grid with stacked labels. Same info, ~60% less vertical space. */
+.nba-card .nc-joint{margin-top:3px;font-size:11px;color:var(--mu);font-family:'Space Mono',monospace;display:flex;gap:14px;flex-wrap:wrap;align-items:baseline;}
+.nba-card .nc-joint .nc-jv{color:var(--tx);font-weight:600;}
+.nba-card .nc-badges{display:inline-flex;gap:5px;margin-top:4px;flex-wrap:wrap;}
+.nba-card .nc-bdg{font-size:9px;padding:1px 7px;border-radius:9px;font-family:'Space Mono',monospace;letter-spacing:.5px;font-weight:600;}
 .nba-card .nc-bdg.info{background:rgba(96,165,250,.12);color:var(--ac3);}
 .nba-card .nc-bdg.warn{background:rgba(245,158,11,.15);color:var(--ac2);}
 .nba-card .nc-bdg.danger{background:rgba(248,113,113,.15);color:var(--red);}
