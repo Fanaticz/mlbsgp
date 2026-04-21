@@ -1174,6 +1174,127 @@ def find_sgps_teammate(payload):
     return response
 
 
+def _stat_matches_market_nba(stat_str, market_blob):
+    """NBA stat → market blob matcher. Caller has already scoped
+    `market_blob` to an NBA player prop via the nba_only subcat filter
+    + isNbaProp check, so this only disambiguates within the 4 supported
+    stats. Order matters: 3-Pointers Made first so a bare "points" match
+    doesn't grab 3-point markets. Canonical stat_str values come from the
+    nbaEvTab.js enumerator: Points, Rebounds, Assists, 3-Pointers Made."""
+    s = (stat_str or "").lower().strip()
+    m = (market_blob or "").lower()
+    # 3-Pointers Made has many DK spellings. Check for any of them first.
+    if "3-pointer" in s or "3-point" in s or "three" in s or s == "3pm":
+        return ("3-point" in m or "3 point" in m or "threes" in m
+                or "pointers" in m or "3pt" in m or "3 pt" in m)
+    if s == "points":
+        # Plain Points — must NOT be 3-Point, PRA, or a combo market. We
+        # exclude "rebound"/"assist" substrings because DK sometimes
+        # emits combo markets (PRA, PR) under Points subcats.
+        return ("point" in m
+                and "3-point" not in m and "3 point" not in m
+                and "three" not in m and "pointers" not in m
+                and "rebound" not in m and "assist" not in m)
+    if s == "rebounds":
+        return "rebound" in m and "assist" not in m and "point" not in m
+    if s == "assists":
+        return "assist" in m and "rebound" not in m and "point" not in m
+    return False
+
+
+def _match_leg_to_dk_nba(player, prop, side, line, props):
+    """NBA analog of _match_leg_to_dk_batter. Takes structured inputs
+    directly — nbaEvTab.js emits (player, prop, side, line) fields, not
+    the "Over 0.5 Hits" composite string the MLB paths parse, so
+    building a string and re-parsing would be a needless round-trip.
+
+    Line matching is exact (points == line). NBA doesn't use the
+    .5 ↔ milestone equivalence MLB has; line-approximation already
+    happened upstream in nbaEvTab.js's line-ignorant enumerator (the
+    candidate here has the FV line; the caller wants DK's selectionId
+    at that exact line, if DK offers it).
+
+    Returns a dict { selection_id, direction, points, prop,
+    over_american, under_american, opposite_selection_id } when DK has
+    the leg + an opposite-direction partner at the same points/subcat.
+    Returns None if DK doesn't offer the primary leg. The opposite-
+    direction side may still be absent (opp_american=None) — the
+    caller's no-vig path handles that."""
+    if not prop or side not in ("over", "under") or line is None:
+        return None
+    try:
+        line = float(line)
+    except (ValueError, TypeError):
+        return None
+    direction = "Over" if side == "over" else "Under"
+
+    def _american_of(sel):
+        raw = (sel or {}).get("oddsAmerican") or ""
+        if not raw:
+            return None
+        t = str(raw).replace("−", "-").replace("+", "").strip()
+        try:
+            return int(t)
+        except (ValueError, TypeError):
+            return None
+
+    matched = None
+    for p in props:
+        if not p.get("isNbaProp"):
+            continue
+        if not _pitcher_matches(player, p.get("player", "")):
+            continue
+        if _selection_direction(p.get("outcomeType")) != direction:
+            continue
+        pts = p.get("points")
+        try:
+            if pts is None or float(pts) != line:
+                continue
+        except (ValueError, TypeError):
+            continue
+        blob = (p.get("marketName", "") + " " + p.get("subcategory", "") + " " + p.get("marketType", ""))
+        if _stat_matches_market_nba(prop, blob):
+            matched = p
+            break
+    if not matched:
+        return None
+
+    # Opposite-direction lookup at the same (points, subcat) for no-vig.
+    opposite_dir = "Under" if direction == "Over" else "Over"
+    matched_pts = matched.get("points")
+    matched_subcat = matched.get("subcategory") or ""
+    opp = None
+    for p in props:
+        if not p.get("isNbaProp"):
+            continue
+        if not _pitcher_matches(player, p.get("player", "")):
+            continue
+        if _selection_direction(p.get("outcomeType")) != opposite_dir:
+            continue
+        if p.get("points") != matched_pts:
+            continue
+        if (p.get("subcategory") or "") != matched_subcat:
+            continue
+        blob = (p.get("marketName", "") + " " + p.get("subcategory", "") + " " + p.get("marketType", ""))
+        if _stat_matches_market_nba(prop, blob):
+            opp = p
+            break
+
+    matched_am = _american_of(matched)
+    opp_am = _american_of(opp) if opp else None
+    over_am  = matched_am if direction == "Over"  else opp_am
+    under_am = matched_am if direction == "Under" else opp_am
+    return {
+        "selection_id":     matched.get("selectionId"),
+        "direction":        direction,
+        "points":           matched_pts,
+        "prop":             prop,
+        "over_american":    over_am,
+        "under_american":   under_am,
+        "opposite_selection_id": (opp.get("selectionId") if opp else None),
+    }
+
+
 def find_sgps_nba(payload):
     """Price a batch of NBA same-player 2-leg SGP candidates against DK.
 

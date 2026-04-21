@@ -20,6 +20,11 @@ node scripts/nba_null_ev_sort_check.js
 # NBA OCR normalizer + market table + groupNbaPlayers. Landed in
 # Phase 4 Edit 4. Expected final line: "ALL NBA OCR NORMALIZE TESTS PASS"
 node scripts/nba_ocr_normalize_tests.js
+
+# NBA DK market matcher + (player, prop, side, line) → selection ID.
+# Landed with the DK pricing wire-up. Expected final line:
+# "ALL NBA DK MATCH TESTS PASS"
+python3 scripts/nba_dk_match_tests.py
 ```
 
 Neither needs jsdom or a running server — both eval the NBA module in a
