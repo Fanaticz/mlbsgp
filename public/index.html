@@ -1239,6 +1239,11 @@ var EV_LEG_SIZE=2;
    Users can drop these sliders once we've observed a few slates. */
 var EV_MIN_EV_PCT_3=10;
 var EV_MIN_STARTS_3=75;
+/* Pagination for 3-leg grid. All enumerated candidates render (no filters),
+   so unbounded rendering lags on large slates. 30/page keeps scroll snappy
+   while letting the user sweep the whole distribution. */
+var EV_PAGE_3=1;
+var EV_PAGE_SIZE_3=30;
 /* 3-way shrinkage. 15 effective starts is the floor for any player weight
    at all; below that a pitcher's empirical triplet rate is essentially noise
    (one hot streak flips 20pp) and must route entirely to the global
@@ -1321,8 +1326,13 @@ function evSetLegSize(n){
   var btn2=document.getElementById('evLegSize2'),btn3=document.getElementById('evLegSize3');
   if(btn2){btn2.className=n===2?'active':'';btn2.style.background=n===2?'rgba(34,197,94,.12)':'transparent';btn2.style.color=n===2?'var(--ac)':'var(--mu)';}
   if(btn3){btn3.className=n===3?'active':'';btn3.style.background=n===3?'rgba(34,197,94,.12)':'transparent';btn3.style.color=n===3?'var(--ac)':'var(--mu)';}
+  /* 3-leg filter bar is permanently hidden: 3-leg mode now shows every
+     enumerated candidate with no filter gating so users can calibrate
+     against the full distribution. Filter sliders retained in DOM for
+     potential future re-enablement but never surfaced. */
   var fb=document.getElementById('evFilters3');
-  if(fb)fb.style.display=n===3?'flex':'none';
+  if(fb)fb.style.display='none';
+  if(n===3)EV_PAGE_3=1;
   /* If we already have an OCR'd leg set, re-request pricing at the new size
      (cached replay when available). No OCR in flight means nothing to do —
      the toggle will take effect on the next upload. */
@@ -1718,6 +1728,7 @@ function evFindSgps(size){
       if(j.error&&!j.pitchers){document.getElementById('evResults').innerHTML='<div class="note" style="border-left-color:var(--red)">'+j.error+'</div>';return;}
       EV_RESULTS=j;
       EV_RESULTS_BY_SIZE[wantSize]=j;
+      EV_PAGE_3=1;
       status.innerHTML='<span style="color:var(--ac)">Done! Scroll down to see all +EV SGPs ranked.</span>';
       evRenderResults();
     })
@@ -1780,10 +1791,10 @@ function evComputeCombo(pitcher,pd,matchedLegs,indices,dkDecimal){
 
 function evRenderResults(){
   if(!EV_RESULTS){document.getElementById('evResults').innerHTML='';return;}
-  /* 3-leg mode takes its own render path — different card layout, different
-     filters (MIN EV% / MIN STARTS), different data source (combos_3/all3
-     from aggregates rather than combos_2/pairwise r). 2-leg path below
-     unchanged. */
+  /* 3-leg mode takes its own render path — different card layout, no
+     filter gating (shows the full enumerated distribution), different
+     data source (combos_3/all3 from aggregates rather than combos_2/
+     pairwise r). 2-leg path below unchanged. */
   if(EV_LEG_SIZE===3){return evRenderResults3Leg();}
   _SGP_DATA=[];
   var html='';
@@ -2169,19 +2180,23 @@ function evCompute3Leg(pitcher,pd,matched,indices,dkDecimal,legTrueOdds){
 }
 
 /* ============ 3-leg render pipeline ============
-   Mirrors the 2-leg evRenderResults iteration shape: collect all priced
-   combos across pitchers, compute EV, filter, sort by EV desc, emit one
-   card per survivor. Separate filters from 2-leg (MIN EV% / MIN STARTS)
-   apply here; correlation mode toggle is shared. card3EV renders each
-   card in its own function so iteration shell and layout evolve
-   independently. */
+   Mirrors the 2-leg evRenderResults iteration shape: collect every priced
+   combo across pitchers, compute EV, sort by EV desc, emit one card per
+   entry. No filter gating — 3-leg mode exposes the full enumerated
+   distribution so users can calibrate what the tool is producing.
+   Pagination (EV_PAGE_SIZE_3 per page) keeps rendering snappy on large
+   slates; _SGP_DATA is populated for every combo so AI-Insights indices
+   remain stable across page flips. */
 function evRenderResults3Leg(){
   _SGP_DATA=[];
   var html='';
   var pitchers=EV_RESULTS.pitchers||{};
   var allCombos=[];
   var pitcherWarnings=[];
-  var skippedLowN=0,skippedBelowEV=0,skippedNoData=0;
+  /* Unrenderable = enumerated combos we can't build a card for (missing
+     pitcher aggregates, null pBlend). Kept distinct from filtering because
+     filters are gone; these are hard compute blockers. */
+  var skippedNoData=0;
   Object.keys(pitchers).forEach(function(pitcher){
     var pr=pitchers[pitcher];
     if(pr.error){pitcherWarnings.push({pitcher:pitcher,msg:pr.error,type:'error'});return;}
@@ -2189,43 +2204,87 @@ function evRenderResults3Leg(){
     if(pr.unmatched_legs&&pr.unmatched_legs.length){pitcherWarnings.push({pitcher:pitcher,msg:'Unmatched: '+pr.unmatched_legs.join(' · '),type:'warn'});}
     var pd=D.pitchers[pitcher]||null;
     var matched=pr.matched_legs||[];
-    var nRaw=(pd&&(pd.n_starts_raw||pd.n_starts))||0;
     (pr.combos_3||[]).forEach(function(c){
-      if(!pd||nRaw<EV_MIN_STARTS_3){skippedLowN++;return;}
+      if(!pd){skippedNoData++;return;}
       var calc=evCompute3Leg(pitcher,pd,matched,c.leg_indices,c.dk_decimal,c.leg_true_odds);
       if(!calc||calc.all3.pBlend==null){skippedNoData++;return;}
-      if(calc.evPct<EV_MIN_EV_PCT_3){skippedBelowEV++;return;}
       allCombos.push({pitcher:pitcher,inDB:!!pd,game:pr.game_name,size:3,dkOdds:c.dk_odds,dkDecimal:c.dk_decimal,calc:calc,rawLegs:c.leg_indices.map(function(i){return matched[i];})});
     });
   });
   allCombos.sort(function(a,b){return b.calc.evPct-a.calc.evPct;});
 
   var pitcherList=Object.keys(pitchers);
-  var totalPriced=allCombos.length+skippedLowN+skippedBelowEV+skippedNoData;
+  var totalEnumerated=allCombos.length+skippedNoData;
   var medianEdgePp=null;
   if(allCombos.length){var eds=allCombos.map(function(c){return c.calc.edgePp;}).sort(function(a,b){return a-b;});medianEdgePp=eds[Math.floor(eds.length/2)];}
+
+  var pageSize=EV_PAGE_SIZE_3;
+  var maxPage=Math.max(1,Math.ceil(allCombos.length/pageSize));
+  if(EV_PAGE_3>maxPage)EV_PAGE_3=maxPage;
+  if(EV_PAGE_3<1)EV_PAGE_3=1;
+  var pageStart=(EV_PAGE_3-1)*pageSize;
+  var pageEnd=Math.min(pageStart+pageSize,allCombos.length);
+  var pageCount=Math.max(0,pageEnd-pageStart);
 
   html+='<div class="ctrl" style="margin-top:14px;flex-direction:column;align-items:stretch;gap:6px">';
   html+='<div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center">';
   html+='<div><span style="font-size:22px;font-weight:700;font-family:Space Mono,monospace;color:var(--cyan)">'+allCombos.length+'</span> <span style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">3-LEG SGPs</span></div>';
   html+='<div><span style="font-size:22px;font-weight:700;font-family:Space Mono,monospace;color:var(--ac3)">'+pitcherList.length+'</span> <span style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">PITCHERS</span></div>';
-  if(medianEdgePp!=null){var medColor=Math.abs(medianEdgePp)>5?'var(--ac2)':'var(--mu)';html+='<div><span style="font-size:15px;font-weight:700;font-family:Space Mono,monospace;color:'+medColor+'">'+(medianEdgePp>=0?'+':'')+medianEdgePp.toFixed(1)+'pp</span> <span style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace" title="Median MODEL−DK edge across rendered cards. If > +5pp, shrinkage is loose — raise MIN STARTS or MIN EV%.">MEDIAN EDGE</span></div>';}
+  if(medianEdgePp!=null){var medColor=Math.abs(medianEdgePp)>5?'var(--ac2)':'var(--mu)';html+='<div><span style="font-size:15px;font-weight:700;font-family:Space Mono,monospace;color:'+medColor+'">'+(medianEdgePp>=0?'+':'')+medianEdgePp.toFixed(1)+'pp</span> <span style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace" title="Median MODEL−DK edge across rendered cards. All candidates shown — no filter cutoffs in 3-leg mode.">MEDIAN EDGE</span></div>';}
   var corrModes=[{k:'global',label:'GLOBAL'},{k:'blended',label:'BLENDED'},{k:'player',label:'PLAYER'}];
   html+='<div style="margin-left:auto;display:inline-flex;border:1px solid var(--b1);border-radius:6px;overflow:hidden;font-family:Space Mono,monospace">';
   corrModes.forEach(function(m,mi){var active=CORR_MODE===m.k;var bg=active?'rgba(34,197,94,.12)':'transparent';var color=active?'var(--ac)':'var(--mu)';var bl=mi>0?'1px solid var(--b1)':'none';html+='<button onclick="evSetCorrMode(\''+m.k+'\')" style="padding:6px 12px;font-size:11px;font-weight:600;border:none;border-left:'+bl+';background:'+bg+';color:'+color+';cursor:pointer;letter-spacing:.5px">'+m.label+'</button>';});
   html+='</div></div>';
-  var skipBits=[];if(skippedLowN)skipBits.push(skippedLowN+' n<'+EV_MIN_STARTS_3);if(skippedBelowEV)skipBits.push(skippedBelowEV+' EV<'+EV_MIN_EV_PCT_3+'%');if(skippedNoData)skipBits.push(skippedNoData+' no combo_3 data');
-  if(skipBits.length)html+='<div style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">Filtered '+(totalPriced-allCombos.length)+' of '+totalPriced+' priced combos ('+skipBits.join(' · ')+')</div>';
+  html+='<div style="font-size:11px;color:var(--ac);font-family:Space Mono,monospace;font-weight:600">Showing '+pageCount+' of '+totalEnumerated+' total enumerated 3-leg candidates <span style="color:var(--mu);font-weight:400">· no filters applied · sorted by EV% desc</span></div>';
+  if(skippedNoData)html+='<div style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">'+skippedNoData+' enumerated combo(s) unrenderable (missing pitcher aggregates or null pBlend).</div>';
   pitcherWarnings.forEach(function(w){var color=w.type==='error'?'var(--red)':'var(--ac2)';html+='<div style="font-size:11px;color:'+color+';font-family:Space Mono,monospace">'+w.pitcher+': '+w.msg+'</div>';});
   html+='</div>';
 
-  if(!allCombos.length){html+='<div class="empty">No 3-leg SGPs survived filters. Try lowering MIN EV% or MIN STARTS sliders, or check that detected legs span at least 3 stat categories per pitcher.</div>';document.getElementById('evResults').innerHTML=html;return;}
-  html+='<div style="margin-top:14px;font-size:11px;color:var(--ac);font-family:Space Mono,monospace;font-weight:600">TOP 3-LEG SGPs BY EV% (highest edge first)</div>';
-  html+='<div class="grid" style="margin-top:8px;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:10px">';
-  allCombos.forEach(function(c,idx){_SGP_DATA.push(_build3LegSgpData(c));html+=card3EV(c,idx);});
+  if(!allCombos.length){html+='<div class="empty">No renderable 3-leg candidates. Check that detected legs span at least 3 stat categories per pitcher and that pitcher aggregates are loaded.</div>';document.getElementById('evResults').innerHTML=html;return;}
+
+  /* Populate _SGP_DATA over the full candidate array so loadSGPInsight
+     indices stay stable when the user paginates. */
+  allCombos.forEach(function(c){_SGP_DATA.push(_build3LegSgpData(c));});
+
+  html+='<div style="margin-top:14px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">';
+  html+='<div style="font-size:11px;color:var(--ac);font-family:Space Mono,monospace;font-weight:600">3-LEG SGPs BY EV% (highest edge first)</div>';
+  html+=_renderPager3(EV_PAGE_3,maxPage,pageStart,pageEnd,allCombos.length);
   html+='</div>';
+  html+='<div class="grid" style="margin-top:8px;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:10px">';
+  for(var i=pageStart;i<pageEnd;i++){html+=card3EV(allCombos[i],i);}
+  html+='</div>';
+  if(maxPage>1){html+='<div style="margin-top:14px;display:flex;justify-content:center">'+_renderPager3(EV_PAGE_3,maxPage,pageStart,pageEnd,allCombos.length)+'</div>';}
   document.getElementById('evResults').innerHTML=html;
   window.scrollTo({top:document.getElementById('evResults').offsetTop-20,behavior:'smooth'});
+}
+
+/* 3-leg pager control. Prev / Next buttons + "page n of m" + range label.
+   Rendered above the grid (and again below when multi-page). Buttons disable
+   at bounds rather than wrap so users don't accidentally loop past ends. */
+function _renderPager3(page,maxPage,start,end,total){
+  if(maxPage<=1)return '<div style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">'+total+' candidates · 1 page</div>';
+  var prevDis=page<=1;
+  var nextDis=page>=maxPage;
+  var btn=function(label,dis,target){
+    var cursor=dis?'not-allowed':'pointer';
+    var color=dis?'var(--mu)':'var(--ac)';
+    var opacity=dis?'0.4':'1';
+    var onclick=dis?'':' onclick="evSetPage3('+target+')"';
+    return '<button'+onclick+' '+(dis?'disabled ':'')+'style="padding:5px 10px;font-size:10px;font-weight:600;border:1px solid var(--b1);background:transparent;color:'+color+';cursor:'+cursor+';opacity:'+opacity+';font-family:Space Mono,monospace;letter-spacing:.4px;border-radius:5px">'+label+'</button>';
+  };
+  var html='<div style="display:inline-flex;gap:6px;align-items:center;font-family:Space Mono,monospace">';
+  html+=btn('‹ PREV',prevDis,page-1);
+  html+='<span style="font-size:10px;color:var(--mu)">PAGE <span style="color:var(--ac)">'+page+'</span> / '+maxPage+' <span style="color:var(--mu2,var(--mu))">&middot; rows '+(start+1)+'–'+end+' of '+total+'</span></span>';
+  html+=btn('NEXT ›',nextDis,page+1);
+  html+='</div>';
+  return html;
+}
+function evSetPage3(n){
+  n=+n;
+  if(!(n>=1))n=1;
+  if(EV_PAGE_3===n)return;
+  EV_PAGE_3=n;
+  evRenderResults();
 }
 
 /* AI-Insights payload shape for 3-leg. Mirrors the 2-leg _SGP_DATA entry
