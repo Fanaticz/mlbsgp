@@ -21,6 +21,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from curl_cffi import requests as cffi_requests
 
 DK_MLB_LEAGUE_ID = "84240"
+# NBA league ID on DraftKings' nav endpoint. Override-able via env if DK
+# ever renumbers. Verified against the /nav/leagues response April 2026.
+import os as _os
+DK_NBA_LEAGUE_ID = _os.environ.get("DK_NBA_LEAGUE_ID", "42648")
 DK_NAV = "https://sportsbook-nash.draftkings.com/api/sportscontent/navigation/dkusnj/v1/nav/leagues"
 DK_MARKETS = "https://sportsbook-nash.draftkings.com/sites/US-SB/api/sportscontent/controldata/event/eventSubcategory/v1/markets"
 DK_SGP = "https://sportsbook-nash.draftkings.com/sites/US-SB/api/sportscontent/parlays/v1/sgp/events"
@@ -133,6 +137,34 @@ def get_games():
     return {"events": out}
 
 
+def get_games_nba():
+    """Return today's NBA games from DraftKings. Mirrors get_games() but
+    scoped to the NBA league ID. Response shape is identical so any
+    downstream code that iterates `events` works unchanged."""
+    r = _get_with_retry(f"{DK_NAV}/{DK_NBA_LEAGUE_ID}")
+    events = r.json().get("events", [])
+    out = []
+    for e in events:
+        tags = e.get("tags", [])
+        participants = e.get("participants", [])
+        home = next((p for p in participants if p.get("venueRole") == "Home"), {})
+        away = next((p for p in participants if p.get("venueRole") == "Away"), {})
+        out.append({
+            "id": e.get("eventId"),
+            "name": e.get("name", ""),
+            "startDate": e.get("startDate", ""),
+            "homeTeam": home.get("name", e.get("teamName2", "")),
+            "awayTeam": away.get("name", e.get("teamName1", "")),
+            "homeShort": home.get("metadata", {}).get("shortName", e.get("teamShortName2", "")),
+            "awayShort": away.get("metadata", {}).get("shortName", e.get("teamShortName1", "")),
+            "hasSGP": "SGP" in tags,
+            "isLive": e.get("isLive", False),
+            "status": e.get("status", ""),
+        })
+    out.sort(key=lambda x: x["startDate"])
+    return {"events": out}
+
+
 def _extract_player_name(market_name, market_type, subcat_name):
     """Strip market type/subcategory suffix from the market name to get the player name."""
     name = market_name
@@ -147,7 +179,13 @@ def _extract_player_name(market_name, market_type, subcat_name):
     if name == market_name:
         for kw in ["Strikeouts", "Earned Runs", "Walks", "Hits Allowed",
                     "Pitching Outs", "Total Bases", "Home Runs", "RBIs",
-                    "Hits", "Runs", "Singles", "Doubles", "Stolen Bases"]:
+                    "Hits", "Runs", "Singles", "Doubles", "Stolen Bases",
+                    # NBA player-prop stat names used by the DK market catalog.
+                    # 3-Pointers Made has several DK spellings — all three are
+                    # kept so the split-on-keyword fallback catches every variant.
+                    "3-Pointers Made", "3-Point Made", "Threes Made",
+                    "Points", "Rebounds", "Assists", "Steals", "Blocks",
+                    "Turnovers"]:
             idx = market_name.find(kw)
             if idx > 0:
                 name = market_name[:idx].strip()
@@ -184,7 +222,7 @@ def _fetch_subcategory(event_id, sc):
     return mkts, sels
 
 
-def get_markets(event_id, pitcher_only=False, batter_only=False):
+def get_markets(event_id, pitcher_only=False, batter_only=False, nba_only=False):
     """Return all markets and selections for an event, scoped properly to that event.
 
     When pitcher_only=True, skip subcategories that are clearly batter/team/game
@@ -196,7 +234,13 @@ def get_markets(event_id, pitcher_only=False, batter_only=False):
     When batter_only=True, the inverse: keep only subcategories whose names
     suggest batter props (Hits, Runs, RBI, TB, HR, Walks, Singles/Doubles/
     Triples, Stolen Bases). Used by find_sgps_teammate to scope teammate-pair
-    pricing to a manageable set of fetches per game."""
+    pricing to a manageable set of fetches per game.
+
+    When nba_only=True, keep only subcats whose names suggest supported NBA
+    player props (Points, Rebounds, Assists, 3-Pointers Made). Used by
+    find_sgps_nba to scope per-event fetches to the 4 props we actually
+    have correlation data for in v1 — Steals/Blocks/Turnovers/PRA/etc.
+    scans would burn Akamai quota with no downstream benefit."""
     # Step 1: Get event metadata (subcategories + market groups)
     r0 = _get_with_retry(f"{DK_SGP}/{event_id}")
     evt = r0.json()["data"]["events"][0]
@@ -243,6 +287,26 @@ def get_markets(event_id, pitcher_only=False, batter_only=False):
                 return False
             return any(k in n for k in _SC_BATTER_HINTS)
         subcats = [sc for sc in subcats if _keep_batter(sc)]
+    elif nba_only:
+        # Keep NBA player-prop subcats for our 4 supported stats, drop
+        # team/game lines + quarter/half splits + unsupported-stat subcats.
+        # "Pointers" catches all the "3-Pointers Made" spellings DK uses.
+        _SC_NBA_HINTS = ("points", "rebounds", "assists", "pointers",
+                         "three-point", "3-point", "3 pt", "threes")
+        _SC_NBA_EXCLUDE = ("team total", "team to", "moneyline", "spread",
+                           "game prop", "game lines", "quarter", "half",
+                           "1st quarter", "2nd quarter", "3rd quarter",
+                           "4th quarter", "first quarter", "first half",
+                           "parlay", "quick pick", "race to", "alternate",
+                           "steals", "blocks", "turnovers",
+                           "double-double", "triple-double", "same game",
+                           "player combo", "pra", "points+", "points +")
+        def _keep_nba(sc):
+            n = (sc.get("name") or "").lower()
+            if any(h in n for h in _SC_NBA_EXCLUDE):
+                return False
+            return any(k in n for k in _SC_NBA_HINTS)
+        subcats = [sc for sc in subcats if _keep_nba(sc)]
 
     # Step 2: Fetch markets for each subcategory in parallel
     all_markets = []
@@ -301,6 +365,18 @@ def get_markets(event_id, pitcher_only=False, batter_only=False):
         is_batter = (any(kw in blob_lower for kw in BATTER_KEYWORDS)
                      and not any(pkw in blob_lower for pkw in PITCHER_KEYWORDS)
                      and "team" not in blob_lower)
+        # NBA player prop: one of our 4 supported stats in the market blob,
+        # no team/game-line qualifier. The subcat-keep filter already drops
+        # PRA / combo / quarter markets for nba_only scans; this guard is
+        # the belt+suspenders for per-market classification.
+        _NBA_STAT_KWS = ("points", "rebounds", "assists", "pointers",
+                         "3-point", "three-point", "3 pt", "threes")
+        _NBA_EXCLUDE = ("team", "quarter", "half", "1st", "2nd", "3rd", "4th",
+                        "race to", "parlay", "double-double", "triple-double",
+                        "pra", "steal", "block", "turnover", "combo")
+        is_nba_prop = (any(kw in blob_lower for kw in _NBA_STAT_KWS)
+                       and not any(ex in blob_lower for ex in _NBA_EXCLUDE)
+                       and not is_pitcher and not is_batter)
         player_name = _extract_player_name(mname, mtype, m.get("_subCategoryName", ""))
 
         for s in m_sels:
@@ -337,6 +413,7 @@ def get_markets(event_id, pitcher_only=False, batter_only=False):
                 "oddsDecimal": s.get("trueOdds"),
                 "isPitcherProp": is_pitcher,
                 "isBatterProp": is_batter,
+                "isNbaProp": is_nba_prop,
                 "isDisabled": s.get("isDisabled", False),
             })
 
