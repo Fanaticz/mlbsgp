@@ -1327,28 +1327,169 @@ def find_sgps_nba(payload):
         "events_scanned": [...]
       }
 
-    Edit 1 (this commit): stub. Returns matched=false missing="nba dk
-    pricing not wired yet (Edits 2-4)" for every candidate so the
-    client can wire its merge path now without waiting for the
-    full pricing implementation. Edits 2-4 replace this with the
-    real matcher + pricer.
+    Flow:
+      1. Resolve each candidate to a DK NBA event via team short code
+         or game-string parse.
+      2. Scan each unique needed event's markets with nba_only=True
+         (Akamai-safe max_workers=2 same as teammate path).
+      3. Match each candidate's two legs to DK selectionIds via
+         _match_leg_to_dk_nba. Per-(event, player, prop, side, line)
+         results cached so repeated lookups are free.
+      4. Dedupe pairs (unordered selection_1/selection_2) and price
+         once via _price_combo. 110s soft deadline — whatever isn't
+         priced by then comes back as matched=false truncated=true.
+      5. Response rows carry per-leg over/under American odds so the
+         client's no-vig path has both sides when available.
     """
+    import concurrent.futures
     candidates = (payload or {}).get("candidates", []) or []
     if not isinstance(candidates, list) or not candidates:
         return {"error": "candidates array required"}
-    results = []
+
+    # Step 1: resolve candidate → event via team/game.
+    try:
+        games_data = get_games_nba()
+    except Exception as e:
+        return {"error": f"DK NBA games endpoint unavailable: {e}. Try again in a moment."}
+    events = [e for e in games_data["events"] if e.get("hasSGP")]
+
+    def _event_for(c):
+        team = (c.get("team") or "").strip().upper()
+        game = (c.get("game") or "").strip().upper()
+        if team:
+            for e in events:
+                if (e.get("homeShort") or "").upper() == team or (e.get("awayShort") or "").upper() == team:
+                    return e
+        if game:
+            parts = [p for p in re.split(r"[@vs\s]+", game) if p]
+            if len(parts) == 2:
+                want = {parts[0].upper(), parts[1].upper()}
+                for e in events:
+                    have = {(e.get("homeShort") or "").upper(), (e.get("awayShort") or "").upper()}
+                    if want == have:
+                        return e
+        return None
+
+    cand_event_map = {}   # cand id -> event dict (or None)
     for c in candidates:
-        results.append({
-            "id": c.get("id"),
-            "event_id": None,
-            "game_name": c.get("game") or "",
-            "matched": False,
-            "missing": ["nba dk pricing not wired yet (Phase 4 follow-up Edits 2-4)"],
+        cand_event_map[c.get("id")] = _event_for(c)
+
+    # Step 2: scan each unique event's NBA markets in parallel.
+    needed_eids = sorted({(e or {}).get("id") for e in cand_event_map.values() if e and e.get("id")})
+    event_markets = {}
+    def _scan(eid):
+        try:
+            return eid, get_markets(eid, nba_only=True)
+        except Exception as ex:
+            sys.stderr.write(f"dk_api: nba event {eid} scan failed: {ex}\n")
+            return eid, None
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        futs = {ex.submit(_scan, eid): eid for eid in needed_eids}
+        for fut in as_completed(futs):
+            eid, md = fut.result()
+            if md is not None:
+                event_markets[eid] = md
+
+    # Step 3: match each candidate's two legs. Cache by (eid, player,
+    # prop, side, line) — candidates that share a leg reuse the match.
+    leg_cache = {}
+    def _match(eid, player, prop, side, line):
+        if not eid or eid not in event_markets:
+            return None
+        key = (eid, _normalize_name(player or ""), prop, side, line)
+        if key in leg_cache:
+            return leg_cache[key]
+        m = _match_leg_to_dk_nba(player, prop, side, line, event_markets[eid]["props"])
+        leg_cache[key] = m
+        return m
+
+    resolved = []
+    for c in candidates:
+        e = cand_event_map.get(c.get("id")) or {}
+        eid = e.get("id")
+        m1 = _match(eid, c.get("player"), c.get("prop1"), c.get("side1"), c.get("line1"))
+        m2 = _match(eid, c.get("player"), c.get("prop2"), c.get("side2"), c.get("line2"))
+        s1 = m1["selection_id"] if m1 else None
+        s2 = m2["selection_id"] if m2 else None
+        missing = []
+        if not eid:
+            missing.append(f"event:{c.get('team') or c.get('game') or '(no team/game)'}")
+        else:
+            if not s1: missing.append(f"leg1:{c.get('player')} :: {c.get('side1')} {c.get('line1')} {c.get('prop1')}")
+            if not s2: missing.append(f"leg2:{c.get('player')} :: {c.get('side2')} {c.get('line2')} {c.get('prop2')}")
+        resolved.append({"src": c, "event_id": eid, "game_name": e.get("name", "") if eid else "",
+                         "selection_1": s1, "selection_2": s2, "match_1": m1, "match_2": m2, "missing": missing})
+
+    # Step 4: dedupe + price unordered pairs.
+    price_cache = {}
+    pricing_jobs = []
+    for r in resolved:
+        if not r["selection_1"] or not r["selection_2"] or r["selection_1"] == r["selection_2"]:
+            continue
+        key = frozenset({r["selection_1"], r["selection_2"]})
+        if key in price_cache:
+            continue
+        price_cache[key] = "pending"
+        pricing_jobs.append((key, r["selection_1"], r["selection_2"]))
+
+    truncated = False
+    deadline = _time.monotonic() + 110.0
+    def _price_one(job):
+        k, sa, sb = job
+        return k, _price_combo([sa, sb])
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        futs = [ex.submit(_price_one, j) for j in pricing_jobs]
+        remaining = max(0.5, deadline - _time.monotonic())
+        try:
+            for f in as_completed(futs, timeout=remaining):
+                try:
+                    k, price = f.result()
+                    price_cache[k] = price
+                except Exception:
+                    pass
+        except concurrent.futures.TimeoutError:
+            truncated = True
+            for f in futs:
+                f.cancel()
+
+    # Step 5: build response.
+    results = []
+    for r in resolved:
+        c = r["src"]
+        m1 = r.get("match_1") or {}
+        m2 = r.get("match_2") or {}
+        out = {
+            "id": c.get("id"), "event_id": r["event_id"], "game_name": r["game_name"],
             "player": c.get("player"),
             "prop1": c.get("prop1"), "side1": c.get("side1"), "line1": c.get("line1"),
             "prop2": c.get("prop2"), "side2": c.get("side2"), "line2": c.get("line2"),
-        })
-    return {"results": results, "events_scanned": [], "stub": True}
+            "selection_1": r["selection_1"], "selection_2": r["selection_2"],
+            "leg_1_over_american":  m1.get("over_american"),
+            "leg_1_under_american": m1.get("under_american"),
+            "leg_2_over_american":  m2.get("over_american"),
+            "leg_2_under_american": m2.get("under_american"),
+        }
+        if r["missing"]:
+            out["matched"] = False
+            out["missing"] = r["missing"]
+            results.append(out)
+            continue
+        key = frozenset({r["selection_1"], r["selection_2"]})
+        price = price_cache.get(key)
+        if price in (None, "pending"):
+            out["matched"] = False
+            out["missing"] = ["dk:price_unavailable"]
+            results.append(out)
+            continue
+        out["matched"] = True
+        out["dk_odds"] = price["sgpOdds"]
+        out["dk_decimal"] = price["sgpDecimal"]
+        results.append(out)
+
+    response = {"results": results, "events_scanned": needed_eids}
+    if truncated:
+        response["truncated"] = True
+    return response
 
 
 def find_sgps(legs):
