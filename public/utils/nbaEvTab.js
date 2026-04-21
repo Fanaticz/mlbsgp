@@ -629,27 +629,28 @@
   }
 
   /* Inline comparison strip: FV JOINT · MODEL JOINT · DK IMPLIED · EDGE.
-     All three joint-probability estimates as percentages so the unit is
-     consistent (prior revision showed MODEL/DK IMPLIED as American odds
-     while FV CORR was left as American in the row above; visually
-     confusing). The FV CORR American form still shows in the dense row
-     above this one for bettors who think in odds.
+     All three joint values as American odds so they read in the same
+     unit as DK SGP / FV CORR in the dense row above. EDGE stays as
+     a probability-point delta (pp) — it's a subtraction of two
+     probabilities, not a probability itself, so "±X.Xpp" is the
+     correct unit.
 
-     FV JOINT derives from fv_corr_prob = jointFromPhi(r_adj, fv_p1, fv_p2) —
-     same number fv_corr_american is the American translation of, so
-     FV JOINT = 1 / decimal(fv_corr_american) by construction.
+     FV JOINT is the American form of fv_corr_prob =
+     jointFromPhi(r_adj, fv_p1, fv_p2) — same number that drives the
+     FV CORR display in the row above, so FV JOINT and FV CORR are
+     by construction equal.
 
-     EDGE keeps its MODEL − DK IMPLIED semantics (Option A from the spec).
-     Users can read FV JOINT and DK IMPLIED from the same row and mentally
-     subtract if they want an FV-driven edge; the big headline EV% at the
-     top of the card is already the FV-based edge claim. */
+     EDGE keeps its MODEL − DK IMPLIED semantics (Option A from the
+     spec). The headline EV% at the top of the card is already the
+     FV-based edge claim; users can read FV JOINT vs DK IMPLIED from
+     the same row if they want an odds-level FV-vs-market comparison. */
   function renderJointRow(c) {
     var edgeColor = c.edge_pp != null && c.edge_pp >= 0 ? 'var(--ac)' : 'var(--red)';
     var edgeText = c.edge_pp == null ? '--' : (c.edge_pp >= 0 ? '+' : '') + c.edge_pp.toFixed(1) + 'pp';
     return '<div class="nc-joint">' +
-      '<span>FV JOINT <span class="nc-jv">' + fmtPct(c.fv_corr_prob, 1) + '</span></span>' +
-      '<span>MODEL JOINT <span class="nc-jv">' + fmtPct(c.model_joint, 1) + '</span></span>' +
-      '<span>DK IMPLIED <span class="nc-jv">' + fmtPct(c.dk_implied, 1) + '</span></span>' +
+      '<span>FV JOINT <span class="nc-jv">' + fmtAmFromProb(c.fv_corr_prob) + '</span></span>' +
+      '<span>MODEL JOINT <span class="nc-jv">' + fmtAmFromProb(c.model_joint) + '</span></span>' +
+      '<span>DK IMPLIED <span class="nc-jv">' + fmtAmFromProb(c.dk_implied) + '</span></span>' +
       '<span>EDGE <span class="nc-jv" style="color:' + edgeColor + '">' + edgeText + '</span></span>' +
       '</div>';
   }
