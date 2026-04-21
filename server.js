@@ -1126,11 +1126,16 @@ app.get('/api/dk/featured/:eventId', async (req, res) => {
 });
 
 // POST /api/dk/find-sgps — unified: take OCR'd legs, match to DK, enumerate + price combos
+// Body: { legs: [...], enumSize?: 2|3 }. enumSize defaults to 2 for back-compat;
+// clients that opt into 3-leg must send enumSize:3. DK pricing is N-leg native,
+// but C(k,3) price calls cost time, so the extra budget is only paid on demand.
 app.post('/api/dk/find-sgps', async (req, res) => {
   try {
-    const { legs } = req.body || {};
+    const { legs, enumSize } = req.body || {};
     if (!Array.isArray(legs) || !legs.length) return res.status(400).json({ error: 'legs array required' });
-    const result = await dkCall(['find-sgps'], JSON.stringify(legs));
+    const size = enumSize === 3 ? 3 : 2;
+    const payload = size === 3 ? { legs, enumSize: 3 } : legs;
+    const result = await dkCall(['find-sgps'], JSON.stringify(payload));
     if (result.error && !result.pitchers) return res.json(result);
     return res.json(result);
   } catch (e) {
