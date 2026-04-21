@@ -565,6 +565,18 @@
     if (a == null || !isFinite(a)) return '--';
     return (a > 0 ? '+' : '') + Math.round(a);
   }
+  /* Convert a probability (0 < p < 1) to American odds. Used for
+     MODEL JOINT / DK IMPLIED / Both-hit-row displays where we were
+     previously rendering "42.0%" — American is the native unit for
+     bettors comparing against DK's posted prices. Returns "--" on
+     degenerate inputs (null, out-of-range) so the render keeps its
+     placeholder instead of throwing. */
+  function fmtAmFromProb(p) {
+    if (p == null || !isFinite(p) || p <= 0 || p >= 1) return '--';
+    var dec = 1 / p;
+    if (dec >= 2) return '+' + Math.round((dec - 1) * 100);
+    return '-' + Math.round(100 / (dec - 1));
+  }
   function fmtEvSigned(ev) {
     if (ev == null || !isFinite(ev)) return '--';
     var pct = ev * 100;
@@ -612,14 +624,14 @@
     var label = 'Both hit' + (inner.length ? ' (' + inner.join(', ') + ')' : '');
     return '<div class="nc-both">' +
       '<span class="nc-both-lbl">' + esc(label) + '</span>' +
-      '<span class="nc-both-val">' + fmtPct(c.model_joint, 1) + ' <span style="color:var(--mu);font-size:10px;letter-spacing:.4px">MODEL</span></span>' +
+      '<span class="nc-both-val">' + fmtAmFromProb(c.model_joint) + ' <span style="color:var(--mu);font-size:10px;letter-spacing:.4px">MODEL</span></span>' +
       '</div>';
   }
 
   function renderJointRow(c) {
     return '<div class="nc-joint">' +
-      '<div class="nc-cell"><div class="nc-cval">' + fmtPct(c.model_joint, 1) + '</div><div class="nc-clbl">MODEL JOINT</div></div>' +
-      '<div class="nc-cell"><div class="nc-cval">' + fmtPct(c.dk_implied, 1) + '</div><div class="nc-clbl">DK IMPLIED</div></div>' +
+      '<div class="nc-cell"><div class="nc-cval">' + fmtAmFromProb(c.model_joint) + '</div><div class="nc-clbl">MODEL JOINT</div></div>' +
+      '<div class="nc-cell"><div class="nc-cval">' + fmtAmFromProb(c.dk_implied) + '</div><div class="nc-clbl">DK IMPLIED</div></div>' +
       '<div class="nc-cell"><div class="nc-cval" style="color:' + (c.edge_pp != null && c.edge_pp >= 0 ? 'var(--ac)' : 'var(--red)') + '">' + (c.edge_pp == null ? '--' : ((c.edge_pp >= 0 ? '+' : '') + c.edge_pp.toFixed(1) + 'pp')) + '</div><div class="nc-clbl">EDGE</div></div>' +
       '</div>';
   }
