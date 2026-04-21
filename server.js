@@ -1161,6 +1161,47 @@ app.post('/api/dk/find-sgps-teammate', async (req, res) => {
   }
 });
 
+// POST /api/dk/find-sgps-nba — same-player NBA 2-leg SGP pricing.
+// Request body: { candidates: [{ id, player, game, prop1, side1, line1, prop2, side2, line2 }] }
+// Response: { results: [{ id, matched, dk_odds, dk_decimal, missing? }], events_scanned, cached?, truncated? }
+//
+// Cache: 10-minute TTL keyed by a stable hash of the sorted candidate
+// handles + their (player, prop, side, line) fingerprint. Selections
+// rarely move intraday, and a user re-scan on the same slate is the
+// common case — serving cached here avoids burning ~20 calculateBets
+// calls + a fresh subcat scan per reload.
+const NBA_DK_CACHE = new Map();
+const NBA_DK_CACHE_TTL_MS = 10 * 60 * 1000;
+
+function _nbaCacheKey(candidates) {
+  var parts = candidates.map(function (c) {
+    return [c.id, c.player, c.prop1, c.side1, c.line1, c.prop2, c.side2, c.line2].join('|');
+  }).slice().sort();
+  return parts.join('\n');
+}
+
+app.post('/api/dk/find-sgps-nba', async (req, res) => {
+  try {
+    const { candidates } = req.body || {};
+    if (!Array.isArray(candidates) || !candidates.length) {
+      return res.status(400).json({ error: 'candidates array required' });
+    }
+    const key = _nbaCacheKey(candidates);
+    const hit = NBA_DK_CACHE.get(key);
+    if (hit && Date.now() - hit.ts < NBA_DK_CACHE_TTL_MS) {
+      return res.json(Object.assign({}, hit.body, { cached: true, cache_age_s: Math.round((Date.now() - hit.ts) / 1000) }));
+    }
+    const result = await dkCall(['find-sgps-nba'], JSON.stringify({ candidates }));
+    if (result.error && !result.results) return res.json(result);
+    /* Only cache successful responses. A single transient Akamai 503
+       shouldn't lock in a broken response for 10 minutes. */
+    if (!result.error) NBA_DK_CACHE.set(key, { ts: Date.now(), body: result });
+    return res.json(result);
+  } catch (e) {
+    return res.status(500).json({ error: 'DK find-sgps-nba failed: ' + e.message });
+  }
+});
+
 // POST /api/dk/price — get correlated SGP price from DraftKings
 app.post('/api/dk/price', async (req, res) => {
   try {

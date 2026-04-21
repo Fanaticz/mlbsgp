@@ -234,6 +234,12 @@
       state.fv = indexFvPlayers(j.players);
       setFvStatus('<span style="color:var(--ac)">&#10003; FV: ' + j.players.length + ' players parsed' + (j.unmatched_markets && j.unmatched_markets.length ? ' &middot; ' + j.unmatched_markets.length + ' unsupported-prop rows' : '') + '</span>');
       if (typeof runPipeline === 'function') runPipeline();
+      /* After enumeration produces state.candidatesAll, kick off the
+         async DK pricing request. fetchDkPricing merges prices back
+         into the existing candidates (no re-enumeration) and triggers
+         a second render. Synthetic dev path (devSimulate) skips this
+         since it pre-attaches dk_sgp_american on every entry. */
+      fetchDkPricing();
     }).catch(function (e) { setFvStatus('<span style="color:var(--red)">OCR error: ' + (e.message || e) + '</span>'); });
   }
 
@@ -619,8 +625,17 @@
   }
 
   function renderPricesRow(c) {
+    /* Surface DK-pricing failure inline so the card reads as a "has data
+       but no DK" cell instead of ambiguous "--" that could also mean no
+       FV_CORR. Missing reason comes from the server's `missing[]` list
+       (first element is usually enough context). */
+    var dkLine = '<span>DK SGP <span class="nc-pv">' + fmtAm(c.dk_sgp_american) + '</span></span>';
+    if (c.dk_sgp_american == null && c.dk_missing) {
+      var reason = Array.isArray(c.dk_missing) && c.dk_missing.length ? c.dk_missing[0] : 'DK price unavailable';
+      dkLine = '<span style="color:var(--mu)">DK SGP <span class="nc-pv" style="color:var(--mu)">--</span> <span style="font-size:10px">' + esc(reason) + '</span></span>';
+    }
     return '<div class="nc-prices">' +
-      '<span>DK SGP <span class="nc-pv">' + fmtAm(c.dk_sgp_american) + '</span></span>' +
+      dkLine +
       '<span>FV CORR <span class="nc-pv">' + fmtAm(c.fv_corr_american) + '</span></span>' +
       '</div>';
   }
@@ -780,6 +795,7 @@
         '<div style="color:var(--mu);padding-left:14px">&middot; Exact line match</div><div>' + exactN + '</div>' +
         '<div style="color:var(--mu);padding-left:14px">&middot; Approximate line match</div><div>' + approxN + '</div>' +
         '<div style="color:var(--mu)">DK priced</div><div>' + f.dk_priced + dkHint + '</div>' +
+        (f.dk_failures ? '<div style="color:var(--mu);padding-left:14px">&middot; DK pricing failures</div><div style="color:var(--ac2)">' + f.dk_failures + '</div>' : '') +
         '<div style="color:var(--mu)">Rendered</div><div>' + rendered + ' <span style="color:var(--b2)">/ ' + renderedDenom + (state.exactLineOnly ? ' exact' : ' enumerated') + '</span></div>' +
       '</div>' +
       '<label style="display:inline-flex;align-items:center;gap:8px;margin-top:12px;font-size:11px;color:var(--tx);cursor:pointer">' +
@@ -956,6 +972,84 @@
     readFilterDom();
     renderFilterLabels();
     if (typeof runPipeline === 'function') runPipeline({ filtersOnly: true });
+  }
+
+  /* ---------- DK pricing (async, merges into state.candidatesAll) ----------
+     fetchDkPricing POSTs the enumerated candidate list to the NBA SGP
+     pricing endpoint. Response comes back with per-candidate dk_odds +
+     per-leg over/under American prices, which mergeDkPrices writes
+     into the existing candidate objects and recomputes ev_pct/edge_pp.
+     Not called from runPipeline — filter changes shouldn't re-hit DK. */
+  function _parseAmerican(s) {
+    if (s == null) return null;
+    var m = String(s).replace(/−/g, '-').match(/([+-]?\d+)/);
+    if (!m) return null;
+    var n = parseInt(m[1], 10);
+    return isFinite(n) ? n : null;
+  }
+
+  function mergeDkPrices(dkJson) {
+    var byId = {};
+    (dkJson.results || []).forEach(function (r) { byId[r.id] = r; });
+    (state.candidatesAll || []).forEach(function (c) {
+      var r = byId[c.id];
+      if (!r) return;
+      if (!r.matched) {
+        c.dk_missing = r.missing || ['dk:unmatched'];
+        return;
+      }
+      c.dk_missing = null;
+      c.dk_sgp_american = _parseAmerican(r.dk_odds);
+      c.dk_sgp_decimal = r.dk_decimal;
+      c.dk_implied = (c.dk_sgp_decimal && c.dk_sgp_decimal > 0) ? 1 / c.dk_sgp_decimal : null;
+      if (r.leg_1_over_american  != null) c.leg1.dk_over_american  = r.leg_1_over_american;
+      if (r.leg_1_under_american != null) c.leg1.dk_under_american = r.leg_1_under_american;
+      if (r.leg_2_over_american  != null) c.leg2.dk_over_american  = r.leg_2_over_american;
+      if (r.leg_2_under_american != null) c.leg2.dk_under_american = r.leg_2_under_american;
+      /* Recompute EV% + EDGE now that we have a real dk_sgp_decimal.
+         EV% stays FV-based per the a5b5442 fix — fv_corr_prob × dkSgpDec
+         - 1, NOT model_joint × dkSgpDec - 1. */
+      c.ev_pct  = (c.dk_sgp_decimal != null && c.fv_corr_prob != null)
+        ? (c.fv_corr_prob * c.dk_sgp_decimal - 1) : null;
+      c.edge_pp = (c.dk_implied != null && c.model_joint != null)
+        ? (c.model_joint - c.dk_implied) * 100 : null;
+    });
+    /* Refresh funnel stats so the diagnostic panel reflects the new
+       priced/failed split without requiring a full re-enumeration. */
+    if (state.funnel) {
+      var priced = (state.candidatesAll || []).filter(function (c) { return c.dk_sgp_american != null; }).length;
+      state.funnel.dk_priced = priced;
+      state.funnel.dk_failures = (state.funnel.enumerated || 0) - priced;
+    }
+  }
+
+  function fetchDkPricing() {
+    if (!state.candidatesAll || !state.candidatesAll.length) return;
+    setFvStatus('<span style="color:var(--ac2)">Pricing ' + state.candidatesAll.length + ' candidates against DraftKings...</span>');
+    var payload = { candidates: state.candidatesAll.map(function (c) {
+      return {
+        id: c.id, player: c.player, team: c.team, game: c.game,
+        prop1: c.leg1.prop, side1: c.leg1.side, line1: c.leg1.line,
+        prop2: c.leg2.prop, side2: c.leg2.side, line2: c.leg2.line,
+      };
+    }) };
+    fetch('/api/dk/find-sgps-nba', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload),
+    }).then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j.error && !j.results) {
+          setFvStatus('<span style="color:var(--red)">DK pricing error: ' + j.error + '</span>');
+          return;
+        }
+        mergeDkPrices(j);
+        var priced = (state.funnel && state.funnel.dk_priced) || 0;
+        var total  = state.candidatesAll.length;
+        var cached = j.cached ? ' <span style="color:var(--mu)">(cached ' + (j.cache_age_s || 0) + 's)</span>' : '';
+        var trunc  = j.truncated ? ' <span style="color:var(--ac2)">(pricing truncated)</span>' : '';
+        setFvStatus('<span style="color:var(--ac)">&#10003; DK priced ' + priced + '/' + total + ' candidates</span>' + cached + trunc);
+        if (typeof renderResults === 'function') renderResults();
+      })
+      .catch(function (e) { setFvStatus('<span style="color:var(--red)">DK pricing failed: ' + (e.message || e) + '</span>'); });
   }
 
   /* Exact-line-only toggle. Fires from the checkbox inside #nbaDiag.

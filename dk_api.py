@@ -21,6 +21,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from curl_cffi import requests as cffi_requests
 
 DK_MLB_LEAGUE_ID = "84240"
+# NBA league ID on DraftKings' nav endpoint. Override-able via env if DK
+# ever renumbers. Verified against the /nav/leagues response April 2026.
+import os as _os
+DK_NBA_LEAGUE_ID = _os.environ.get("DK_NBA_LEAGUE_ID", "42648")
 DK_NAV = "https://sportsbook-nash.draftkings.com/api/sportscontent/navigation/dkusnj/v1/nav/leagues"
 DK_MARKETS = "https://sportsbook-nash.draftkings.com/sites/US-SB/api/sportscontent/controldata/event/eventSubcategory/v1/markets"
 DK_SGP = "https://sportsbook-nash.draftkings.com/sites/US-SB/api/sportscontent/parlays/v1/sgp/events"
@@ -133,6 +137,34 @@ def get_games():
     return {"events": out}
 
 
+def get_games_nba():
+    """Return today's NBA games from DraftKings. Mirrors get_games() but
+    scoped to the NBA league ID. Response shape is identical so any
+    downstream code that iterates `events` works unchanged."""
+    r = _get_with_retry(f"{DK_NAV}/{DK_NBA_LEAGUE_ID}")
+    events = r.json().get("events", [])
+    out = []
+    for e in events:
+        tags = e.get("tags", [])
+        participants = e.get("participants", [])
+        home = next((p for p in participants if p.get("venueRole") == "Home"), {})
+        away = next((p for p in participants if p.get("venueRole") == "Away"), {})
+        out.append({
+            "id": e.get("eventId"),
+            "name": e.get("name", ""),
+            "startDate": e.get("startDate", ""),
+            "homeTeam": home.get("name", e.get("teamName2", "")),
+            "awayTeam": away.get("name", e.get("teamName1", "")),
+            "homeShort": home.get("metadata", {}).get("shortName", e.get("teamShortName2", "")),
+            "awayShort": away.get("metadata", {}).get("shortName", e.get("teamShortName1", "")),
+            "hasSGP": "SGP" in tags,
+            "isLive": e.get("isLive", False),
+            "status": e.get("status", ""),
+        })
+    out.sort(key=lambda x: x["startDate"])
+    return {"events": out}
+
+
 def _extract_player_name(market_name, market_type, subcat_name):
     """Strip market type/subcategory suffix from the market name to get the player name."""
     name = market_name
@@ -147,7 +179,13 @@ def _extract_player_name(market_name, market_type, subcat_name):
     if name == market_name:
         for kw in ["Strikeouts", "Earned Runs", "Walks", "Hits Allowed",
                     "Pitching Outs", "Total Bases", "Home Runs", "RBIs",
-                    "Hits", "Runs", "Singles", "Doubles", "Stolen Bases"]:
+                    "Hits", "Runs", "Singles", "Doubles", "Stolen Bases",
+                    # NBA player-prop stat names used by the DK market catalog.
+                    # 3-Pointers Made has several DK spellings — all three are
+                    # kept so the split-on-keyword fallback catches every variant.
+                    "3-Pointers Made", "3-Point Made", "Threes Made",
+                    "Points", "Rebounds", "Assists", "Steals", "Blocks",
+                    "Turnovers"]:
             idx = market_name.find(kw)
             if idx > 0:
                 name = market_name[:idx].strip()
@@ -184,7 +222,7 @@ def _fetch_subcategory(event_id, sc):
     return mkts, sels
 
 
-def get_markets(event_id, pitcher_only=False, batter_only=False):
+def get_markets(event_id, pitcher_only=False, batter_only=False, nba_only=False):
     """Return all markets and selections for an event, scoped properly to that event.
 
     When pitcher_only=True, skip subcategories that are clearly batter/team/game
@@ -196,7 +234,13 @@ def get_markets(event_id, pitcher_only=False, batter_only=False):
     When batter_only=True, the inverse: keep only subcategories whose names
     suggest batter props (Hits, Runs, RBI, TB, HR, Walks, Singles/Doubles/
     Triples, Stolen Bases). Used by find_sgps_teammate to scope teammate-pair
-    pricing to a manageable set of fetches per game."""
+    pricing to a manageable set of fetches per game.
+
+    When nba_only=True, keep only subcats whose names suggest supported NBA
+    player props (Points, Rebounds, Assists, 3-Pointers Made). Used by
+    find_sgps_nba to scope per-event fetches to the 4 props we actually
+    have correlation data for in v1 — Steals/Blocks/Turnovers/PRA/etc.
+    scans would burn Akamai quota with no downstream benefit."""
     # Step 1: Get event metadata (subcategories + market groups)
     r0 = _get_with_retry(f"{DK_SGP}/{event_id}")
     evt = r0.json()["data"]["events"][0]
@@ -243,6 +287,26 @@ def get_markets(event_id, pitcher_only=False, batter_only=False):
                 return False
             return any(k in n for k in _SC_BATTER_HINTS)
         subcats = [sc for sc in subcats if _keep_batter(sc)]
+    elif nba_only:
+        # Keep NBA player-prop subcats for our 4 supported stats, drop
+        # team/game lines + quarter/half splits + unsupported-stat subcats.
+        # "Pointers" catches all the "3-Pointers Made" spellings DK uses.
+        _SC_NBA_HINTS = ("points", "rebounds", "assists", "pointers",
+                         "three-point", "3-point", "3 pt", "threes")
+        _SC_NBA_EXCLUDE = ("team total", "team to", "moneyline", "spread",
+                           "game prop", "game lines", "quarter", "half",
+                           "1st quarter", "2nd quarter", "3rd quarter",
+                           "4th quarter", "first quarter", "first half",
+                           "parlay", "quick pick", "race to", "alternate",
+                           "steals", "blocks", "turnovers",
+                           "double-double", "triple-double", "same game",
+                           "player combo", "pra", "points+", "points +")
+        def _keep_nba(sc):
+            n = (sc.get("name") or "").lower()
+            if any(h in n for h in _SC_NBA_EXCLUDE):
+                return False
+            return any(k in n for k in _SC_NBA_HINTS)
+        subcats = [sc for sc in subcats if _keep_nba(sc)]
 
     # Step 2: Fetch markets for each subcategory in parallel
     all_markets = []
@@ -301,6 +365,18 @@ def get_markets(event_id, pitcher_only=False, batter_only=False):
         is_batter = (any(kw in blob_lower for kw in BATTER_KEYWORDS)
                      and not any(pkw in blob_lower for pkw in PITCHER_KEYWORDS)
                      and "team" not in blob_lower)
+        # NBA player prop: one of our 4 supported stats in the market blob,
+        # no team/game-line qualifier. The subcat-keep filter already drops
+        # PRA / combo / quarter markets for nba_only scans; this guard is
+        # the belt+suspenders for per-market classification.
+        _NBA_STAT_KWS = ("points", "rebounds", "assists", "pointers",
+                         "3-point", "three-point", "3 pt", "threes")
+        _NBA_EXCLUDE = ("team", "quarter", "half", "1st", "2nd", "3rd", "4th",
+                        "race to", "parlay", "double-double", "triple-double",
+                        "pra", "steal", "block", "turnover", "combo")
+        is_nba_prop = (any(kw in blob_lower for kw in _NBA_STAT_KWS)
+                       and not any(ex in blob_lower for ex in _NBA_EXCLUDE)
+                       and not is_pitcher and not is_batter)
         player_name = _extract_player_name(mname, mtype, m.get("_subCategoryName", ""))
 
         for s in m_sels:
@@ -337,6 +413,7 @@ def get_markets(event_id, pitcher_only=False, batter_only=False):
                 "oddsDecimal": s.get("trueOdds"),
                 "isPitcherProp": is_pitcher,
                 "isBatterProp": is_batter,
+                "isNbaProp": is_nba_prop,
                 "isDisabled": s.get("isDisabled", False),
             })
 
@@ -1097,6 +1174,324 @@ def find_sgps_teammate(payload):
     return response
 
 
+def _stat_matches_market_nba(stat_str, market_blob):
+    """NBA stat → market blob matcher. Caller has already scoped
+    `market_blob` to an NBA player prop via the nba_only subcat filter
+    + isNbaProp check, so this only disambiguates within the 4 supported
+    stats. Order matters: 3-Pointers Made first so a bare "points" match
+    doesn't grab 3-point markets. Canonical stat_str values come from the
+    nbaEvTab.js enumerator: Points, Rebounds, Assists, 3-Pointers Made."""
+    s = (stat_str or "").lower().strip()
+    m = (market_blob or "").lower()
+    # 3-Pointers Made has many DK spellings. Check for any of them first.
+    if "3-pointer" in s or "3-point" in s or "three" in s or s == "3pm":
+        return ("3-point" in m or "3 point" in m or "threes" in m
+                or "pointers" in m or "3pt" in m or "3 pt" in m)
+    if s == "points":
+        # Plain Points — must NOT be 3-Point, PRA, or a combo market. We
+        # exclude "rebound"/"assist" substrings because DK sometimes
+        # emits combo markets (PRA, PR) under Points subcats.
+        return ("point" in m
+                and "3-point" not in m and "3 point" not in m
+                and "three" not in m and "pointers" not in m
+                and "rebound" not in m and "assist" not in m)
+    if s == "rebounds":
+        return "rebound" in m and "assist" not in m and "point" not in m
+    if s == "assists":
+        return "assist" in m and "rebound" not in m and "point" not in m
+    return False
+
+
+def _match_leg_to_dk_nba(player, prop, side, line, props):
+    """NBA analog of _match_leg_to_dk_batter. Takes structured inputs
+    directly — nbaEvTab.js emits (player, prop, side, line) fields, not
+    the "Over 0.5 Hits" composite string the MLB paths parse, so
+    building a string and re-parsing would be a needless round-trip.
+
+    Line matching is exact (points == line). NBA doesn't use the
+    .5 ↔ milestone equivalence MLB has; line-approximation already
+    happened upstream in nbaEvTab.js's line-ignorant enumerator (the
+    candidate here has the FV line; the caller wants DK's selectionId
+    at that exact line, if DK offers it).
+
+    Returns a dict { selection_id, direction, points, prop,
+    over_american, under_american, opposite_selection_id } when DK has
+    the leg + an opposite-direction partner at the same points/subcat.
+    Returns None if DK doesn't offer the primary leg. The opposite-
+    direction side may still be absent (opp_american=None) — the
+    caller's no-vig path handles that."""
+    if not prop or side not in ("over", "under") or line is None:
+        return None
+    try:
+        line = float(line)
+    except (ValueError, TypeError):
+        return None
+    direction = "Over" if side == "over" else "Under"
+
+    def _american_of(sel):
+        raw = (sel or {}).get("oddsAmerican") or ""
+        if not raw:
+            return None
+        t = str(raw).replace("−", "-").replace("+", "").strip()
+        try:
+            return int(t)
+        except (ValueError, TypeError):
+            return None
+
+    matched = None
+    for p in props:
+        if not p.get("isNbaProp"):
+            continue
+        if not _pitcher_matches(player, p.get("player", "")):
+            continue
+        if _selection_direction(p.get("outcomeType")) != direction:
+            continue
+        pts = p.get("points")
+        try:
+            if pts is None or float(pts) != line:
+                continue
+        except (ValueError, TypeError):
+            continue
+        blob = (p.get("marketName", "") + " " + p.get("subcategory", "") + " " + p.get("marketType", ""))
+        if _stat_matches_market_nba(prop, blob):
+            matched = p
+            break
+    if not matched:
+        return None
+
+    # Opposite-direction lookup at the same (points, subcat) for no-vig.
+    opposite_dir = "Under" if direction == "Over" else "Over"
+    matched_pts = matched.get("points")
+    matched_subcat = matched.get("subcategory") or ""
+    opp = None
+    for p in props:
+        if not p.get("isNbaProp"):
+            continue
+        if not _pitcher_matches(player, p.get("player", "")):
+            continue
+        if _selection_direction(p.get("outcomeType")) != opposite_dir:
+            continue
+        if p.get("points") != matched_pts:
+            continue
+        if (p.get("subcategory") or "") != matched_subcat:
+            continue
+        blob = (p.get("marketName", "") + " " + p.get("subcategory", "") + " " + p.get("marketType", ""))
+        if _stat_matches_market_nba(prop, blob):
+            opp = p
+            break
+
+    matched_am = _american_of(matched)
+    opp_am = _american_of(opp) if opp else None
+    over_am  = matched_am if direction == "Over"  else opp_am
+    under_am = matched_am if direction == "Under" else opp_am
+    return {
+        "selection_id":     matched.get("selectionId"),
+        "direction":        direction,
+        "points":           matched_pts,
+        "prop":             prop,
+        "over_american":    over_am,
+        "under_american":   under_am,
+        "opposite_selection_id": (opp.get("selectionId") if opp else None),
+    }
+
+
+def find_sgps_nba(payload):
+    """Price a batch of NBA same-player 2-leg SGP candidates against DK.
+
+    Input shape (passed via stdin JSON):
+      {
+        "candidates": [
+          {
+            "id": "<frontend candidate handle>",   # echoed back
+            "player": "Donovan Mitchell",
+            "game":   "CLE@BOS",                   # optional, tiebreaker
+            "team":   "CLE",                       # optional, tiebreaker
+            "prop1":  "Points", "side1": "over", "line1": 27.5,
+            "prop2":  "Rebounds", "side2": "over", "line2": 4.5
+          }, ...
+        ]
+      }
+
+    Output (mirrors find_sgps_teammate shape so nbaEvTab.js can reuse
+    the same merge logic):
+      {
+        "results": [
+          { "id", "event_id", "game_name", "matched": bool,
+            "missing": [...],                   # when matched=false
+            "dk_odds": "+275", "dk_decimal": 3.75,
+            "selection_1", "selection_2",
+            "leg_1_over_american", "leg_1_under_american",
+            "leg_2_over_american", "leg_2_under_american"
+          }, ...
+        ],
+        "events_scanned": [...]
+      }
+
+    Flow:
+      1. Resolve each candidate to a DK NBA event via team short code
+         or game-string parse.
+      2. Scan each unique needed event's markets with nba_only=True
+         (Akamai-safe max_workers=2 same as teammate path).
+      3. Match each candidate's two legs to DK selectionIds via
+         _match_leg_to_dk_nba. Per-(event, player, prop, side, line)
+         results cached so repeated lookups are free.
+      4. Dedupe pairs (unordered selection_1/selection_2) and price
+         once via _price_combo. 110s soft deadline — whatever isn't
+         priced by then comes back as matched=false truncated=true.
+      5. Response rows carry per-leg over/under American odds so the
+         client's no-vig path has both sides when available.
+    """
+    import concurrent.futures
+    candidates = (payload or {}).get("candidates", []) or []
+    if not isinstance(candidates, list) or not candidates:
+        return {"error": "candidates array required"}
+
+    # Step 1: resolve candidate → event via team/game.
+    try:
+        games_data = get_games_nba()
+    except Exception as e:
+        return {"error": f"DK NBA games endpoint unavailable: {e}. Try again in a moment."}
+    events = [e for e in games_data["events"] if e.get("hasSGP")]
+
+    def _event_for(c):
+        team = (c.get("team") or "").strip().upper()
+        game = (c.get("game") or "").strip().upper()
+        if team:
+            for e in events:
+                if (e.get("homeShort") or "").upper() == team or (e.get("awayShort") or "").upper() == team:
+                    return e
+        if game:
+            parts = [p for p in re.split(r"[@vs\s]+", game) if p]
+            if len(parts) == 2:
+                want = {parts[0].upper(), parts[1].upper()}
+                for e in events:
+                    have = {(e.get("homeShort") or "").upper(), (e.get("awayShort") or "").upper()}
+                    if want == have:
+                        return e
+        return None
+
+    cand_event_map = {}   # cand id -> event dict (or None)
+    for c in candidates:
+        cand_event_map[c.get("id")] = _event_for(c)
+
+    # Step 2: scan each unique event's NBA markets in parallel.
+    needed_eids = sorted({(e or {}).get("id") for e in cand_event_map.values() if e and e.get("id")})
+    event_markets = {}
+    def _scan(eid):
+        try:
+            return eid, get_markets(eid, nba_only=True)
+        except Exception as ex:
+            sys.stderr.write(f"dk_api: nba event {eid} scan failed: {ex}\n")
+            return eid, None
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        futs = {ex.submit(_scan, eid): eid for eid in needed_eids}
+        for fut in as_completed(futs):
+            eid, md = fut.result()
+            if md is not None:
+                event_markets[eid] = md
+
+    # Step 3: match each candidate's two legs. Cache by (eid, player,
+    # prop, side, line) — candidates that share a leg reuse the match.
+    leg_cache = {}
+    def _match(eid, player, prop, side, line):
+        if not eid or eid not in event_markets:
+            return None
+        key = (eid, _normalize_name(player or ""), prop, side, line)
+        if key in leg_cache:
+            return leg_cache[key]
+        m = _match_leg_to_dk_nba(player, prop, side, line, event_markets[eid]["props"])
+        leg_cache[key] = m
+        return m
+
+    resolved = []
+    for c in candidates:
+        e = cand_event_map.get(c.get("id")) or {}
+        eid = e.get("id")
+        m1 = _match(eid, c.get("player"), c.get("prop1"), c.get("side1"), c.get("line1"))
+        m2 = _match(eid, c.get("player"), c.get("prop2"), c.get("side2"), c.get("line2"))
+        s1 = m1["selection_id"] if m1 else None
+        s2 = m2["selection_id"] if m2 else None
+        missing = []
+        if not eid:
+            missing.append(f"event:{c.get('team') or c.get('game') or '(no team/game)'}")
+        else:
+            if not s1: missing.append(f"leg1:{c.get('player')} :: {c.get('side1')} {c.get('line1')} {c.get('prop1')}")
+            if not s2: missing.append(f"leg2:{c.get('player')} :: {c.get('side2')} {c.get('line2')} {c.get('prop2')}")
+        resolved.append({"src": c, "event_id": eid, "game_name": e.get("name", "") if eid else "",
+                         "selection_1": s1, "selection_2": s2, "match_1": m1, "match_2": m2, "missing": missing})
+
+    # Step 4: dedupe + price unordered pairs.
+    price_cache = {}
+    pricing_jobs = []
+    for r in resolved:
+        if not r["selection_1"] or not r["selection_2"] or r["selection_1"] == r["selection_2"]:
+            continue
+        key = frozenset({r["selection_1"], r["selection_2"]})
+        if key in price_cache:
+            continue
+        price_cache[key] = "pending"
+        pricing_jobs.append((key, r["selection_1"], r["selection_2"]))
+
+    truncated = False
+    deadline = _time.monotonic() + 110.0
+    def _price_one(job):
+        k, sa, sb = job
+        return k, _price_combo([sa, sb])
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        futs = [ex.submit(_price_one, j) for j in pricing_jobs]
+        remaining = max(0.5, deadline - _time.monotonic())
+        try:
+            for f in as_completed(futs, timeout=remaining):
+                try:
+                    k, price = f.result()
+                    price_cache[k] = price
+                except Exception:
+                    pass
+        except concurrent.futures.TimeoutError:
+            truncated = True
+            for f in futs:
+                f.cancel()
+
+    # Step 5: build response.
+    results = []
+    for r in resolved:
+        c = r["src"]
+        m1 = r.get("match_1") or {}
+        m2 = r.get("match_2") or {}
+        out = {
+            "id": c.get("id"), "event_id": r["event_id"], "game_name": r["game_name"],
+            "player": c.get("player"),
+            "prop1": c.get("prop1"), "side1": c.get("side1"), "line1": c.get("line1"),
+            "prop2": c.get("prop2"), "side2": c.get("side2"), "line2": c.get("line2"),
+            "selection_1": r["selection_1"], "selection_2": r["selection_2"],
+            "leg_1_over_american":  m1.get("over_american"),
+            "leg_1_under_american": m1.get("under_american"),
+            "leg_2_over_american":  m2.get("over_american"),
+            "leg_2_under_american": m2.get("under_american"),
+        }
+        if r["missing"]:
+            out["matched"] = False
+            out["missing"] = r["missing"]
+            results.append(out)
+            continue
+        key = frozenset({r["selection_1"], r["selection_2"]})
+        price = price_cache.get(key)
+        if price in (None, "pending"):
+            out["matched"] = False
+            out["missing"] = ["dk:price_unavailable"]
+            results.append(out)
+            continue
+        out["matched"] = True
+        out["dk_odds"] = price["sgpOdds"]
+        out["dk_decimal"] = price["sgpDecimal"]
+        results.append(out)
+
+    response = {"results": results, "events_scanned": needed_eids}
+    if truncated:
+        response["truncated"] = True
+    return response
+
+
 def find_sgps(legs, enum_size=2):
     """Given OCR'd legs, auto-match them to DK selections, enumerate combos
     of the requested size, and return DK-priced SGPs. Frontend computes FV
@@ -1358,6 +1753,10 @@ if __name__ == "__main__":
             stdin_data = sys.stdin.read().strip()
             payload = json.loads(stdin_data) if stdin_data else {}
             result = find_sgps_teammate(payload)
+        elif cmd == "find-sgps-nba":
+            stdin_data = sys.stdin.read().strip()
+            payload = json.loads(stdin_data) if stdin_data else {}
+            result = find_sgps_nba(payload)
         elif cmd == "price":
             stdin_data = sys.stdin.read().strip()
             if stdin_data:
