@@ -1295,6 +1295,80 @@ def _match_leg_to_dk_nba(player, prop, side, line, props):
     }
 
 
+def _norm_team_nba(s):
+    """Lowercase, strip non-alphanumeric, collapse whitespace. Used to
+    compare NBA team names across FV-sheet formats (short codes,
+    nickname, full-city-plus-nickname) without a fragile equality check."""
+    if not s:
+        return ""
+    s = re.sub(r"[^a-z0-9 ]+", " ", str(s).lower())
+    return " ".join(s.split())
+
+
+def _event_for_nba_candidate(c, events):
+    """Resolve an NBA candidate → DK event. FV sheets in the wild use
+    three formats for the team/game columns:
+
+      1. Short codes: team="PHI", game="PHI@BOS"
+      2. Nicknames:   team="76ers", game="76ers @ Celtics"
+      3. Full names:  team="Philadelphia 76ers", game="Philadelphia 76ers @ Boston Celtics"
+
+    Try all three against each DK event's homeShort / awayShort /
+    homeTeam / awayTeam. Substring match in both directions on the
+    team-field path so "76ers" matches "philadelphia 76ers" and
+    vice versa. Game-string path checks that every token of both
+    teams' full-name forms appears in the normalized game string —
+    robust against punctuation and "@" / "vs" / "at" separators.
+
+    Module-level (not a closure inside find_sgps_nba) so the unit
+    tests can exercise it without spinning up a full pricing request
+    that would hit DK over the network. Returns the event dict or None."""
+    team_raw = (c.get("team") or "").strip()
+    game_raw = (c.get("game") or "").strip()
+    tn = _norm_team_nba(team_raw)
+    gn = _norm_team_nba(game_raw)
+
+    if tn:
+        for e in events:
+            hs = (e.get("homeShort") or "").lower()
+            as_ = (e.get("awayShort") or "").lower()
+            ht = _norm_team_nba(e.get("homeTeam"))
+            at = _norm_team_nba(e.get("awayTeam"))
+            if tn == hs or tn == as_:
+                return e
+            if ht and (tn in ht or ht in tn):
+                return e
+            if at and (tn in at or at in tn):
+                return e
+    if gn:
+        # gn is already normalized: lowercased, non-alnum stripped to space,
+        # whitespace collapsed. So "PHI@BOS" → "phi bos", "PHI vs BOS" →
+        # "phi vs bos", "Philadelphia 76ers @ Boston Celtics" →
+        # "philadelphia 76ers boston celtics". Split on whitespace and
+        # drop the common connector tokens so both short-code and
+        # full-name game strings flow through the same splitter.
+        #
+        # NOTE: earlier attempt used re.split(r"[@vs\s]+", gn) which is a
+        # character class — splits on v OR s individually, so "phi bos"
+        # became ["phi", "bo"] (the 's' got eaten). Char-class regex is
+        # the wrong tool for multi-character separators.
+        parts = [p for p in gn.split() if p not in ("vs", "at", "v")]
+        if len(parts) == 2 and all(len(p) <= 4 for p in parts):
+            want = {parts[0], parts[1]}
+            for e in events:
+                have = {(e.get("homeShort") or "").lower(), (e.get("awayShort") or "").lower()}
+                if want == have:
+                    return e
+        for e in events:
+            ht = _norm_team_nba(e.get("homeTeam"))
+            at = _norm_team_nba(e.get("awayTeam"))
+            if not ht or not at:
+                continue
+            if all(tok in gn for tok in ht.split()) and all(tok in gn for tok in at.split()):
+                return e
+    return None
+
+
 def find_sgps_nba(payload):
     """Price a batch of NBA same-player 2-leg SGP candidates against DK.
 
@@ -1353,26 +1427,9 @@ def find_sgps_nba(payload):
         return {"error": f"DK NBA games endpoint unavailable: {e}. Try again in a moment."}
     events = [e for e in games_data["events"] if e.get("hasSGP")]
 
-    def _event_for(c):
-        team = (c.get("team") or "").strip().upper()
-        game = (c.get("game") or "").strip().upper()
-        if team:
-            for e in events:
-                if (e.get("homeShort") or "").upper() == team or (e.get("awayShort") or "").upper() == team:
-                    return e
-        if game:
-            parts = [p for p in re.split(r"[@vs\s]+", game) if p]
-            if len(parts) == 2:
-                want = {parts[0].upper(), parts[1].upper()}
-                for e in events:
-                    have = {(e.get("homeShort") or "").upper(), (e.get("awayShort") or "").upper()}
-                    if want == have:
-                        return e
-        return None
-
     cand_event_map = {}   # cand id -> event dict (or None)
     for c in candidates:
-        cand_event_map[c.get("id")] = _event_for(c)
+        cand_event_map[c.get("id")] = _event_for_nba_candidate(c, events)
 
     # Step 2: scan each unique event's NBA markets in parallel.
     needed_eids = sorted({(e or {}).get("id") for e in cand_event_map.values() if e and e.get("id")})
@@ -1413,7 +1470,15 @@ def find_sgps_nba(payload):
         s2 = m2["selection_id"] if m2 else None
         missing = []
         if not eid:
-            missing.append(f"event:{c.get('team') or c.get('game') or '(no team/game)'}")
+            # Include a sample of available DK events so the user can tell
+            # apart "my team/game string didn't match anything DK has" from
+            # "DK returned 0 NBA events (wrong league ID, off-season, etc.)".
+            avail = ", ".join(
+                f"{(e.get('awayShort') or '?')}@{(e.get('homeShort') or '?')}"
+                for e in events[:6]
+            )
+            hint = f" (dk events: {avail})" if avail else " (dk events: none — check league ID / slate)"
+            missing.append(f"event:{c.get('team') or c.get('game') or '(no team/game)'}{hint}")
         else:
             if not s1: missing.append(f"leg1:{c.get('player')} :: {c.get('side1')} {c.get('line1')} {c.get('prop1')}")
             if not s2: missing.append(f"leg2:{c.get('player')} :: {c.get('side2')} {c.get('line2')} {c.get('prop2')}")
