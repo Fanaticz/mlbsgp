@@ -624,44 +624,62 @@
     var label = 'Both hit' + (inner.length ? ' (' + inner.join(', ') + ')' : '');
     return '<div class="nc-both">' +
       '<span class="nc-both-lbl">' + esc(label) + '</span>' +
-      '<span class="nc-both-val">' + fmtAmFromProb(c.model_joint) + ' <span style="color:var(--mu);font-size:10px;letter-spacing:.4px">MODEL</span></span>' +
+      '<span class="nc-both-val">' + fmtPct(c.model_joint, 1) + ' <span style="color:var(--mu);font-size:10px;letter-spacing:.4px">MODEL</span></span>' +
       '</div>';
   }
 
+  /* Inline comparison strip: FV JOINT · MODEL JOINT · DK IMPLIED · EDGE.
+     All three joint-probability estimates as percentages so the unit is
+     consistent (prior revision showed MODEL/DK IMPLIED as American odds
+     while FV CORR was left as American in the row above; visually
+     confusing). The FV CORR American form still shows in the dense row
+     above this one for bettors who think in odds.
+
+     FV JOINT derives from fv_corr_prob = jointFromPhi(r_adj, fv_p1, fv_p2) —
+     same number fv_corr_american is the American translation of, so
+     FV JOINT = 1 / decimal(fv_corr_american) by construction.
+
+     EDGE keeps its MODEL − DK IMPLIED semantics (Option A from the spec).
+     Users can read FV JOINT and DK IMPLIED from the same row and mentally
+     subtract if they want an FV-driven edge; the big headline EV% at the
+     top of the card is already the FV-based edge claim. */
   function renderJointRow(c) {
+    var edgeColor = c.edge_pp != null && c.edge_pp >= 0 ? 'var(--ac)' : 'var(--red)';
+    var edgeText = c.edge_pp == null ? '--' : (c.edge_pp >= 0 ? '+' : '') + c.edge_pp.toFixed(1) + 'pp';
     return '<div class="nc-joint">' +
-      '<div class="nc-cell"><div class="nc-cval">' + fmtAmFromProb(c.model_joint) + '</div><div class="nc-clbl">MODEL JOINT</div></div>' +
-      '<div class="nc-cell"><div class="nc-cval">' + fmtAmFromProb(c.dk_implied) + '</div><div class="nc-clbl">DK IMPLIED</div></div>' +
-      '<div class="nc-cell"><div class="nc-cval" style="color:' + (c.edge_pp != null && c.edge_pp >= 0 ? 'var(--ac)' : 'var(--red)') + '">' + (c.edge_pp == null ? '--' : ((c.edge_pp >= 0 ? '+' : '') + c.edge_pp.toFixed(1) + 'pp')) + '</div><div class="nc-clbl">EDGE</div></div>' +
+      '<span>FV JOINT <span class="nc-jv">' + fmtPct(c.fv_corr_prob, 1) + '</span></span>' +
+      '<span>MODEL JOINT <span class="nc-jv">' + fmtPct(c.model_joint, 1) + '</span></span>' +
+      '<span>DK IMPLIED <span class="nc-jv">' + fmtPct(c.dk_implied, 1) + '</span></span>' +
+      '<span>EDGE <span class="nc-jv" style="color:' + edgeColor + '">' + edgeText + '</span></span>' +
       '</div>';
   }
 
-  function renderPricesRow(c) {
-    /* Surface DK-pricing failure inline so the card reads as a "has data
-       but no DK" cell instead of ambiguous "--" that could also mean no
-       FV_CORR. Missing reason comes from the server's `missing[]` list
-       (first element is usually enough context). */
-    var dkLine = '<span>DK SGP <span class="nc-pv">' + fmtAm(c.dk_sgp_american) + '</span></span>';
-    if (c.dk_sgp_american == null && c.dk_missing) {
-      var reason = Array.isArray(c.dk_missing) && c.dk_missing.length ? c.dk_missing[0] : 'DK price unavailable';
-      dkLine = '<span style="color:var(--mu)">DK SGP <span class="nc-pv" style="color:var(--mu)">--</span> <span style="font-size:10px">' + esc(reason) + '</span></span>';
-    }
-    return '<div class="nc-prices">' +
-      dkLine +
-      '<span>FV CORR <span class="nc-pv">' + fmtAm(c.fv_corr_american) + '</span></span>' +
-      '</div>';
-  }
-
-  function renderStatsLine(c) {
+  /* Dense single-line stats row: DK SGP · FV CORR · r · p · n. Replaces
+     the old stacked renderPricesRow + renderStatsLine pair. Middot-
+     separated, flex+wrap so long DK miss reasons fall to the next line
+     without crowding. Rest-context caveat moved from a full line to a
+     title-attribute tooltip on the n=X token (dotted underline hint). */
+  function renderStatsDense(c) {
     var e = c.entry || {};
-    var parts = [];
-    if (e.r_adj != null) parts.push('r ' + (e.r_adj >= 0 ? '+' : '') + e.r_adj.toFixed(2) + ' (adj)');
-    if (e.p_value != null) parts.push('p=' + e.p_value.toFixed(2));
-    if (e.n_games != null) parts.push('n=' + e.n_games);
-    /* Surface the muted "rest-context" caveat from the NBA v1 hazards list
-       once per card so the user carries the caveat into their bet decision. */
-    var ctx = parts.join(' · ');
-    return '<div class="nc-stats">' + esc(ctx) + '  <span style="color:var(--b2)">&middot; n=' + (e.n_games || '?') + ' doesn\'t distinguish rest contexts</span></div>';
+    var SEP = '<span class="nc-sep">·</span>';
+    var segs = [];
+    if (c.dk_sgp_american != null) {
+      segs.push('DK SGP <span class="nc-pv">' + fmtAm(c.dk_sgp_american) + '</span>');
+    } else if (c.dk_missing) {
+      var reason = Array.isArray(c.dk_missing) && c.dk_missing.length ? c.dk_missing[0] : 'DK price unavailable';
+      segs.push('<span style="color:var(--mu)">DK SGP <span class="nc-pv" style="color:var(--mu)">--</span> <span style="font-size:10px">' + esc(reason) + '</span></span>');
+    } else {
+      segs.push('DK SGP <span class="nc-pv">--</span>');
+    }
+    segs.push('FV CORR <span class="nc-pv">' + fmtAm(c.fv_corr_american) + '</span>');
+    if (e.r_adj != null) segs.push('r <span class="nc-pv">' + (e.r_adj >= 0 ? '+' : '') + e.r_adj.toFixed(2) + '</span> (adj)');
+    if (e.p_value != null) segs.push('p=<span class="nc-pv">' + e.p_value.toFixed(2) + '</span>');
+    if (e.n_games != null) {
+      var nTip = 'n=' + e.n_games + ' game' + (e.n_games === 1 ? '' : 's') +
+                 ". Does not distinguish rest contexts (back-to-backs vs rested). Interpret with small-sample caution.";
+      segs.push('n=<span class="nc-pv nc-n" title="' + esc(nTip) + '">' + e.n_games + '</span>');
+    }
+    return '<div class="nc-dense">' + segs.join(SEP) + '</div>';
   }
 
   function renderCard(c) {
@@ -678,15 +696,14 @@
       renderLegRow(c.leg1) +
       renderLegRow(c.leg2) +
       renderBothHitLine(c) +
-      renderPricesRow(c) +
-      renderStatsLine(c) +
-      '<div class="nc-badges" data-nba-badges="' + esc(c.id) + '"></div>' +
-      /* MODEL JOINT / DK IMPLIED / EDGE diagnostic grid lives at the
-         bottom of the card so the "Both hit" line up top is the
-         prominent model-joint surface and this strip is explicitly
-         "supporting detail". Keeps the top half focused on the FV-based
-         decision (EV% headline + FV prices + model context). */
+      /* Compact order: single-line dense row (DK SGP + FV CORR + r + p
+         + n) immediately below Both-hit, then the inline FV/MODEL/DK/
+         EDGE comparison strip, then badges. Replaces the old stacked
+         prices + stats + badge + joint-grid quartet — same data, ~60%
+         less vertical space, reads in the pitcher-card rhythm. */
+      renderStatsDense(c) +
       renderJointRow(c) +
+      '<div class="nc-badges" data-nba-badges="' + esc(c.id) + '"></div>' +
       '</div>';
   }
 
