@@ -319,10 +319,6 @@ h1 em{color:var(--ac);font-style:normal;}
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <span style="font-size:13px;color:var(--cyan);font-family:Syne,sans-serif;font-weight:700">+EV SGP FINDER</span>
       <span style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace">Upload your FV sheet &rarr; auto-match to DK &rarr; find the biggest edges</span>
-      <div id="evLegSizeTG" style="margin-left:auto;display:inline-flex;border:1px solid var(--b1);border-radius:6px;overflow:hidden;font-family:Space Mono,monospace">
-        <button id="evLegSize2" class="active" onclick="evSetLegSize(2)" title="Pair SGPs. Default. Existing 2-leg enumeration over matched legs." style="padding:6px 12px;font-size:11px;font-weight:600;border:none;background:rgba(34,197,94,.12);color:var(--ac);cursor:pointer;letter-spacing:.5px">2-LEG</button>
-        <button id="evLegSize3" onclick="evSetLegSize(3)" title="Triplet SGPs. Iterates C(matched,3) combos; uses empirical 3-way joint from pitcher aggregates blended toward global baseline. Heavier shrinkage than 2-leg." style="padding:6px 12px;font-size:11px;font-weight:600;border:none;border-left:1px solid var(--b1);background:transparent;color:var(--mu);cursor:pointer;letter-spacing:.5px">3-LEG</button>
-      </div>
     </div>
     <div id="evDrop" style="border:2px dashed var(--b2);border-radius:9px;padding:28px 16px;text-align:center;cursor:pointer;transition:all .15s;background:var(--s2)">
       <div style="font-size:13px;color:var(--tx);font-weight:600;margin-bottom:4px">Drag &amp; drop your FV sheet screenshot</div>
@@ -1323,9 +1319,6 @@ function evSetLegSize(n){
   if(n!==2&&n!==3)return;
   if(EV_LEG_SIZE===n)return;
   EV_LEG_SIZE=n;
-  var btn2=document.getElementById('evLegSize2'),btn3=document.getElementById('evLegSize3');
-  if(btn2){btn2.className=n===2?'active':'';btn2.style.background=n===2?'rgba(34,197,94,.12)':'transparent';btn2.style.color=n===2?'var(--ac)':'var(--mu)';}
-  if(btn3){btn3.className=n===3?'active':'';btn3.style.background=n===3?'rgba(34,197,94,.12)':'transparent';btn3.style.color=n===3?'var(--ac)':'var(--mu)';}
   /* 3-leg filter bar is permanently hidden: 3-leg mode now shows every
      enumerated candidate with no filter gating so users can calibrate
      against the full distribution. Filter sliders retained in DOM for
@@ -1343,6 +1336,20 @@ function evSetLegSize(n){
   }else{
     evFindSgps(n);
   }
+}
+/* Shared 2↔3 toggle markup, injected into the results stats row by both
+   render paths so the control sits next to GLOBAL/BLENDED/PLAYER rather
+   than in the page header. Active state is baked per render — no mutating
+   handler needed since each toggle triggers a full re-render. */
+function _renderLegSizeToggle(){
+  var a2=EV_LEG_SIZE===2, a3=EV_LEG_SIZE===3;
+  var bg2=a2?'rgba(34,197,94,.12)':'transparent', col2=a2?'var(--ac)':'var(--mu)';
+  var bg3=a3?'rgba(34,197,94,.12)':'transparent', col3=a3?'var(--ac)':'var(--mu)';
+  var h='<div style="display:inline-flex;border:1px solid var(--b1);border-radius:6px;overflow:hidden;font-family:Space Mono,monospace">';
+  h+='<button onclick="evSetLegSize(2)" title="Pair SGPs. Existing 2-leg enumeration over matched legs." style="padding:6px 12px;font-size:11px;font-weight:600;border:none;background:'+bg2+';color:'+col2+';cursor:pointer;letter-spacing:.5px">2-LEG</button>';
+  h+='<button onclick="evSetLegSize(3)" title="Triplet SGPs. Full enumerated distribution, no filters, paginated 30/page." style="padding:6px 12px;font-size:11px;font-weight:600;border:none;border-left:1px solid var(--b1);background:'+bg3+';color:'+col3+';cursor:pointer;letter-spacing:.5px">3-LEG</button>';
+  h+='</div>';
+  return h;
 }
 function evMinEV3Change(){
   var el=document.getElementById('evMinEV3');if(!el)return;
@@ -1843,7 +1850,9 @@ function evRenderResults(){
   html+='<div><span style="font-size:22px;font-weight:700;font-family:Space Mono,monospace;color:var(--ac)">'+positiveEV+'</span> <span style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">+EV</span></div>';
   html+='<div><span style="font-size:22px;font-weight:700;font-family:Space Mono,monospace;color:var(--ac3)">'+pitcherList.length+'</span> <span style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">PITCHERS</span></div>';
   var corrModes=[{k:'global',label:'GLOBAL',title:'League-average correlation. Stable but ignores pitcher archetype.'},{k:'blended',label:'BLENDED',title:'Bayesian shrinkage of player r toward global prior (weighted by n starts). Best point estimate.'},{k:'player',label:'PLAYER',title:'Pitcher-specific correlation from their start history. Noisy at small samples.'}];
-  html+='<div style="margin-left:auto;display:inline-flex;border:1px solid var(--b1);border-radius:6px;overflow:hidden;font-family:Space Mono,monospace">';
+  html+='<div style="margin-left:auto;display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap">';
+  html+=_renderLegSizeToggle();
+  html+='<div style="display:inline-flex;border:1px solid var(--b1);border-radius:6px;overflow:hidden;font-family:Space Mono,monospace">';
   corrModes.forEach(function(m,mi){
     var active=CORR_MODE===m.k;
     var bg=active?'rgba(34,197,94,.12)':'transparent';
@@ -1851,6 +1860,7 @@ function evRenderResults(){
     var bl=mi>0?'1px solid var(--b1)':'none';
     html+='<button onclick="evSetCorrMode(\''+m.k+'\')" title="'+m.title+'" style="padding:6px 12px;font-size:11px;font-weight:600;border:none;border-left:'+bl+';background:'+bg+';color:'+color+';cursor:pointer;letter-spacing:.5px">'+m.label+'</button>';
   });
+  html+='</div>';
   html+='</div>';
   html+='</div>';
   pitcherWarnings.forEach(function(w){
@@ -2232,9 +2242,11 @@ function evRenderResults3Leg(){
   html+='<div><span style="font-size:22px;font-weight:700;font-family:Space Mono,monospace;color:var(--ac3)">'+pitcherList.length+'</span> <span style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">PITCHERS</span></div>';
   if(medianEdgePp!=null){var medColor=Math.abs(medianEdgePp)>5?'var(--ac2)':'var(--mu)';html+='<div><span style="font-size:15px;font-weight:700;font-family:Space Mono,monospace;color:'+medColor+'">'+(medianEdgePp>=0?'+':'')+medianEdgePp.toFixed(1)+'pp</span> <span style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace" title="Median MODEL−DK edge across rendered cards. All candidates shown — no filter cutoffs in 3-leg mode.">MEDIAN EDGE</span></div>';}
   var corrModes=[{k:'global',label:'GLOBAL'},{k:'blended',label:'BLENDED'},{k:'player',label:'PLAYER'}];
-  html+='<div style="margin-left:auto;display:inline-flex;border:1px solid var(--b1);border-radius:6px;overflow:hidden;font-family:Space Mono,monospace">';
+  html+='<div style="margin-left:auto;display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap">';
+  html+=_renderLegSizeToggle();
+  html+='<div style="display:inline-flex;border:1px solid var(--b1);border-radius:6px;overflow:hidden;font-family:Space Mono,monospace">';
   corrModes.forEach(function(m,mi){var active=CORR_MODE===m.k;var bg=active?'rgba(34,197,94,.12)':'transparent';var color=active?'var(--ac)':'var(--mu)';var bl=mi>0?'1px solid var(--b1)':'none';html+='<button onclick="evSetCorrMode(\''+m.k+'\')" style="padding:6px 12px;font-size:11px;font-weight:600;border:none;border-left:'+bl+';background:'+bg+';color:'+color+';cursor:pointer;letter-spacing:.5px">'+m.label+'</button>';});
-  html+='</div></div>';
+  html+='</div></div></div>';
   html+='<div style="font-size:11px;color:var(--ac);font-family:Space Mono,monospace;font-weight:600">Showing '+pageCount+' of '+totalEnumerated+' total enumerated 3-leg candidates <span style="color:var(--mu);font-weight:400">· no filters applied · sorted by EV% desc</span></div>';
   if(skippedNoData)html+='<div style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">'+skippedNoData+' enumerated combo(s) unrenderable (missing pitcher aggregates or null pBlend).</div>';
   pitcherWarnings.forEach(function(w){var color=w.type==='error'?'var(--red)':'var(--ac2)';html+='<div style="font-size:11px;color:'+color+';font-family:Space Mono,monospace">'+w.pitcher+': '+w.msg+'</div>';});
