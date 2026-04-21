@@ -113,7 +113,13 @@ h1 em{color:var(--ac);font-style:normal;}
 /* NBA EV card styling. Shares the MLB pitcher-card visual vocabulary
    (rounded, s1 background, accent-cyan "EV%" corner) but uses Space
    Mono throughout the body for tabular odds alignment. */
-.nba-cards{display:flex;flex-direction:column;gap:8px;margin-top:10px;}
+/* Grid layout for NBA cards — same auto-fill minmax(320px,1fr) pattern
+   the MLB pitcher .grid uses. Responsive behavior: ~5 cards on wide
+   desktop (1920+), 4 on laptop (1440), 3 on narrower laptop (1280), 2
+   on tablet (~768), 1 on mobile (≤600 via the existing .grid media-
+   query below inherits). No JS breakpoints — CSS track sizing handles
+   all widths. */
+.nba-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px;margin-top:10px;}
 .nba-card{background:var(--s1);border:1px solid var(--b1);border-radius:9px;padding:9px 12px;font-family:'Inter',sans-serif;}
 .nba-card .nc-head{display:flex;align-items:baseline;gap:10px;margin-bottom:4px;}
 .nba-card .nc-player{font-size:13px;font-weight:700;color:var(--tx);letter-spacing:-.2px;}
@@ -149,7 +155,7 @@ h1 em{color:var(--ac);font-style:normal;}
 .nba-card .nc-bdg.danger{background:rgba(248,113,113,.15);color:var(--red);}
 .nba-card .nc-bdg.muted{background:var(--s2);color:var(--mu);}
 .nba-empty{padding:36px 20px;text-align:center;color:var(--mu);font-family:'Space Mono',monospace;font-size:11px;border:1px dashed var(--b1);border-radius:9px;margin-top:12px;line-height:1.7;}
-@media(max-width:600px){.nav{padding:0 8px;}.page{padding:12px 10px;}.grid{grid-template-columns:1fr;}.srch{width:100%;margin-left:0;}}
+@media(max-width:600px){.nav{padding:0 8px;}.page{padding:12px 10px;}.grid,.nba-cards{grid-template-columns:1fr;}.srch{width:100%;margin-left:0;}}
 .insight-btn{width:100%;margin-top:10px;padding:7px 12px;font-size:12px;font-weight:600;border:1px solid var(--b2);border-radius:6px;background:var(--s2);color:var(--tx);cursor:pointer;font-family:'Inter',sans-serif;transition:border-color .15s,color .15s;letter-spacing:.3px;}
 .insight-btn:hover:not(:disabled){border-color:var(--ac3);color:var(--ac3);}
 .insight-btn:disabled{opacity:.5;cursor:not-allowed;}
