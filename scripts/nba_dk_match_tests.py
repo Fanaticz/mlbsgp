@@ -101,6 +101,46 @@ m = D._match_leg_to_dk_nba("LeBron James", "Points", "over", 27.5, props)
 check("different player returns None", m, None)
 
 
+# --- _event_for_nba_candidate (team/game → DK event) ---
+# Direct call to the module-level resolver. No network — just the pure
+# string matching against a canned 2-event fixture that mirrors what DK
+# returns on a typical nav/leagues response.
+EVENTS = [
+    {"id": "e_phi_bos", "name": "Philadelphia 76ers @ Boston Celtics",
+     "homeTeam": "Boston Celtics", "awayTeam": "Philadelphia 76ers",
+     "homeShort": "BOS", "awayShort": "PHI"},
+    {"id": "e_lal_gsw", "name": "Los Angeles Lakers @ Golden State Warriors",
+     "homeTeam": "Golden State Warriors", "awayTeam": "Los Angeles Lakers",
+     "homeShort": "GSW", "awayShort": "LAL"},
+]
+
+def match_team_game(team, game):
+    r = D._event_for_nba_candidate({"team": team, "game": game}, EVENTS)
+    return r["id"] if r else None
+
+check("team='PHI' short code",                         match_team_game("PHI", ""), "e_phi_bos")
+check("team='BOS' short code",                         match_team_game("BOS", ""), "e_phi_bos")
+check("team='LAL' short code → LAL/GSW event",         match_team_game("LAL", ""), "e_lal_gsw")
+check("game='PHI@BOS' short-code pair",                match_team_game("", "PHI@BOS"), "e_phi_bos")
+check("game='PHI @ BOS' short-code pair with spaces",  match_team_game("", "PHI @ BOS"), "e_phi_bos")
+# Full team names (the user's actual FV-sheet format that was failing)
+check("team='Philadelphia 76ers' full name",
+      match_team_game("Philadelphia 76ers", ""), "e_phi_bos")
+check("team='Boston Celtics' full name",
+      match_team_game("Boston Celtics", ""), "e_phi_bos")
+check("game='Philadelphia 76ers @ Boston Celtics' full-name game",
+      match_team_game("", "Philadelphia 76ers @ Boston Celtics"), "e_phi_bos")
+check("game='Los Angeles Lakers vs Golden State Warriors' full-name + vs",
+      match_team_game("", "Los Angeles Lakers vs Golden State Warriors"), "e_lal_gsw")
+# Nickname-only
+check("team='76ers' nickname",
+      match_team_game("76ers", ""), "e_phi_bos")
+check("team='Celtics' nickname",
+      match_team_game("Celtics", ""), "e_phi_bos")
+# Unknown team / game
+check("team='MIA' not in fixture → None",  match_team_game("MIA", ""), None)
+check("empty team + empty game → None",    match_team_game("", ""), None)
+
 print(f"\n{passes} pass, {failures} fail")
 if failures:
     sys.exit(1)
