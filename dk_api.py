@@ -1097,6 +1097,62 @@ def find_sgps_teammate(payload):
     return response
 
 
+def find_sgps_nba(payload):
+    """Price a batch of NBA same-player 2-leg SGP candidates against DK.
+
+    Input shape (passed via stdin JSON):
+      {
+        "candidates": [
+          {
+            "id": "<frontend candidate handle>",   # echoed back
+            "player": "Donovan Mitchell",
+            "game":   "CLE@BOS",                   # optional, tiebreaker
+            "team":   "CLE",                       # optional, tiebreaker
+            "prop1":  "Points", "side1": "over", "line1": 27.5,
+            "prop2":  "Rebounds", "side2": "over", "line2": 4.5
+          }, ...
+        ]
+      }
+
+    Output (mirrors find_sgps_teammate shape so nbaEvTab.js can reuse
+    the same merge logic):
+      {
+        "results": [
+          { "id", "event_id", "game_name", "matched": bool,
+            "missing": [...],                   # when matched=false
+            "dk_odds": "+275", "dk_decimal": 3.75,
+            "selection_1", "selection_2",
+            "leg_1_over_american", "leg_1_under_american",
+            "leg_2_over_american", "leg_2_under_american"
+          }, ...
+        ],
+        "events_scanned": [...]
+      }
+
+    Edit 1 (this commit): stub. Returns matched=false missing="nba dk
+    pricing not wired yet (Edits 2-4)" for every candidate so the
+    client can wire its merge path now without waiting for the
+    full pricing implementation. Edits 2-4 replace this with the
+    real matcher + pricer.
+    """
+    candidates = (payload or {}).get("candidates", []) or []
+    if not isinstance(candidates, list) or not candidates:
+        return {"error": "candidates array required"}
+    results = []
+    for c in candidates:
+        results.append({
+            "id": c.get("id"),
+            "event_id": None,
+            "game_name": c.get("game") or "",
+            "matched": False,
+            "missing": ["nba dk pricing not wired yet (Phase 4 follow-up Edits 2-4)"],
+            "player": c.get("player"),
+            "prop1": c.get("prop1"), "side1": c.get("side1"), "line1": c.get("line1"),
+            "prop2": c.get("prop2"), "side2": c.get("side2"), "line2": c.get("line2"),
+        })
+    return {"results": results, "events_scanned": [], "stub": True}
+
+
 def find_sgps(legs):
     """Given OCR'd legs, auto-match them to DK selections, enumerate 2-leg combos,
     and return DK-priced SGPs. Frontend computes FV and EV."""
@@ -1325,6 +1381,10 @@ if __name__ == "__main__":
             stdin_data = sys.stdin.read().strip()
             payload = json.loads(stdin_data) if stdin_data else {}
             result = find_sgps_teammate(payload)
+        elif cmd == "find-sgps-nba":
+            stdin_data = sys.stdin.read().strip()
+            payload = json.loads(stdin_data) if stdin_data else {}
+            result = find_sgps_nba(payload)
         elif cmd == "price":
             stdin_data = sys.stdin.read().strip()
             if stdin_data:
