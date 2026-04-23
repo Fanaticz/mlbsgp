@@ -1393,18 +1393,25 @@ function flipDir(leg){if(leg.startsWith('Over '))return 'Under '+leg.slice(5);if
                 flipping both leaves it unchanged. This is the correct input
                 for SGP joint-probability math — it encodes how often the two
                 legs co-hit relative to independence in the direction picked.
-     r_margin = continuous Pearson on the raw stat columns (e.g. K vs ER).
-                Direction-INVARIANT: same value regardless of Over/Under on
-                either leg. Display-only — useful as a "continuous signal"
-                readout on cards, but NOT a correct input to EV math on mixed
-                Under/Over pairs (its sign reflects raw-stat correlation, not
-                leg co-hitting, so for aces with K↑/ER↓ it is negative while
-                the actual leg co-hit rate is positive).
+     r_margin = stored as raw-stat continuous Pearson in combos_2 (translation
+                -invariant across threshold choices). For display we orient it
+                to the queried leg directions: signedMargin_i = dir_i·(stat_i
+                − line_i) where dir_i = +1 for Over, −1 for Under. By Pearson
+                sign rules this equals (dirA·dirB) · raw_Pearson, so we
+                multiply the stored raw r_margin by dirA·dirB at read time.
+                Display-only — still NOT used by EV math (which reads binary
+                phi via _findRBinaryIn). Invariant: for same-direction queries
+                (both Over or both Under) the displayed margin sign matches
+                the stored raw-stat correlation's sign; for mixed-direction
+                queries the sign is flipped.
    _findRBinaryIn is the canonical reader for EV math (via resolveR). It
    returns c.r with sign=-1 applied when exactly one leg is flipped to match
-   the stored row — which correctly flips phi's sign. _findRMarginIn returns
-   the stored c.r_margin unchanged and is display-only. */
-function _findRMarginIn(arr,a,b){if(!arr)return _NF;var fa=flipDir(a),fb=flipDir(b);function tryArr(x,y){for(var i=0;i<arr.length;i++){var c=arr[i];if((c.leg1===x&&c.leg2===y)||(c.leg1===y&&c.leg2===x)){if(c.r_margin===null||c.r_margin===undefined)return null;return c.r_margin;}}return _NF;}var r;if((r=tryArr(a,b))!==_NF)return r;if((r=tryArr(fa,fb))!==_NF)return r;if((r=tryArr(fa,b))!==_NF)return r;if((r=tryArr(a,fb))!==_NF)return r;return _NF;}
+   the stored row — which correctly flips phi's sign. _findRMarginIn applies
+   the direction-pair sign (dirA·dirB) so displayed margin r shares sign
+   convention with binary phi on same- vs mixed-direction parlays (magnitudes
+   can still differ — dichotomization can materially change the correlation
+   value, and occasionally the sign, versus continuous Pearson). */
+function _findRMarginIn(arr,a,b){if(!arr)return _NF;var fa=flipDir(a),fb=flipDir(b);var flip=(a.startsWith('Over ')?1:-1)*(b.startsWith('Over ')?1:-1);function tryArr(x,y){for(var i=0;i<arr.length;i++){var c=arr[i];if((c.leg1===x&&c.leg2===y)||(c.leg1===y&&c.leg2===x)){if(c.r_margin===null||c.r_margin===undefined)return null;return c.r_margin*flip;}}return _NF;}var r;if((r=tryArr(a,b))!==_NF)return r;if((r=tryArr(fa,fb))!==_NF)return r;if((r=tryArr(fa,b))!==_NF)return r;if((r=tryArr(a,fb))!==_NF)return r;return _NF;}
 function _findRBinaryIn(arr,a,b){if(!arr)return _NF;var fa=flipDir(a),fb=flipDir(b);function tryArr(x,y,sign){for(var i=0;i<arr.length;i++){var c=arr[i];if((c.leg1===x&&c.leg2===y)||(c.leg1===y&&c.leg2===x)){if(c.r===null||c.r===undefined)return null;return c.r*sign;}}return _NF;}var r;if((r=tryArr(a,b,1))!==_NF)return r;if((r=tryArr(fa,fb,1))!==_NF)return r;if((r=tryArr(fa,b,-1))!==_NF)return r;if((r=tryArr(a,fb,-1))!==_NF)return r;return _NF;}
 function _blendWeights(n,k){if(k==null)k=DEFAULT_K;if(n<BLEND_MIN_STARTS)return{wPlayer:0,wGlobal:1,insufficient:true,n:n,k:k};var wp=n/(n+k);return{wPlayer:wp,wGlobal:1-wp,insufficient:false,n:n,k:k};}
 
@@ -1463,7 +1470,13 @@ function resolveRMargin(pd,a,b){
   if(s1&&s2&&D&&D.global_raw_corr){
     var gv=D.global_raw_corr[s1+'_'+s2];
     if(gv==null||isNaN(gv))gv=D.global_raw_corr[s2+'_'+s1];
-    if(gv!=null&&!isNaN(gv))globalR=gv;
+    if(gv!=null&&!isNaN(gv)){
+      /* Match _findRMarginIn: D.global_raw_corr stores raw-stat Pearson
+         which is direction-invariant, so orient to queried legs with
+         dirA·dirB before blending. */
+      var _flip=(a.startsWith('Over ')?1:-1)*(b.startsWith('Over ')?1:-1);
+      globalR=gv*_flip;
+    }
   }
   var nEff=(pd&&pd.n_starts_eff)||0;
   var k=getKForLegs(a,b);
