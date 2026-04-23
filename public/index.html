@@ -1388,36 +1388,23 @@ function _warnMissingPair(kind,a,b){
 }
 function flipDir(leg){if(leg.startsWith('Over '))return 'Under '+leg.slice(5);if(leg.startsWith('Under '))return 'Over '+leg.slice(6);return leg;}
 /* r vs r_margin in combos_2:
-     r        = binary phi (Pearson on 0/1 leg-hit indicators). Flipping one leg's
-                direction (Over↔Under) flips its indicator, which flips phi's sign.
-                Flipping BOTH legs leaves phi unchanged. Because phi IS the dichotomy,
-                _findRIn MUST multiply by sign=-1 when exactly one leg is flipped.
-     r_margin = continuous Pearson on the raw stat columns (e.g. ER vs OUTS).
-                This is a property of the underlying raw stats, NOT of the dichotomy,
-                so it is INVARIANT to Over/Under direction on either leg. _findRMarginIn
-                therefore returns the stored value WITHOUT a sign flip — negating it
-                for a one-leg flip would invert a direction-invariant quantity.
-   _findRIn synthesizes a requested (a,b) pair from whichever direction combination
-   happens to be stored. When sign=+1 (direct hit, or both legs flipped) either r or
-   r_margin is valid; prefer r_margin since it's the higher-resolution continuous
-   estimate. When sign=-1 (exactly one leg flipped) we MUST use r (binary phi) —
-   multiplying r_margin by -1 would invert a direction-invariant quantity and
-   produce a wrong-sign correlation, which inverts downstream EV math. */
-function _findRIn(arr,a,b){if(!arr)return _NF;var fa=flipDir(a),fb=flipDir(b);function tryArr(x,y,sign){for(var i=0;i<arr.length;i++){var c=arr[i];if((c.leg1===x&&c.leg2===y)||(c.leg1===y&&c.leg2===x)){var rm;if(sign===-1){rm=c.r;}else{rm=(c.r_margin!==null&&c.r_margin!==undefined)?c.r_margin:c.r;}if(rm===null||rm===undefined)return null;return rm*sign;}}return _NF;}var r;if((r=tryArr(a,b,1))!==_NF)return r;if((r=tryArr(fa,fb,1))!==_NF)return r;if((r=tryArr(fa,b,-1))!==_NF)return r;if((r=tryArr(a,fb,-1))!==_NF)return r;return _NF;}
-/* Mirror of _findRIn but returns r_margin only — the continuous Pearson
-   correlation between the raw stat columns. r_margin is a property of the
-   underlying stats, not of the Over/Under dichotomy, so it is direction-
-   INVARIANT: every cell return is the stored c.r_margin with NO sign flip,
-   regardless of how many legs were flipped to match the stored row. Display-
-   only; EV math keeps flowing through resolveR / binary phi as before. */
+     r        = binary phi (Pearson on 0/1 leg-hit indicators). Leg-direction
+                aware: flipping exactly one leg (Over↔Under) flips phi's sign;
+                flipping both leaves it unchanged. This is the correct input
+                for SGP joint-probability math — it encodes how often the two
+                legs co-hit relative to independence in the direction picked.
+     r_margin = continuous Pearson on the raw stat columns (e.g. K vs ER).
+                Direction-INVARIANT: same value regardless of Over/Under on
+                either leg. Display-only — useful as a "continuous signal"
+                readout on cards, but NOT a correct input to EV math on mixed
+                Under/Over pairs (its sign reflects raw-stat correlation, not
+                leg co-hitting, so for aces with K↑/ER↓ it is negative while
+                the actual leg co-hit rate is positive).
+   _findRBinaryIn is the canonical reader for EV math (via resolveR). It
+   returns c.r with sign=-1 applied when exactly one leg is flipped to match
+   the stored row — which correctly flips phi's sign. _findRMarginIn returns
+   the stored c.r_margin unchanged and is display-only. */
 function _findRMarginIn(arr,a,b){if(!arr)return _NF;var fa=flipDir(a),fb=flipDir(b);function tryArr(x,y){for(var i=0;i<arr.length;i++){var c=arr[i];if((c.leg1===x&&c.leg2===y)||(c.leg1===y&&c.leg2===x)){if(c.r_margin===null||c.r_margin===undefined)return null;return c.r_margin;}}return _NF;}var r;if((r=tryArr(a,b))!==_NF)return r;if((r=tryArr(fa,fb))!==_NF)return r;if((r=tryArr(fa,b))!==_NF)return r;if((r=tryArr(a,fb))!==_NF)return r;return _NF;}
-/* Strict binary-phi reader. Always returns c.r (indicator-variable Pearson)
-   with a sign flip on one-leg direction flips — never substitutes c.r_margin.
-   Phase 1 ground-truth validation showed phi and r_margin diverge materially
-   per pitcher (e.g. Cavalli +0.04 vs -0.60), so the "prefer r_margin when
-   sign=+1" path inside _findRIn conflates two distinct quantities on the card.
-   The EV pipeline stays on _findRIn / resolveR to preserve its current output;
-   the "R" column on EV cards reads through here so it shows true binary phi. */
 function _findRBinaryIn(arr,a,b){if(!arr)return _NF;var fa=flipDir(a),fb=flipDir(b);function tryArr(x,y,sign){for(var i=0;i<arr.length;i++){var c=arr[i];if((c.leg1===x&&c.leg2===y)||(c.leg1===y&&c.leg2===x)){if(c.r===null||c.r===undefined)return null;return c.r*sign;}}return _NF;}var r;if((r=tryArr(a,b,1))!==_NF)return r;if((r=tryArr(fa,fb,1))!==_NF)return r;if((r=tryArr(fa,b,-1))!==_NF)return r;if((r=tryArr(a,fb,-1))!==_NF)return r;return _NF;}
 function _blendWeights(n,k){if(k==null)k=DEFAULT_K;if(n<BLEND_MIN_STARTS)return{wPlayer:0,wGlobal:1,insufficient:true,n:n,k:k};var wp=n/(n+k);return{wPlayer:wp,wGlobal:1-wp,insufficient:false,n:n,k:k};}
 
@@ -1433,8 +1420,8 @@ function _blendWeights(n,k){if(k==null)k=DEFAULT_K;if(n<BLEND_MIN_STARTS)return{
 function resolveR(pd,a,b){
   if(a===b)return{r:1,source:'identity',wPlayer:1,wGlobal:0,n:0,k:0,rPlayer:1,rGlobal:1};
   var mode=CORR_MODE;
-  var playerR=pd?_findRIn(pd.combos_2,a,b):_NF;
-  var globalR=_findRIn(D.global_2,a,b);
+  var playerR=pd?_findRBinaryIn(pd.combos_2,a,b):_NF;
+  var globalR=_findRBinaryIn(D.global_2,a,b);
   if(playerR===_NF)playerR=null;
   if(globalR===_NF)globalR=null;
   var nEff=(pd&&pd.n_starts_eff)||0;
@@ -1494,12 +1481,11 @@ function resolveRMargin(pd,a,b){
   return Object.assign({r:w.wPlayer*playerR+w.wGlobal*globalR,source:'blended',wPlayer:w.wPlayer,wGlobal:w.wGlobal},base);
 }
 
-/* Display-only parallel to resolveR that strictly reads c.r (binary phi).
-   Uses the same shrinkage pipeline (n_eff, k, player/global split) as
-   resolveR, but routes through _findRBinaryIn so r_margin is never
-   substituted in on sign=+1 matches. Feeds the EV card's "R" column so
-   that binary R and continuous Margin stay distinguishable on cards where
-   resolveR happened to resolve via the r_margin-preferred path. */
+/* Explicit binary-phi resolver. Functionally equivalent to resolveR
+   post-fix (resolveR now also routes through _findRBinaryIn). Retained so
+   read-path call sites that want to assert "I specifically want binary phi,
+   not whatever resolveR happens to do" stay self-documenting. Safe to
+   collapse into resolveR in a future cleanup. */
 function resolveRBinary(pd,a,b){
   if(a===b)return{r:1,source:'identity',wPlayer:1,wGlobal:0,n:0,k:0,rPlayer:1,rGlobal:1};
   var mode=CORR_MODE;
@@ -1762,10 +1748,12 @@ function evComputeCombo(pitcher,pd,matchedLegs,indices,dkDecimal){
     for(var j=i+1;j<legs.length;j++){
       /* resolveR carries provenance so the EV card label reflects the source
          actually used (e.g. "blended → global" when low sample triggered fallback).
-         resolveRMargin and resolveRBinary run alongside purely for read-path
-         enrichment (EV card R + Margin readouts, AI Insights prompt context).
-         EV math stays on resolveR's r, which preserves the historic behavior
-         of preferring r_margin when the stored combo matches directly. */
+         resolveR now reads through _findRBinaryIn — binary phi is the correct
+         input for joint-probability math (see _findRBinaryIn doc block).
+         resolveRMargin and resolveRBinary still run alongside for read-path
+         enrichment (Margin column readouts, AI Insights prompt context);
+         resolveRBinary is functionally redundant with resolveR post-fix but is
+         retained as an explicit read-path name. */
       var res=resolveR(pd,legs[i].leg,legs[j].leg);
       var rmRes=resolveRMargin(pd,legs[i].leg,legs[j].leg);
       var rbRes=resolveRBinary(pd,legs[i].leg,legs[j].leg);
@@ -1919,9 +1907,11 @@ function evRenderResults(){
 
     /* Price comparison.
        The "R" column is the binary-phi correlation (indicator-variable
-       Pearson), rendered from pd.rBinary so it stays distinguishable from
-       the continuous "Margin" column even on pairs where resolveR prefers
-       r_margin internally. EV math upstream keeps using pd.r unchanged. */
+       Pearson), rendered from pd.rBinary. Post-fix, pd.r (from resolveR)
+       and pd.rBinary are the same quantity — both read through
+       _findRBinaryIn. We keep reading pd.rBinary here so the column stays
+       self-documenting about what it shows. The "Margin" column continues
+       to display-only read r_margin via resolveRMargin. */
     var rPairs=(c.calc.pairDetails||[]).filter(function(pd){return pd.rBinary!==null&&pd.rBinary!==undefined&&!isNaN(pd.rBinary);});
     var rAvg=rPairs.length?rPairs.reduce(function(s,p){return s+p.rBinary;},0)/rPairs.length:null;
     var rColor=rAvg===null?'var(--mu)':(rAvg>=0.3?'var(--ac)':(rAvg<0?'var(--red)':'var(--mu)'));
