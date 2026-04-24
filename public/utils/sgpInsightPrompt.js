@@ -144,40 +144,68 @@ function _buildSGP2InsightPrompt(sgp) {
 
   /* Reasoning rules. The model does not see the card layout — it only sees
      the JSON it emits, rendered into badges and lines. So the rules must
-     be about CONTENT discipline, not layout. */
+     be about CONTENT discipline, not layout.
+
+     Core framing: DK's standalone pitcher leg markets are near-efficient
+     (per-leg fair edge typically within +/-3%). When an SGP card shows
+     meaningful EV (>~8%), the math forces the edge to come from DK's
+     correlation prior disagreeing with our per-pitcher correlation
+     measurement — not from leg mispricing. Leg mispricing is not a
+     structurally repeatable edge on pitcher props; correlation
+     mispricing IS, because DK applies a generic prior while we measure
+     per pitcher. The prompt teaches this framing implicitly through
+     the default thesis. */
+  lines.push('=== BACKGROUND (read before choosing a thesis) ===');
+  lines.push('DK\'s standalone pitcher leg markets are near-efficient: a single leg\'s fair-value edge is almost always within -2% to +3%. This means when an SGP card shows meaningful EV, the math simply does not allow leg mispricing to be the dominant driver. The only place a large edge can come from is DK\'s correlation prior disagreeing with our per-pitcher correlation measurement.');
+  lines.push('Leg mispricing is not a structurally repeatable edge on pitcher props — DK prices those markets tightly and adjusts quickly. Correlation mispricing IS structurally repeatable, because DK applies a generic correlation prior across pitchers while we measure per-pitcher correlations from start history.');
+  lines.push('');
   lines.push('=== RULES ===');
-  lines.push('1. THESIS-FIRST. Pick ONE thesis in your head before writing:');
-  lines.push('     (a) LEG MISPRICING — our fair leg probs beat DK, correlation is close to neutral.');
-  lines.push('     (b) CORRELATION GAP — DK prices in correlation our data does not support (direction stated).');
-  lines.push('     (c) BOTH — name both explicitly.');
-  lines.push('   headline, explanation, edge, and risk must all agree with the chosen thesis.');
-  lines.push('   If headline says correlation is weak, edge CANNOT say DK underprices correlation. Pick one.');
+  lines.push('1. THESIS-FIRST. Pick ONE thesis and stick with it across headline, explanation, edge, and risk. Contradictions (e.g. headline says "weak correlation", edge says "DK underprices correlation") are forbidden.');
+  lines.push('   The three theses:');
+  lines.push('     (a) CORRELATION GAP — DK prices in a different correlation than our data supports (r_gap is the story). DEFAULT for any card with EV > 8%.');
+  lines.push('     (b) LEG MISPRICING — a leg\'s fair value genuinely differs from DK\'s implied. RARE on pitcher props. Only pick (b) when EV is small AND |r_gap| < 0.05 AND evFromLegsPct carries most of the EV.');
+  lines.push('     (c) MARGINAL — EV < 3% and |r_gap| < 0.05. Not a structural edge; card is a wash.');
+  lines.push('   Use the EV-size decision table:');
+  lines.push('     EV > ~8%   -> correlation-gap thesis (a) is the default. Leg mispricing is a secondary clause at most, not the thesis.');
+  lines.push('     EV 3-8%    -> check attribution. Whichever of evFromLegsPct / evFromCorrPct is larger leads; the smaller is a supporting clause.');
+  lines.push('     EV < 3%    -> likely (c); call it marginal unless there is a specific structural reason to play.');
   lines.push('');
-  lines.push('2. CORRECT MATH. To argue correlation exists, compare P(B|A) vs P(B). If |r_ours| < 0.05 AND P(B|A) is within ~3pp of P(B), call correlation weak and put the edge in the legs. Never argue that P(B|A) > P(A)*P(B) proves correlation — that is almost always true and irrelevant.');
+  lines.push('2. CORRECT MATH.');
+  lines.push('   - To argue correlation exists IN OUR SAMPLE, compare P(B|A) vs P(B). If P(B|A) > P(B), positive; if <, negative; within a couple of pp, effectively zero. NEVER argue that P(B|A) > P(A)*P(B) proves correlation — that comparison is almost always true and proves nothing.');
+  lines.push('   - IMPORTANT: a near-zero r_ours does NOT mean "no correlation edge." It means OUR SAMPLE shows no correlation. The correlation edge lives in r_gap = r_ours - r_DK. A r_ours of +0.02 with a r_DK of -0.14 is a large correlation edge (DK is pricing in negative correlation that our data does not support) even though our r is near zero.');
   lines.push('');
-  lines.push('3. USE r_DK. Treat r_DK as ground truth for what DK is pricing; r_ours for what our data shows. Rules:');
-  lines.push('     |r_gap| < 0.05 -> correlation is a wash, edge is in the legs; say so directly.');
-  lines.push('     r_gap > +0.05 -> DK prices in more negative correlation than we see; combo is cheap for correlation reasons on top of any leg edge.');
-  lines.push('     r_gap < -0.05 -> DK prices in more positive correlation than we see; SGP is expensive on correlation and any EV has to overcome that. Hardest case to win — reflect in confidence.');
-  lines.push('   When discussing the correlation piece, cite both numbers ("DK implies r≈X; our sample shows r≈Y, a gap of Z") and the attribution line (EV from corr = W%).');
+  lines.push('3. USE r_DK.');
+  lines.push('   - r_DK is what DK is pricing; r_ours is what our data shows. Always cite both when the correlation thesis is in play: "DK implies r≈X; our N-start sample shows r≈Y, a gap of Z."');
+  lines.push('   - Directional rules:');
+  lines.push('       r_gap > +0.05  -> DK prices in more negative correlation than our data supports. SGP is underpriced. This is the structural edge we hunt — lead with it.');
+  lines.push('       r_gap < -0.05  -> DK prices in more positive correlation than our data supports. SGP is overpriced on correlation. Any +EV must overcome that; the score should reflect skepticism.');
+  lines.push('       |r_gap| < 0.05 -> we agree with DK\'s correlation. If EV is meaningful (>5%) yet r_gap is tiny, flag it as unusual — something in the attribution or a near-efficient leg market accident. If EV < 3%, mark marginal (thesis c).');
+  lines.push('   - When citing "worth X% of EV on its own", quote the attribution numbers directly (evFromCorrPct and evFromLegsPct). Do NOT recompute.');
+  lines.push('   - Teach the user implicitly: frame the correlation edge as "DK applies a generic prior for this stat pair; this pitcher\'s history does not match." Do not belabor the point — one clause is enough.');
   lines.push('');
-  lines.push('4. SPECIFIC RISK. risk must reference at least one number or fact from the context above (sample size, a leg hit rate, n_eff, blend %, r_gap magnitude, r_DK clamp, specific opponent/park if present in game string). Never write a generic "usage pattern or injury history could shift baseline" line.');
+  lines.push('4. SPECIFIC RISK. risk must reference at least one number or fact from the context above (sample size, a specific leg hit rate, n_eff, blend %, r_gap magnitude, r_DK clamp, specific opponent/park from the game string). Never write a generic "usage pattern or injury history could shift baseline" line.');
   lines.push('');
-  lines.push('5. HONEST SCORE. confidence must be tied to one specific data point. Defaults like 7/10 are not allowed. Anchor points:');
-  lines.push('     confidence 8-9: EV% >= 10 AND n >= 40 AND (|r_gap| < 0.05 OR |r_gap| >= 0.10 with aligned attribution) AND no rDK clamp.');
-  lines.push('     confidence 5-7: EV% 3-10, or n 15-40, or r_gap modest and ambiguous.');
-  lines.push('     confidence 1-4: EV% < 3, n < 15, rDK clamped, missing pairs, or thesis requires negative-r_gap bet.');
-  lines.push('   If the only justification is generic, drop to 5.');
+  lines.push('5. HONEST SCORE. confidence must be tied to one specific data point. Defaults (7/10) are not allowed. Anchors:');
+  lines.push('     confidence 8-9: EV% >= 10 AND n_raw >= 40 AND r_gap aligned with the thesis (positive r_gap for a play) AND no rDK clamp.');
+  lines.push('     confidence 5-7: EV% 3-10, or n_raw 15-40, or r_gap modest and attribution ambiguous.');
+  lines.push('     confidence 1-4: EV% < 3, n_raw < 15, rDK clamped, missingPairs>0, or thesis requires a negative-r_gap play.');
+  lines.push('   If the only justification is generic, drop the score by 2.');
   lines.push('');
-  lines.push('6. LEG/CARD NUMBERS. Quote values directly from the context above. Do NOT invent, round, or re-derive. If a value is n/a, say so — do not substitute.');
+  lines.push('6. VALUES. Quote context numbers directly. Do NOT invent, round away, or re-derive. If a value is n/a, say so — never substitute.');
   lines.push('');
   lines.push('=== OUTPUT (JSON only; no markdown) ===');
   lines.push('{"verdict":"PLAY","headline":"one-line thesis, max 14 words","explanation":"2-3 sentences, grounded in context numbers","edge":"1 sentence; must agree with headline thesis","risk":"1 sentence; must cite a specific number from context","confidence":8}');
   lines.push('');
+  lines.push('Example (deGrom, Over 3.5 Hits Allowed + Over 16.5 Outs, EV +19.6%, r_ours=+0.02, r_DK=-0.14):');
+  lines.push('  headline: "DK\'s negative-correlation prior doesn\'t fit deGrom — correlation gap drives the edge"');
+  lines.push('  explanation: "DK\'s SGP price implies r ≈ -0.14 — the standard \'hit around, pulled early\' prior. Our 42-start sample shows r ≈ +0.02: deGrom works through traffic rather than getting yanked. That 0.16 gap accounts for the bulk of the 19.6% EV; leg pricing contributes only a few points on top."');
+  lines.push('  edge: "DK applies a generic negative-correlation prior for Hits × Outs that doesn\'t match this pitcher\'s history; that mismatch is the whole game, leg pricing a minor bonus."');
+  lines.push('  risk: "42-start sample with n_eff 29.2; shrinkage pulls our r halfway toward the global baseline, so true correlation could still be modestly negative."');
+  lines.push('');
   lines.push('verdict rules:');
-  lines.push('  PLAY     = EV% > 5 AND the thesis is coherent (leg edge, corr gap, or both — not contradicted by |r_gap|<0.05 when headline claims corr).');
-  lines.push('  MARGINAL = EV% 0-5, or data thin (n_eff < 15, missingPairs>0, rDKClamp set), or r_gap negative and relying on leg edge to survive.');
-  lines.push('  SKIP     = EV% < 0, OR r_gap strongly negative with leg edge insufficient to overcome it.');
+  lines.push('  PLAY     = EV% > 5 AND the chosen thesis is structurally supported (correlation gap aligned, OR small-EV leg edge with |r_gap|<0.05).');
+  lines.push('  MARGINAL = EV% 0-5, data thin (n_eff < 15, missingPairs>0, rDKClamp set), or r_gap negative and EV relying on correlation surviving.');
+  lines.push('  SKIP     = EV% < 0, OR r_gap strongly negative and EV small enough that overcoming DK\'s correlation price is implausible.');
 
   return lines.join('\n');
 }
