@@ -1,5 +1,10 @@
 # Changes
 
+## 2026-04-24 session
+
+### AI Insights: structured context, r_DK attribution, correlation-gap-first prompt
+2-leg cards now compute `r_DK` (inverting `jointFrechet` on the DK SGP price with our FV legs) and an EV attribution split (`evFromLegsPct` + `evFromCorrPct`). New `DK R` column on the card shows the gap directly. `sgpInsightPrompt.js` rewritten to hand the model a structured context object (FV legs, empirical hits J/N, P(A)·P(B), P(B|A), r_ours, r_DK, r_gap, attribution split) and enforce a correlation-gap-default thesis (pitcher leg markets are near-efficient, so for EV > ~8% the edge must live in the r_ours vs r_DK gap), correct-math (P(B|A) vs P(B) not vs P(A)·P(B); near-zero r_ours is not "no correlation edge" when r_gap is large), specific-risk, and honest-score rules. `sgpMath.js` gained `inverseJointFrechet` and `evAttribution` (unit-tested roundtrip + clamp).
+
 ## 2026-04-17 session
 
 ### 571e187 — Collapse duplicate `(pitcher, leg)` rows and canonicalize SGP leg ordering

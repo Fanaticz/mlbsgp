@@ -1,22 +1,52 @@
-/* buildSGPInsightPrompt(sgp) — constructs the Claude prompt for an SGP insight.
-   sgp shape:
-     size       2 | 3  (defaults to legs.length when absent — 2-leg back-compat)
-     pitcher    string
-     game       string
-     legs       [{label, fv}]
-     dkSGP      number  (American odds)
-     fvCorr     number  (American odds, corr-adjusted FV)
-     evPct      number  (e.g. 7.3)
-     fvP        number  (0–1 decimal probability)
-     correlation {
-       pairs:[{a,b,r,rMargin,rMarginSource,source,...}],
-       missingPairs, usedPairs, starts,
-       // 3-leg only:
-       empirical3Way: { hitRatePlayer, hitRateGlobal, hitRateBlended, wPlayer, wGlobal, nEff, nRaw }
-     }
-     hitRates   { leg1, leg2, both, givenLeg1toLeg2 } | null      // 2-leg shape
-     hitRates3  { leg1, leg2, leg3, all3, all3Blended } | null    // 3-leg shape
-     dkHoldPct  number | null                                       // 3-leg only
+/* buildSGPInsightPrompt(sgp) — constructs the Claude prompt for an SGP
+   insight card. Two variants: 2-leg (the common case; fed a fully
+   structured numeric context object so the model never re-derives values)
+   and 3-leg (empirical 3-way joint path).
+
+   Rule-of-thumb for edits:
+     1) Every number on the card must be in the structured context.
+        If the model needs a value that isn't in the context, the context
+        is incomplete — add it; do NOT let the model guess.
+     2) One thesis per card. Title, body, Edge, and Risk must all stay
+        consistent with a single thesis sentence.
+     3) Math comparisons must be correct. To argue correlation exists,
+        compare P(B|A) vs P(B), NOT P(B|A) vs P(A)*P(B).
+     4) Risks must reference a specific number from the context.
+     5) Confidence is justified by a specific data point, not handed out.
+
+   sgp shape (2-leg):
+     size         2
+     pitcher      string
+     game         string                       "Mets @ Dodgers" etc.
+     inDB         bool
+     legs         [{label, fv, fvProb}]
+     dkSGP        number   American odds (e.g. +320)
+     dkDecimal    number   decimal odds
+     fvCorr       number   American odds, corr-adjusted FV
+     fvIndep      number   American odds at independence
+     evPct        number   % (e.g. 19.6)
+     kellyPct     number
+     qkUnits      number
+     fvP          number   0–1 correlation-adjusted joint
+     pIndep       number   0–1 independence product of FV legs
+     correlation  { pairs[], missingPairs, usedPairs, starts, nEff, nRaw }
+     hitRates     { leg1, leg2, both, givenLeg1toLeg2 } | null   (%)
+     hits         { leg1Count, leg2Count, bothCount, n,
+                    leg1Pct, leg2Pct, bothPct, givenLeg1toLeg2Pct }
+     probs        { pA_fv, pB_fv, pA_emp, pB_emp, pA_times_pB_emp,
+                    pAB_emp, pBgivenA_emp }
+     rOurs        number   pair binary phi (shrunk)
+     rMargin      number   pair margin r (shrunk)
+     rSource      string   resolved source (blended, global, player, …)
+     rPlayer      number | null
+     rGlobal      number | null
+     wPlayer      number | null
+     wGlobal      number | null
+     rDK          number | null   inverted from DK SGP price + FV legs
+     rGap         number | null   rOurs - rDK
+     rDKClamp     string | null   'ceiling' | 'floor' | 'degenerate' | null
+     evFromLegsPct number | null  attribution split
+     evFromCorrPct number | null  attribution split
 */
 function buildSGPInsightPrompt(sgp) {
   var size = sgp.size || (sgp.legs && sgp.legs.length) || 2;
@@ -24,191 +54,244 @@ function buildSGPInsightPrompt(sgp) {
   return _buildSGP2InsightPrompt(sgp);
 }
 
+function _fmtAm(v) {
+  if (v === null || v === undefined || isNaN(v)) return 'n/a';
+  return (v >= 0 ? '+' : '') + v;
+}
+function _fmtPct(v, digits) {
+  if (v === null || v === undefined || isNaN(v)) return 'n/a';
+  return v.toFixed(digits == null ? 1 : digits) + '%';
+}
+function _fmtR(v, digits) {
+  if (v === null || v === undefined || isNaN(v)) return 'n/a';
+  return (v >= 0 ? '+' : '') + v.toFixed(digits == null ? 3 : digits);
+}
+
 function _buildSGP2InsightPrompt(sgp) {
   var lines = [];
+  var hits = sgp.hits || {};
+  var probs = sgp.probs || {};
+  var corr = sgp.correlation || {};
+  var n = hits.n || corr.starts || null;
 
-  lines.push('You are a sharp sports betting analyst specializing in MLB pitcher prop SGPs.');
-  lines.push('Analyze the following Same Game Parlay and respond ONLY with valid JSON — no markdown, no backticks, no prose before or after the JSON.');
+  lines.push('You are a sharp MLB pitcher-prop SGP analyst. Your output appears inside a small card that already shows the verdict badge, score, price, EV%, and correlation numbers. The user has the numbers — your job is to narrate them sharply and correctly. Respond ONLY with valid JSON (no markdown, no backticks, no prose).');
   lines.push('');
-  lines.push('=== SGP DATA ===');
-  lines.push('Pitcher: ' + sgp.pitcher);
-  lines.push('Game: ' + sgp.game);
+
+  /* All numeric context. Pre-derived. Do not ask the model to recompute. */
+  lines.push('=== CONTEXT (every number on the card) ===');
+  lines.push('pitcher: ' + sgp.pitcher);
+  lines.push('game: ' + (sgp.game || 'n/a'));
+  lines.push('pitcher_in_db: ' + (sgp.inDB ? 'yes' : 'no'));
   lines.push('');
-  lines.push('Legs:');
-  sgp.legs.forEach(function(leg, i) {
-    lines.push('  Leg ' + (i + 1) + ': ' + leg.label + '  (FV odds: ' + (leg.fv > 0 ? '+' : '') + leg.fv + ')');
+
+  lines.push('legs:');
+  (sgp.legs || []).forEach(function (l, i) {
+    var fvp = (l.fvProb != null) ? (' / FV prob ' + _fmtPct(l.fvProb * 100)) : '';
+    lines.push('  leg' + (i + 1) + ': "' + l.label + '"  FV ' + _fmtAm(l.fv) + fvp);
   });
   lines.push('');
-  lines.push('=== PRICING ===');
-  lines.push('DK SGP price: ' + (sgp.dkSGP > 0 ? '+' : '') + sgp.dkSGP);
-  lines.push('Fair Value (correlation-adjusted): ' + (sgp.fvCorr > 0 ? '+' : '') + sgp.fvCorr);
-  lines.push('EV%: ' + sgp.evPct.toFixed(1) + '%');
-  lines.push('Fair Value probability: ' + (sgp.fvP * 100).toFixed(1) + '%');
+
+  lines.push('pricing:');
+  lines.push('  DK SGP: ' + _fmtAm(sgp.dkSGP) + ' (decimal ' + (sgp.dkDecimal != null ? sgp.dkDecimal.toFixed(3) : 'n/a') + ', implied ' + (sgp.dkDecimal ? _fmtPct(100 / sgp.dkDecimal) : 'n/a') + ')');
+  lines.push('  FV correlation-adjusted: ' + _fmtAm(sgp.fvCorr) + ' (joint prob ' + (sgp.fvP != null ? _fmtPct(sgp.fvP * 100) : 'n/a') + ')');
+  lines.push('  FV independence: ' + _fmtAm(sgp.fvIndep) + ' (joint prob ' + (sgp.pIndep != null ? _fmtPct(sgp.pIndep * 100) : 'n/a') + ')');
+  lines.push('  EV%: ' + (sgp.evPct != null ? _fmtPct(sgp.evPct) : 'n/a'));
+  lines.push('  Kelly: ' + (sgp.kellyPct != null ? sgp.kellyPct.toFixed(2) + '%' : 'n/a') + '   1/4 Kelly: ' + (sgp.qkUnits != null ? sgp.qkUnits.toFixed(2) + 'u' : 'n/a'));
   lines.push('');
 
-  lines.push('=== CORRELATION ===');
-  var corr = sgp.correlation || {};
-  if (corr.pairs && corr.pairs.length) {
-    corr.pairs.forEach(function(p) {
-      var rStr = (p.r !== null && p.r !== undefined) ? p.r.toFixed(4) : 'missing (treated as 0)';
-      var hasMargin = (p.rMargin !== null && p.rMargin !== undefined && !isNaN(p.rMargin));
-      var mStr = hasMargin ? p.rMargin.toFixed(4) : 'n/a';
-      lines.push('  ' + p.a + '  \u2194  ' + p.b + ':  binary r = ' + rStr + ',  margin r = ' + mStr);
-    });
-  } else {
-    lines.push('  No pair correlations available');
-  }
-  if (corr.missingPairs) {
-    lines.push('  Missing pairs (r=0 fallback): ' + corr.missingPairs);
-  }
-  if (corr.starts !== null && corr.starts !== undefined) {
-    lines.push('  Sample size: ' + corr.starts + ' pitcher starts');
-  }
-  lines.push('');
-  lines.push('For each leg pair, you have two correlation measures:');
-  lines.push('  - R (binary phi): how often the two leg outcomes co-occur at their specific thresholds (the actual parlay lines).');
-  lines.push('  - Margin (continuous): how the underlying raw stats move together, independent of the chosen thresholds.');
-  lines.push('Interpret divergence between them:');
-  lines.push('  - Same sign, similar magnitude: stable relationship, high confidence in the correlation signal.');
-  lines.push('  - Same sign, margin much stronger than binary: the raw-stat relationship is real but the specific line thresholds don\u2019t capture it well \u2014 edge may be weaker than binary suggests.');
-  lines.push('  - Opposite signs: the line thresholds are carving the data differently than the underlying relationship \u2014 the parlay at these specific lines fights the pitcher\u2019s actual tendencies (usually a weak or negative edge).');
-  lines.push('  - Both near zero: outcomes are effectively independent; any EV is coming from leg pricing errors, not correlation arbitrage.');
+  lines.push('historical hits (empirical, over ' + (n != null ? n : '?') + ' starts):');
+  lines.push('  leg1: ' + (hits.leg1Count != null && n ? (hits.leg1Count + '/' + n) : 'n/a') +
+             '   ' + _fmtPct(hits.leg1Pct));
+  lines.push('  leg2: ' + (hits.leg2Count != null && n ? (hits.leg2Count + '/' + n) : 'n/a') +
+             '   ' + _fmtPct(hits.leg2Pct));
+  lines.push('  combined: ' + (hits.bothCount != null && n ? (hits.bothCount + '/' + n) : 'n/a') +
+             '   ' + _fmtPct(hits.bothPct));
+  lines.push('  P(leg2 | leg1): ' + _fmtPct(hits.givenLeg1toLeg2Pct));
   lines.push('');
 
-  lines.push('=== HISTORICAL HIT RATES ===');
-  var hr = sgp.hitRates;
-  if (hr) {
-    if (hr.leg1 !== null && hr.leg1 !== undefined) lines.push('  Leg 1 hit rate: ' + hr.leg1.toFixed(1) + '%');
-    if (hr.leg2 !== null && hr.leg2 !== undefined) lines.push('  Leg 2 hit rate: ' + hr.leg2.toFixed(1) + '%');
-    if (hr.both !== null && hr.both !== undefined) lines.push('  Both legs hit rate: ' + hr.both.toFixed(1) + '%');
-    if (hr.givenLeg1toLeg2 !== null && hr.givenLeg1toLeg2 !== undefined) {
-      lines.push('  P(Leg 2 hits | Leg 1 hits): ' + hr.givenLeg1toLeg2.toFixed(1) + '%');
-    }
-  } else {
-    lines.push('  No historical hit rate data available');
-  }
+  lines.push('probabilities (decimals):');
+  lines.push('  P(A) empirical = ' + (probs.pA_emp != null ? probs.pA_emp.toFixed(4) : 'n/a'));
+  lines.push('  P(B) empirical = ' + (probs.pB_emp != null ? probs.pB_emp.toFixed(4) : 'n/a'));
+  lines.push('  P(A)*P(B) independence = ' + (probs.pA_times_pB_emp != null ? probs.pA_times_pB_emp.toFixed(4) : 'n/a'));
+  lines.push('  P(A ∩ B) observed = ' + (probs.pAB_emp != null ? probs.pAB_emp.toFixed(4) : 'n/a'));
+  lines.push('  P(B|A) observed = ' + (probs.pBgivenA_emp != null ? probs.pBgivenA_emp.toFixed(4) : 'n/a'));
+  lines.push('  -> correlation-exists test: compare P(B|A)=' + (probs.pBgivenA_emp != null ? probs.pBgivenA_emp.toFixed(4) : 'n/a') +
+             ' to P(B)=' + (probs.pB_emp != null ? probs.pB_emp.toFixed(4) : 'n/a') +
+             '.  DO NOT compare P(B|A) to P(A)*P(B) — that comparison is almost always true and proves nothing.');
   lines.push('');
 
-  lines.push('=== INSTRUCTIONS ===');
-  lines.push('Evaluate this SGP using EV%, the correlation between legs (both binary r and margin r), sample size, and historical hit rates.');
-  lines.push('A positive correlation means the legs tend to hit together \u2014 this boosts real fair value above the independent product.');
-  lines.push('Missing correlations or small samples increase uncertainty.');
-  lines.push('Compare binary r vs margin r for each pair and work the interpretation into the commentary:');
-  lines.push('  - When binary and margin agree directionally (same sign, similar magnitude), say so briefly \u2014 it reinforces confidence in the edge.');
-  lines.push('  - When they disagree (opposite signs, or same sign with very different magnitudes), flag it and explain what the disagreement suggests about this specific pitcher + these specific line thresholds.');
-  lines.push('  - Do not simply restate both numbers. Interpret the relationship for the specific pitcher and combo (e.g. an all-or-nothing pitcher whose raw stats trend together but whose line thresholds carve the outcomes oppositely).');
-  lines.push('Keep the correlation discussion concise \u2014 one paragraph mentioning the r/margin behavior is enough; do not turn every insight into a statistics lecture.');
+  lines.push('correlation:');
+  lines.push('  r_ours (binary phi, shrunk): ' + _fmtR(sgp.rOurs));
+  lines.push('  r_margin (continuous, shrunk): ' + _fmtR(sgp.rMargin));
+  lines.push('  r_source: ' + (sgp.rSource || 'n/a'));
+  if (sgp.rPlayer != null || sgp.rGlobal != null) {
+    lines.push('  r_player=' + _fmtR(sgp.rPlayer) + '  r_global=' + _fmtR(sgp.rGlobal) +
+               '   shrinkage weights: ' + Math.round((sgp.wPlayer || 0) * 100) + '% player / ' +
+               Math.round((sgp.wGlobal || 0) * 100) + '% global');
+  }
+  lines.push('  r_DK (implied by DK SGP price + our FV legs): ' + _fmtR(sgp.rDK) +
+             (sgp.rDKClamp ? ' [clamped: ' + sgp.rDKClamp + ']' : ''));
+  lines.push('  r_gap = r_ours - r_DK = ' + _fmtR(sgp.rGap));
+  lines.push('  n_eff: ' + (corr.nEff != null ? corr.nEff.toFixed(1) : 'n/a') +
+             '   n_raw: ' + (corr.nRaw != null ? corr.nRaw : 'n/a'));
   lines.push('');
-  lines.push('Respond with ONLY this JSON (no markdown, no backticks):');
-  lines.push('{"verdict":"PLAY","headline":"Short takeaway here","explanation":"2-3 sentences.","edge":"1 sentence on what gives this value.","risk":"1 sentence on the main risk.","confidence":8}');
+
+  lines.push('EV attribution (sums to total EV%):');
+  lines.push('  EV from legs (independence × DK − 1): ' + (sgp.evFromLegsPct != null ? _fmtPct(sgp.evFromLegsPct) : 'n/a'));
+  lines.push('  EV from correlation (our r above independence × DK): ' + (sgp.evFromCorrPct != null ? _fmtPct(sgp.evFromCorrPct) : 'n/a'));
+  lines.push('  Total EV%: ' + (sgp.evPct != null ? _fmtPct(sgp.evPct) : 'n/a'));
   lines.push('');
-  lines.push('Rules:');
-  lines.push('- verdict: "PLAY" (EV% > 5 and correlation is supportive), "MARGINAL" (EV is thin, data is weak, or uncertainty is high), "SKIP" (negative EV or correlation undermines the parlay)');
-  lines.push('- headline: max 12 words, punchy, captures the key signal');
-  lines.push('- explanation: 2-3 sentences covering EV, correlation strength, and hit rate context');
-  lines.push('- edge: 1 sentence — what specifically makes this worth playing (or not)');
-  lines.push('- risk: 1 sentence — biggest concern or caveat');
-  lines.push('- confidence: integer 1-10 based on data quality, sample size, and conviction in the verdict');
+
+  /* Reasoning rules. The model does not see the card layout — it only sees
+     the JSON it emits, rendered into badges and lines. So the rules must
+     be about CONTENT discipline, not layout.
+
+     Core framing: DK's standalone pitcher leg markets are near-efficient
+     (per-leg fair edge typically within +/-3%). When an SGP card shows
+     meaningful EV (>~8%), the math forces the edge to come from DK's
+     correlation prior disagreeing with our per-pitcher correlation
+     measurement — not from leg mispricing. Leg mispricing is not a
+     structurally repeatable edge on pitcher props; correlation
+     mispricing IS, because DK applies a generic prior while we measure
+     per pitcher. The prompt teaches this framing implicitly through
+     the default thesis. */
+  lines.push('=== BACKGROUND (read before choosing a thesis) ===');
+  lines.push('DK\'s standalone pitcher leg markets are near-efficient: a single leg\'s fair-value edge is almost always within -2% to +3%. This means when an SGP card shows meaningful EV, the math simply does not allow leg mispricing to be the dominant driver. The only place a large edge can come from is DK\'s correlation prior disagreeing with our per-pitcher correlation measurement.');
+  lines.push('Leg mispricing is not a structurally repeatable edge on pitcher props — DK prices those markets tightly and adjusts quickly. Correlation mispricing IS structurally repeatable, because DK applies a generic correlation prior across pitchers while we measure per-pitcher correlations from start history.');
+  lines.push('');
+  lines.push('=== RULES ===');
+  lines.push('1. THESIS-FIRST. Pick ONE thesis and stick with it across headline, explanation, edge, and risk. Contradictions (e.g. headline says "weak correlation", edge says "DK underprices correlation") are forbidden.');
+  lines.push('   The three theses:');
+  lines.push('     (a) CORRELATION GAP — DK prices in a different correlation than our data supports (r_gap is the story). DEFAULT for any card with EV > 8%.');
+  lines.push('     (b) LEG MISPRICING — a leg\'s fair value genuinely differs from DK\'s implied. RARE on pitcher props. Only pick (b) when EV is small AND |r_gap| < 0.05 AND evFromLegsPct carries most of the EV.');
+  lines.push('     (c) MARGINAL — EV < 3% and |r_gap| < 0.05. Not a structural edge; card is a wash.');
+  lines.push('   Use the EV-size decision table:');
+  lines.push('     EV > ~8%   -> correlation-gap thesis (a) is the default. Leg mispricing is a secondary clause at most, not the thesis.');
+  lines.push('     EV 3-8%    -> check attribution. Whichever of evFromLegsPct / evFromCorrPct is larger leads; the smaller is a supporting clause.');
+  lines.push('     EV < 3%    -> likely (c); call it marginal unless there is a specific structural reason to play.');
+  lines.push('');
+  lines.push('2. CORRECT MATH.');
+  lines.push('   - To argue correlation exists IN OUR SAMPLE, compare P(B|A) vs P(B). If P(B|A) > P(B), positive; if <, negative; within a couple of pp, effectively zero. NEVER argue that P(B|A) > P(A)*P(B) proves correlation — that comparison is almost always true and proves nothing.');
+  lines.push('   - IMPORTANT: a near-zero r_ours does NOT mean "no correlation edge." It means OUR SAMPLE shows no correlation. The correlation edge lives in r_gap = r_ours - r_DK. A r_ours of +0.02 with a r_DK of -0.14 is a large correlation edge (DK is pricing in negative correlation that our data does not support) even though our r is near zero.');
+  lines.push('');
+  lines.push('3. USE r_DK.');
+  lines.push('   - r_DK is what DK is pricing; r_ours is what our data shows. Always cite both when the correlation thesis is in play: "DK implies r≈X; our N-start sample shows r≈Y, a gap of Z."');
+  lines.push('   - Directional rules:');
+  lines.push('       r_gap > +0.05  -> DK prices in more negative correlation than our data supports. SGP is underpriced. This is the structural edge we hunt — lead with it.');
+  lines.push('       r_gap < -0.05  -> DK prices in more positive correlation than our data supports. SGP is overpriced on correlation. Any +EV must overcome that; the score should reflect skepticism.');
+  lines.push('       |r_gap| < 0.05 -> we agree with DK\'s correlation. If EV is meaningful (>5%) yet r_gap is tiny, flag it as unusual — something in the attribution or a near-efficient leg market accident. If EV < 3%, mark marginal (thesis c).');
+  lines.push('   - When citing "worth X% of EV on its own", quote the attribution numbers directly (evFromCorrPct and evFromLegsPct). Do NOT recompute.');
+  lines.push('   - Teach the user implicitly: frame the correlation edge as "DK applies a generic prior for this stat pair; this pitcher\'s history does not match." Do not belabor the point — one clause is enough.');
+  lines.push('');
+  lines.push('4. SPECIFIC RISK. risk must reference at least one number or fact from the context above (sample size, a specific leg hit rate, n_eff, blend %, r_gap magnitude, r_DK clamp, specific opponent/park from the game string). Never write a generic "usage pattern or injury history could shift baseline" line.');
+  lines.push('');
+  lines.push('5. HONEST SCORE. confidence must be tied to one specific data point. Defaults (7/10) are not allowed. Anchors:');
+  lines.push('     confidence 8-9: EV% >= 10 AND n_raw >= 40 AND r_gap aligned with the thesis (positive r_gap for a play) AND no rDK clamp.');
+  lines.push('     confidence 5-7: EV% 3-10, or n_raw 15-40, or r_gap modest and attribution ambiguous.');
+  lines.push('     confidence 1-4: EV% < 3, n_raw < 15, rDK clamped, missingPairs>0, or thesis requires a negative-r_gap play.');
+  lines.push('   If the only justification is generic, drop the score by 2.');
+  lines.push('');
+  lines.push('6. VALUES. Quote context numbers directly. Do NOT invent, round away, or re-derive. If a value is n/a, say so — never substitute.');
+  lines.push('');
+  lines.push('=== OUTPUT (JSON only; no markdown) ===');
+  lines.push('{"verdict":"PLAY","headline":"one-line thesis, max 14 words","explanation":"2-3 sentences, grounded in context numbers","edge":"1 sentence; must agree with headline thesis","risk":"1 sentence; must cite a specific number from context","confidence":8}');
+  lines.push('');
+  lines.push('Example (deGrom, Over 3.5 Hits Allowed + Over 16.5 Outs, EV +19.6%, r_ours=+0.02, r_DK=-0.14):');
+  lines.push('  headline: "DK\'s negative-correlation prior doesn\'t fit deGrom — correlation gap drives the edge"');
+  lines.push('  explanation: "DK\'s SGP price implies r ≈ -0.14 — the standard \'hit around, pulled early\' prior. Our 42-start sample shows r ≈ +0.02: deGrom works through traffic rather than getting yanked. That 0.16 gap accounts for the bulk of the 19.6% EV; leg pricing contributes only a few points on top."');
+  lines.push('  edge: "DK applies a generic negative-correlation prior for Hits × Outs that doesn\'t match this pitcher\'s history; that mismatch is the whole game, leg pricing a minor bonus."');
+  lines.push('  risk: "42-start sample with n_eff 29.2; shrinkage pulls our r halfway toward the global baseline, so true correlation could still be modestly negative."');
+  lines.push('');
+  lines.push('verdict rules:');
+  lines.push('  PLAY     = EV% > 5 AND the chosen thesis is structurally supported (correlation gap aligned, OR small-EV leg edge with |r_gap|<0.05).');
+  lines.push('  MARGINAL = EV% 0-5, data thin (n_eff < 15, missingPairs>0, rDKClamp set), or r_gap negative and EV relying on correlation surviving.');
+  lines.push('  SKIP     = EV% < 0, OR r_gap strongly negative and EV small enough that overcoming DK\'s correlation price is implausible.');
 
   return lines.join('\n');
 }
 
-/* 3-leg variant. The primary model probability is the EMPIRICAL 3-way joint
-   hit rate from the aggregates (blended with the global 3-way baseline under
-   shrinkage), not a pairwise-derived estimate — it captures higher-order
-   structure that the pairwise correction misses. The prompt tells the model
-   to treat the empirical 3-way rate as the ground truth for model joint. */
+/* 3-leg variant. Preserved from prior spec (empirical 3-way joint as the
+   model ground truth). Prompt updated to carry the same thesis-first,
+   specific-risk, and honest-score rules as the 2-leg variant. r_DK
+   inversion is 2-leg-specific (pairwise Fréchet) and is not applied
+   here. Reads directly from the _build3LegSgpData shape emitted by
+   index.html (top-level pairDetails, all3 decimal-prob object,
+   per-leg baseRate on legs[]). */
 function _buildSGP3InsightPrompt(sgp) {
   var lines = [];
-  var am = function(v){ return (v >= 0 ? '+' : '') + v; };
 
-  lines.push('You are a sharp sports betting analyst specializing in MLB pitcher prop 3-leg SGPs.');
-  lines.push('Analyze the following Same Game Parlay and respond ONLY with valid JSON — no markdown, no backticks, no prose before or after the JSON.');
+  lines.push('You are a sharp MLB pitcher-prop 3-leg SGP analyst. Respond ONLY with valid JSON — no markdown, no backticks, no prose.');
   lines.push('');
-  lines.push('=== SGP DATA (3-LEG) ===');
-  lines.push('Pitcher: ' + sgp.pitcher);
-  lines.push('Game: ' + sgp.game);
+  lines.push('=== CONTEXT (3-LEG) ===');
+  lines.push('pitcher: ' + sgp.pitcher);
+  lines.push('game: ' + sgp.game);
   lines.push('');
-  lines.push('Legs:');
-  sgp.legs.forEach(function(leg, i) {
-    lines.push('  Leg ' + (i + 1) + ': ' + leg.label + '  (FV odds: ' + am(leg.fv) + ')');
+  lines.push('legs:');
+  (sgp.legs || []).forEach(function (leg, i) {
+    var base = (leg.baseRate != null) ? (' / base ' + _fmtPct(leg.baseRate)) : '';
+    lines.push('  leg' + (i + 1) + ': "' + leg.label + '"  FV ' + _fmtAm(leg.fv) + base);
   });
   lines.push('');
-  lines.push('=== PRICING ===');
-  lines.push('DK SGP price: ' + am(sgp.dkSGP));
-  lines.push('Fair Value (FV-correlated joint, pairwise Fréchet): ' + am(sgp.fvCorr));
-  lines.push('Primary EV% (vs FV): ' + sgp.evPct.toFixed(1) + '%   — this is the decision number; computed from user-supplied FV × DK decimal');
-  if (sgp.evPctModel !== null && sgp.evPctModel !== undefined) {
-    lines.push('Secondary EV% (vs aggregates model): ' + sgp.evPctModel.toFixed(1) + '%   — computed from the blended empirical 3-way joint × DK decimal');
+  lines.push('pricing:');
+  lines.push('  DK SGP: ' + _fmtAm(sgp.dkSGP));
+  lines.push('  FV correlation-adjusted (pairwise Fréchet): ' + _fmtAm(sgp.fvCorr));
+  lines.push('  Primary EV% (vs FV): ' + (sgp.evPct != null ? _fmtPct(sgp.evPct) : 'n/a') + '  — decision number');
+  if (sgp.evPctModel != null) {
+    lines.push('  Secondary EV% (vs aggregates model): ' + _fmtPct(sgp.evPctModel) + '  — diagnostic');
   }
-  lines.push('FV-correlated joint probability (pairwise Fréchet on FV marginals): ' + (sgp.fvP * 100).toFixed(1) + '%');
-  if (sgp.pModel !== null && sgp.pModel !== undefined) {
-    lines.push('Aggregates blended 3-way joint (what MODEL JOINT on the card shows): ' + (sgp.pModel * 100).toFixed(1) + '%');
+  lines.push('  FV-correlated joint probability: ' + (sgp.fvP != null ? _fmtPct(sgp.fvP * 100) : 'n/a'));
+  if (sgp.pModel != null) {
+    lines.push('  Aggregates blended 3-way joint: ' + _fmtPct(sgp.pModel * 100));
   }
-  if (sgp.dkHoldPct !== null && sgp.dkHoldPct !== undefined) {
-    lines.push('DK correlation premium vs independent-product: ' + sgp.dkHoldPct.toFixed(1) + '%' +
-               '   (positive means DK prices the SGP SHORTER than the product of its own vigged per-leg prices — i.e. DK models the legs as positively correlated)');
+  if (sgp.dkHoldPct != null) {
+    lines.push('  DK correlation premium vs indep product of DK legs: ' + _fmtPct(sgp.dkHoldPct));
   }
   lines.push('');
 
-  lines.push('=== PAIRWISE CORRELATIONS ===');
-  var corr = sgp.correlation || {};
-  if (corr.pairs && corr.pairs.length) {
-    corr.pairs.forEach(function(p) {
-      var rStr = (p.r !== null && p.r !== undefined) ? p.r.toFixed(4) : 'missing (treated as 0)';
-      lines.push('  ' + p.a + '  \u2194  ' + p.b + ':  binary r = ' + rStr);
+  lines.push('pairwise correlations:');
+  var pairs = sgp.pairDetails || (sgp.correlation && sgp.correlation.pairs) || [];
+  if (pairs.length) {
+    pairs.forEach(function (p) {
+      lines.push('  ' + p.a + ' × ' + p.b + ': r=' + _fmtR(p.r));
     });
   } else {
-    lines.push('  No pair correlations available');
-  }
-  if (corr.missingPairs) {
-    lines.push('  Missing pairs (r=0 fallback): ' + corr.missingPairs);
+    lines.push('  (none available)');
   }
   lines.push('');
 
-  lines.push('=== EMPIRICAL 3-WAY JOINT ===');
-  var e3 = corr.empirical3Way || {};
-  if (e3.hitRatePlayer !== null && e3.hitRatePlayer !== undefined) {
-    lines.push('  Player empirical all-3-hit rate: ' + e3.hitRatePlayer.toFixed(1) + '%');
-  }
-  if (e3.hitRateGlobal !== null && e3.hitRateGlobal !== undefined) {
-    lines.push('  Global (league) empirical all-3-hit rate: ' + e3.hitRateGlobal.toFixed(1) + '%');
-  }
-  if (e3.hitRateBlended !== null && e3.hitRateBlended !== undefined) {
-    lines.push('  Blended (shrunk) 3-way joint used in EV: ' + e3.hitRateBlended.toFixed(1) + '%');
-  }
-  if (e3.nEff !== null && e3.nEff !== undefined) {
-    lines.push('  Shrinkage: ' + Math.round((e3.wPlayer || 0) * 100) + '% player / ' +
-               Math.round((e3.wGlobal || 0) * 100) + '% global,  n_eff=' + e3.nEff.toFixed(1) +
-               (e3.nRaw != null ? '  (raw starts=' + e3.nRaw + ')' : ''));
-  }
-  if (sgp.hitRates3) {
-    var h3 = sgp.hitRates3;
-    if (h3.leg1 != null) lines.push('  Leg 1 marginal hit: ' + h3.leg1.toFixed(1) + '%');
-    if (h3.leg2 != null) lines.push('  Leg 2 marginal hit: ' + h3.leg2.toFixed(1) + '%');
-    if (h3.leg3 != null) lines.push('  Leg 3 marginal hit: ' + h3.leg3.toFixed(1) + '%');
+  lines.push('empirical 3-way joint:');
+  var all3 = sgp.all3 || {};
+  if (all3.pPlayer != null) lines.push('  player all-3-hit: ' + _fmtPct(all3.pPlayer * 100));
+  if (all3.pGlobal != null) lines.push('  global all-3-hit: ' + _fmtPct(all3.pGlobal * 100));
+  if (all3.pBlend != null) lines.push('  blended: ' + _fmtPct(all3.pBlend * 100));
+  if (all3.nEff != null) {
+    lines.push('  shrinkage: ' + Math.round((all3.wPlayer || 0) * 100) + '% player / ' +
+               Math.round((all3.wGlobal || 0) * 100) + '% global, n_eff=' + all3.nEff.toFixed(1) +
+               (all3.nRaw != null ? ' (raw ' + all3.nRaw + ')' : ''));
   }
   lines.push('');
 
-  lines.push('=== INSTRUCTIONS ===');
-  lines.push('Primary EV% for the play decision is the FV-based number. The user supplied FV because they believe their fair-value sheet is sharper than pure aggregate history; a model-based EV that disagrees with FV-based EV is a useful divergence signal, not a substitute.');
-  lines.push('The aggregates-based EV (secondary) is the "what the history-only model would think if FV were absent" view. When the two EVs disagree materially (> 15pp), call that out — it indicates FV and aggregates see this combo differently, and the user should weigh whether their FV already priced in what the aggregates are seeing.');
-  lines.push('Key risks specific to 3-leg:');
-  lines.push('  - Pitcher-quality confounding: an ace has a high all-3-hit rate because the pitcher is good, not necessarily because of intrinsic correlation between the specific thresholds. DK\'s per-leg prices already reflect pitcher quality, so part of the apparent edge may be double-counted. Heavier shrinkage toward global mitigates but does not eliminate this.');
-  lines.push('  - Empirical 3-way rates from 15-40 effective starts have high variance. A 10pp edge on n_eff=20 is noisy; the same edge on n_eff=40 is meaningful.');
-  lines.push('  - If DK\'s correlation premium is already large (dkHoldPct > 10%), DK agrees the legs are positively correlated and is pricing accordingly — the model needs a markedly different joint to create a real edge.');
-  lines.push('Evaluate EV%, pairwise r structure, sample size (n_eff matters more than raw starts), and DK\'s own correlation premium.');
+  lines.push('=== RULES ===');
+  lines.push('1. THESIS-FIRST. Pick ONE thesis: (a) all-3-hit rate beats DK implied, (b) DK correlation premium disagrees with our pairwise structure, (c) both. Keep headline, explanation, edge, and risk consistent with the chosen thesis.');
+  lines.push('2. PITCHER-QUALITY CONFOUND. An ace has a high all-3-hit rate because they are good; DK\'s per-leg prices already capture that. When n_eff < 25 OR edge > 15pp, flag this explicitly.');
+  lines.push('3. FV vs AGGREGATES DIVERGENCE. When primary and secondary EV differ by > 15pp, call it out — FV and aggregates disagree about this combo.');
+  lines.push('4. SPECIFIC RISK. risk must reference a specific number: n_eff, a leg hit rate, DK corr premium magnitude, edge size, or shrinkage weight. No generic "usage/injury" lines.');
+  lines.push('5. HONEST SCORE. Tie confidence to one specific data point. Cap at 6 when n_eff < 20; cap at 8 when any pair r is missing; further cap at 8 when DK correlation premium already absorbs > 10% and the model\'s claimed edge is pure correlation.');
+  lines.push('6. VALUES. Quote context numbers directly; do not invent, re-derive, or round them away.');
   lines.push('');
-  lines.push('Respond with ONLY this JSON (no markdown, no backticks):');
-  lines.push('{"verdict":"PLAY","headline":"Short takeaway","explanation":"2-3 sentences.","edge":"1 sentence on what gives this value.","risk":"1 sentence on the main risk.","confidence":8}');
+  lines.push('=== OUTPUT (JSON only) ===');
+  lines.push('{"verdict":"PLAY","headline":"one-line thesis, max 14 words","explanation":"2-3 sentences, grounded in context","edge":"1 sentence; must agree with headline","risk":"1 sentence; must cite a specific number","confidence":8}');
   lines.push('');
-  lines.push('Rules:');
-  lines.push('- verdict reads from the PRIMARY (FV-based) EV%: "PLAY" (primary EV% > 10 AND n_eff >= 20 AND model EV agrees at least in sign), "MARGINAL" (thin primary EV, borderline sample, or the two EVs disagree materially), "SKIP" (primary EV% is negative or the edge is plausibly pitcher-quality-confounding)');
-  lines.push('- headline: max 12 words');
-  lines.push('- explanation: 2-3 sentences — cover EV, empirical vs DK implied, sample size, and any red flag');
-  lines.push('- edge: 1 sentence — what specifically makes this worth playing (or not)');
-  lines.push('- risk: 1 sentence — biggest concern; mention pitcher-quality confounding when n_eff < 25 or edge > 15pp');
-  lines.push('- confidence: integer 1-10; cap at 6 when n_eff < 20 and at 8 when any pair has missing r');
+  lines.push('verdict rules:');
+  lines.push('  PLAY     = primary EV% > 10 AND n_eff >= 20 AND primary vs secondary EV agree in sign.');
+  lines.push('  MARGINAL = thin EV, borderline sample, or FV/aggregates disagree materially.');
+  lines.push('  SKIP     = primary EV% < 0 OR edge is plausibly pitcher-quality-confounding at small n_eff.');
 
   return lines.join('\n');
+}
+
+/* UMD-ish export so the prompt builder is importable in the Node smoke
+   scripts while the script-tag call in index.html keeps working. */
+if (typeof module === 'object' && module.exports) {
+  module.exports = { buildSGPInsightPrompt: buildSGPInsightPrompt };
 }

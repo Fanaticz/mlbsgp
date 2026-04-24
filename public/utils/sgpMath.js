@@ -59,11 +59,98 @@
     return pab + r * (pab - Math.max(0, pa + pb - 1));
   }
 
+  /* inverseJointFrechet: given fair leg probabilities pa, pb and an observed
+     joint probability pjoint, return the r that would produce pjoint under
+     jointFrechet(pa, pb, r). Piecewise-linear inversion:
+       pjoint = pa*pb + r*(min(pa,pb) - pa*pb)       [r >= 0]
+       pjoint = pa*pb + r*(pa*pb - max(0, pa+pb-1))  [r <  0]
+     Returns { r, clamp } where clamp is 'ceiling' when pjoint > upper Fréchet
+     bound, 'floor' when < lower bound, or null. r is clamped to [-1, 1].
+     Degenerate legs (pa or pb at 0/1) collapse the interpolation interval to
+     zero on one or both sides; we fall back to r=0 and flag 'degenerate'. */
+  function inverseJointFrechet(pa, pb, pjoint) {
+    if (pa == null || pb == null || pjoint == null ||
+        isNaN(pa) || isNaN(pb) || isNaN(pjoint)) return { r: null, clamp: null };
+    var indep = pa * pb;
+    var lo = Math.max(0, pa + pb - 1);
+    var hi = Math.min(pa, pb);
+    if (hi - lo <= 1e-12) return { r: 0, clamp: 'degenerate' };
+    if (pjoint >= hi) return { r: 1, clamp: pjoint > hi + 1e-9 ? 'ceiling' : null };
+    if (pjoint <= lo) return { r: -1, clamp: pjoint < lo - 1e-9 ? 'floor' : null };
+    if (pjoint > indep) {
+      var denomUp = hi - indep;
+      if (denomUp <= 1e-12) return { r: 0, clamp: 'degenerate' };
+      return { r: (pjoint - indep) / denomUp, clamp: null };
+    }
+    if (pjoint < indep) {
+      var denomDn = indep - lo;
+      if (denomDn <= 1e-12) return { r: 0, clamp: 'degenerate' };
+      return { r: (pjoint - indep) / denomDn, clamp: null };
+    }
+    return { r: 0, clamp: null };
+  }
+
+  /* evAttribution: split total 2-leg SGP EV into leg vs correlation pieces
+     using independence as the shared reference point:
+
+       pIndep      = pa * pb                             — "no-corr" baseline
+       pJointOurs  = jointFrechet(pa, pb, rOurs)         — our fair joint
+       pJointDK    = 1 / dkDecimal                       — DK implied joint
+       rDK         = inverseJointFrechet(pa, pb, pJointDK).r
+
+     Then total EV factors cleanly:
+       evTotalPct     = (pJointOurs * dkDecimal - 1) * 100
+                      = evFromLegsPct + evFromCorrPct
+       evFromLegsPct  = (pIndep     * dkDecimal - 1) * 100
+       evFromCorrPct  = (pJointOurs - pIndep) * dkDecimal * 100
+
+     Interpretation:
+       - evFromLegsPct is the EV you'd see if the two legs were uncorrelated
+         — i.e. how much our marginal fair probabilities beat DK's combined
+         implied probability on their own.
+       - evFromCorrPct is the additional EV (positive or negative) that our
+         correlation contributes on top of independence.
+
+     rDK is computed alongside (same pa, pb) so the narrative can reference
+     "the r DK's SGP price implies, given our marginals." rGap = rOurs - rDK
+     is positive when DK has priced in more negative correlation than our
+     data supports, negative when DK has priced in more positive correlation
+     than our data supports.
+
+     Returns null if required inputs are missing/invalid. */
+  function evAttribution(pa, pb, rOurs, dkDecimal) {
+    if (pa == null || pb == null || !dkDecimal || dkDecimal <= 1 ||
+        isNaN(pa) || isNaN(pb) || isNaN(dkDecimal)) return null;
+    if (rOurs == null || isNaN(rOurs)) rOurs = 0;
+    var pIndep = pa * pb;
+    var pJointOurs = jointFrechet(pa, pb, rOurs);
+    var pJointDK = 1 / dkDecimal;
+    var inv = inverseJointFrechet(pa, pb, pJointDK);
+    var rDK = inv.r;
+    var evTotalPct = (pJointOurs * dkDecimal - 1) * 100;
+    var evFromLegsPct = (pIndep * dkDecimal - 1) * 100;
+    var evFromCorrPct = (pJointOurs - pIndep) * dkDecimal * 100;
+    return {
+      pIndep: pIndep,
+      pJointOurs: pJointOurs,
+      pJointDK: pJointDK,
+      rOurs: rOurs,
+      rDK: rDK,
+      rGap: (rDK == null) ? null : (rOurs - rDK),
+      evTotalPct: evTotalPct,
+      evFromLegsPct: evFromLegsPct,
+      evFromCorrPct: evFromCorrPct,
+      clamp: inv.clamp,
+    };
+  }
+
   return {
     americanToProb: americanToProb,
     probToAmerican: probToAmerican,
     americanToDecimal: americanToDecimal,
     decimalToAmerican: decimalToAmerican,
     jointFrechet: jointFrechet,
+    inverseJointFrechet: inverseJointFrechet,
+    evAttribution: evAttribution,
   };
 }));
