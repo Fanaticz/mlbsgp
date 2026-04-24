@@ -1581,6 +1581,8 @@ function rCorrTooltip(res){
 /* Sourced from /utils/sgpMath.js (single source of truth shared with
    teammateEv.js). Pitcher EV math unchanged. */
 var jointFrechet = window.sgpMath.jointFrechet;
+var inverseJointFrechet = window.sgpMath.inverseJointFrechet;
+var evAttribution = window.sgpMath.evAttribution;
 
 /* ---------- AI Insight state + handlers ---------- */
 var _SGP_DATA=[];
@@ -1785,6 +1787,20 @@ function evComputeCombo(pitcher,pd,matchedLegs,indices,dkDecimal){
   var fvCorrOdds=probToAmerican(pJoint);
   var evPct=(pJoint*dkDecimal-1)*100;
   var kelly=(pJoint*dkDecimal-1)/(dkDecimal-1);
+
+  /* r_DK attribution (2-leg only — pairwise Fréchet inversion is exactly
+     defined here). Uses the pair's resolved binary r as r_ours and the two
+     FV-derived leg probs as pa/pb — same anchors the card already uses for
+     the joint correction above, so the attribution lines stay consistent
+     with the rendered FV CORR and EV%. For N=2 exactly one pair exists
+     and evAttribution is unambiguous. For larger combos we leave attrib
+     null rather than pick an arbitrary representative pair. */
+  var attrib=null;
+  if(legs.length===2){
+    var pairR=pairDetails.length?pairDetails[0].r:null;
+    attrib=evAttribution(legs[0].p,legs[1].p,pairR,dkDecimal);
+  }
+
   return{
     legs:legs,
     pIndep:pIndep,
@@ -1797,6 +1813,7 @@ function evComputeCombo(pitcher,pd,matchedLegs,indices,dkDecimal){
     usedPairs:usedPairs,
     missingPairs:missingPairs,
     pairDetails:pairDetails,
+    attrib:attrib,
   };
 }
 
@@ -1889,16 +1906,81 @@ function evRenderResults(){
     if(hrOut.leg1==null&&c.calc.legs[0])hrOut.leg1=_legHitRate(pdC,c.calc.legs[0].leg);
     if(hrOut.leg2==null&&c.calc.legs[1])hrOut.leg2=_legHitRate(pdC,c.calc.legs[1].leg);
     var hrFinal=(hrOut.leg1!=null||hrOut.leg2!=null||hrOut.both!=null)?hrOut:null;
+
+    /* Structured hit-count rollup for the AI prompt. Everything numeric the
+       card shows, pre-derived. N = the sample size the rates were computed
+       against (player n_starts when in-DB, null for global-only cards). */
+    var nFor=nStarts||0;
+    var hits={
+      leg1Pct:hrOut.leg1,
+      leg2Pct:hrOut.leg2,
+      bothPct:hrOut.both,
+      givenLeg1toLeg2Pct:hrOut.givenLeg1toLeg2,
+      n:nFor||null,
+      leg1Count:(hrOut.leg1!=null&&nFor)?Math.round(hrOut.leg1/100*nFor):null,
+      leg2Count:(hrOut.leg2!=null&&nFor)?Math.round(hrOut.leg2/100*nFor):null,
+      bothCount:(hrOut.both!=null&&nFor)?Math.round(hrOut.both/100*nFor):null,
+    };
+    /* Independence baseline P(A)*P(B) and observed conditional P(B|A) so the
+       prompt can make the CORRECT correlation-existence comparison
+       (P(B|A) vs P(B), not P(B|A) vs P(A)*P(B)). */
+    var legPa=c.calc.legs[0]?c.calc.legs[0].p:null;
+    var legPb=c.calc.legs[1]?c.calc.legs[1].p:null;
+    var pA_emp=(hits.leg1Pct!=null)?hits.leg1Pct/100:null;
+    var pB_emp=(hits.leg2Pct!=null)?hits.leg2Pct/100:null;
+    var pAB_emp=(hits.bothPct!=null)?hits.bothPct/100:null;
+    var pBgivenA_emp=(hits.givenLeg1toLeg2Pct!=null)?hits.givenLeg1toLeg2Pct/100:null;
+    var pA_times_pB_emp=(pA_emp!=null&&pB_emp!=null)?pA_emp*pB_emp:null;
+
+    var primaryPair=(c.calc.pairDetails&&c.calc.pairDetails.length)?c.calc.pairDetails[0]:null;
+    var attrib=c.calc.attrib||null;
+    var pdCForN=pdC||{};
     _SGP_DATA.push({
+      size:2,
       pitcher:c.pitcher,
       game:c.game,
-      legs:c.calc.legs.map(function(l){return{label:l.leg,fv:l.fv};}),
+      inDB:!!pdC,
+      legs:c.calc.legs.map(function(l){return{label:l.leg,fv:l.fv,fvProb:l.p};}),
       dkSGP:c.dkOdds,
+      dkDecimal:c.dkDecimal,
       fvCorr:c.calc.fvCorrOdds,
+      fvIndep:c.calc.fvIndepOdds,
       evPct:c.calc.evPct,
+      kellyPct:c.calc.kellyPct,
+      qkUnits:c.calc.qkPct,
       fvP:c.calc.pJoint,
-      correlation:{pairs:c.calc.pairDetails,missingPairs:c.calc.missingPairs,usedPairs:c.calc.usedPairs,starts:nStarts},
-      hitRates:hrFinal
+      pIndep:c.calc.pIndep,
+      correlation:{
+        pairs:c.calc.pairDetails,
+        missingPairs:c.calc.missingPairs,
+        usedPairs:c.calc.usedPairs,
+        starts:nStarts,
+        nEff:pdCForN.n_starts_eff||null,
+        nRaw:pdCForN.n_starts||null,
+      },
+      hitRates:hrFinal,
+      hits:hits,
+      probs:{
+        pA_fv:legPa,
+        pB_fv:legPb,
+        pA_emp:pA_emp,
+        pB_emp:pB_emp,
+        pA_times_pB_emp:pA_times_pB_emp,
+        pAB_emp:pAB_emp,
+        pBgivenA_emp:pBgivenA_emp,
+      },
+      rOurs:primaryPair?primaryPair.r:null,
+      rMargin:primaryPair?primaryPair.rMargin:null,
+      rSource:primaryPair?primaryPair.source:null,
+      rPlayer:primaryPair?primaryPair.rPlayer:null,
+      rGlobal:primaryPair?primaryPair.rGlobal:null,
+      wPlayer:primaryPair?primaryPair.wPlayer:null,
+      wGlobal:primaryPair?primaryPair.wGlobal:null,
+      rDK:attrib?attrib.rDK:null,
+      rGap:attrib?attrib.rGap:null,
+      rDKClamp:attrib?attrib.clamp:null,
+      evFromLegsPct:attrib?attrib.evFromLegsPct:null,
+      evFromCorrPct:attrib?attrib.evFromCorrPct:null,
     });
     html+='<div class="card '+cls+'" id="sgp-card-'+idx+'">';
     html+='<div style="display:flex;justify-content:space-between;align-items:start;gap:8px;margin-bottom:8px">';
@@ -1949,11 +2031,37 @@ function evRenderResults(){
     var rmLabel=rmPairs.length>1?'MARGIN AVG':'MARGIN';
     var rmTitle=rmPairs.map(function(p){return p.a+' \u00d7 '+p.b+': '+(p.r>=0?'+':'')+p.r.toFixed(3);}).join('\n').replace(/"/g,'&quot;');
     var hasMargin=rmText!==null;
-    var nCols=hasMargin?5:4;
+    /* DK R column: DK's implied correlation (from inverting jointFrechet on
+       the DK SGP price with our FV legs). Only shown when we have both a
+       resolved pair r (for comparison) and a valid attribution, so a missing
+       DK R reads as "not applicable here" rather than "zero". rDK column is
+       colored by the GAP (rOurs - rDK): a large positive gap means DK prices
+       in more negative correlation than we see — a real edge source. Clamp
+       flag marks the rare case where the DK price lands outside the Fréchet
+       bounds (floor/ceiling); we render the clamped value with a "!" so the
+       user knows not to read it as a normal r. */
+    var attr=c.calc.attrib||null;
+    var hasDKR=(attr&&attr.rDK!=null&&!isNaN(attr.rDK));
+    var rDKText=null,rDKColor='var(--mu)',rDKTitle='';
+    if(hasDKR){
+      rDKText=(attr.rDK>=0?'+':'')+attr.rDK.toFixed(2)+(attr.clamp?'!':'');
+      var gap=attr.rGap;
+      rDKColor=(gap!=null&&Math.abs(gap)>=0.10)?(gap>0?'var(--ac)':'var(--red)'):'var(--mu)';
+      rDKTitle='DK price implies r='+(attr.rDK>=0?'+':'')+attr.rDK.toFixed(3)+
+        (attr.clamp?' ('+attr.clamp+' — outside Fréchet bounds, clamped)':'')+
+        (gap!=null?'\nr_gap (ours − DK) = '+(gap>=0?'+':'')+gap.toFixed(3):'')+
+        (attr.evFromLegsPct!=null?'\nEV from legs: '+(attr.evFromLegsPct>=0?'+':'')+attr.evFromLegsPct.toFixed(1)+'%':'')+
+        (attr.evFromCorrPct!=null?'\nEV from corr: '+(attr.evFromCorrPct>=0?'+':'')+attr.evFromCorrPct.toFixed(1)+'%':'');
+      rDKTitle=rDKTitle.replace(/"/g,'&quot;');
+    }
+    var nCols=4+(hasMargin?1:0)+(hasDKR?1:0);
     html+='<div class="hr4" style="grid-template-columns:repeat('+nCols+',1fr)">';
     html+='<div class="hi"><div class="hv" style="color:var(--cyan);font-size:15px">'+c.dkOdds+'</div><div class="hl">DK SGP</div></div>';
     html+='<div class="hi"><div class="hv" style="color:var(--ac);font-size:15px">'+fmtAm(c.calc.fvCorrOdds)+'</div><div class="hl">FV CORR</div></div>';
     html+='<div class="hi" title="'+rTitle+'"><div class="hv" style="color:'+rColor+';font-size:15px">'+rText+'</div><div class="hl">'+rLabel+'</div></div>';
+    if(hasDKR){
+      html+='<div class="hi" title="'+rDKTitle+'"><div class="hv" style="color:'+rDKColor+';font-size:15px">'+rDKText+'</div><div class="hl">DK R</div></div>';
+    }
     if(hasMargin){
       html+='<div class="hi" title="'+rmTitle+'"><div class="hv" style="color:'+rmColor+';font-size:15px">'+rmText+'</div><div class="hl">'+rmLabel+'</div></div>';
     }
