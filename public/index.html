@@ -1258,7 +1258,7 @@ var EV_PAGE_SIZE_3=30;
    at all; below that a pitcher's empirical triplet rate is essentially noise
    (one hot streak flips 20pp) and must route entirely to the global
    triplet baseline. Above 15, weight follows n_eff/(n_eff+K_3WAY) with
-   K_3WAY=80 — stiffer than pairwise K=50 because joint frequency variance
+   K_3WAY=80 — stiffer than pairwise K_2WAY=25 because joint frequency variance
    is higher than marginal or pairwise frequency variance. */
 var BLEND_MIN_STARTS_3WAY=15;
 var K_3WAY=80;
@@ -1267,12 +1267,13 @@ var K_3WAY=80;
    Default 'blended' — Bayesian shrinkage of player r toward the global prior,
    weighted by sample size. Best point estimate for most pitchers. */
 var CORR_MODE='blended';
-/* Default shrinkage prior strength in "pseudo-starts" for stat pairs not in the
-   STAT_PAIR_K table. Kept as DEFAULT_K for clarity. Lower k = faster convergence
-   to the player signal; stat pairs whose values are driven by the same underlying
-   process (e.g. hits and outs both come from batters faced) should use a lower k. */
-var DEFAULT_K=50;
-var SHRINKAGE_K=DEFAULT_K; /* back-compat alias */
+/* Default 2-way shrinkage prior strength in "pseudo-starts" for stat pairs not
+   in the STAT_PAIR_K table. Mirrors K_3WAY for naming. Lower k = faster
+   convergence to the player signal; stat pairs whose values are driven by the
+   same underlying process (e.g. hits and outs both come from batters faced)
+   should use a lower k. */
+var K_2WAY=25;
+var SHRINKAGE_K=K_2WAY; /* back-compat alias */
 /* Stat-pair specific k. Keys use the statCat() categories (SO/ER/BB/H/OUTS),
    alphabetised and joined with "|". Values reflect how mechanically linked the
    two stats are: k=30-35 when the same generative process drives both (hits and
@@ -1291,9 +1292,9 @@ var STAT_PAIR_K={
 };
 function _pairKey(s1,s2){return s1<s2?s1+'|'+s2:s2+'|'+s1;}
 function getKForStats(s1,s2){
-  if(!s1||!s2)return DEFAULT_K;
+  if(!s1||!s2)return K_2WAY;
   var v=STAT_PAIR_K[_pairKey(s1,s2)];
-  return v==null?DEFAULT_K:v;
+  return v==null?K_2WAY:v;
 }
 function getKForLegs(leg1,leg2){return getKForStats(statCat(leg1),statCat(leg2));}
 /* Effective sample size for an AR(1)-ish time series. MLB pitcher game logs
@@ -1413,7 +1414,7 @@ function flipDir(leg){if(leg.startsWith('Over '))return 'Under '+leg.slice(5);if
    value, and occasionally the sign, versus continuous Pearson). */
 function _findRMarginIn(arr,a,b){if(!arr)return _NF;var fa=flipDir(a),fb=flipDir(b);var flip=(a.startsWith('Over ')?1:-1)*(b.startsWith('Over ')?1:-1);function tryArr(x,y){for(var i=0;i<arr.length;i++){var c=arr[i];if((c.leg1===x&&c.leg2===y)||(c.leg1===y&&c.leg2===x)){if(c.r_margin===null||c.r_margin===undefined)return null;return c.r_margin*flip;}}return _NF;}var r;if((r=tryArr(a,b))!==_NF)return r;if((r=tryArr(fa,fb))!==_NF)return r;if((r=tryArr(fa,b))!==_NF)return r;if((r=tryArr(a,fb))!==_NF)return r;return _NF;}
 function _findRBinaryIn(arr,a,b){if(!arr)return _NF;var fa=flipDir(a),fb=flipDir(b);function tryArr(x,y,sign){for(var i=0;i<arr.length;i++){var c=arr[i];if((c.leg1===x&&c.leg2===y)||(c.leg1===y&&c.leg2===x)){if(c.r===null||c.r===undefined)return null;return c.r*sign;}}return _NF;}var r;if((r=tryArr(a,b,1))!==_NF)return r;if((r=tryArr(fa,fb,1))!==_NF)return r;if((r=tryArr(fa,b,-1))!==_NF)return r;if((r=tryArr(a,fb,-1))!==_NF)return r;return _NF;}
-function _blendWeights(n,k){if(k==null)k=DEFAULT_K;if(n<BLEND_MIN_STARTS)return{wPlayer:0,wGlobal:1,insufficient:true,n:n,k:k};var wp=n/(n+k);return{wPlayer:wp,wGlobal:1-wp,insufficient:false,n:n,k:k};}
+function _blendWeights(n,k){if(k==null)k=K_2WAY;if(n<BLEND_MIN_STARTS)return{wPlayer:0,wGlobal:1,insufficient:true,n:n,k:k};var wp=n/(n+k);return{wPlayer:wp,wGlobal:1-wp,insufficient:false,n:n,k:k};}
 
 /* Single source of truth for correlation resolution under the active mode.
    Returns {r, source, wPlayer, wGlobal, n, rPlayer, rGlobal} so the UI can
