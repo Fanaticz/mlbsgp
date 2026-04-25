@@ -1267,36 +1267,13 @@ var K_3WAY=80;
    Default 'blended' — Bayesian shrinkage of player r toward the global prior,
    weighted by sample size. Best point estimate for most pitchers. */
 var CORR_MODE='blended';
-/* Default 2-way shrinkage prior strength in "pseudo-starts" for stat pairs not
-   in the STAT_PAIR_K table. Mirrors K_3WAY for naming. Lower k = faster
-   convergence to the player signal; stat pairs whose values are driven by the
-   same underlying process (e.g. hits and outs both come from batters faced)
-   should use a lower k. */
+/* 2-way shrinkage prior strength in "pseudo-starts". Mirrors K_3WAY for naming.
+   Applied uniformly to every pairwise correlation; lower k = faster convergence
+   to the player signal. */
 var K_2WAY=25;
 var SHRINKAGE_K=K_2WAY; /* back-compat alias */
-/* Stat-pair specific k. Keys use the statCat() categories (SO/ER/BB/H/OUTS),
-   alphabetised and joined with "|". Values reflect how mechanically linked the
-   two stats are: k=30-35 when the same generative process drives both (hits and
-   outs both depend on batters faced + contact rate), k=40-50 when stats are
-   linked but with significant independent variance, k=60+ when stats are nearly
-   independent in the data-generating process. */
-var STAT_PAIR_K={
-  'H|OUTS':  30,  /* same process: batters faced × contact outcomes */
-  'ER|H':    35,
-  'OUTS|SO': 30,  /* strikeouts are a subset of outs recorded */
-  'BB|ER':   40,
-  'BB|H':    45,
-  'ER|SO':   55,
-  'H|SO':    50,
-  'ER|OUTS': 45,
-};
-function _pairKey(s1,s2){return s1<s2?s1+'|'+s2:s2+'|'+s1;}
-function getKForStats(s1,s2){
-  if(!s1||!s2)return K_2WAY;
-  var v=STAT_PAIR_K[_pairKey(s1,s2)];
-  return v==null?K_2WAY:v;
-}
-function getKForLegs(leg1,leg2){return getKForStats(statCat(leg1),statCat(leg2));}
+function getKForStats(s1,s2){return K_2WAY;}
+function getKForLegs(leg1,leg2){return K_2WAY;}
 /* Effective sample size for an AR(1)-ish time series. MLB pitcher game logs
    have lag-1 autocorrelation around 0.10, so n_eff ≈ 0.82 * n_raw by default.
    The multi-season penalty accounts for non-stationarity (role changes, aging,
