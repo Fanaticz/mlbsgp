@@ -70,11 +70,12 @@ function sanitizeModelJson(s) {
 
 function parseBetNameDirection(betName) {
   if (!betName) return null;
-  const m = String(betName).match(/\b(Over|Under)\s+(\d+(?:\.\d+)?)/i);
+  const m = String(betName).match(/^(.*?)\s+(Over|Under)\s+(\d+(?:\.\d+)?)/i);
   if (!m) return null;
   return {
-    direction: m[1][0].toUpperCase() + m[1].slice(1).toLowerCase(),
-    line: parseFloat(m[2]),
+    pitcher: m[1].trim(),
+    direction: m[2][0].toUpperCase() + m[2].slice(1).toLowerCase(),
+    line: parseFloat(m[3]),
   };
 }
 
@@ -138,7 +139,22 @@ function normalizeRows(rows) {
     }
     if (!leg) return;
 
-    const pitcher = (r.pitcher || '').trim();
+    /* Pitcher name: same authority rule as direction/line. The 2026-04-30
+       trace showed the model emitting pitcher="Chris Bassitt" with
+       bet_name="Peter Lambert Over 5.5" — a row-level player swap that
+       silently put Lambert's Over 5.5 K (+177) on Bassitt's card. Pull
+       the name from bet_name when we can; warn when the explicit field
+       disagrees. */
+    const explicitPitcher = (r.pitcher || '').trim();
+    let pitcher = (fromBetName && fromBetName.pitcher) || explicitPitcher;
+    if (fromBetName && fromBetName.pitcher && explicitPitcher &&
+        fromBetName.pitcher.toLowerCase() !== explicitPitcher.toLowerCase()) {
+      console.warn('[pitcher_disagree] L=' + (r.L != null ? r.L : '?') +
+        ' bet_name pitcher=' + JSON.stringify(fromBetName.pitcher) +
+        ' but explicit pitcher=' + JSON.stringify(explicitPitcher) +
+        ' — using bet_name');
+    }
+    pitcher = pitcher.trim();
     if (!pitcher) return;
     const fv = Number(r.avg_fv);
     if (!isFinite(fv)) return;
@@ -293,9 +309,16 @@ The same pitcher often appears in MULTIPLE rows with different directions and li
 If the same pitcher has two rows with the same line+stat, one MUST be Over and the other MUST be Under. Never label both with the same direction.
 
 ═══ FINAL SELF-CHECK BEFORE EMITTING ═══
-Before returning JSON, scan your rows for any pitcher+line+stat where you have written the same direction twice.
-Example of the error: L=6 "Bryce Elder Over 4.5" AND L=18 "Bryce Elder Over 4.5" — impossible, one MUST be Under.
-If you find a duplicate direction, go back to that later row and re-read the bet_name letter by letter. One letter separates "Over" from "Under". Correct it before emitting.
+Before returning JSON, perform these two checks on every row:
+
+(1) Same direction twice for the same pitcher+line+stat — impossible.
+    Example: L=6 "Bryce Elder Over 4.5" AND L=18 "Bryce Elder Over 4.5" — one MUST be Under.
+    If found, re-read the bet_name on the later row letter by letter. One letter separates "Over" from "Under".
+
+(2) "pitcher" field MUST match the player name in "bet_name".
+    Example of the error: pitcher="Chris Bassitt" with bet_name="Peter Lambert Over 5.5".
+    The pitcher field is whatever name appears BEFORE the word Over/Under in this same row's bet_name.
+    Never carry a player name from a previous row. Re-read the bet_name from THIS row and copy the player name verbatim into the pitcher field.
 
 ═══ WORKED EXAMPLES ═══
 CORRECT:
