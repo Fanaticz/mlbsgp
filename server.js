@@ -51,7 +51,7 @@ app.use(express.static(path.join(__dirname, 'public'), {
 // model can't mis-pair stat-type with line value.
 const STAT_FROM_MARKET = [
   // order matters: check more specific first
-  { re: /strikeout/i,             stat: 'Strikeouts',    valid: [4.5, 5.5, 6.5, 7.5] },
+  { re: /strikeout/i,             stat: 'Strikeouts',    valid: [3.5, 4.5, 5.5, 6.5, 7.5] },
   { re: /earned\s*run/i,          stat: 'Earned Runs',   valid: [1.5, 2.5, 3.5] },
   { re: /walk/i,                  stat: 'Walks',         valid: [1.5, 2.5, 3.5] },
   { re: /hits?\s*allowed|hits?$/i,stat: 'Hits Allowed',  valid: [3.5, 4.5, 5.5] },
@@ -103,17 +103,31 @@ function normalizeRows(rows) {
   rows.forEach((r, idx) => {
     if (!r || typeof r !== 'object') return;
 
-    // Prefer the explicit direction/line fields when the model returned them
-    // (asking for them as separate fields forces a more careful read of the
-    // U/O letter than parsing it back out of the bet_name string).
-    let direction = canonDirection(r.direction);
-    let line = (r.line !== undefined && r.line !== null && r.line !== '') ? Number(r.line) : NaN;
-    if (!direction || !isFinite(line)) {
-      const parsed = parseBetNameDirection(r.bet_name);
-      if (parsed) {
-        if (!direction) direction = parsed.direction;
-        if (!isFinite(line)) line = parsed.line;
+    /* bet_name is authoritative for direction + line. The 2026-04-30 trace
+       showed the model emitting bet_name="Bryce Elder Over 3.5" with
+       line:5.5 — a misread of the digit. Trusting the explicit `line`
+       field then mislabels the row as Over 5.5 Strikeouts and drags the
+       wrong row's avg_fv into a real leg. bet_name has more redundancy
+       (letters + digits + name), so it's the safer source of truth. */
+    const fromBetName = parseBetNameDirection(r.bet_name);
+    const explicitDir = canonDirection(r.direction);
+    const explicitLine = (r.line !== undefined && r.line !== null && r.line !== '')
+      ? Number(r.line) : NaN;
+    let direction, line;
+    if (fromBetName) {
+      direction = fromBetName.direction;
+      line = fromBetName.line;
+      if ((explicitDir && explicitDir !== direction) ||
+          (isFinite(explicitLine) && explicitLine !== line)) {
+        console.warn('[bet_name_disagree] L=' + (r.L != null ? r.L : '?') +
+          ' bet_name=' + JSON.stringify(r.bet_name) +
+          ' → ' + direction + ' ' + line +
+          ' but explicit fields say ' + explicitDir + ' ' + explicitLine +
+          ' — using bet_name');
       }
+    } else {
+      direction = explicitDir;
+      line = explicitLine;
     }
 
     let leg = null;
@@ -329,8 +343,12 @@ Return exactly this JSON shape, nothing else:
     const cleaned = sanitizeModelJson(m[0]);
     try {
       const parsed = JSON.parse(cleaned);
-      const rows = normalizeRows(parsed.rows);
-      return res.json({ rows });
+      const rawRows = Array.isArray(parsed.rows) ? parsed.rows : [];
+      const rows = normalizeRows(rawRows);
+      /* Echo a sample of raw OCR rows so the client can show what Vision
+         actually emitted. Mirrors the batter endpoint at line 720 — fastest
+         way to spot bet_name/line/avg_fv misalignment without re-uploading. */
+      return res.json({ rows, raw_rows: rawRows, raw_row_count: rawRows.length });
     } catch (e) {
       return res.status(500).json({ error: 'JSON parse error: ' + e.message, raw: cleaned });
     }
