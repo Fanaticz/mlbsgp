@@ -266,85 +266,76 @@ app.post('/api/extract', async (req, res) => {
 
 The table header row contains these column names (left to right): league, date, time, game, market, bet_name, book, L, M, odds, limit, books_count, avg_odds, avg_fv, avg_hold, fbc, ev, qk.
 
-YOUR TASK: For each data row, return ONE JSON object with cell values from that single row. Do NOT normalize, do NOT combine columns, do NOT infer values from other rows. Each row of JSON must come from exactly ONE row of the table. Emit one object per row — do NOT skip rows, do NOT merge rows.
+═══ HOW TO READ THE TABLE — ROW BY ROW, LEFT TO RIGHT ═══
+You will read the table the same way a human reads a spreadsheet:
+
+1. Find row L=1. Place your eye on the leftmost cell of that row.
+2. Slide your eye RIGHT across that single row, reading each cell in order: league → date → time → game → market → bet_name → book → L → M → odds → limit → books_count → avg_odds → avg_fv → avg_hold → fbc → ev → qk.
+3. Emit the JSON object for that row.
+4. Move down to row L=2. Repeat from step 2.
+5. Continue until every row of the table has been emitted.
+
+DO NOT scan a single column top-to-bottom and then jump to the next column. DO NOT collect avg_fv values down a column and then try to pair them with bet_names. Process ONE COMPLETE ROW at a time. Every field for row L=N must come from the SAME horizontal row of pixels.
 
 ═══ FIELDS TO RETURN (per row) ═══
 - L: the integer in the "L" column, the small per-row index (1, 2, 3, ...). Required — anchors the row.
 - pitcher: the player name (everything in bet_name BEFORE the word "Over" or "Under")
 - market: the EXACT text from the "market" column. Examples: "Player Pitching Strikeouts", "Player Pitching Earned Runs Allowed", "Player Pitching Walks", "Player Pitching Hits Allowed", "Player Pitching Outs"
 - bet_name: the EXACT text from the "bet_name" column. Examples: "Emerson Hancock Over 15.5", "Clay Holmes Under 2.5"
-- direction: the word "Over" or "Under" — read it letter-by-letter from this row's bet_name cell
+- direction: the word "Over" or "Under" — read the first letter ("O" or "U") of the word that appears after the player name in this row's bet_name
 - line: the numeric line from this row's bet_name (4.5, 14.5, 16.5, etc.) as a number
-- avg_odds: the EXACT text under the "avg_odds" header for this row, as a STRING. This cell always contains a PAIR of signed integers separated by "/". Preserve the format verbatim: "+204 / -309", "-101 / -136", "+150 / -209". If the cell is genuinely empty, return "".
-- avg_fv: the SINGLE SIGNED INTEGER under the "avg_fv" header for this row. ONE number, not a pair. Examples: 261, -298, 117, -110.
-- books_count: the UNSIGNED INTEGER under the "books_count" header. A small count like 2, 3, 5, 7, 8. If empty or non-numeric, return 0.
+- avg_odds: the EXACT text in the avg_odds cell of this row, as a STRING. Always a PAIR of signed integers separated by "/". Preserve verbatim: "+204 / -309", "-101 / -136". If empty, return "".
+- avg_fv: the SINGLE SIGNED INTEGER in the avg_fv cell of this row. ONE number, not a pair. Examples: 261, -298, 117, -110.
+- books_count: the UNSIGNED INTEGER in the books_count cell. Small count: 2, 3, 5, 7, 8. If empty/non-numeric, return 0.
 
-═══ HOW TO IDENTIFY THE avg_fv COLUMN — READ THIS CAREFULLY ═══
-Do NOT count columns. Do NOT infer column position from neighbors. Do NOT use adjacent columns as positional anchors. Instead:
+═══ ANTI-COLUMN-DRIFT CHECK (per row, before emitting) ═══
+After reading a row, verify these three properties of THIS row's values:
 
-1. Locate the HEADER ROW at the top of the table. Visually find the text "avg_fv".
-2. Read values straight DOWN from that specific header cell. For each data row, the avg_fv value is the cell directly under the "avg_fv" header.
-3. The "avg_odds" header sits immediately to the LEFT of "avg_fv". Its cells contain TWO numbers separated by "/". That column is NOT avg_fv. Never substitute one for the other.
+(a) avg_fv is a SINGLE signed integer. NO "/" in it. NO second number.
+(b) avg_fv is NOT numerically equal to either half of this row's own avg_odds pair.
+    If avg_odds is "+204 / -309" and you wrote avg_fv = -309, you read the wrong column for THIS row. Re-read avg_fv from the cell directly to the RIGHT of the avg_odds cell on this same row.
+(c) pitcher in your JSON object equals the name in bet_name on THIS row. If bet_name says "Peter Lambert Over 5.5" and you wrote pitcher="Chris Bassitt", you carried the name from a previous row — re-read the bet_name cell on THIS row.
 
-═══ MANDATORY SELF-CHECK BEFORE EMITTING EACH ROW ═══
-For every row, verify these three conditions. If ANY fail, you are reading the wrong column — re-locate the "avg_fv" header and re-read.
+If any check fails, fix the offending field on THIS row before moving to row L=N+1.
 
-(a) avg_fv is a SINGLE integer. It contains NO "/" character and NO space-separated second number.
-(b) avg_fv is NOT numerically equal to either half of this row's avg_odds pair.
-    If avg_odds is "+204 / -309" and you think avg_fv is -309, that's impossible — you copied from the wrong column.
-    If avg_odds is "-101 / -136" and you think avg_fv is -101, that's impossible — same mistake.
-(c) avg_fv is the value directly under the "avg_fv" header text, not under "avg_odds" or "avg_hold".
+═══ OVER vs UNDER (per row) ═══
+The same pitcher appears in MULTIPLE rows with different directions/lines. For EACH row independently:
+1. Look at the bet_name cell on this row.
+2. The word right after the player name is "Over" or "Under". The only difference is the FIRST letter: O vs U.
+3. Whatever first letter you see, write that exact word into BOTH the bet_name field (verbatim) AND the direction field. They MUST agree.
 
-═══ ROW DISCIPLINE ═══
-market, bet_name, direction, avg_odds, and avg_fv MUST all come from the SAME row. Use L as a positional anchor. Before emitting JSON for a row, ask: "Am I reading every field from the row whose L = X?" If not, re-align.
+If the same pitcher has two rows with the same stat+line, one MUST be Over and the other MUST be Under. Never label both rows with the same direction.
 
-DO NOT cross rows. DO NOT pair the market from one row with the bet_name from another.
+═══ FINAL TABLE-LEVEL CHECK BEFORE EMITTING JSON ═══
+After processing every row, scan the assembled list once more:
 
-═══ OVER vs UNDER ═══
-The same pitcher often appears in MULTIPLE rows with different directions and lines. For EACH row independently:
-1. Locate the bet_name cell in the row whose L = X.
-2. Read the first letter only: "O" → "Over", "U" → "Under". Do NOT guess from context. Do NOT infer from avg_fv sign or neighboring rows.
-3. Copy that exact word into "direction" AND keep it in the verbatim "bet_name". They MUST agree.
-
-If the same pitcher has two rows with the same line+stat, one MUST be Over and the other MUST be Under. Never label both with the same direction.
-
-═══ FINAL SELF-CHECK BEFORE EMITTING ═══
-Before returning JSON, perform these two checks on every row:
-
-(1) Same direction twice for the same pitcher+line+stat — impossible.
-    Example: L=6 "Bryce Elder Over 4.5" AND L=18 "Bryce Elder Over 4.5" — one MUST be Under.
-    If found, re-read the bet_name on the later row letter by letter. One letter separates "Over" from "Under".
-
-(2) "pitcher" field MUST match the player name in "bet_name".
-    Example of the error: pitcher="Chris Bassitt" with bet_name="Peter Lambert Over 5.5".
-    The pitcher field is whatever name appears BEFORE the word Over/Under in this same row's bet_name.
-    Never carry a player name from a previous row. Re-read the bet_name from THIS row and copy the player name verbatim into the pitcher field.
+(1) Look for any (pitcher, line, stat) that appears with the SAME direction twice. Impossible — one must be Under. Re-read that later row's bet_name letter-by-letter and correct.
+(2) Look for any row where the pitcher field doesn't match the player name in its own bet_name. Re-read that row's bet_name and fix the pitcher field.
+(3) Look for any row where avg_fv equals one half of that row's own avg_odds pair. That row's avg_fv was copied from the wrong column — re-read it from one cell to the right of avg_odds.
 
 ═══ WORKED EXAMPLES ═══
-CORRECT:
+CORRECT (read row 15 left-to-right): bet_name="Emerson Hancock Over 15.5" → pitcher="Emerson Hancock", direction="Over", line=15.5; avg_odds cell shows "-436 / +287"; avg_fv cell (next right) shows "-298".
 {"L":15,"pitcher":"Emerson Hancock","market":"Player Pitching Outs","bet_name":"Emerson Hancock Over 15.5","direction":"Over","line":15.5,"avg_odds":"-436 / +287","avg_fv":-298,"books_count":7}
 
-CORRECT:
-{"L":2,"pitcher":"Dean Kremer","market":"Player Pitching Strikeouts","bet_name":"Dean Kremer Over 5.5","direction":"Over","line":5.5,"avg_odds":"+204 / -309","avg_fv":261,"books_count":2}
-
-CORRECT:
-{"L":6,"pitcher":"Dean Kremer","market":"Player Pitching Outs","bet_name":"Dean Kremer Over 15.5","direction":"Over","line":15.5,"avg_odds":"-101 / -136","avg_fv":117,"books_count":4}
-
-WRONG — the exact bug this prompt guards against:
+WRONG — avg_fv copied from avg_odds pair (column drift):
 {"L":2,"pitcher":"Dean Kremer","bet_name":"Dean Kremer Over 5.5","avg_odds":"+204 / -309","avg_fv":-309,"books_count":2}
-  — avg_fv was copied from the avg_odds pair. ALWAYS WRONG. The real avg_fv (261) lives in the NEXT column to the right.
+  — -309 is the right half of avg_odds. The real avg_fv lives ONE CELL FURTHER RIGHT on the same row.
+
+WRONG — pitcher carried over from previous row:
+{"L":7,"pitcher":"Chris Bassitt","bet_name":"Peter Lambert Over 4.5",...}
+  — bet_name says Peter Lambert; pitcher must say Peter Lambert too.
 
 WRONG — direction flipped:
 {"L":3,"bet_name":"Braxton Ashcraft Under 4.5","direction":"Over",...}
-  — bet_name says "Under" but direction says "Over". They MUST agree.
+  — bet_name says Under; direction must say Under.
 
 ═══ OUTPUT ═══
 Return exactly this JSON shape, nothing else:
 {"rows":[{"L":1,"pitcher":"...","market":"...","bet_name":"...","direction":"Over","line":4.5,"avg_odds":"+X / -Y","avg_fv":123,"books_count":7}, ...]}`;
 
     const body = {
-      model: 'claude-opus-4-6',
-      max_tokens: 4000,
+      model: 'claude-opus-4-7',
+      max_tokens: 8000,
       messages: [{
         role: 'user',
         content: [
@@ -608,6 +599,17 @@ Between "bet_name" and "book" there is a narrow column labeled "L/U" whose cells
 
 The presence of "L/U" means EVERY column to its right is shifted one position compared to sheets that lack it. You MUST read values by column HEADER TEXT, never by counting positions from the left edge.
 
+═══ HOW TO READ THE TABLE — ROW BY ROW, LEFT TO RIGHT ═══
+Read the table the same way a human reads a spreadsheet:
+
+1. Find row L=1. Place your eye on the leftmost cell of that row.
+2. Slide your eye RIGHT across that single row, reading each cell in header order.
+3. Emit the JSON object for that row.
+4. Move down to row L=2. Repeat.
+5. Continue until every row of the table has been emitted.
+
+DO NOT scan a single column top-to-bottom and then jump to the next column. DO NOT collect avg_fv values down a column and then try to pair them with bet_names. Process ONE COMPLETE ROW at a time. Every field for row L=N must come from the SAME horizontal row of pixels.
+
 YOUR TASK: For each data row, return ONE JSON object with cell values from that single row. Do NOT normalize, do NOT combine columns, do NOT infer values from other rows. Each row of JSON must come from exactly ONE row of the table. Emit one object per row — do NOT skip rows, do NOT merge rows.
 
 ═══ FIELDS TO RETURN (per row) ═══
@@ -696,8 +698,8 @@ app.post('/api/extract-batter', async (req, res) => {
     if (!image) return res.status(400).json({ error: 'Missing image (base64) in body' });
 
     const body = {
-      model: 'claude-opus-4-6',
-      max_tokens: 4000,
+      model: 'claude-opus-4-7',
+      max_tokens: 8000,
       messages: [{
         role: 'user',
         content: [
@@ -848,6 +850,13 @@ const NBA_FV_PROMPT = `You are extracting NBA player prop bets from a screenshot
 The table header row contains columns like: league, date, time, game, team, market, bet_name, L/U, book, L, M, odds, limit, books_count, avg_odds, avg_fv, avg_hold, fbc, ev, qk.
 
 The "L/U" narrow column (single letter L or U, often colored) sits between bet_name and book. EVERY column to its right is shifted one slot, so you MUST read by header text, not by counting positions from the left edge.
+
+═══ HOW TO READ THE TABLE — ROW BY ROW, LEFT TO RIGHT ═══
+Read the table the same way a human reads a spreadsheet:
+1. Find row L=1. Slide your eye RIGHT across that single row, reading each cell in header order.
+2. Emit the JSON object for that row.
+3. Move down to row L=2. Repeat.
+DO NOT scan a single column top-to-bottom and then jump to the next column. Process ONE COMPLETE ROW at a time. Every field for row L=N must come from the SAME horizontal row of pixels.
 
 YOUR TASK: For each data row, return ONE JSON object with cell values from that single row. Do NOT normalize, do NOT combine columns, do NOT infer from other rows.
 
@@ -1026,8 +1035,8 @@ app.post('/api/extract-nba', async (req, res) => {
     if (!image) return res.status(400).json({ error: 'Missing image (base64) in body' });
 
     const body = {
-      model: 'claude-opus-4-6',
-      max_tokens: 4000,
+      model: 'claude-opus-4-7',
+      max_tokens: 8000,
       messages: [{
         role: 'user',
         content: [
