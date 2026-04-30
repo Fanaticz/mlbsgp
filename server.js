@@ -58,6 +58,16 @@ const STAT_FROM_MARKET = [
   { re: /out/i,                   stat: 'Outs Recorded', valid: [14.5, 15.5, 16.5, 17.5, 18.5] },
 ];
 
+/* Strip invalid leading "+" from JSON number literals in the model's
+   response. Vision occasionally echoes American odds like "+185" verbatim
+   into a number context (e.g. `"avg_fv": +185`), which JSON.parse rejects
+   with "Unexpected token '+'". Only touches "+" that appears at a value
+   position (after `:`, `,`, or `[`) immediately before a digit, so quoted
+   strings like `"avg_odds": "+204 / -309"` are left intact. */
+function sanitizeModelJson(s) {
+  return s.replace(/([:\[,]\s*)\+(?=\d)/g, '$1');
+}
+
 function parseBetNameDirection(betName) {
   if (!betName) return null;
   const m = String(betName).match(/\b(Over|Under)\s+(\d+(?:\.\d+)?)/i);
@@ -316,12 +326,13 @@ Return exactly this JSON shape, nothing else:
     const m = txt.match(/\{[\s\S]*\}/);
     if (!m) return res.status(500).json({ error: 'Could not parse JSON from model output', raw: txt });
 
+    const cleaned = sanitizeModelJson(m[0]);
     try {
-      const parsed = JSON.parse(m[0]);
+      const parsed = JSON.parse(cleaned);
       const rows = normalizeRows(parsed.rows);
       return res.json({ rows });
     } catch (e) {
-      return res.status(500).json({ error: 'JSON parse error: ' + e.message, raw: m[0] });
+      return res.status(500).json({ error: 'JSON parse error: ' + e.message, raw: cleaned });
     }
   } catch (e) {
     return res.status(500).json({ error: e.message });
@@ -664,8 +675,9 @@ app.post('/api/extract-batter', async (req, res) => {
     const m = txt.match(/\{[\s\S]*\}/);
     if (!m) return res.status(500).json({ error: 'Could not parse JSON from model output', raw: txt });
 
+    const cleaned = sanitizeModelJson(m[0]);
     try {
-      const parsed = JSON.parse(m[0]);
+      const parsed = JSON.parse(cleaned);
       const rawRowCount = Array.isArray(parsed.rows) ? parsed.rows.length : 0;
       const { rows: normRows, unmatched } = normalizeBatterRows(parsed.rows);
 
@@ -719,7 +731,7 @@ app.post('/api/extract-batter', async (req, res) => {
         sample_rows: sampleRows,
       });
     } catch (e) {
-      return res.status(500).json({ error: 'JSON parse error: ' + e.message, raw: m[0] });
+      return res.status(500).json({ error: 'JSON parse error: ' + e.message, raw: cleaned });
     }
   } catch (e) {
     return res.status(500).json({ error: e.message });
@@ -993,8 +1005,9 @@ app.post('/api/extract-nba', async (req, res) => {
     const m = txt.match(/\{[\s\S]*\}/);
     if (!m) return res.status(500).json({ error: 'Could not parse JSON from model output', raw: txt });
 
+    const cleaned = sanitizeModelJson(m[0]);
     try {
-      const parsed = JSON.parse(m[0]);
+      const parsed = JSON.parse(cleaned);
       const rawRowCount = Array.isArray(parsed.rows) ? parsed.rows.length : 0;
       const { rows: normRows, unmatched } = normalizeNbaRows(parsed.rows);
       /* Schema-drift guard: if >20% of rows had non-numeric avg_fv the
@@ -1026,7 +1039,7 @@ app.post('/api/extract-nba', async (req, res) => {
         sample_rows: (parsed.rows || []).slice(0, 3),
       });
     } catch (e) {
-      return res.status(500).json({ error: 'JSON parse error: ' + e.message, raw: m[0] });
+      return res.status(500).json({ error: 'JSON parse error: ' + e.message, raw: cleaned });
     }
   } catch (e) {
     return res.status(500).json({ error: e.message });
