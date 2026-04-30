@@ -204,7 +204,10 @@ function normalizeRows(rows) {
 /* Second-pass collapse: group by (pitcher, leg), pick one canonical row.
    Preference order:
      1. Highest books_count  (more books = more robust FV, less OCR-artifact-y)
-     2. Highest L            (newer row; assumes sheets are appended to)
+     2. Lowest L             (first occurrence in sheet — the model reads top-to-bottom
+                              and later rows are more likely to be direction misreads.
+                              e.g. row 6 "Over 4.5 K" wins over row 18 "Over 4.5 K"
+                              when row 18 was actually "Under 4.5 K" misread as Over.)
    No averaging — we pick one row and use it whole so avg_fv stays
    self-consistent with whatever other fields of that row matter downstream. */
 function collapseLegDupes(legs) {
@@ -219,7 +222,7 @@ function collapseLegDupes(legs) {
     if (rows.length === 1) { out.push(rows[0]); continue; }
     rows.sort(function(a, b) {
       if (b._books !== a._books) return b._books - a._books;
-      return b._L - a._L;
+      return a._L - b._L;
     });
     const winner = rows[0];
     if (DEBUG) {
@@ -284,10 +287,15 @@ DO NOT cross rows. DO NOT pair the market from one row with the bet_name from an
 ═══ OVER vs UNDER ═══
 The same pitcher often appears in MULTIPLE rows with different directions and lines. For EACH row independently:
 1. Locate the bet_name cell in the row whose L = X.
-2. Read the literal letters after the player name — "Over" (O) or "Under" (U). Do NOT guess from context, do NOT infer from avg_fv sign.
+2. Read the first letter only: "O" → "Over", "U" → "Under". Do NOT guess from context. Do NOT infer from avg_fv sign or neighboring rows.
 3. Copy that exact word into "direction" AND keep it in the verbatim "bet_name". They MUST agree.
 
 If the same pitcher has two rows with the same line+stat, one MUST be Over and the other MUST be Under. Never label both with the same direction.
+
+═══ FINAL SELF-CHECK BEFORE EMITTING ═══
+Before returning JSON, scan your rows for any pitcher+line+stat where you have written the same direction twice.
+Example of the error: L=6 "Bryce Elder Over 4.5" AND L=18 "Bryce Elder Over 4.5" — impossible, one MUST be Under.
+If you find a duplicate direction, go back to that later row and re-read the bet_name letter by letter. One letter separates "Over" from "Under". Correct it before emitting.
 
 ═══ WORKED EXAMPLES ═══
 CORRECT:
