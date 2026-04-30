@@ -220,7 +220,10 @@ function normalizeRows(rows) {
 /* Second-pass collapse: group by (pitcher, leg), pick one canonical row.
    Preference order:
      1. Highest books_count  (more books = more robust FV, less OCR-artifact-y)
-     2. Highest L            (newer row; assumes sheets are appended to)
+     2. Lowest L             (first occurrence in sheet — the model reads top-to-bottom
+                              and later rows are more likely to be direction misreads.
+                              e.g. row 6 "Over 4.5 K" wins over row 18 "Over 4.5 K"
+                              when row 18 was actually "Under 4.5 K" misread as Over.)
    No averaging — we pick one row and use it whole so avg_fv stays
    self-consistent with whatever other fields of that row matter downstream. */
 function collapseLegDupes(legs) {
@@ -235,7 +238,7 @@ function collapseLegDupes(legs) {
     if (rows.length === 1) { out.push(rows[0]); continue; }
     rows.sort(function(a, b) {
       if (b._books !== a._books) return b._books - a._books;
-      return b._L - a._L;
+      return a._L - b._L;
     });
     const winner = rows[0];
     if (DEBUG) {
@@ -300,19 +303,22 @@ DO NOT cross rows. DO NOT pair the market from one row with the bet_name from an
 ═══ OVER vs UNDER ═══
 The same pitcher often appears in MULTIPLE rows with different directions and lines. For EACH row independently:
 1. Locate the bet_name cell in the row whose L = X.
-2. Read the literal letters after the player name — "Over" (O) or "Under" (U). Do NOT guess from context, do NOT infer from avg_fv sign.
+2. Read the first letter only: "O" → "Over", "U" → "Under". Do NOT guess from context. Do NOT infer from avg_fv sign or neighboring rows.
 3. Copy that exact word into "direction" AND keep it in the verbatim "bet_name". They MUST agree.
 
 If the same pitcher has two rows with the same line+stat, one MUST be Over and the other MUST be Under. Never label both with the same direction.
 
 ═══ FINAL SELF-CHECK BEFORE EMITTING ═══
-Before returning JSON, verify on every row:
+Before returning JSON, perform these two checks on every row:
 
-The "pitcher" field MUST match the player name in "bet_name".
-Example of the error: pitcher="Chris Bassitt" with bet_name="Peter Lambert Over 5.5".
-The pitcher field is whatever name appears BEFORE the word Over/Under in this same row's bet_name.
-Never carry a player name from a previous row. Re-read the bet_name from THIS row and copy the player name verbatim into the pitcher field.
+(1) Same direction twice for the same pitcher+line+stat — impossible.
+    Example: L=6 "Bryce Elder Over 4.5" AND L=18 "Bryce Elder Over 4.5" — one MUST be Under.
+    If found, re-read the bet_name on the later row letter by letter. One letter separates "Over" from "Under".
 
+(2) "pitcher" field MUST match the player name in "bet_name".
+    Example of the error: pitcher="Chris Bassitt" with bet_name="Peter Lambert Over 5.5".
+    The pitcher field is whatever name appears BEFORE the word Over/Under in this same row's bet_name.
+    Never carry a player name from a previous row. Re-read the bet_name from THIS row and copy the player name verbatim into the pitcher field.
 
 ═══ WORKED EXAMPLES ═══
 CORRECT:
