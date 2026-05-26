@@ -456,6 +456,7 @@
   // ===== UI control handlers =====
   function setFairMode(mode) {
     if (mode !== 'fv' && mode !== 'dk' && mode !== 'pinnacle') return;
+    var prev = state.fairMode;
     state.fairMode = mode;
     var fv = $('tnsFairFv'), pin = $('tnsFairPin'), dk = $('tnsFairDk');
     function on(el) { el.style.background = 'rgba(34,197,94,.12)'; el.style.color = 'var(--ac)'; }
@@ -463,6 +464,15 @@
     if (fv)  (mode === 'fv'       ? on : off)(fv);
     if (pin) (mode === 'pinnacle' ? on : off)(pin);
     if (dk)  (mode === 'dk'       ? on : off)(dk);
+    // Switching from DK → FV/PIN with sheet candidates uploaded but no
+    // DK pricing yet: kick off the sheet pricing path now. Otherwise
+    // every row stays "DK MISSING" and the matched-only filter hides
+    // them all.
+    if (prev !== mode && mode !== 'dk'
+        && state.sheetCands.length
+        && Object.keys(state.dkResults).length === 0) {
+      runScan();
+    }
     render();
   }
   function onLineBtn(btn) {
