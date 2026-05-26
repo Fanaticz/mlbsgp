@@ -1695,7 +1695,7 @@ def _match_tennis_set1_total(line, side, props):
             "line": pts,
             "side": otype,
             "market_name": p.get("marketName", ""),
-            "american": p.get("americanOdds"),
+            "american": p.get("oddsAmerican"),
         }
         # Capture sibling Over/Under for client-side no-vig if present.
         sibling = "under" if side_l == "over" else "over"
@@ -1703,8 +1703,8 @@ def _match_tennis_set1_total(line, side, props):
                     if _is_tennis_set1_total_market(q)
                     and (q.get("outcomeType") or "").lower() == sibling
                     and abs(float(q.get("points") or 0) - pts) < 0.01), None)
-        best["over_american"]  = p.get("americanOdds") if side_l == "over"  else (sib or {}).get("americanOdds")
-        best["under_american"] = p.get("americanOdds") if side_l == "under" else (sib or {}).get("americanOdds")
+        best["over_american"]  = p.get("oddsAmerican") if side_l == "over"  else (sib or {}).get("oddsAmerican")
+        best["under_american"] = p.get("oddsAmerican") if side_l == "under" else (sib or {}).get("oddsAmerican")
         return best
     return best
 
@@ -1752,7 +1752,7 @@ def _match_tennis_match_handicap(player_name, line, props):
             "selection_id": p.get("selectionId"),
             "line": pts,
             "player": sel_name,
-            "american": p.get("americanOdds"),
+            "american": p.get("oddsAmerican"),
         }
         return best
     return best
@@ -1944,6 +1944,227 @@ def find_sgps_tennis(payload):
     if truncated:
         response["truncated"] = True
     return response
+
+
+def enumerate_sgps_tennis(payload=None):
+    """Auto-enumerate ALL 1st-Set-Total × dog Game-Handicap SGP candidates
+    on the current tennis slate, price each via DK, return ready-to-render
+    rows. No FV-sheet upload required — DK is both leg-fair source
+    (two-sided no-vig) AND the SGP-price source.
+
+    Output row shape (one per (event, total_line, handicap_line) combo):
+      {
+        "id":               "<event_id>::<total_line>::<dog_last>::<hcap_mag>",
+        "event_id":         "<dk event id>",
+        "game_name":        "Quentin Halys vs Ugo Humbert",
+        "set1_total_line":  9.5,
+        "leg_1_over_american":  -150,
+        "leg_1_under_american": +110,
+        "set1_over_selection_id": "...",
+        "dog_player":            "Matteo Berrettini",
+        "fav_player":            "Arthur Rinderknech",
+        "match_handicap_line":   3.5,                   # always positive (dog side)
+        "leg_2_dog_american":    -225,
+        "leg_2_fav_american":    +175,
+        "dog_handicap_selection_id": "...",
+        "selection_1": "...", "selection_2": "...",
+        "matched":     bool,
+        "dk_odds":     "+350",
+        "dk_decimal":  4.50,
+        "missing":     [...]                             # when matched=false
+      }
+
+    Supported set-1 total lines are pinned to the four lines with hardcoded
+    correlation priors (8.5 / 9.5 / 10.5 / 12.5). Optional payload keys:
+      {
+        "lines":        [8.5, 9.5, 10.5, 12.5],   # subset to enumerate
+        "max_handicap": 9.5                         # cap on dog handicap magnitude
+      }
+    """
+    import concurrent.futures
+
+    payload = payload or {}
+    supported_lines = payload.get("lines") or [8.5, 9.5, 10.5, 12.5]
+    supported_lines = [float(x) for x in supported_lines]
+    max_handicap = payload.get("max_handicap")
+    if max_handicap is not None:
+        try:
+            max_handicap = float(max_handicap)
+        except (TypeError, ValueError):
+            max_handicap = None
+
+    try:
+        games_data = get_games_tennis()
+    except Exception as e:
+        return {"error": f"DK tennis games endpoint unavailable: {e}. Check DK_TENNIS_LEAGUE_ID."}
+    events = [e for e in games_data["events"]
+              if e.get("hasSGP") and not e.get("isLive")]
+
+    # Step 1: per-event market scan in parallel.
+    event_markets = {}
+    def _scan(eid):
+        try:
+            return eid, get_markets(eid, tennis_only=True)
+        except Exception as ex:
+            sys.stderr.write(f"dk_api: tennis event {eid} scan failed: {ex}\n")
+            return eid, None
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        futs = {ex.submit(_scan, e["id"]): e["id"] for e in events if e.get("id")}
+        for fut in as_completed(futs):
+            eid, md = fut.result()
+            if md is not None:
+                event_markets[eid] = md
+
+    # Step 2: enumerate legs per event.
+    # Each event yields:
+    #   totals_by_line:  { line: {"over": prop, "under": prop} }
+    #   handicaps_by_mag: { mag: {"dog": prop, "fav": prop} }
+    # where mag is the absolute handicap magnitude (DK lists the dog at
+    # +mag and the favorite at -mag in the same market).
+    enriched_events = []
+    for e in events:
+        eid = e.get("id")
+        md = event_markets.get(eid)
+        if not md:
+            continue
+        props = md.get("props", [])
+        totals = {}
+        for p in props:
+            if not _is_tennis_set1_total_market(p):
+                continue
+            try:
+                line = float(p.get("points"))
+            except (TypeError, ValueError):
+                continue
+            side = (p.get("outcomeType") or "").lower()
+            if side not in ("over", "under"):
+                continue
+            totals.setdefault(line, {})[side] = p
+        # Game handicap selections: group by absolute magnitude. Each
+        # mag bucket should hold one dog (points > 0) and one fav
+        # (points < 0). Skip mags missing one side.
+        hcap_buckets = {}
+        for p in props:
+            if not _is_tennis_match_handicap_market(p):
+                continue
+            try:
+                pts = float(p.get("points"))
+            except (TypeError, ValueError):
+                continue
+            mag = round(abs(pts) * 2) / 2  # snap to half-game grid
+            side = "dog" if pts > 0 else "fav"
+            hcap_buckets.setdefault(mag, {})[side] = p
+        # Drop incomplete bucket entries (need both dog + fav).
+        handicaps_by_mag = {m: b for m, b in hcap_buckets.items() if "dog" in b and "fav" in b}
+        enriched_events.append({
+            "event": e,
+            "totals_by_line": totals,
+            "handicaps_by_mag": handicaps_by_mag,
+        })
+
+    # Step 3: build candidate combos. For each event × supported total ×
+    # handicap magnitude (optionally capped). Total leg is always Over.
+    candidates = []
+    for ev in enriched_events:
+        e = ev["event"]
+        for line in supported_lines:
+            tot = ev["totals_by_line"].get(line)
+            if not tot or "over" not in tot:
+                continue
+            over_prop = tot["over"]
+            under_prop = tot.get("under") or {}
+            for mag in sorted(ev["handicaps_by_mag"].keys()):
+                if max_handicap is not None and mag > max_handicap:
+                    continue
+                bucket = ev["handicaps_by_mag"][mag]
+                dog_prop = bucket["dog"]
+                fav_prop = bucket["fav"]
+                dog_player = dog_prop.get("player") or dog_prop.get("outcomeType") or ""
+                fav_player = fav_prop.get("player") or fav_prop.get("outcomeType") or ""
+                dog_last = _normalize_name(dog_player).split()[-1] if dog_player else "p"
+                cid = f"{e.get('id')}::{line}::{dog_last}::{mag}"
+                candidates.append({
+                    "id": cid,
+                    "event_id": e.get("id"),
+                    "game_name": e.get("name") or f"{e.get('awayPlayer','')} vs {e.get('homePlayer','')}",
+                    "set1_total_line": line,
+                    "set1_over_selection_id":  over_prop.get("selectionId"),
+                    "set1_under_selection_id": under_prop.get("selectionId"),
+                    "leg_1_over_american":  over_prop.get("oddsAmerican"),
+                    "leg_1_under_american": under_prop.get("oddsAmerican"),
+                    "dog_player": dog_player,
+                    "fav_player": fav_player,
+                    "match_handicap_line":  mag,
+                    "dog_handicap_selection_id": dog_prop.get("selectionId"),
+                    "fav_handicap_selection_id": fav_prop.get("selectionId"),
+                    "leg_2_dog_american":  dog_prop.get("oddsAmerican"),
+                    "leg_2_fav_american":  fav_prop.get("oddsAmerican"),
+                    "selection_1": over_prop.get("selectionId"),
+                    "selection_2": dog_prop.get("selectionId"),
+                })
+
+    # Step 4: dedupe + price each unique selection pair via calculateBets.
+    price_cache = {}
+    pricing_jobs = []
+    for c in candidates:
+        s1, s2 = c["selection_1"], c["selection_2"]
+        if not s1 or not s2 or s1 == s2:
+            continue
+        key = frozenset({s1, s2})
+        if key in price_cache:
+            continue
+        price_cache[key] = "pending"
+        pricing_jobs.append((key, s1, s2))
+
+    truncated = False
+    deadline = _time.monotonic() + 110.0
+    def _price_one(job):
+        k, sa, sb = job
+        return k, _price_combo([sa, sb])
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        futs = [ex.submit(_price_one, j) for j in pricing_jobs]
+        remaining = max(0.5, deadline - _time.monotonic())
+        try:
+            for f in as_completed(futs, timeout=remaining):
+                try:
+                    k, price = f.result()
+                    price_cache[k] = price
+                except Exception:
+                    pass
+        except concurrent.futures.TimeoutError:
+            truncated = True
+            for f in futs:
+                f.cancel()
+
+    # Step 5: stitch prices back into candidate rows.
+    out_rows = []
+    for c in candidates:
+        s1, s2 = c["selection_1"], c["selection_2"]
+        row = dict(c)
+        if not s1 or not s2:
+            row["matched"] = False
+            row["missing"] = ["dk:selection_missing"]
+            out_rows.append(row); continue
+        key = frozenset({s1, s2})
+        price = price_cache.get(key)
+        if price in (None, "pending"):
+            row["matched"] = False
+            row["missing"] = ["dk:price_unavailable"]
+            out_rows.append(row); continue
+        row["matched"] = True
+        row["dk_odds"] = price["sgpOdds"]
+        row["dk_decimal"] = price["sgpDecimal"]
+        out_rows.append(row)
+
+    resp = {
+        "candidates": out_rows,
+        "events_scanned": list(event_markets.keys()),
+        "events_total":   len(events),
+        "league_id":      DK_TENNIS_LEAGUE_ID,
+    }
+    if truncated:
+        resp["truncated"] = True
+    return resp
 
 
 def find_sgps(legs, enum_size=2):
@@ -2217,6 +2438,10 @@ if __name__ == "__main__":
             stdin_data = sys.stdin.read().strip()
             payload = json.loads(stdin_data) if stdin_data else {}
             result = find_sgps_tennis(payload)
+        elif cmd == "enumerate-sgps-tennis":
+            stdin_data = sys.stdin.read().strip()
+            payload = json.loads(stdin_data) if stdin_data else {}
+            result = enumerate_sgps_tennis(payload)
         elif cmd == "price":
             stdin_data = sys.stdin.read().strip()
             if stdin_data:

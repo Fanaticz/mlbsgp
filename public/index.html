@@ -554,31 +554,48 @@ h1 em{color:var(--ac);font-style:normal;}
   <div class="ctrl" style="flex-direction:column;align-items:stretch;gap:10px">
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <span style="font-size:13px;color:var(--cyan);font-family:Syne,sans-serif;font-weight:700">TENNIS SGP +EV — FRENCH OPEN M</span>
-      <span style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace">drop FV sheets per market &rarr; matches merge by game &rarr; SGPs price via DK</span>
+      <span style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace">scan DK &rarr; 1st Set Total Over &times; dog Game Handicap &rarr; correlated EV</span>
     </div>
-    <!-- Two upload zones, side by side. Each accepts an image; OCR
-         auto-classifies the rows by `market`. Rows accumulate across
-         re-uploads — re-dropping the same market overwrites that bucket. -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      <div id="tnsDropTotal" style="border:2px dashed var(--b2);border-radius:9px;padding:18px 14px;text-align:center;cursor:pointer;transition:all .15s;background:var(--s2)">
-        <div style="font-size:12px;color:var(--tx);font-weight:600;margin-bottom:4px">1st Set Total Games — FV sheet</div>
-        <div style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">drop screenshot &middot; or click to pick</div>
-        <input type="file" id="tnsFileTotal" accept="image/*" style="display:none" onchange="window.tennisTab&amp;&amp;window.tennisTab.onUpload(event,'total')">
-        <div id="tnsStatusTotal" style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace;margin-top:6px;min-height:14px">no rows yet</div>
+    <!-- Primary path: pull the slate straight from DK. No FV sheets
+         required. Click triggers /api/dk/tennis-autoscan which
+         enumerates every supported (event, total_line, handicap_line)
+         combo, prices the SGP, and returns two-sided per-leg DK odds.
+         The client no-vigs to get pa/pb, joints via Fréchet with the
+         hardcoded set-1 correlations, then renders EV cards. -->
+    <div id="tnsScanPanel" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:14px 16px;background:var(--s2);border:1px solid var(--b1);border-radius:9px">
+      <div style="flex:1;min-width:200px">
+        <div style="font-size:12px;color:var(--tx);font-weight:600;margin-bottom:4px">Scan DraftKings for tonight's French Open slate</div>
+        <div style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">pulls all 1st-set totals &times; dog game handicaps &middot; prices each SGP via DK calculateBets &middot; cached 10 min</div>
       </div>
-      <div id="tnsDropSpread" style="border:2px dashed var(--b2);border-radius:9px;padding:18px 14px;text-align:center;cursor:pointer;transition:all .15s;background:var(--s2)">
-        <div style="font-size:12px;color:var(--tx);font-weight:600;margin-bottom:4px">Game Spread — FV sheet</div>
-        <div style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">drop screenshot &middot; or click to pick</div>
-        <input type="file" id="tnsFileSpread" accept="image/*" style="display:none" onchange="window.tennisTab&amp;&amp;window.tennisTab.onUpload(event,'spread')">
-        <div id="tnsStatusSpread" style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace;margin-top:6px;min-height:14px">no rows yet</div>
-      </div>
+      <button id="tnsAutoScanBtn" type="button" onclick="window.tennisTab&amp;&amp;window.tennisTab.runAutoScan()" style="padding:10px 22px;font-size:12px;font-weight:700;border:1px solid var(--ac);border-radius:6px;background:rgba(34,197,94,.16);color:var(--ac);cursor:pointer;letter-spacing:.6px;font-family:Space Mono,monospace">&#10024; SCAN DK</button>
     </div>
+    <!-- Secondary path: FV sheet uploads. Only needed if you want to
+         use the FV-column or Pinnacle-devig-column as the fair source
+         (the PIN NO-VIG button reads sheet.devig_odds). Otherwise DK
+         no-vig from the scan above is fully standalone. -->
+    <details id="tnsFvUploads" style="background:var(--s1);border:1px solid var(--b1);border-radius:9px;padding:10px 14px">
+      <summary style="cursor:pointer;font-size:11px;color:var(--mu);font-family:Space Mono,monospace;letter-spacing:.4px">FV SHEET UPLOADS (optional — needed only for FV / PIN NO-VIG modes)</summary>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+        <div id="tnsDropTotal" style="border:2px dashed var(--b2);border-radius:9px;padding:14px 12px;text-align:center;cursor:pointer;transition:all .15s;background:var(--s2)">
+          <div style="font-size:12px;color:var(--tx);font-weight:600;margin-bottom:4px">1st Set Total Games — FV sheet</div>
+          <div style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">drop screenshot &middot; or click to pick</div>
+          <input type="file" id="tnsFileTotal" accept="image/*" style="display:none" onchange="window.tennisTab&amp;&amp;window.tennisTab.onUpload(event,'total')">
+          <div id="tnsStatusTotal" style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace;margin-top:6px;min-height:14px">no rows yet</div>
+        </div>
+        <div id="tnsDropSpread" style="border:2px dashed var(--b2);border-radius:9px;padding:14px 12px;text-align:center;cursor:pointer;transition:all .15s;background:var(--s2)">
+          <div style="font-size:12px;color:var(--tx);font-weight:600;margin-bottom:4px">Game Spread — FV sheet</div>
+          <div style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">drop screenshot &middot; or click to pick</div>
+          <input type="file" id="tnsFileSpread" accept="image/*" style="display:none" onchange="window.tennisTab&amp;&amp;window.tennisTab.onUpload(event,'spread')">
+          <div id="tnsStatusSpread" style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace;margin-top:6px;min-height:14px">no rows yet</div>
+        </div>
+      </div>
+    </details>
     <!-- Filter / mode bar. FAIR-source toggle is the headline control. -->
     <div class="ctrl" id="tnsFilterBar" style="flex-wrap:wrap;gap:10px;align-items:center">
       <div style="display:inline-flex;border:1px solid var(--b1);border-radius:6px;overflow:hidden;font-family:Space Mono,monospace">
-        <button id="tnsFairFv" onclick="window.tennisTab&amp;&amp;window.tennisTab.setFairMode('fv')" title="Use the FV-sheet `fv` column as the fair price for each leg." style="padding:6px 12px;font-size:11px;font-weight:600;border:none;background:rgba(34,197,94,.12);color:var(--ac);cursor:pointer;letter-spacing:.5px">FV (sheet)</button>
-        <button id="tnsFairPin" onclick="window.tennisTab&amp;&amp;window.tennisTab.setFairMode('pinnacle')" title="No-vig the FV sheet's `devig_odds` (Pinnacle two-sided) column. Equivalent to using Pinnacle no-vig as the fair." style="padding:6px 12px;font-size:11px;font-weight:600;border:none;border-left:1px solid var(--b1);background:transparent;color:var(--mu);cursor:pointer;letter-spacing:.5px">PIN NO-VIG</button>
-        <button id="tnsFairDk" onclick="window.tennisTab&amp;&amp;window.tennisTab.setFairMode('dk')" title="No-vig DK's two-sided book_odds. e.g. -150/+100 ⇒ fair -120." style="padding:6px 12px;font-size:11px;font-weight:600;border:none;border-left:1px solid var(--b1);background:transparent;color:var(--mu);cursor:pointer;letter-spacing:.5px">DK NO-VIG</button>
+        <button id="tnsFairDk" onclick="window.tennisTab&amp;&amp;window.tennisTab.setFairMode('dk')" title="No-vig DK's two-sided book_odds for each leg. Default — works standalone off the DK auto-scan, no FV sheet required." style="padding:6px 12px;font-size:11px;font-weight:600;border:none;background:rgba(34,197,94,.12);color:var(--ac);cursor:pointer;letter-spacing:.5px">DK NO-VIG</button>
+        <button id="tnsFairPin" onclick="window.tennisTab&amp;&amp;window.tennisTab.setFairMode('pinnacle')" title="No-vig the FV sheet's `devig_odds` (Pinnacle two-sided) column. Requires uploading the FV sheets below." style="padding:6px 12px;font-size:11px;font-weight:600;border:none;border-left:1px solid var(--b1);background:transparent;color:var(--mu);cursor:pointer;letter-spacing:.5px">PIN NO-VIG</button>
+        <button id="tnsFairFv" onclick="window.tennisTab&amp;&amp;window.tennisTab.setFairMode('fv')" title="Use the FV-sheet `fv` column as the fair price for each leg. Requires uploading the FV sheets below." style="padding:6px 12px;font-size:11px;font-weight:600;border:none;border-left:1px solid var(--b1);background:transparent;color:var(--mu);cursor:pointer;letter-spacing:.5px">FV (sheet)</button>
       </div>
       <div class="tm-slider"><span class="tm-label">MIN EV%</span><input type="range" id="tnsMinEv" min="-10" max="30" step="1" value="0" oninput="window.tennisTab&amp;&amp;window.tennisTab.onFilter()"><span class="v" id="tnsMinEvV">+0%</span></div>
       <div id="tnsLineBtns" style="display:inline-flex;gap:4px;flex-wrap:wrap" title="Which 1st-set total lines to include in the candidate set. Defaults to all four hardcoded correlations.">
@@ -588,8 +605,7 @@ h1 em{color:var(--ac);font-style:normal;}
         <button class="fb active" data-tns-line="12.5" type="button" onclick="window.tennisTab&amp;&amp;window.tennisTab.onLineBtn(this)">O 12.5</button>
       </div>
       <label class="tm-toggle" title="If on, skip rows whose DK price couldn't be resolved."><input type="checkbox" id="tnsMatchedOnly" checked onchange="window.tennisTab&amp;&amp;window.tennisTab.onFilter()"><span>MATCHED ONLY</span></label>
-      <button id="tnsScanBtn" type="button" onclick="window.tennisTab&amp;&amp;window.tennisTab.runScan()" style="margin-left:auto;padding:6px 14px;font-size:11px;font-weight:700;border:1px solid var(--ac);border-radius:5px;background:rgba(34,197,94,.14);color:var(--ac);cursor:pointer">&#10024; PRICE SGPs</button>
-      <span id="tnsCount" style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace"></span>
+      <span id="tnsCount" style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace;margin-left:auto"></span>
     </div>
     <div id="tnsStatus" style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace;min-height:16px"></div>
   </div>
