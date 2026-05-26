@@ -38,12 +38,23 @@
   var SUPPORTED_LINES = [8.5, 9.5, 10.5, 12.5];
 
   // Tab state.
+  //
+  // Two parallel candidate sources, each consumed by a different fairMode:
+  //   autoCands  — straight from DK /api/dk/tennis-autoscan (no FV sheets
+  //                needed). Carries full DK two-sided + DK SGP price.
+  //                Source for DK NO-VIG mode.
+  //   sheetCands — built from OCR'd FV-sheet rows merged by game string.
+  //                Carries fv + book_odds + devig_odds per leg. Source
+  //                for FV and PIN NO-VIG modes.
+  // dkResults still maps sheet-candidate id → DK pricing row (legacy
+  // sheet pipeline path; lazy-priced via /api/dk/find-sgps-tennis).
   var state = {
-    rowsTotal: [],         // parsed 1st-set-total leg rows
-    rowsSpread: [],        // parsed game-spread leg rows (dog side only)
-    candidates: [],        // SGP candidate objects post-merge
-    dkResults: {},         // candidate.id → dk response row
-    fairMode: 'fv',        // 'fv' | 'pinnacle' | 'dk'
+    rowsTotal: [],         // parsed 1st-set-total leg rows (sheet)
+    rowsSpread: [],        // parsed game-spread leg rows (sheet, dog side only)
+    sheetCands: [],        // sheet-sourced candidate objects
+    autoCands: [],         // DK-autoscan-sourced candidate objects
+    dkResults: {},         // sheet candidate.id → DK price row
+    fairMode: 'dk',        // 'fv' | 'pinnacle' | 'dk' (DK is the default now)
     enabledLines: { 8.5: true, 9.5: true, 10.5: true, 12.5: true },
     matchedOnly: true,
     minEv: 0,
@@ -158,7 +169,7 @@
         });
       });
     });
-    state.candidates = cands;
+    state.sheetCands = cands;
   }
 
   // Compute the fair probabilities + joint + EV for one candidate,
@@ -254,9 +265,15 @@
         statusEl.textContent = keep.length + ' rows parsed' +
           (j.unmatched && j.unmatched.length ? ' (' + j.unmatched.length + ' skipped)' : '');
       }
-      setStatus('Loaded ' + nTot + ' total rows · ' + nSpr + ' spread rows. Click PRICE SGPs to fetch DK.', 'var(--mu)');
+      setStatus('Loaded ' + nTot + ' total rows · ' + nSpr + ' spread rows.', 'var(--mu)');
       rebuildCandidates();
       render();
+      // Auto-price sheet candidates if both buckets are populated and
+      // the user is on an FV/PIN mode. DK NO-VIG mode doesn't need this
+      // — those candidates come from the autoscan path.
+      if (state.sheetCands.length && state.fairMode !== 'dk') {
+        runScan();
+      }
     } catch (e) {
       if (statusEl) { statusEl.style.color = 'var(--red)'; statusEl.textContent = 'failed: ' + e.message; }
       setStatus('Upload failed: ' + e.message, 'var(--red)');
@@ -276,17 +293,75 @@
     });
   }
 
-  // ===== DK scan =====
+  // ===== DK auto-scan (primary path; no FV sheet required) =====
+  async function runAutoScan() {
+    var btn = $('tnsAutoScanBtn'); if (btn) { btn.disabled = true; btn.style.opacity = '.5'; }
+    setStatus('Scanning DK for tennis slate…', 'var(--ac3)');
+    try {
+      var params = { lines: Object.keys(state.enabledLines).filter(function (k) { return state.enabledLines[k]; }).map(Number) };
+      var r = await fetch('/api/dk/tennis-autoscan', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(params),
+      });
+      var j = await r.json();
+      if (!r.ok || (j.error && !j.candidates)) throw new Error(j.error || ('HTTP ' + r.status));
+      // Shim auto-candidate rows into the same shape sheet-candidates use
+      // (legTotal / legSpread objects carrying a synthesized book_odds
+      // string). That lets computeEv / renderCard branch only on
+      // fairMode, not on candidate source. `source:'auto'` marks the
+      // candidate so render() can pick the DK price baked into the row
+      // instead of looking up state.dkResults.
+      state.autoCands = (j.candidates || []).map(function (c) {
+        var totBookOdds = (c.leg_1_over_american != null && c.leg_1_under_american != null)
+          ? (c.leg_1_over_american + ' / ' + c.leg_1_under_american)
+          : '';
+        var spdBookOdds = (c.leg_2_dog_american != null && c.leg_2_fav_american != null)
+          ? (c.leg_2_dog_american + ' / ' + c.leg_2_fav_american)
+          : '';
+        return Object.assign({}, c, {
+          source: 'auto',
+          r: CORR_BY_LINE[c.set1_total_line] || 0,
+          game: c.game_name || c.game,
+          player_dog: c.dog_player,
+          set1_total_side: 'Over',
+          legTotal:  { book_odds: totBookOdds, fv: null, devig_odds: '' },
+          legSpread: { book_odds: spdBookOdds, fv: null, devig_odds: '', isDog: true },
+        });
+      });
+      var matched = state.autoCands.filter(function (c) { return c.matched; }).length;
+      setStatus(state.autoCands.length + ' candidates across ' + (j.events_scanned || []).length + '/' +
+        (j.events_total || '?') + ' events · ' + matched + ' priced' +
+        (j.cached ? ' (cached ' + j.cache_age_s + 's)' : '') +
+        (j.truncated ? ' · TRUNCATED' : ''),
+        matched ? 'var(--ac)' : 'var(--ac2)');
+      // If FV/PIN was the active mode but no sheet data is loaded, kick
+      // back to DK mode so the user sees results immediately.
+      if ((state.fairMode === 'fv' || state.fairMode === 'pinnacle') &&
+          !state.sheetCands.length) {
+        setFairMode('dk');
+      }
+      render();
+    } catch (e) {
+      setStatus('DK scan failed: ' + e.message, 'var(--red)');
+    } finally {
+      if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+    }
+  }
+
+  // ===== DK scan (legacy sheet-driven path) =====
+  // Called from the sheet pipeline after both FV uploads — prices the
+  // sheet-merged candidate list via /api/dk/find-sgps-tennis. Still
+  // wired so FV/PIN modes get DK prices without firing a full autoscan.
   async function runScan() {
-    if (!state.candidates.length) {
-      setStatus('No candidates yet — upload both FV sheets first.', 'var(--ac2)');
+    if (!state.sheetCands.length) {
+      setStatus('No sheet candidates yet — upload both FV sheets first.', 'var(--ac2)');
       return;
     }
-    setStatus('Pricing ' + state.candidates.length + ' candidates via DK…', 'var(--ac3)');
-    var btn = $('tnsScanBtn'); if (btn) { btn.disabled = true; btn.style.opacity = '.5'; }
+    setStatus('Pricing ' + state.sheetCands.length + ' sheet candidates via DK…', 'var(--ac3)');
     try {
       var body = {
-        candidates: state.candidates.map(function (c) {
+        candidates: state.sheetCands.map(function (c) {
           return {
             id: c.id,
             player_dog: c.player_dog,
@@ -304,12 +379,10 @@
       });
       var j = await r.json();
       if (!r.ok || (j.error && !j.results)) throw new Error(j.error || ('HTTP ' + r.status));
-      // Map results by id for fast lookup. Anything not in the response
-      // (shouldn't happen for v1) silently shows up as unmatched.
       state.dkResults = {};
       (j.results || []).forEach(function (row) { state.dkResults[row.id] = row; });
       var matched = (j.results || []).filter(function (r) { return r.matched; }).length;
-      setStatus(matched + ' of ' + state.candidates.length + ' matched + priced' +
+      setStatus(matched + ' of ' + state.sheetCands.length + ' sheet candidates matched' +
         (j.cached ? ' (cached ' + j.cache_age_s + 's)' : '') +
         (j.truncated ? ' · TRUNCATED' : ''),
         matched ? 'var(--ac)' : 'var(--ac2)');
@@ -375,14 +448,35 @@
 
   function render() {
     var body = $('tnsBody'); if (!body) return;
-    if (!state.candidates.length) {
-      body.innerHTML = '<div class="empty" style="padding:30px;text-align:center;color:var(--mu);font-family:Space Mono,monospace;font-size:12px">Upload both FV sheets (1st Set Total + Game Spread) to see SGP candidates.</div>';
+    // Pick the candidate source for the active fair mode.
+    //   DK NO-VIG → autoscan candidates (no sheet needed)
+    //   FV / PIN  → sheet-merged candidates
+    var src = (state.fairMode === 'dk') ? state.autoCands : state.sheetCands;
+    if (!src.length) {
+      var empty;
+      if (state.fairMode === 'dk') {
+        empty = 'Click SCAN DK to pull tonight\'s slate and price every supported SGP.';
+      } else if (state.fairMode === 'pinnacle') {
+        empty = 'PIN NO-VIG reads the sheet\'s devig_odds column — open the FV uploads panel and drop both sheets.';
+      } else {
+        empty = 'FV mode reads the sheet\'s fv column — open the FV uploads panel and drop both sheets.';
+      }
+      body.innerHTML = '<div class="empty" style="padding:30px;text-align:center;color:var(--mu);font-family:Space Mono,monospace;font-size:12px">' + escapeHtml(empty) + '</div>';
       var cnt = $('tnsCount'); if (cnt) cnt.textContent = '';
       return;
     }
-    // Compute EV per candidate using current fairMode + DK results.
-    var rows = state.candidates.map(function (c) {
-      var dk = state.dkResults[c.id] || null;
+    // Compute EV per candidate. For auto candidates, the DK price is
+    // baked into the row. For sheet candidates, fall back to the
+    // state.dkResults map (populated by the legacy runScan path).
+    var rows = src.map(function (c) {
+      var dk = (c.source === 'auto')
+        ? {
+            matched:   !!c.matched,
+            dk_odds:    c.dk_odds,
+            dk_decimal: c.dk_decimal,
+            missing:    c.missing,
+          }
+        : (state.dkResults[c.id] || null);
       var ev = computeEv(c, dk);
       return { c: c, dk: dk, ev: ev };
     });
@@ -491,13 +585,21 @@
         file.dispatchEvent(new Event('change'));
       });
     });
+    // Sync the fair-mode button highlighting to the runtime default
+    // (DK NO-VIG). The HTML's static `background:rgba(...)` already
+    // marks the DK button green; this catches any post-load drift.
+    setFairMode(state.fairMode);
     render();
+    // Kick the DK autoscan automatically on first activation. Cached
+    // server-side for 10 min so the second activation is free.
+    runAutoScan();
   }
 
   window.tennisTab = {
     onActivate: onActivate,
     onUpload: onUpload,
     runScan: runScan,
+    runAutoScan: runAutoScan,
     setFairMode: setFairMode,
     onLineBtn: onLineBtn,
     onFilter: onFilter,
