@@ -293,12 +293,34 @@
     });
   }
 
+  // League ID override — persisted to localStorage so the user only
+  // sets it once per slate. Empty string falls back to server's
+  // DK_TENNIS_LEAGUE_ID env default. Find the right ID via the DK
+  // public web URL: sportsbook.draftkings.com/leagues/tennis/<id>.
+  var LEAGUE_ID_LS_KEY = 'tns.leagueId';
+  function getLeagueIdOverride() {
+    try { return (localStorage.getItem(LEAGUE_ID_LS_KEY) || '').trim(); }
+    catch (_) { return ''; }
+  }
+  function onLeagueIdChange() {
+    var el = $('tnsLeagueId'); if (!el) return;
+    var v = (el.value || '').trim();
+    try {
+      if (v) localStorage.setItem(LEAGUE_ID_LS_KEY, v);
+      else   localStorage.removeItem(LEAGUE_ID_LS_KEY);
+    } catch (_) {}
+  }
+
   // ===== DK auto-scan (primary path; no FV sheet required) =====
   async function runAutoScan() {
     var btn = $('tnsAutoScanBtn'); if (btn) { btn.disabled = true; btn.style.opacity = '.5'; }
     setStatus('Scanning DK for tennis slate…', 'var(--ac3)');
     try {
-      var params = { lines: Object.keys(state.enabledLines).filter(function (k) { return state.enabledLines[k]; }).map(Number) };
+      var params = {
+        lines: Object.keys(state.enabledLines).filter(function (k) { return state.enabledLines[k]; }).map(Number),
+      };
+      var lid = getLeagueIdOverride();
+      if (lid) params.league_id = lid;
       var r = await fetch('/api/dk/tennis-autoscan', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -589,10 +611,18 @@
     // (DK NO-VIG). The HTML's static `background:rgba(...)` already
     // marks the DK button green; this catches any post-load drift.
     setFairMode(state.fairMode);
+    // Restore any saved league-ID override into the input field.
+    var lidEl = $('tnsLeagueId');
+    if (lidEl) lidEl.value = getLeagueIdOverride();
     render();
-    // Kick the DK autoscan automatically on first activation. Cached
-    // server-side for 10 min so the second activation is free.
-    runAutoScan();
+    // Kick the DK autoscan automatically only if the user has saved a
+    // league ID override. Otherwise the default env value is likely
+    // stale; we'd just 404. Surface the setup hint instead.
+    if (getLeagueIdOverride()) {
+      runAutoScan();
+    } else {
+      setStatus('Set the DK LEAGUE ID above (find it in sportsbook.draftkings.com/leagues/tennis/<id>), then click SCAN DK.', 'var(--ac2)');
+    }
   }
 
   window.tennisTab = {
@@ -603,5 +633,6 @@
     setFairMode: setFairMode,
     onLineBtn: onLineBtn,
     onFilter: onFilter,
+    onLeagueIdChange: onLeagueIdChange,
   };
 }());
