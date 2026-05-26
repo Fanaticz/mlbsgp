@@ -170,6 +170,43 @@ def get_games_nba():
     return {"events": out}
 
 
+def resolve_tennis_league_by_slug(slug="french-open-men"):
+    """Resolve a DK public-URL slug (e.g. 'french-open-men') to the
+    numeric league ID by scraping the public league page.
+
+    DK's public URLs switched to slug-based routing
+    (sportsbook.draftkings.com/leagues/tennis/<slug>), but the backend
+    API still keys on the numeric ID. The page itself bakes the ID
+    into its Next.js initial state — we fetch the HTML and regex it
+    out. Multiple fallback patterns are tried; the first hit wins.
+
+    Returns {"slug": ..., "league_id": "12345", "source": "page-scrape"}
+    or {"slug": ..., "error": "..."} on failure."""
+    if not slug:
+        slug = "french-open-men"
+    url = f"https://sportsbook.draftkings.com/leagues/tennis/{slug}"
+    try:
+        r = _get_with_retry(url, attempts=4, timeout=12)
+    except Exception as e:
+        return {"slug": slug, "error": f"fetch failed: {e}"}
+    html = r.text or ""
+    # Patterns in declining order of specificity — first match wins.
+    patterns = [
+        r'"leagueId"\s*:\s*"?(\d{3,7})"?',
+        r'"league_id"\s*:\s*"?(\d{3,7})"?',
+        r'/nav/leagues/(\d{3,7})',
+        r'data-leagueid="(\d{3,7})"',
+        r'/leagues/(\d{3,7})\b',
+    ]
+    for pat in patterns:
+        m = re.search(pat, html)
+        if m:
+            return {"slug": slug, "league_id": m.group(1),
+                    "source": "page-scrape"}
+    return {"slug": slug, "error": "no league id found in page",
+            "html_len": len(html)}
+
+
 def get_games_tennis(league_id=None):
     """Return today's men's French Open matches from DraftKings.
 
@@ -2456,6 +2493,9 @@ if __name__ == "__main__":
             stdin_data = sys.stdin.read().strip()
             payload = json.loads(stdin_data) if stdin_data else {}
             result = enumerate_sgps_tennis(payload)
+        elif cmd == "resolve-tennis-league":
+            slug = sys.argv[2] if len(sys.argv) >= 3 else "french-open-men"
+            result = resolve_tennis_league_by_slug(slug)
         elif cmd == "price":
             stdin_data = sys.stdin.read().strip()
             if stdin_data:
