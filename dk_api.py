@@ -170,14 +170,20 @@ def get_games_nba():
     return {"events": out}
 
 
-def get_games_tennis():
+def get_games_tennis(league_id=None):
     """Return today's men's French Open matches from DraftKings.
 
     DK scopes grand slams under a per-tournament league ID. Singles
     matches have two participants (the two players); we surface both
     names so the frontend can match by either side. `hasSGP` is honored
-    so we skip events without SGP support."""
-    r = _get_with_retry(f"{DK_NAV}/{DK_TENNIS_LEAGUE_ID}")
+    so we skip events without SGP support.
+
+    `league_id` (caller-provided) wins over the `DK_TENNIS_LEAGUE_ID`
+    env default so the UI can switch leagues without a redeploy. To find
+    the right ID, open the DK page (sportsbook.draftkings.com/leagues/
+    tennis/<id>) in a browser and grab the trailing number."""
+    lid = str(league_id) if league_id else DK_TENNIS_LEAGUE_ID
+    r = _get_with_retry(f"{DK_NAV}/{lid}")
     events = r.json().get("events", [])
     out = []
     for e in events:
@@ -205,7 +211,7 @@ def get_games_tennis():
             "status": e.get("status", ""),
         })
     out.sort(key=lambda x: x["startDate"])
-    return {"events": out, "leagueId": DK_TENNIS_LEAGUE_ID}
+    return {"events": out, "leagueId": lid}
 
 
 def _extract_player_name(market_name, market_type, subcat_name):
@@ -1806,10 +1812,14 @@ def find_sgps_tennis(payload):
     if not isinstance(candidates, list) or not candidates:
         return {"error": "candidates array required"}
 
+    lid = (payload or {}).get("league_id")
     try:
-        games_data = get_games_tennis()
+        games_data = get_games_tennis(league_id=lid)
     except Exception as e:
-        return {"error": f"DK tennis games endpoint unavailable: {e}. Check DK_TENNIS_LEAGUE_ID."}
+        return {"error": f"DK tennis games endpoint unavailable: {e}. "
+                          f"League ID = {lid or DK_TENNIS_LEAGUE_ID}. "
+                          f"Open sportsbook.draftkings.com/leagues/tennis/<id> "
+                          f"in a browser to find the right one."}
     events = games_data["events"]
 
     cand_event_map = {}
@@ -1940,7 +1950,7 @@ def find_sgps_tennis(payload):
         results.append(out)
 
     response = {"results": results, "events_scanned": needed_eids,
-                "league_id": DK_TENNIS_LEAGUE_ID}
+                "league_id": lid or DK_TENNIS_LEAGUE_ID}
     if truncated:
         response["truncated"] = True
     return response
@@ -1993,10 +2003,14 @@ def enumerate_sgps_tennis(payload=None):
         except (TypeError, ValueError):
             max_handicap = None
 
+    lid = payload.get("league_id")
     try:
-        games_data = get_games_tennis()
+        games_data = get_games_tennis(league_id=lid)
     except Exception as e:
-        return {"error": f"DK tennis games endpoint unavailable: {e}. Check DK_TENNIS_LEAGUE_ID."}
+        return {"error": f"DK tennis games endpoint unavailable: {e}. "
+                          f"League ID = {lid or DK_TENNIS_LEAGUE_ID}. "
+                          f"Open sportsbook.draftkings.com/leagues/tennis/<id> "
+                          f"in a browser to find the right one."}
     events = [e for e in games_data["events"]
               if e.get("hasSGP") and not e.get("isLive")]
 
@@ -2160,7 +2174,7 @@ def enumerate_sgps_tennis(payload=None):
         "candidates": out_rows,
         "events_scanned": list(event_markets.keys()),
         "events_total":   len(events),
-        "league_id":      DK_TENNIS_LEAGUE_ID,
+        "league_id":      lid or DK_TENNIS_LEAGUE_ID,
     }
     if truncated:
         resp["truncated"] = True
