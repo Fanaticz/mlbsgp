@@ -59,6 +59,7 @@
     matchedOnly: true,
     minEv: 0,
     activated: false,
+    resolvedLeagueId: '',  // populated by /api/dk/tennis-resolve-league on activate
   };
 
   function $(id) { return document.getElementById(id); }
@@ -293,11 +294,14 @@
     });
   }
 
-  // League ID override — persisted to localStorage so the user only
-  // sets it once per slate. Empty string falls back to server's
-  // DK_TENNIS_LEAGUE_ID env default. Find the right ID via the DK
-  // public web URL: sportsbook.draftkings.com/leagues/tennis/<id>.
+  // League ID — three layers, highest priority wins:
+  //   1. Manual override saved to localStorage (user pasted into input)
+  //   2. Auto-resolved ID from /api/dk/tennis-resolve-league
+  //      (resolved once per session, kept in state.resolvedLeagueId)
+  //   3. Server's DK_TENNIS_LEAGUE_ID env default (used when neither
+  //      of the above is available; stale by default)
   var LEAGUE_ID_LS_KEY = 'tns.leagueId';
+  var DEFAULT_SLUG = 'french-open-men';
   function getLeagueIdOverride() {
     try { return (localStorage.getItem(LEAGUE_ID_LS_KEY) || '').trim(); }
     catch (_) { return ''; }
@@ -310,6 +314,33 @@
       else   localStorage.removeItem(LEAGUE_ID_LS_KEY);
     } catch (_) {}
   }
+  function activeLeagueId() {
+    return getLeagueIdOverride() || state.resolvedLeagueId || '';
+  }
+
+  // Resolve French Open M's numeric league ID by hitting the server,
+  // which scrapes DK's public page (curl_cffi session). Caches in state
+  // so a re-scan doesn't re-resolve. Manual override (input field) wins
+  // when set — we still resolve in the background so the placeholder
+  // can show the auto-detected value.
+  async function resolveLeagueId() {
+    if (state.resolvedLeagueId) return state.resolvedLeagueId;
+    try {
+      var r = await fetch('/api/dk/tennis-resolve-league?slug=' + encodeURIComponent(DEFAULT_SLUG));
+      var j = await r.json();
+      if (r.ok && j.league_id) {
+        state.resolvedLeagueId = String(j.league_id);
+        // Pre-fill the input as a hint, but don't persist — so user
+        // override semantics stay clean.
+        var el = $('tnsLeagueId');
+        if (el && !getLeagueIdOverride() && !el.value) {
+          el.placeholder = j.league_id + ' (auto-detected)';
+        }
+        return state.resolvedLeagueId;
+      }
+    } catch (_) {}
+    return '';
+  }
 
   // ===== DK auto-scan (primary path; no FV sheet required) =====
   async function runAutoScan() {
@@ -319,7 +350,13 @@
       var params = {
         lines: Object.keys(state.enabledLines).filter(function (k) { return state.enabledLines[k]; }).map(Number),
       };
-      var lid = getLeagueIdOverride();
+      // Resolve on demand if we don't have one yet — surfaces a useful
+      // error if DK page-scrape failed instead of silently 404'ing the
+      // autoscan with the stale env default.
+      if (!getLeagueIdOverride() && !state.resolvedLeagueId) {
+        await resolveLeagueId();
+      }
+      var lid = activeLeagueId();
       if (lid) params.league_id = lid;
       var r = await fetch('/api/dk/tennis-autoscan', {
         method: 'POST',
@@ -615,14 +652,20 @@
     var lidEl = $('tnsLeagueId');
     if (lidEl) lidEl.value = getLeagueIdOverride();
     render();
-    // Kick the DK autoscan automatically only if the user has saved a
-    // league ID override. Otherwise the default env value is likely
-    // stale; we'd just 404. Surface the setup hint instead.
-    if (getLeagueIdOverride()) {
+    // Resolve French Open M's league ID server-side (page-scrape via
+    // curl_cffi) and then kick the autoscan. If the user already saved
+    // a manual override, we still resolve in the background so the
+    // placeholder can show the auto-detected value as a hint — and we
+    // skip the resolve roundtrip in runAutoScan().
+    (async function () {
+      setStatus('Resolving French Open M league ID via DK page…', 'var(--ac3)');
+      var lid = await resolveLeagueId();
+      if (!lid && !getLeagueIdOverride()) {
+        setStatus('Could not auto-resolve French Open M league ID. Paste it manually into DK LEAGUE ID and click SCAN DK.', 'var(--ac2)');
+        return;
+      }
       runAutoScan();
-    } else {
-      setStatus('Set the DK LEAGUE ID above (find it in sportsbook.draftkings.com/leagues/tennis/<id>), then click SCAN DK.', 'var(--ac2)');
-    }
+    }());
   }
 
   window.tennisTab = {
