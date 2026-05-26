@@ -394,14 +394,13 @@ def get_markets(event_id, pitcher_only=False, batter_only=False, nba_only=False,
             return any(k in n for k in _SC_NBA_HINTS)
         subcats = [sc for sc in subcats if _keep_nba(sc)]
     elif tennis_only:
-        # Keep only subcats relevant to the tennis SGP build:
-        #   - 1st Set Total Games  (Over/Under X.5)
-        #   - Game Handicap        (full-match games spread per player)
-        # DK names these as "1st Set" / "Set Total" / "Handicap" /
-        # "Games Handicap" — keep all the variants we've seen.
-        _SC_TENNIS_HINTS = ("1st set", "first set", "set total",
-                            "game handicap", "games handicap", "handicap",
-                            "match handicap")
+        # Keep only subcats relevant to the tennis SGP build. DK's actual
+        # subcategory names (verified on French Open 2026) are:
+        #   - "Total Games - Listed Set" → 1st-set total games (alt lines)
+        #   - "Games Spread"             → full-match game handicap
+        # Earlier hints ("1st set", "game handicap", ...) never matched any
+        # real DK subcat, so every event dropped 0 markets through.
+        _SC_TENNIS_HINTS = ("total games - listed set", "games spread")
         _SC_TENNIS_EXCLUDE = ("moneyline", "to win", "winner", "match winner",
                               "set betting", "set winner", "tie break",
                               "tiebreak", "aces", "double fault",
@@ -1700,17 +1699,20 @@ def _is_tennis_set1_total_market(market_blob):
 
 
 def _is_tennis_match_handicap_market(market_blob):
-    """True iff this DK market is the full-match game handicap (per player)."""
+    """True iff this DK market is the full-match game handicap (per player).
+    DK exposes this as marketName/subcategory "Games Spread" (not "Handicap").
+    The 1st-set version is "1st Set Game Spread" — explicitly excluded."""
     name = (market_blob.get("marketName") or market_blob.get("name") or "").lower()
-    mtype = (market_blob.get("marketTypeName") or "").lower()
+    mtype = (market_blob.get("marketTypeName") or market_blob.get("marketType") or "").lower()
     subcat = (market_blob.get("subcategory") or "").lower()
     blob = " ".join([name, mtype, subcat])
     if "1st set" in blob or "first set" in blob or "set total" in blob:
         return False
-    if "set handicap" in blob:
-        # Set handicap is the sets-won spread, not games. Skip.
+    if "set handicap" in blob or "set game spread" in blob:
+        # Per-set spread, not the full-match games spread. Skip.
         return False
-    return ("game handicap" in blob or "games handicap" in blob
+    return ("games spread" in blob
+            or "game handicap" in blob or "games handicap" in blob
             or "match handicap" in blob
             or ("handicap" in blob and "games" in blob))
 
