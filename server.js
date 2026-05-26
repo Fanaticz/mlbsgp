@@ -1345,6 +1345,37 @@ app.get('/api/dk/tennis-games', async (_req, res) => {
   }
 });
 
+// POST /api/dk/tennis-autoscan — auto-enumerate the full SGP candidate
+// set straight from DK. No FV-sheet upload required. Returns priced
+// candidates with two-sided per-leg DK odds + DK SGP price; the client
+// no-vigs to derive pa/pb, applies the hardcoded set-1 correlation,
+// and computes EV. Cached server-side for 10 minutes keyed by the
+// {lines, max_handicap} request fingerprint.
+const TENNIS_AUTOSCAN_CACHE = new Map();
+const TENNIS_AUTOSCAN_TTL_MS = 10 * 60 * 1000;
+
+app.post('/api/dk/tennis-autoscan', async (req, res) => {
+  try {
+    const params = req.body || {};
+    const key = JSON.stringify({
+      lines: Array.isArray(params.lines) ? params.lines.slice().sort() : null,
+      max_handicap: params.max_handicap != null ? Number(params.max_handicap) : null,
+    });
+    const hit = TENNIS_AUTOSCAN_CACHE.get(key);
+    if (hit && Date.now() - hit.ts < TENNIS_AUTOSCAN_TTL_MS) {
+      return res.json(Object.assign({}, hit.body, {
+        cached: true, cache_age_s: Math.round((Date.now() - hit.ts) / 1000)
+      }));
+    }
+    const result = await dkCall(['enumerate-sgps-tennis'], JSON.stringify(params));
+    if (result.error && !result.candidates) return res.json(result);
+    if (!result.error) TENNIS_AUTOSCAN_CACHE.set(key, { ts: Date.now(), body: result });
+    return res.json(result);
+  } catch (e) {
+    return res.status(500).json({ error: 'DK tennis autoscan failed: ' + e.message });
+  }
+});
+
 // ===== SGP AI Insight =====
 app.post('/api/sgp-insight', async (req, res) => {
   try {
