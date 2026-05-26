@@ -1360,6 +1360,7 @@ app.post('/api/dk/tennis-autoscan', async (req, res) => {
     const key = JSON.stringify({
       lines: Array.isArray(params.lines) ? params.lines.slice().sort() : null,
       max_handicap: params.max_handicap != null ? Number(params.max_handicap) : null,
+      league_id: params.league_id != null ? String(params.league_id) : null,
     });
     const hit = TENNIS_AUTOSCAN_CACHE.get(key);
     if (hit && Date.now() - hit.ts < TENNIS_AUTOSCAN_TTL_MS) {
