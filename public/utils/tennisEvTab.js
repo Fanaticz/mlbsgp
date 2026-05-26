@@ -9,10 +9,12 @@
  * dog_match_handicap_line) combination from the uploaded rows.
  *
  * Fair-price source toggle:
- *   FV    — use the sheet's signed `fv` integer as the fair American
- *           for each leg (default).
- *   DK NO-VIG — derive the fair from the DK two-sided `book_odds` pair
- *           via standard no-vig (drop the overround proportionally).
+ *   FV         — use the sheet's signed `fv` integer as the fair American
+ *                for each leg (default).
+ *   PIN NO-VIG — no-vig the sheet's `devig_odds` two-sided pair
+ *                (the `sharp:Pinnacle` column from the FV source).
+ *                Effectively "use Pinnacle no-vig as fair."
+ *   DK NO-VIG  — no-vig the DK two-sided `book_odds` pair instead.
  *
  * Joint probability: jointFrechet(pa, pb, r) from sgpMath.js — same
  * function the pitcher / teammate / NBA pipelines use.
@@ -41,7 +43,7 @@
     rowsSpread: [],        // parsed game-spread leg rows (dog side only)
     candidates: [],        // SGP candidate objects post-merge
     dkResults: {},         // candidate.id → dk response row
-    fairMode: 'fv',        // 'fv' | 'dk'
+    fairMode: 'fv',        // 'fv' | 'pinnacle' | 'dk'
     enabledLines: { 8.5: true, 9.5: true, 10.5: true, 12.5: true },
     matchedOnly: true,
     minEv: 0,
@@ -164,22 +166,25 @@
   // unavailable. `dkRow` is the DK pricing row (or null when unmatched).
   function computeEv(c, dkRow) {
     var pa = null, pb = null, paSrc = '', pbSrc = '';
-    if (state.fairMode === 'dk') {
-      // No-vig DK's two-sided book_odds for each leg.
-      var totalTwoSided = parseTwoSided(c.legTotal.book_odds);
-      var spreadTwoSided = parseTwoSided(c.legSpread.book_odds);
-      if (totalTwoSided) {
-        // Total row's bet_name is "Over X.5" — first side of "X / Y" is
-        // the Over price. So no-vig prob for Over = side-A prob.
-        pa = noVigProbForSideA(totalTwoSided);
-        paSrc = 'DK ' + totalTwoSided[0] + '/' + totalTwoSided[1];
+    if (state.fairMode === 'dk' || state.fairMode === 'pinnacle') {
+      // Both modes share the same no-vig math; only the source pair
+      // differs. DK reads `book_odds` (the DK two-sided column);
+      // Pinnacle reads `devig_odds` (the sharp.Pinnacle two-sided
+      // column the FV sheet already carries). In both cases side-A of
+      // the pair corresponds to the leg as named in `bet_name`:
+      //   Total  row: "Over X.5"            ⇒ side-A is the Over price
+      //   Spread row: "<player> +X.5"       ⇒ side-A is the dog's price
+      var useDevig = state.fairMode === 'pinnacle';
+      var totalPair  = parseTwoSided(useDevig ? c.legTotal.devig_odds  : c.legTotal.book_odds);
+      var spreadPair = parseTwoSided(useDevig ? c.legSpread.devig_odds : c.legSpread.book_odds);
+      var srcTag = useDevig ? 'PIN' : 'DK';
+      if (totalPair) {
+        pa = noVigProbForSideA(totalPair);
+        paSrc = srcTag + ' ' + totalPair[0] + '/' + totalPair[1];
       }
-      if (spreadTwoSided) {
-        // Spread row's bet_name is "<player> +X.5" — first side of the
-        // pair is the price on THAT player (the dog). So side-A is the
-        // leg we want.
-        pb = noVigProbForSideA(spreadTwoSided);
-        pbSrc = 'DK ' + spreadTwoSided[0] + '/' + spreadTwoSided[1];
+      if (spreadPair) {
+        pb = noVigProbForSideA(spreadPair);
+        pbSrc = srcTag + ' ' + spreadPair[0] + '/' + spreadPair[1];
       }
     } else {
       // FV mode: use the sheet's signed `fv` integer for each leg.
@@ -318,12 +323,14 @@
 
   // ===== UI control handlers =====
   function setFairMode(mode) {
-    if (mode !== 'fv' && mode !== 'dk') return;
+    if (mode !== 'fv' && mode !== 'dk' && mode !== 'pinnacle') return;
     state.fairMode = mode;
-    var fv = $('tnsFairFv'), dk = $('tnsFairDk');
+    var fv = $('tnsFairFv'), pin = $('tnsFairPin'), dk = $('tnsFairDk');
     function on(el) { el.style.background = 'rgba(34,197,94,.12)'; el.style.color = 'var(--ac)'; }
     function off(el) { el.style.background = 'transparent'; el.style.color = 'var(--mu)'; }
-    if (fv && dk) { (mode === 'fv' ? on : off)(fv); (mode === 'dk' ? on : off)(dk); }
+    if (fv)  (mode === 'fv'       ? on : off)(fv);
+    if (pin) (mode === 'pinnacle' ? on : off)(pin);
+    if (dk)  (mode === 'dk'       ? on : off)(dk);
     render();
   }
   function onLineBtn(btn) {
@@ -454,7 +461,11 @@
           '<div><div style="color:var(--mu);font-size:9px">EV%</div><div style="color:' + ec + ';font-weight:700">' + fmtEv(evPct) + '</div></div>' +
         '</div>' +
         '<div style="margin-top:6px;color:var(--mu);font-family:Space Mono,monospace;font-size:9px">' +
-          'fair mode: ' + (state.fairMode === 'dk' ? 'DK no-vig' : 'FV sheet') + rGapStr +
+          'fair mode: ' + (
+            state.fairMode === 'dk' ? 'DK no-vig' :
+            state.fairMode === 'pinnacle' ? 'Pinnacle no-vig (sheet devig_odds)' :
+            'FV sheet'
+          ) + rGapStr +
         '</div>' +
       '</div>';
   }
