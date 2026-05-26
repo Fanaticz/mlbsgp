@@ -25,6 +25,11 @@ DK_MLB_LEAGUE_ID = "84240"
 # ever renumbers. Verified against the /nav/leagues response April 2026.
 import os as _os
 DK_NBA_LEAGUE_ID = _os.environ.get("DK_NBA_LEAGUE_ID", "42648")
+# Tennis (men's French Open) league ID. DK uses per-tournament league IDs
+# for grand slams. Default is a placeholder — set DK_TENNIS_LEAGUE_ID in
+# the environment to the live French Open Men's league ID (check the
+# /nav/leagues response or the DK URL on the slate page).
+DK_TENNIS_LEAGUE_ID = _os.environ.get("DK_TENNIS_LEAGUE_ID", "40841")
 DK_NAV = "https://sportsbook-nash.draftkings.com/api/sportscontent/navigation/dkusnj/v1/nav/leagues"
 DK_MARKETS = "https://sportsbook-nash.draftkings.com/sites/US-SB/api/sportscontent/controldata/event/eventSubcategory/v1/markets"
 DK_SGP = "https://sportsbook-nash.draftkings.com/sites/US-SB/api/sportscontent/parlays/v1/sgp/events"
@@ -165,6 +170,44 @@ def get_games_nba():
     return {"events": out}
 
 
+def get_games_tennis():
+    """Return today's men's French Open matches from DraftKings.
+
+    DK scopes grand slams under a per-tournament league ID. Singles
+    matches have two participants (the two players); we surface both
+    names so the frontend can match by either side. `hasSGP` is honored
+    so we skip events without SGP support."""
+    r = _get_with_retry(f"{DK_NAV}/{DK_TENNIS_LEAGUE_ID}")
+    events = r.json().get("events", [])
+    out = []
+    for e in events:
+        tags = e.get("tags", [])
+        participants = e.get("participants", []) or []
+        # Tennis singles: participants come in via venueRole Home/Away
+        # most of the time, but DK occasionally flips that for tennis.
+        # Fall back to index order if both roles are absent.
+        home = next((p for p in participants if p.get("venueRole") == "Home"), None)
+        away = next((p for p in participants if p.get("venueRole") == "Away"), None)
+        if not home and len(participants) >= 1: home = participants[0]
+        if not away and len(participants) >= 2: away = participants[1]
+        home = home or {}
+        away = away or {}
+        out.append({
+            "id": e.get("eventId"),
+            "name": e.get("name", ""),
+            "startDate": e.get("startDate", ""),
+            "homePlayer": home.get("name", e.get("teamName2", "")),
+            "awayPlayer": away.get("name", e.get("teamName1", "")),
+            "homeShort": home.get("metadata", {}).get("shortName", e.get("teamShortName2", "")),
+            "awayShort": away.get("metadata", {}).get("shortName", e.get("teamShortName1", "")),
+            "hasSGP": "SGP" in tags,
+            "isLive": e.get("isLive", False),
+            "status": e.get("status", ""),
+        })
+    out.sort(key=lambda x: x["startDate"])
+    return {"events": out, "leagueId": DK_TENNIS_LEAGUE_ID}
+
+
 def _extract_player_name(market_name, market_type, subcat_name):
     """Strip market type/subcategory suffix from the market name to get the player name."""
     name = market_name
@@ -222,7 +265,7 @@ def _fetch_subcategory(event_id, sc):
     return mkts, sels
 
 
-def get_markets(event_id, pitcher_only=False, batter_only=False, nba_only=False):
+def get_markets(event_id, pitcher_only=False, batter_only=False, nba_only=False, tennis_only=False):
     """Return all markets and selections for an event, scoped properly to that event.
 
     When pitcher_only=True, skip subcategories that are clearly batter/team/game
@@ -307,6 +350,26 @@ def get_markets(event_id, pitcher_only=False, batter_only=False, nba_only=False)
                 return False
             return any(k in n for k in _SC_NBA_HINTS)
         subcats = [sc for sc in subcats if _keep_nba(sc)]
+    elif tennis_only:
+        # Keep only subcats relevant to the tennis SGP build:
+        #   - 1st Set Total Games  (Over/Under X.5)
+        #   - Game Handicap        (full-match games spread per player)
+        # DK names these as "1st Set" / "Set Total" / "Handicap" /
+        # "Games Handicap" — keep all the variants we've seen.
+        _SC_TENNIS_HINTS = ("1st set", "first set", "set total",
+                            "game handicap", "games handicap", "handicap",
+                            "match handicap")
+        _SC_TENNIS_EXCLUDE = ("moneyline", "to win", "winner", "match winner",
+                              "set betting", "set winner", "tie break",
+                              "tiebreak", "aces", "double fault",
+                              "break point", "service", "fastest serve",
+                              "in-play", "live", "quick pick")
+        def _keep_tennis(sc):
+            n = (sc.get("name") or "").lower()
+            if any(h in n for h in _SC_TENNIS_EXCLUDE):
+                return False
+            return any(k in n for k in _SC_TENNIS_HINTS)
+        subcats = [sc for sc in subcats if _keep_tennis(sc)]
 
     # Step 2: Fetch markets for each subcategory in parallel
     all_markets = []
@@ -1557,6 +1620,332 @@ def find_sgps_nba(payload):
     return response
 
 
+# ===== Tennis (men's French Open) SGP pricing =====
+#
+# Build target per the user's spec:
+#   leg 1 — "Over X.5 1st Set Total"          (X in {8.5, 9.5, 10.5, 12.5})
+#   leg 2 — "<Underdog Player> +Y.5 Game Handicap"  (full-match games spread, dog side)
+#
+# Correlations are hardcoded client-side (sport-wide priors for men's
+# ATP grand slam). We just resolve DK selection IDs + price the combo
+# here; the joint/EV math runs in the browser via sgpMath.js.
+
+_TENNIS_SET1_KEYWORDS = ("1st set", "first set")
+_TENNIS_SET_TOTAL_KEYWORDS = ("total", "games")
+_TENNIS_HANDICAP_KEYWORDS = ("game handicap", "games handicap",
+                              "match handicap", "handicap")
+
+
+def _is_tennis_set1_total_market(market_blob):
+    """True iff this DK market is the 1st-Set total-games market."""
+    name = (market_blob.get("marketName") or market_blob.get("name") or "").lower()
+    mtype = (market_blob.get("marketTypeName") or "").lower()
+    subcat = (market_blob.get("subcategory") or "").lower()
+    blob = " ".join([name, mtype, subcat])
+    if not any(k in blob for k in _TENNIS_SET1_KEYWORDS):
+        return False
+    if "total" not in blob and "games" not in blob:
+        return False
+    # Filter out 1st-set winner/spread markets that mention "1st set"
+    # but aren't totals.
+    if "winner" in blob or "to win" in blob:
+        return False
+    # 1st-set spread/handicap is a different market.
+    if "handicap" in blob or "spread" in blob:
+        return False
+    return True
+
+
+def _is_tennis_match_handicap_market(market_blob):
+    """True iff this DK market is the full-match game handicap (per player)."""
+    name = (market_blob.get("marketName") or market_blob.get("name") or "").lower()
+    mtype = (market_blob.get("marketTypeName") or "").lower()
+    subcat = (market_blob.get("subcategory") or "").lower()
+    blob = " ".join([name, mtype, subcat])
+    if "1st set" in blob or "first set" in blob or "set total" in blob:
+        return False
+    if "set handicap" in blob:
+        # Set handicap is the sets-won spread, not games. Skip.
+        return False
+    return ("game handicap" in blob or "games handicap" in blob
+            or "match handicap" in blob
+            or ("handicap" in blob and "games" in blob))
+
+
+def _match_tennis_set1_total(line, side, props):
+    """Find the DK selection for Over/Under <line> 1st Set Total.
+    Returns dict with selection_id + over/under american odds, or None."""
+    side_l = (side or "").lower()
+    line_f = float(line)
+    best = None
+    for p in props:
+        if not _is_tennis_set1_total_market(p):
+            continue
+        try:
+            pts = float(p.get("points"))
+        except (TypeError, ValueError):
+            continue
+        if abs(pts - line_f) > 0.01:
+            continue
+        otype = (p.get("outcomeType") or "").lower()
+        if otype != side_l:
+            continue
+        best = {
+            "selection_id": p.get("selectionId"),
+            "line": pts,
+            "side": otype,
+            "market_name": p.get("marketName", ""),
+            "american": p.get("americanOdds"),
+        }
+        # Capture sibling Over/Under for client-side no-vig if present.
+        sibling = "under" if side_l == "over" else "over"
+        sib = next((q for q in props
+                    if _is_tennis_set1_total_market(q)
+                    and (q.get("outcomeType") or "").lower() == sibling
+                    and abs(float(q.get("points") or 0) - pts) < 0.01), None)
+        best["over_american"]  = p.get("americanOdds") if side_l == "over"  else (sib or {}).get("americanOdds")
+        best["under_american"] = p.get("americanOdds") if side_l == "under" else (sib or {}).get("americanOdds")
+        return best
+    return best
+
+
+def _match_tennis_match_handicap(player_name, line, props):
+    """Find the DK selection for <player> +<line> Game Handicap.
+    Returns dict with selection_id + american odds, or None.
+    Player matching is normalized so "M. Berrettini" matches "Matteo Berrettini"
+    (DK's canonical form), and last-name-only also matches."""
+    if not player_name:
+        return None
+    line_f = float(line)
+    norm_target = _normalize_name(player_name)
+    # Also keep a last-name fallback ("berrettini").
+    parts = norm_target.split()
+    last_name = parts[-1] if parts else ""
+    # And a "first-initial + last" form: "m berrettini" if input was "m. berrettini".
+    initials_form = None
+    if len(parts) >= 2 and len(parts[0]) == 1:
+        initials_form = parts[0] + " " + parts[-1]
+    best = None
+    for p in props:
+        if not _is_tennis_match_handicap_market(p):
+            continue
+        try:
+            pts = float(p.get("points"))
+        except (TypeError, ValueError):
+            continue
+        if abs(pts - line_f) > 0.01:
+            continue
+        # Selection participant name is usually in `player` or
+        # `outcomeName`. Compare normalized.
+        sel_name = p.get("player") or p.get("outcomeName") or p.get("participantName") or ""
+        norm_sel = _normalize_name(sel_name)
+        matched = False
+        if norm_sel == norm_target:
+            matched = True
+        elif last_name and norm_sel.endswith(last_name):
+            matched = True
+        elif initials_form and initials_form in norm_sel:
+            matched = True
+        if not matched:
+            continue
+        best = {
+            "selection_id": p.get("selectionId"),
+            "line": pts,
+            "player": sel_name,
+            "american": p.get("americanOdds"),
+        }
+        return best
+    return best
+
+
+def _event_for_tennis_candidate(c, events):
+    """Resolve a tennis candidate to a DK event. Match by player name
+    against either participant. Falls back to the `event` string if the
+    candidate carries one (e.g. "Berrettini vs Rinderknech")."""
+    if not events:
+        return None
+    dog = (c.get("player_dog") or "").strip()
+    norm_dog = _normalize_name(dog)
+    dog_last = norm_dog.split()[-1] if norm_dog else ""
+    for e in events:
+        for side in ("homePlayer", "awayPlayer"):
+            nm = _normalize_name(e.get(side) or "")
+            if not nm:
+                continue
+            if nm == norm_dog or (dog_last and nm.endswith(dog_last)):
+                return e
+    # Last-resort: scan the event `name` string for the dog's last name.
+    if dog_last:
+        for e in events:
+            if dog_last in _normalize_name(e.get("name") or ""):
+                return e
+    return None
+
+
+def find_sgps_tennis(payload):
+    """Price a batch of tennis 2-leg SGP candidates against DK.
+
+    Input shape (passed via stdin JSON):
+      {
+        "candidates": [
+          {
+            "id": "<frontend candidate handle>",  # echoed back
+            "player_dog": "Matteo Berrettini",    # underdog (gets +X.5 handicap)
+            "event": "Berrettini vs Rinderknech", # optional, tiebreaker
+            "set1_total_line": 12.5,              # 1st-set total games line (Over)
+            "match_handicap_line": 3.5            # dog's full-match game handicap (+X.5)
+          }, ...
+        ]
+      }
+
+    Output mirrors find_sgps_nba so the frontend's merge logic can be
+    reused with only field-name swaps.
+    """
+    import concurrent.futures
+    candidates = (payload or {}).get("candidates", []) or []
+    if not isinstance(candidates, list) or not candidates:
+        return {"error": "candidates array required"}
+
+    try:
+        games_data = get_games_tennis()
+    except Exception as e:
+        return {"error": f"DK tennis games endpoint unavailable: {e}. Check DK_TENNIS_LEAGUE_ID."}
+    events = games_data["events"]
+
+    cand_event_map = {}
+    for c in candidates:
+        cand_event_map[c.get("id")] = _event_for_tennis_candidate(c, events)
+
+    needed_eids = sorted({(e or {}).get("id") for e in cand_event_map.values() if e and e.get("id")})
+    event_markets = {}
+    def _scan(eid):
+        try:
+            return eid, get_markets(eid, tennis_only=True)
+        except Exception as ex:
+            sys.stderr.write(f"dk_api: tennis event {eid} scan failed: {ex}\n")
+            return eid, None
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        futs = {ex.submit(_scan, eid): eid for eid in needed_eids}
+        for fut in as_completed(futs):
+            eid, md = fut.result()
+            if md is not None:
+                event_markets[eid] = md
+
+    leg_cache_total = {}
+    leg_cache_hcap = {}
+    def _match_total(eid, line, side):
+        if not eid or eid not in event_markets: return None
+        key = (eid, line, side)
+        if key in leg_cache_total: return leg_cache_total[key]
+        m = _match_tennis_set1_total(line, side, event_markets[eid]["props"])
+        leg_cache_total[key] = m
+        return m
+    def _match_hcap(eid, player, line):
+        if not eid or eid not in event_markets: return None
+        key = (eid, _normalize_name(player or ""), line)
+        if key in leg_cache_hcap: return leg_cache_hcap[key]
+        m = _match_tennis_match_handicap(player, line, event_markets[eid]["props"])
+        leg_cache_hcap[key] = m
+        return m
+
+    resolved = []
+    for c in candidates:
+        e = cand_event_map.get(c.get("id")) or {}
+        eid = e.get("id")
+        line_total = c.get("set1_total_line")
+        line_hcap  = c.get("match_handicap_line")
+        side_total = c.get("set1_total_side") or "Over"
+        m1 = _match_total(eid, line_total, side_total)
+        m2 = _match_hcap(eid, c.get("player_dog"), line_hcap)
+        s1 = m1["selection_id"] if m1 else None
+        s2 = m2["selection_id"] if m2 else None
+        missing = []
+        if not eid:
+            avail = ", ".join(
+                f"{(e.get('awayPlayer') or '?')} vs {(e.get('homePlayer') or '?')}"
+                for e in events[:6]
+            )
+            hint = f" (dk events: {avail})" if avail else " (dk events: none — check DK_TENNIS_LEAGUE_ID)"
+            missing.append(f"event:{c.get('player_dog') or c.get('event') or '(no player)'}{hint}")
+        else:
+            if not s1: missing.append(f"leg1:1st Set {side_total} {line_total}")
+            if not s2: missing.append(f"leg2:{c.get('player_dog')} +{line_hcap} Game Handicap")
+        resolved.append({"src": c, "event_id": eid,
+                         "game_name": e.get("name", "") if eid else "",
+                         "selection_1": s1, "selection_2": s2,
+                         "match_1": m1, "match_2": m2,
+                         "missing": missing})
+
+    price_cache = {}
+    pricing_jobs = []
+    for r in resolved:
+        if not r["selection_1"] or not r["selection_2"] or r["selection_1"] == r["selection_2"]:
+            continue
+        key = frozenset({r["selection_1"], r["selection_2"]})
+        if key in price_cache: continue
+        price_cache[key] = "pending"
+        pricing_jobs.append((key, r["selection_1"], r["selection_2"]))
+
+    truncated = False
+    deadline = _time.monotonic() + 110.0
+    def _price_one(job):
+        k, sa, sb = job
+        return k, _price_combo([sa, sb])
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        futs = [ex.submit(_price_one, j) for j in pricing_jobs]
+        remaining = max(0.5, deadline - _time.monotonic())
+        try:
+            for f in as_completed(futs, timeout=remaining):
+                try:
+                    k, price = f.result()
+                    price_cache[k] = price
+                except Exception:
+                    pass
+        except concurrent.futures.TimeoutError:
+            truncated = True
+            for f in futs:
+                f.cancel()
+
+    results = []
+    for r in resolved:
+        c = r["src"]
+        m1 = r.get("match_1") or {}
+        m2 = r.get("match_2") or {}
+        out = {
+            "id": c.get("id"), "event_id": r["event_id"], "game_name": r["game_name"],
+            "player_dog": c.get("player_dog"),
+            "set1_total_line": c.get("set1_total_line"),
+            "set1_total_side": c.get("set1_total_side") or "Over",
+            "match_handicap_line": c.get("match_handicap_line"),
+            "selection_1": r["selection_1"], "selection_2": r["selection_2"],
+            "leg_1_over_american":  m1.get("over_american"),
+            "leg_1_under_american": m1.get("under_american"),
+            "leg_2_american":       m2.get("american"),
+        }
+        if r["missing"]:
+            out["matched"] = False
+            out["missing"] = r["missing"]
+            results.append(out)
+            continue
+        key = frozenset({r["selection_1"], r["selection_2"]})
+        price = price_cache.get(key)
+        if price in (None, "pending"):
+            out["matched"] = False
+            out["missing"] = ["dk:price_unavailable"]
+            results.append(out)
+            continue
+        out["matched"] = True
+        out["dk_odds"] = price["sgpOdds"]
+        out["dk_decimal"] = price["sgpDecimal"]
+        results.append(out)
+
+    response = {"results": results, "events_scanned": needed_eids,
+                "league_id": DK_TENNIS_LEAGUE_ID}
+    if truncated:
+        response["truncated"] = True
+    return response
+
+
 def find_sgps(legs, enum_size=2):
     """Given OCR'd legs, auto-match them to DK selections, enumerate combos
     of the requested size, and return DK-priced SGPs. Frontend computes FV
@@ -1790,7 +2179,7 @@ def get_price(selection_ids):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print(json.dumps({"error": "Usage: dk_api.py <games|markets|featured|price> [args]"}))
+        print(json.dumps({"error": "Usage: dk_api.py <games|markets|featured|price|games-tennis|find-sgps-tennis> [args]"}))
         sys.exit(1)
 
     cmd = sys.argv[1]
@@ -1822,6 +2211,12 @@ if __name__ == "__main__":
             stdin_data = sys.stdin.read().strip()
             payload = json.loads(stdin_data) if stdin_data else {}
             result = find_sgps_nba(payload)
+        elif cmd == "games-tennis":
+            result = get_games_tennis()
+        elif cmd == "find-sgps-tennis":
+            stdin_data = sys.stdin.read().strip()
+            payload = json.loads(stdin_data) if stdin_data else {}
+            result = find_sgps_tennis(payload)
         elif cmd == "price":
             stdin_data = sys.stdin.read().strip()
             if stdin_data:

@@ -1,5 +1,29 @@
 # Changes
 
+## 2026-05-26 session
+
+### Tennis SGP +EV tab (French Open M)
+New top-level sport (`TENNIS` next to MLB / NBA in the `.sport-bar`) targeting 1st-set-total × dog-game-handicap SGPs at the men's grand slam. Sport-wide correlations are hardcoded priors:
+
+| 1st Set Total Over | r vs dog Game Handicap |
+| --- | --- |
+| 8.5  | 0.20 |
+| 9.5  | 0.27 |
+| 10.5 | 0.30 |
+| 12.5 | 0.34 |
+
+**Inputs.** Two FV-sheet uploads (one screenshot per market). OCR (`/api/extract-tennis`) auto-normalizes both layouts we've seen — the older `name / book_odds / fv` schema and the newer `bet_name / odds / avg_fv / tournament` schema — to a single `{game, market, bet_name, book_odds, fv, devig_odds, tournament}` row. Rows accumulate across uploads and merge by `game` key into SGP candidates. Favorite-side spread rows (`-X.5`) are dropped; only the dog side feeds the correlation.
+
+**Fair-price source toggle.**
+- `FV` (default) — uses the sheet's signed `fv` integer for each leg.
+- `DK NO-VIG` — no-vigs DK's own two-sided `book_odds` pair (e.g. `-150/+100` → fair `-120`) for each leg.
+
+Joint prob via `sgpMath.jointFrechet(pa, pb, r)`, same function the pitcher + teammate + NBA pipelines use. EV vs DK SGP price + Kelly + `evAttribution` rendered on each card.
+
+**DK linkage.** `dk_api.py:get_games_tennis()` pulls events from `DK_TENNIS_LEAGUE_ID` (env-configurable; defaults to a placeholder for French Open M — set it explicitly to the live league ID). `find_sgps_tennis()` resolves each candidate to one event by player-name match, scans markets with the new `tennis_only=True` subcat filter, matches Set-1 Over/Under and per-player full-match Game Handicap legs by line + name, then prices each unique pair via `_price_combo` with the existing 110s soft deadline + Akamai-safe retry budget. Response cached server-side for 10 minutes per candidate-set fingerprint (mirrors the NBA pricing cache).
+
+**Files.** `dk_api.py` (+ tennis league ID, get_games_tennis, find_sgps_tennis, tennis subcat filter), `server.js` (+ `/api/extract-tennis`, `/api/dk/find-sgps-tennis`, `/api/dk/tennis-games`, OCR prompt + parser), `public/index.html` (+ sport-btn, nav, header, page, sport switcher), `public/utils/tennisEvTab.js` (new tab module — upload merge, fair-mode toggle, scan, render).
+
 ## 2026-04-24 session
 
 ### AI Insights: structured context, r_DK attribution, correlation-gap-first prompt

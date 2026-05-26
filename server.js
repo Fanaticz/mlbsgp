@@ -1104,6 +1104,247 @@ app.post('/api/extract-nba', async (req, res) => {
   }
 });
 
+// ===== Tennis FV OCR =====
+//
+// One endpoint handles BOTH market sheets the user uploads — the prompt
+// extracts whatever rows the model finds, and we auto-detect per-row
+// whether it's a "1st Set Total Games" row or a "Game Spread" row by
+// inspecting the `market` cell. The client accumulates rows across
+// multiple uploads (one per market) before running the SGP pipeline.
+//
+// We extract `book_odds` as a STRING (two-sided pair like "-150 / +100"),
+// the signed `fv` integer, and the row identifiers (game, name, market).
+// `book_odds` is needed so the client's "DK lines as fair" mode can
+// no-vig DK's own two-sided price instead of relying on the sharp FV.
+const TENNIS_FV_PROMPT = `You are extracting tennis prop bets from a screenshot of a spreadsheet. Return ONLY valid JSON, no prose, no markdown fences.
+
+The screenshot's columns may vary across sheets. Map source columns to these OUTPUT field names regardless of what the header says:
+
+  OUTPUT FIELD       <-  SOURCE COLUMN ALIASES (any one)
+  game               <-  game
+  tournament         <-  tournament                          (optional; "" if absent)
+  market             <-  market
+  bet_name           <-  bet_name OR name
+  book               <-  book
+  book_odds          <-  odds OR book_odds                   (DK's two-sided pair, e.g. "-150 / +100")
+  fv                 <-  avg_fv OR fv                        (single signed integer, sharp/consensus FV)
+  devig_odds         <-  devig_odds                          (optional; "" if absent)
+
+The "L" / "M" / "L/U" narrow indicator columns sit just before "book" or just after "bet_name" depending on the sheet. EVERY column to the right of those indicators is shifted one slot — so you MUST read by header text, not by counting positions from the left edge.
+
+═══ HOW TO READ THE TABLE — ROW BY ROW, LEFT TO RIGHT ═══
+1. Find the first data row. Slide your eye RIGHT across it, reading each cell in the order the headers appear.
+2. Map the cell under each header to the OUTPUT field via the alias table above.
+3. Emit one JSON object for that row. Move to the next row.
+DO NOT scan a single column top-to-bottom and jump to the next column — process ONE COMPLETE ROW at a time.
+
+═══ FIELD SEMANTICS ═══
+- game: STRING containing BOTH players with " @ " between them. e.g. "Quentin Halys @ Ugo Humbert". Preserve exactly.
+- tournament: STRING. e.g. "ATP French Open - Paris - France". Empty string if no such column.
+- market: STRING copied EXACTLY. Expected: "1st Set Total Games" OR "Game Spread". Other markets are allowed but the downstream pipeline will ignore them.
+- bet_name: STRING copied EXACTLY.
+    * For 1st-Set-Total rows: "Over X.5" or "Under X.5" (X.5 a numeric line)
+    * For Game-Spread rows: "<Full Player Name> +X.5" or "<Full Player Name> -X.5"
+- book_odds: STRING. The DK two-sided pair like "-150 / +100" or "-110 / -135". Keep both sides and the separator. This is the "odds" column (the DK book column) — NOT the avg_odds / consensus column.
+- fv: SINGLE signed integer copied from the avg_fv (or fv) column. ONE number, never a pair.
+
+═══ MANDATORY SELF-CHECK BEFORE EMITTING EACH ROW ═══
+(a) fv is a SINGLE integer, NO "/" character, NO second number.
+(b) fv MUST NOT equal either half of book_odds or devig_odds for this row.
+(c) fv MUST NOT be the literal word "DraftKings" / "Pinnacle" / "L" / "M" — those are different columns.
+(d) book_odds contains a "/" between two signed numbers (DK's two-sided market).
+(e) game contains "@" between two player names.
+(f) market is the EXACT cell text under "market" — do NOT infer from bet_name.
+
+═══ WORKED EXAMPLES ═══
+1st-set-total row (older layout, "name" column):
+{"game":"Quentin Halys @ Ugo Humbert","tournament":"","market":"1st Set Total Games","bet_name":"Over 8.5","book":"DraftKings","book_odds":"-525 / +300","fv":-578,"devig_odds":"-684 / +490"}
+
+1st-set-total row (newer layout, "bet_name" + "tournament" columns):
+{"game":"Yibing Wu @ Flavio Cobolli","tournament":"ATP French Open - Paris - France","market":"1st Set Total Games","bet_name":"Over 8.5","book":"DraftKings","book_odds":"-110 / -135","fv":-108,"devig_odds":""}
+
+Game-spread row (newer layout):
+{"game":"Alexander Zverev @ Tomas Machac","tournament":"ATP French Open - Paris - France","market":"Game Spread","bet_name":"Tomas Machac +6.5","book":"DraftKings","book_odds":"+100 / -140","fv":100,"devig_odds":""}
+
+WRONG — fv copied from a half of book_odds:
+{"bet_name":"Over 8.5","book_odds":"-525 / +300","fv":-525}
+  — fv was the first half of the DK pair. NEVER do this.
+
+═══ OUTPUT ═══
+Return exactly this JSON shape, nothing else:
+{"rows":[ <one normalized object per data row>, ... ]}`;
+
+/* Parse an OCR row into a canonicalized tennis-leg record.
+   Returns { kind: 'total'|'spread', ... } or { kind: null, reason } when
+   the row can't be classified. */
+function parseTennisRow(r) {
+  if (!r || typeof r !== 'object') return { kind: null, reason: 'bad row' };
+  const game = (r.game || '').trim();
+  if (!game || game.indexOf('@') < 0) return { kind: null, reason: 'no game' };
+  const market = (r.market || '').toLowerCase();
+  // Accept either the new ("bet_name", "avg_fv", "odds") or the old
+  // ("name", "fv", "book_odds") schema — the OCR prompt normalizes them
+  // but we fall back per-key just in case.
+  const name = (r.bet_name || r.name || '').trim();
+  const fv = Number(r.fv != null && r.fv !== '' ? r.fv : r.avg_fv);
+  const bookOdds = String(
+    r.book_odds != null && r.book_odds !== '' ? r.book_odds
+    : (r.odds != null ? r.odds : '')
+  ).trim();
+  const tournament = (r.tournament || '').trim();
+  const players = game.split('@').map(s => s.trim());
+  const [pA, pB] = [players[0] || '', players[1] || ''];
+
+  if (market.indexOf('1st set total') >= 0 || market.indexOf('first set total') >= 0) {
+    // name: "Over 8.5" / "Under 8.5"
+    const m = name.match(/^(Over|Under)\s+(\d+(?:\.\d+)?)$/i);
+    if (!m) return { kind: null, reason: 'unparseable 1st-set name: ' + name };
+    return {
+      kind: 'total',
+      game, pA, pB, tournament,
+      side: m[1][0].toUpperCase() + m[1].slice(1).toLowerCase(), // Over | Under
+      line: Number(m[2]),
+      fv: Number.isFinite(fv) ? fv : null,
+      book_odds: bookOdds,
+      devig_odds: String(r.devig_odds || ''),
+    };
+  }
+
+  if (market.indexOf('game spread') >= 0 || market.indexOf('game handicap') >= 0) {
+    // name: "Tomas Machac +7.5" or "Rafael Jodar -8.5"
+    const m = name.match(/^(.+?)\s+([+-])\s*(\d+(?:\.\d+)?)$/);
+    if (!m) return { kind: null, reason: 'unparseable spread name: ' + name };
+    const player = m[1].trim();
+    const sign = m[2];
+    const mag = Number(m[3]);
+    return {
+      kind: 'spread',
+      game, pA, pB, tournament,
+      player,
+      sign,                       // "+" → dog ; "-" → favorite
+      line: sign === '+' ? mag : -mag,   // signed line
+      mag,
+      isDog: sign === '+',
+      fv: Number.isFinite(fv) ? fv : null,
+      book_odds: bookOdds,
+      devig_odds: String(r.devig_odds || ''),
+    };
+  }
+
+  return { kind: null, reason: 'unknown market: ' + r.market };
+}
+
+app.post('/api/extract-tennis', async (req, res) => {
+  try {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not set on server' });
+
+    const { image, mime } = req.body || {};
+    if (!image) return res.status(400).json({ error: 'Missing image (base64) in body' });
+
+    const body = {
+      model: 'claude-opus-4-7',
+      max_tokens: 8000,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: mime || 'image/png', data: image } },
+          { type: 'text', text: TENNIS_FV_PROMPT }
+        ]
+      }]
+    };
+
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify(body)
+    });
+
+    const j = await r.json();
+    if (j.error) return res.status(500).json({ error: j.error.message || 'Anthropic API error', detail: j.error });
+
+    const txt = j.content && j.content[0] && j.content[0].text || '';
+    const m = txt.match(/\{[\s\S]*\}/);
+    if (!m) return res.status(500).json({ error: 'Could not parse JSON from model output', raw: txt });
+
+    const cleaned = sanitizeModelJson(m[0]);
+    let parsed;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch (e) {
+      return res.status(500).json({ error: 'JSON parse error: ' + e.message, raw: cleaned });
+    }
+
+    const rawRows = Array.isArray(parsed.rows) ? parsed.rows : [];
+    const totals  = [];
+    const spreads = [];
+    const unmatched = [];
+    rawRows.forEach((row) => {
+      const parsedRow = parseTennisRow(row);
+      if (parsedRow.kind === 'total')  return totals.push(parsedRow);
+      if (parsedRow.kind === 'spread') return spreads.push(parsedRow);
+      unmatched.push({ row, reason: parsedRow.reason });
+    });
+
+    return res.json({
+      totals,
+      spreads,
+      unmatched,
+      ocr_stats: { raw_row_count: rawRows.length, totals: totals.length, spreads: spreads.length },
+      sample_rows: rawRows.slice(0, 3),
+    });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/dk/find-sgps-tennis — price a batch of tennis 2-leg SGPs.
+// Request body: { candidates: [{ id, player_dog, event, set1_total_line, set1_total_side, match_handicap_line }] }
+const TENNIS_DK_CACHE = new Map();
+const TENNIS_DK_CACHE_TTL_MS = 10 * 60 * 1000;
+
+function _tennisCacheKey(candidates) {
+  var parts = candidates.map(function (c) {
+    return [c.id, c.player_dog, c.set1_total_line, c.set1_total_side, c.match_handicap_line].join('|');
+  }).slice().sort();
+  return parts.join('\n');
+}
+
+app.post('/api/dk/find-sgps-tennis', async (req, res) => {
+  try {
+    const { candidates } = req.body || {};
+    if (!Array.isArray(candidates) || !candidates.length) {
+      return res.status(400).json({ error: 'candidates array required' });
+    }
+    const key = _tennisCacheKey(candidates);
+    const hit = TENNIS_DK_CACHE.get(key);
+    if (hit && Date.now() - hit.ts < TENNIS_DK_CACHE_TTL_MS) {
+      return res.json(Object.assign({}, hit.body, { cached: true, cache_age_s: Math.round((Date.now() - hit.ts) / 1000) }));
+    }
+    const result = await dkCall(['find-sgps-tennis'], JSON.stringify({ candidates }));
+    if (result.error && !result.results) return res.json(result);
+    if (!result.error) TENNIS_DK_CACHE.set(key, { ts: Date.now(), body: result });
+    return res.json(result);
+  } catch (e) {
+    return res.status(500).json({ error: 'DK find-sgps-tennis failed: ' + e.message });
+  }
+});
+
+// GET /api/dk/tennis-games — DK tennis events for the current league
+// (defaults to French Open men's via DK_TENNIS_LEAGUE_ID env var).
+app.get('/api/dk/tennis-games', async (_req, res) => {
+  try {
+    const result = await dkCall(['games-tennis']);
+    return res.json(result);
+  } catch (e) {
+    return res.status(500).json({ error: 'DK tennis games failed: ' + e.message });
+  }
+});
+
 // ===== SGP AI Insight =====
 app.post('/api/sgp-insight', async (req, res) => {
   try {

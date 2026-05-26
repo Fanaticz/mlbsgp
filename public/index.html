@@ -257,6 +257,7 @@ h1 em{color:var(--ac);font-style:normal;}
   <span class="sport-label">SPORT</span>
   <button class="sport-btn active" id="sportBtnMlb" type="button" onclick="setSport('mlb')" aria-pressed="true"><span class="sport-dot"></span>MLB</button>
   <button class="sport-btn" id="sportBtnNba" type="button" onclick="setSport('nba')" aria-pressed="false"><span class="sport-dot"></span>NBA</button>
+  <button class="sport-btn" id="sportBtnTennis" type="button" onclick="setSport('tennis')" aria-pressed="false"><span class="sport-dot"></span>TENNIS</button>
 </div>
 <div class="nav" id="navMlb">
   <button class="nav-tab active" onclick="showPage('global')">Global</button>
@@ -267,6 +268,9 @@ h1 em{color:var(--ac);font-style:normal;}
 </div>
 <div class="nav" id="navNba" style="display:none">
   <button class="nav-tab active" data-nba-tab="evfinder" onclick="showNbaPage('evfinder')">NBA +EV Finder</button>
+</div>
+<div class="nav" id="navTennis" style="display:none">
+  <button class="nav-tab active" data-tennis-tab="evfinder" onclick="showTennisPage('evfinder')">Tennis +EV (French Open M)</button>
 </div>
 <div class="header" id="headerMlb">
   <div class="badge"><span class="dot"></span> <span id="hdrBadge">Loading historical data...</span></div>
@@ -285,6 +289,20 @@ h1 em{color:var(--ac);font-style:normal;}
     <div class="stat"><span class="n" id="nbaHdrEntries">--</span><span class="l">CORRELATION ENTRIES</span></div>
     <div class="stat"><span class="n" id="nbaHdrPlayers">--</span><span class="l">PLAYERS</span></div>
     <div class="stat"><span class="n" id="nbaHdrSeason">--</span><span class="l">SEASON</span></div>
+  </div>
+</div>
+<!-- Tennis header. Correlations are hardcoded sport-wide priors for
+     men's ATP grand-slam 1st-set SGPs (1st Set Total Over X.5 × dog
+     full-match Game Handicap). No uploaded correlation dataset here —
+     unlike NBA — because the relationship is well-known and the build
+     space is tiny (4 total lines × 1 spread direction). -->
+<div class="header" id="headerTennis" style="display:none">
+  <div class="badge"><span class="dot"></span> <span id="tennisHdrBadge">Upload FV sheets to begin</span></div>
+  <h1>Tennis SGP <em>Correlations</em></h1>
+  <div class="stats-row">
+    <div class="stat"><span class="n">8.5 / 9.5 / 10.5 / 12.5</span><span class="l">1ST SET TOTAL LINES</span></div>
+    <div class="stat"><span class="n">.20 / .27 / .30 / .34</span><span class="l">CORR vs DOG SPREAD</span></div>
+    <div class="stat"><span class="n">FRENCH OPEN M</span><span class="l">SLATE SCOPE</span></div>
   </div>
 </div>
 <div id="page-global" class="page active">
@@ -521,6 +539,61 @@ h1 em{color:var(--ac);font-style:normal;}
        vocabulary. Inert until FV is uploaded. -->
   <div id="nbaDiag" style="display:none;margin-top:10px;background:var(--s1);border:1px solid var(--b1);border-radius:9px;padding:12px 14px;font-family:Space Mono,monospace"></div>
   <div id="nbaBody"></div>
+</div>
+<!-- Tennis page. Two-screenshot upload (one per market) + DK linkage.
+     The user uploads:
+       1) "1st Set Total Games" FV sheet  → all per-match Over/Under X.5 rows
+       2) "Game Spread" FV sheet          → per-match dog/fav handicap rows
+     Rows accumulate across uploads; we merge by `game` string to form
+     SGP candidates. FAIR mode toggle picks the source of pa/pb:
+       FV       — use the `fv` column from the FV sheet (default).
+       DK NO-VIG — derive pa/pb from `book_odds` (DK two-sided) via no-vig.
+     Correlations are hardcoded: line 8.5→.20, 9.5→.27, 10.5→.30, 12.5→.34.
+-->
+<div id="page-tennis-evfinder" class="page tennis-page">
+  <div class="ctrl" style="flex-direction:column;align-items:stretch;gap:10px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span style="font-size:13px;color:var(--cyan);font-family:Syne,sans-serif;font-weight:700">TENNIS SGP +EV — FRENCH OPEN M</span>
+      <span style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace">drop FV sheets per market &rarr; matches merge by game &rarr; SGPs price via DK</span>
+    </div>
+    <!-- Two upload zones, side by side. Each accepts an image; OCR
+         auto-classifies the rows by `market`. Rows accumulate across
+         re-uploads — re-dropping the same market overwrites that bucket. -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div id="tnsDropTotal" style="border:2px dashed var(--b2);border-radius:9px;padding:18px 14px;text-align:center;cursor:pointer;transition:all .15s;background:var(--s2)">
+        <div style="font-size:12px;color:var(--tx);font-weight:600;margin-bottom:4px">1st Set Total Games — FV sheet</div>
+        <div style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">drop screenshot &middot; or click to pick</div>
+        <input type="file" id="tnsFileTotal" accept="image/*" style="display:none" onchange="window.tennisTab&amp;&amp;window.tennisTab.onUpload(event,'total')">
+        <div id="tnsStatusTotal" style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace;margin-top:6px;min-height:14px">no rows yet</div>
+      </div>
+      <div id="tnsDropSpread" style="border:2px dashed var(--b2);border-radius:9px;padding:18px 14px;text-align:center;cursor:pointer;transition:all .15s;background:var(--s2)">
+        <div style="font-size:12px;color:var(--tx);font-weight:600;margin-bottom:4px">Game Spread — FV sheet</div>
+        <div style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">drop screenshot &middot; or click to pick</div>
+        <input type="file" id="tnsFileSpread" accept="image/*" style="display:none" onchange="window.tennisTab&amp;&amp;window.tennisTab.onUpload(event,'spread')">
+        <div id="tnsStatusSpread" style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace;margin-top:6px;min-height:14px">no rows yet</div>
+      </div>
+    </div>
+    <!-- Filter / mode bar. FAIR-source toggle is the headline control. -->
+    <div class="ctrl" id="tnsFilterBar" style="flex-wrap:wrap;gap:10px;align-items:center">
+      <div style="display:inline-flex;border:1px solid var(--b1);border-radius:6px;overflow:hidden;font-family:Space Mono,monospace">
+        <button id="tnsFairFv" onclick="window.tennisTab&amp;&amp;window.tennisTab.setFairMode('fv')" title="Use the FV-sheet `fv` column as the fair price for each leg." style="padding:6px 12px;font-size:11px;font-weight:600;border:none;background:rgba(34,197,94,.12);color:var(--ac);cursor:pointer;letter-spacing:.5px">FV (sheet)</button>
+        <button id="tnsFairDk" onclick="window.tennisTab&amp;&amp;window.tennisTab.setFairMode('dk')" title="No-vig DK's two-sided book_odds. e.g. -150/+100 ⇒ fair -120." style="padding:6px 12px;font-size:11px;font-weight:600;border:none;border-left:1px solid var(--b1);background:transparent;color:var(--mu);cursor:pointer;letter-spacing:.5px">DK NO-VIG</button>
+      </div>
+      <div class="tm-slider"><span class="tm-label">MIN EV%</span><input type="range" id="tnsMinEv" min="-10" max="30" step="1" value="0" oninput="window.tennisTab&amp;&amp;window.tennisTab.onFilter()"><span class="v" id="tnsMinEvV">+0%</span></div>
+      <div id="tnsLineBtns" style="display:inline-flex;gap:4px;flex-wrap:wrap" title="Which 1st-set total lines to include in the candidate set. Defaults to all four hardcoded correlations.">
+        <button class="fb active" data-tns-line="8.5"  type="button" onclick="window.tennisTab&amp;&amp;window.tennisTab.onLineBtn(this)">O 8.5</button>
+        <button class="fb active" data-tns-line="9.5"  type="button" onclick="window.tennisTab&amp;&amp;window.tennisTab.onLineBtn(this)">O 9.5</button>
+        <button class="fb active" data-tns-line="10.5" type="button" onclick="window.tennisTab&amp;&amp;window.tennisTab.onLineBtn(this)">O 10.5</button>
+        <button class="fb active" data-tns-line="12.5" type="button" onclick="window.tennisTab&amp;&amp;window.tennisTab.onLineBtn(this)">O 12.5</button>
+      </div>
+      <label class="tm-toggle" title="If on, skip rows whose DK price couldn't be resolved."><input type="checkbox" id="tnsMatchedOnly" checked onchange="window.tennisTab&amp;&amp;window.tennisTab.onFilter()"><span>MATCHED ONLY</span></label>
+      <button id="tnsScanBtn" type="button" onclick="window.tennisTab&amp;&amp;window.tennisTab.runScan()" style="margin-left:auto;padding:6px 14px;font-size:11px;font-weight:700;border:1px solid var(--ac);border-radius:5px;background:rgba(34,197,94,.14);color:var(--ac);cursor:pointer">&#10024; PRICE SGPs</button>
+      <span id="tnsCount" style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace"></span>
+    </div>
+    <div id="tnsStatus" style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace;min-height:16px"></div>
+  </div>
+  <div id="tnsDiag" style="display:none;margin-top:10px;background:var(--s1);border:1px solid var(--b1);border-radius:9px;padding:12px 14px;font-family:Space Mono,monospace"></div>
+  <div id="tnsBody"></div>
 </div>
 <div class="tm-overlay" id="tmOverlay" onclick="tmClose()"></div>
 <div class="tm-drawer" id="tmDrawer"><button class="tm-close" onclick="tmClose()">&#10005;</button><div id="tmDrawerBody"></div></div>
@@ -2990,26 +3063,31 @@ function getRawCorr(rc,leg1,leg2){if(!rc)return null;var s1=statOf(leg1);var s2=
    keep behaving exactly as before. NBA side is a shell in this phase —
    its page content fills in during Phase 3. */
 function getSportFromUrl(){
-  var m = window.location.search.match(/[?&]sport=(mlb|nba)(?:&|$)/i);
+  var m = window.location.search.match(/[?&]sport=(mlb|nba|tennis)(?:&|$)/i);
   return m ? m[1].toLowerCase() : 'mlb';
 }
 function setSport(sport){
-  if(sport !== 'nba') sport = 'mlb';
+  if(sport !== 'nba' && sport !== 'tennis') sport = 'mlb';
   document.body.classList.toggle('sport-mlb', sport==='mlb');
   document.body.classList.toggle('sport-nba', sport==='nba');
+  document.body.classList.toggle('sport-tennis', sport==='tennis');
   var show = function(id, on){var el=document.getElementById(id); if(el) el.style.display = on ? '' : 'none';};
-  show('navMlb',    sport==='mlb');
-  show('navNba',    sport==='nba');
-  show('headerMlb', sport==='mlb');
-  show('headerNba', sport==='nba');
+  show('navMlb',       sport==='mlb');
+  show('navNba',       sport==='nba');
+  show('navTennis',    sport==='tennis');
+  show('headerMlb',    sport==='mlb');
+  show('headerNba',    sport==='nba');
+  show('headerTennis', sport==='tennis');
   var btnMlb=document.getElementById('sportBtnMlb');
   var btnNba=document.getElementById('sportBtnNba');
+  var btnTns=document.getElementById('sportBtnTennis');
   if(btnMlb){btnMlb.classList.toggle('active', sport==='mlb'); btnMlb.setAttribute('aria-pressed', sport==='mlb');}
   if(btnNba){btnNba.classList.toggle('active', sport==='nba'); btnNba.setAttribute('aria-pressed', sport==='nba');}
+  if(btnTns){btnTns.classList.toggle('active', sport==='tennis'); btnTns.setAttribute('aria-pressed', sport==='tennis');}
   /* Swap which .page is active. We deactivate everything, then re-activate
      the default page for the chosen sport. MLB has 5 pages and we remember
      the last-opened one so toggling back to MLB returns to wherever the
-     user was. NBA has exactly one tab in v1. */
+     user was. NBA + Tennis have one tab each in v1. */
   document.querySelectorAll('.page').forEach(function(e){e.classList.remove('active');});
   if(sport === 'nba'){
     /* Suppress the MLB "Loading historical data…" blocker — NBA doesn't
@@ -3019,6 +3097,11 @@ function setSport(sport){
     var nba=document.getElementById('page-nba-evfinder'); if(nba) nba.classList.add('active');
     showNbaPage('evfinder');
     if(window.nbaTab && typeof window.nbaTab.onActivate==='function') window.nbaTab.onActivate();
+  } else if(sport === 'tennis'){
+    var al = document.getElementById('appLoading'); if(al) al.style.display = 'none';
+    var tns=document.getElementById('page-tennis-evfinder'); if(tns) tns.classList.add('active');
+    showTennisPage('evfinder');
+    if(window.tennisTab && typeof window.tennisTab.onActivate==='function') window.tennisTab.onActivate();
   } else {
     var remembered = window._MLB_LAST_PAGE || 'global';
     var el = document.getElementById('page-' + remembered) || document.getElementById('page-global');
@@ -3033,6 +3116,7 @@ function setSport(sport){
   try {
     var u = new URL(window.location.href);
     if(sport === 'nba') u.searchParams.set('sport','nba');
+    else if(sport === 'tennis') u.searchParams.set('sport','tennis');
     else u.searchParams.delete('sport');
     window.history.replaceState({}, '', u.toString());
   } catch(_){}
@@ -3043,6 +3127,14 @@ function showNbaPage(p){
   if(btn) btn.classList.add('active');
   document.querySelectorAll('.nba-page').forEach(function(e){e.classList.remove('active');});
   var tgt = document.getElementById('page-nba-'+p);
+  if(tgt) tgt.classList.add('active');
+}
+function showTennisPage(p){
+  document.querySelectorAll('#navTennis .nav-tab').forEach(function(t){t.classList.remove('active');});
+  var btn = document.querySelector('#navTennis .nav-tab[data-tennis-tab="'+p+'"]');
+  if(btn) btn.classList.add('active');
+  document.querySelectorAll('.tennis-page').forEach(function(e){e.classList.remove('active');});
+  var tgt = document.getElementById('page-tennis-'+p);
   if(tgt) tgt.classList.add('active');
 }
 /* Apply the URL-derived sport once the DOM is ready so the first paint
@@ -3156,5 +3248,6 @@ function applyPF(){
 </script>
 <script src="/utils/teammateEvTab.js"></script>
 <script src="/utils/nbaEvTab.js"></script>
+<script src="/utils/tennisEvTab.js"></script>
 </body>
 </html>
