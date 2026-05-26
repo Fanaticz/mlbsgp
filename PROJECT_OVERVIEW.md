@@ -39,7 +39,7 @@ Single-page reference for the MLB (+ NBA) Same-Game-Parlay +EV finder. Written t
 
 ### Inputs
 - `MLB-2023-Player-BoxScore-Dataset.xlsx`, `MLB-2024-…`, `MLB-2025-…` — historical per-game rows.
-- `04-16-2026-mlb-season-player-feed.xlsx` — current-season feed, same schema.
+- `05-15-2026-mlb-season-player-feed.xlsx` — current-season feed, same schema.
 - Columns include: player, team, opponent, hand, IP, H, ER, BB, K, W/L, HR, QS, BF, GB, FB.
 
 ### Build steps (offline, idempotent)
