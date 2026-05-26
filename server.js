@@ -1334,6 +1334,39 @@ app.post('/api/dk/find-sgps-tennis', async (req, res) => {
   }
 });
 
+// GET /api/dk/tennis-resolve-league?slug=<slug>
+// Server-side resolution of a DK public slug to the numeric league ID.
+// DK's public URLs switched to slug routing; the backend still uses
+// numeric IDs. Scrapes the public page via dk_api.py's curl_cffi
+// session (which already bypasses Akamai) and extracts the embedded
+// league ID. Cached 30 min per slug — IDs don't change mid-tournament.
+// Default slug=french-open-men so the bare call resolves the current
+// French Open M ID.
+const TENNIS_LEAGUE_RESOLVE_CACHE = new Map();
+const TENNIS_LEAGUE_RESOLVE_TTL_MS = 30 * 60 * 1000;
+
+app.get('/api/dk/tennis-resolve-league', async (req, res) => {
+  try {
+    const slug = String(req.query.slug || 'french-open-men').trim();
+    if (!/^[a-z0-9-]+$/i.test(slug)) {
+      return res.status(400).json({ error: 'slug must be alphanumeric with dashes only' });
+    }
+    const hit = TENNIS_LEAGUE_RESOLVE_CACHE.get(slug);
+    if (hit && Date.now() - hit.ts < TENNIS_LEAGUE_RESOLVE_TTL_MS) {
+      return res.json(Object.assign({}, hit.body, {
+        cached: true, cache_age_s: Math.round((Date.now() - hit.ts) / 1000),
+      }));
+    }
+    const result = await dkCall(['resolve-tennis-league', slug]);
+    if (!result.error && result.league_id) {
+      TENNIS_LEAGUE_RESOLVE_CACHE.set(slug, { ts: Date.now(), body: result });
+    }
+    return res.json(result);
+  } catch (e) {
+    return res.status(500).json({ error: 'DK league resolve failed: ' + e.message });
+  }
+});
+
 // GET /api/dk/tennis-games — DK tennis events for the current league
 // (defaults to French Open men's via DK_TENNIS_LEAGUE_ID env var).
 app.get('/api/dk/tennis-games', async (_req, res) => {
