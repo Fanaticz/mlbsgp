@@ -28,7 +28,7 @@ SOURCES = {
     2023: ("MLB-2023-Player-BoxScore-Dataset.xlsx", "2023-MLB-PLAYER"),
     2024: ("MLB-2024-Player-BoxScore-Dataset.xlsx", "2024-MLB-PLAYER"),
     2025: ("MLB-2025-Player-BoxScore-Dataset.xlsx", "2025-MLB-PLAYER"),
-    2026: ("04-16-2026-mlb-season-player-feed.xlsx", "MLB-2026-PLAYER"),
+    2026: ("05-15-2026-mlb-season-player-feed.xlsx", "MLB-2026-PLAYER"),
 }
 
 # Source column name -> short output key.
