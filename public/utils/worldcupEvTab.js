@@ -1,21 +1,18 @@
 /* worldcupEvTab.js — World Cup (soccer) SGP +EV tab.
-   Flow: upload a Pinnacle match-page PDF → server parses the combo market
-   groups (BTTS/Total, BTTS/Winner, Winner/Total, HT/FT, Odd-Even/Total) →
-   client devigs each group (straight multiplicative no-vig: the groups are
+   Flow: pull live Pinnacle odds for one or more matches → server devigs each
+   combo market group (straight multiplicative no-vig: the groups are
    mutually exclusive + exhaustive partitions, so normalizing the implied
-   probabilities removes the hold) → scan DK for the match's posted combo
-   markets → EV% = fairProb × dkDecimal − 1, ranked descending.
+   probabilities removes the hold) → scan DK for each match's posted combo
+   markets → EV% = fairProb × dkDecimal − 1, ranked descending across games.
    No correlation model needed: Pinnacle prices the joint outcome directly. */
 (function () {
   'use strict';
   var M = window.sgpMath;
 
+  var CATS = ['combos', 'gamelines', 'team', 'corners', 'cards', 'players'];
+
   var state = {
-    parsed: null,        // /api/extract-worldcup-pdf response
-    candidates: [],      // devigged Pinnacle combo selections
-    dkById: {},          // candidate id -> DK match result
-    dkMeta: null,        // event/league info from the DK scan
-    scanning: false,
+    games: [],           // [{ id, label, parsed, candidates, dkById, dkMeta, loading, scanning, error }]
     minEv: 0,
     matchedOnly: true,
     enabledCats: { combos: true, gamelines: true, team: true, corners: true, cards: true, players: true },
@@ -52,110 +49,27 @@
     if (o == null || isNaN(o)) return '—';
     return (o > 0 ? '+' : '') + Math.round(o);
   }
-
-  /* ---- Pinnacle selection-name parsing into structured fields ---- */
-
-  function resultToken(token, home, away) {
-    var t = (token || '').trim().toLowerCase();
-    if (!t) return null;
-    if (t.indexOf('draw') >= 0) return 'draw';
-    var h = (home || '').toLowerCase(), a = (away || '').toLowerCase();
-    if (h && (t === h || t.indexOf(h) >= 0 || h.indexOf(t) >= 0)) return 'home';
-    if (a && (t === a || t.indexOf(a) >= 0 || a.indexOf(t) >= 0)) return 'away';
-    return null;
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
-  function parseTotal(s) {
-    var side = /\bover\b/i.test(s) ? 'Over' : (/\bunder\b/i.test(s) ? 'Under' : null);
-    var m = s.match(/(\d+(?:\.\d+)?)/);
-    return { side: side, line: m ? parseFloat(m[1]) : null };
-  }
-
-  /* Turn one Pinnacle selection name into the structured candidate fields
-     dk_api.py's matcher expects. Returns null when the name doesn't parse —
-     that selection is dropped (and reported) rather than mismatched. */
-  function structureSelection(key, name, home, away) {
-    var parts = name.split('&').map(function (s) { return s.trim(); });
-    if (key === 'btts_total') {
-      if (parts.length !== 2) return null;
-      var t = parseTotal(parts[1]);
-      if (!/^(yes|no)$/i.test(parts[0]) || !t.side) return null;
-      return { btts: parts[0].charAt(0).toUpperCase() === 'Y' ? 'Yes' : 'No', total_side: t.side, total_line: t.line };
-    }
-    if (key === 'btts_winner') {
-      if (parts.length !== 2) return null;
-      var r = resultToken(parts[1], home, away);
-      if (!/^(yes|no)$/i.test(parts[0]) || !r) return null;
-      return { btts: parts[0].charAt(0).toUpperCase() === 'Y' ? 'Yes' : 'No', result: r };
-    }
-    if (key === 'winner_total') {
-      if (parts.length !== 2) return null;
-      var r2 = resultToken(parts[0], home, away);
-      var t2 = parseTotal(parts[1]);
-      if (!r2 || !t2.side) return null;
-      return { result: r2, total_side: t2.side, total_line: t2.line };
-    }
-    if (key === 'oddeven_total') {
-      if (parts.length !== 2) return null;
-      var t3 = parseTotal(parts[1]);
-      if (!/^(odd|even)$/i.test(parts[0]) || !t3.side) return null;
-      return { odd_even: /^odd$/i.test(parts[0]) ? 'Odd' : 'Even', total_side: t3.side, total_line: t3.line };
-    }
-    if (key === 'ht_ft') {
-      var seg = name.split(/\s+-\s+/);
-      if (seg.length !== 2) return null;
-      var ht = resultToken(seg[0], home, away), ft = resultToken(seg[1], home, away);
-      if (!ht || !ft) return null;
-      return { ht: ht, ft: ft };
-    }
-    return null;
-  }
-
-  /* Devig one market group (multiplicative): fair_i = implied_i / Σ implied.
-     Live Pinnacle pulls arrive with server-computed groups (fair_prob +
-     structured fields included) covering far more markets than the PDF can;
-     the PDF path falls back to client-side parsing of the 5 combo groups. */
+  /* Live Pinnacle pulls arrive with server-computed groups (fair_prob +
+     structured fields included). */
   function buildCandidates(parsed) {
-    if (parsed.groups && parsed.groups.length) {
-      var out2 = [];
-      parsed.groups.forEach(function (g, gi) {
-        g.sels.forEach(function (s, i) {
-          if (s.fair_prob == null) return;
-          out2.push({
-            id: g.key + ':' + i,
-            market_key: g.kind,
-            group_label: g.label,
-            name: s.name,
-            pin_odds: s.odds,
-            fair_prob: s.fair_prob,
-            fair_american: s.fair_american != null ? s.fair_american : M.probToAmerican(s.fair_prob),
-            fields: s.fields || null,
-          });
-        });
-      });
-      return out2;
-    }
     var out = [];
-    var keys = Object.keys(MARKET_LABELS);
-    keys.forEach(function (key) {
-      var sels = (parsed.markets || {})[key] || [];
-      if (sels.length < 2) return;
-      var implied = sels.map(function (s) { return M.americanToProb(s.odds); });
-      if (implied.some(function (p) { return p == null; })) return;
-      var sum = implied.reduce(function (a, b) { return a + b; }, 0);
-      if (sum <= 0) return;
-      sels.forEach(function (s, i) {
-        var fields = structureSelection(key, s.name, parsed.home, parsed.away);
-        var fairProb = implied[i] / sum;
+    (parsed.groups || []).forEach(function (g) {
+      g.sels.forEach(function (s, i) {
+        if (s.fair_prob == null) return;
         out.push({
-          id: key + ':' + i,
-          market_key: key,
+          id: g.key + ':' + i,
+          market_key: g.kind,
+          group_label: g.label,
           name: s.name,
           pin_odds: s.odds,
-          fair_prob: fairProb,
-          fair_american: M.probToAmerican(fairProb),
-          group_hold_pct: (sum - 1) * 100,
-          fields: fields,            // null → can't be matched on DK
+          fair_prob: s.fair_prob,
+          fair_american: s.fair_american != null ? s.fair_american : M.probToAmerican(s.fair_prob),
+          fields: s.fields || null,
         });
       });
     });
@@ -163,19 +77,6 @@
   }
 
   /* ---- live pull from Pinnacle ---- */
-
-  function applyParsed(j, sourceLabel) {
-    state.parsed = j;
-    state.candidates = buildCandidates(j);
-    state.dkById = {};
-    state.dkMeta = null;
-    var badge = $('wcHdrBadge');
-    if (badge) badge.textContent = j.home + ' vs ' + j.away + (j.kickoff ? ' · ' + j.kickoff : '');
-    setStatus(j.home + ' vs ' + j.away + ' (' + sourceLabel + ') — ' + state.candidates.length +
-      ' SGP selections across ' + (j.sgp_markets_found || []).length + ' combo markets. Scanning DK…');
-    render();
-    runScan();
-  }
 
   function loadPinnySlate() {
     var sel = $('wcPinMatch');
@@ -188,13 +89,13 @@
         if (j.error) { setStatus('Pinnacle slate: ' + j.error, true); return; }
         var matches = j.matches || [];
         if (!sel) return;
-        sel.innerHTML = '<option value="">— pick a match (' + matches.length + ') —</option>' +
+        sel.innerHTML = '<option value="">— add a match (' + matches.length + ') —</option>' +
           matches.map(function (m) {
             var d = m.startTime ? m.startTime.replace('T', ' ').replace(':00Z', 'Z') : '';
-            return '<option value="' + m.id + '">' + m.home + ' vs ' + m.away + (d ? ' · ' + d : '') + '</option>';
+            return '<option value="' + m.id + '">' + esc(m.home + ' vs ' + m.away) + (d ? ' · ' + d : '') + '</option>';
           }).join('');
         sel.style.display = '';
-        setStatus('Pinnacle slate loaded — ' + matches.length + ' World Cup matches. Pick one.');
+        setStatus('Pinnacle slate loaded — ' + matches.length + ' World Cup matches. Pick one or more.');
       })
       .catch(function (e) {
         if (btn) { btn.disabled = false; btn.textContent = '↻ LOAD SLATE'; }
@@ -202,51 +103,63 @@
       });
   }
 
+  function findGame(mid) {
+    for (var i = 0; i < state.games.length; i++) if (state.games[i].id === mid) return state.games[i];
+    return null;
+  }
+
   function onPinMatchPick() {
     var sel = $('wcPinMatch');
     var mid = sel && sel.value;
     if (!mid) return;
-    setStatus('Pulling live Pinnacle odds…');
+    var label = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : mid;
+    sel.value = '';                     // reset so another match can be added
+    if (findGame(mid)) { setStatus(label + ' is already loaded.'); return; }
+    var game = { id: mid, label: label, parsed: null, candidates: [], dkById: {}, dkMeta: null, loading: true, scanning: false, error: null };
+    state.games.push(game);
+    renderGames();
+    setStatus('Pulling live Pinnacle odds for ' + label + '…');
     fetch('/api/pinnacle/worldcup-match/' + mid)
       .then(function (r) { return r.json(); })
       .then(function (j) {
-        if (j.error) { setStatus('Pinnacle pull: ' + j.error, true); return; }
-        applyParsed(j, 'live pinny');
+        game.loading = false;
+        if (j.error) { game.error = j.error; setStatus('Pinnacle pull: ' + j.error, true); renderGames(); render(); return; }
+        game.parsed = j;
+        game.candidates = buildCandidates(j);
+        game.label = j.home + ' vs ' + j.away;
+        setStatus(j.home + ' vs ' + j.away + ' — ' + game.candidates.length +
+          ' selections across ' + (j.sgp_markets_found || []).length + ' combo markets. Scanning DK…');
+        renderGames();
+        render();
+        scanGame(game);
       })
-      .catch(function (e) { setStatus('Pinnacle pull failed: ' + e.message, true); });
+      .catch(function (e) {
+        game.loading = false;
+        game.error = e.message;
+        setStatus('Pinnacle pull failed: ' + e.message, true);
+        renderGames();
+      });
   }
 
-  /* ---- upload ---- */
-
-  function onUpload(ev) {
-    var file = ev && ev.target && ev.target.files && ev.target.files[0];
-    if (!file) return;
-    ev.target.value = '';
-    var fd = new FormData();
-    fd.append('file', file);
-    setStatus('Parsing PDF…');
-    fetch('/api/extract-worldcup-pdf', { method: 'POST', body: fd })
-      .then(function (r) { return r.json(); })
-      .then(function (j) {
-        if (j.error) { setStatus(j.error, true); return; }
-        applyParsed(j, 'pdf');
-      })
-      .catch(function (e) { setStatus('Upload failed: ' + e.message, true); });
+  function removeGame(mid) {
+    state.games = state.games.filter(function (g) { return g.id !== mid; });
+    renderGames();
+    render();
   }
 
   /* ---- DK scan ---- */
 
-  function runScan() {
-    if (!state.parsed) { setStatus('Upload a Pinnacle PDF first.', true); return; }
-    if (state.scanning) return;
-    var cands = state.candidates.filter(function (c) { return c.fields; });
-    if (!cands.length) { setStatus('No parseable SGP candidates in this PDF.', true); return; }
-    state.scanning = true;
-    var btn = $('wcScanBtn');
-    if (btn) { btn.disabled = true; btn.textContent = 'SCANNING…'; }
+  function scanGame(game) {
+    if (!game.parsed || game.scanning) return;
+    var cands = game.candidates.filter(function (c) { return c.fields; });
+    if (!cands.length) { game.error = 'no parseable SGP candidates'; renderGames(); return; }
+    game.scanning = true;
+    game.error = null;
+    renderGames();
+    syncScanBtn();
     var body = {
-      home: state.parsed.home,
-      away: state.parsed.away,
+      home: game.parsed.home,
+      away: game.parsed.away,
       candidates: cands.map(function (c) {
         return Object.assign({ id: c.id, market_key: c.market_key }, c.fields);
       }),
@@ -260,33 +173,52 @@
     })
       .then(function (r) { return r.json(); })
       .then(function (j) {
-        state.scanning = false;
-        if (btn) { btn.disabled = false; btn.textContent = '✨ SCAN DK'; }
+        game.scanning = false;
+        syncScanBtn();
         if (j.error) {
-          setStatus('DK scan: ' + j.error + (j.dk_events ? ' · slate: ' + j.dk_events : ''), true);
+          game.error = 'DK: ' + j.error;
+          setStatus('DK scan (' + game.label + '): ' + j.error + (j.dk_events ? ' · slate: ' + j.dk_events : ''), true);
+          renderGames();
           render();
           return;
         }
-        state.dkById = {};
-        (j.results || []).forEach(function (r) { state.dkById[r.id] = r; });
-        state.dkMeta = j;
+        game.dkById = {};
+        (j.results || []).forEach(function (r) { game.dkById[r.id] = r; });
+        game.dkMeta = j;
         var matched = (j.results || []).filter(function (r) { return r.matched; }).length;
         setStatus('DK event: ' + (j.event_name || (j.away + ' @ ' + j.home)) +
           ' — matched ' + matched + '/' + (j.results || []).length + ' selections' +
           (j.cached ? ' (cached ' + j.cache_age_s + 's)' : ''));
+        renderGames();
         render();
       })
       .catch(function (e) {
-        state.scanning = false;
-        if (btn) { btn.disabled = false; btn.textContent = '✨ SCAN DK'; }
-        setStatus('DK scan failed: ' + e.message, true);
+        game.scanning = false;
+        syncScanBtn();
+        game.error = 'DK scan failed: ' + e.message;
+        setStatus('DK scan failed (' + game.label + '): ' + e.message, true);
+        renderGames();
       });
+  }
+
+  function runScan() {
+    var loaded = state.games.filter(function (g) { return g.parsed; });
+    if (!loaded.length) { setStatus('Load the slate and pick a match first.', true); return; }
+    loaded.forEach(scanGame);
+  }
+
+  function syncScanBtn() {
+    var btn = $('wcScanBtn');
+    if (!btn) return;
+    var busy = state.games.some(function (g) { return g.scanning; });
+    btn.disabled = busy;
+    btn.textContent = busy ? 'SCANNING…' : '✨ SCAN DK';
   }
 
   /* ---- EV + render ---- */
 
-  function evFor(cand) {
-    var dk = state.dkById[cand.id];
+  function evFor(game, cand) {
+    var dk = game.dkById[cand.id];
     if (!dk || !dk.matched) return null;
     var dec = dk.dk_decimal != null ? parseFloat(dk.dk_decimal) : null;
     if (!dec || isNaN(dec) || dec <= 1) dec = M.americanToDecimal(dk.dk_american);
@@ -299,19 +231,55 @@
     };
   }
 
+  function renderGames() {
+    var el = $('wcGames');
+    if (!el) return;
+    if (!state.games.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
+    el.style.display = 'flex';
+    el.innerHTML = state.games.map(function (g) {
+      var stat;
+      if (g.loading) stat = 'pulling…';
+      else if (g.scanning) stat = 'scanning DK…';
+      else if (g.error) stat = '⚠ ' + g.error;
+      else if (g.dkMeta) {
+        var matched = (g.dkMeta.results || []).filter(function (r) { return r.matched; }).length;
+        stat = matched + '/' + (g.dkMeta.results || []).length + ' matched';
+      } else stat = g.candidates.length + ' sels';
+      return '<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid ' +
+        (g.error ? 'var(--red, #f87171)' : 'var(--b1)') + ';border-radius:5px;background:var(--s1);font-size:10px;font-family:Space Mono,monospace">' +
+        '<span style="color:var(--tx)">' + esc(g.label) + '</span>' +
+        '<span style="color:' + (g.error ? 'var(--red, #f87171)' : 'var(--mu)') + '" title="' + esc(g.error || '') + '">' + esc(stat) + '</span>' +
+        '<button type="button" onclick="window.worldcupTab.removeGame(\'' + esc(g.id) + '\')" style="border:none;background:none;color:var(--mu);cursor:pointer;font-size:11px;padding:0" title="Remove this match">✕</button>' +
+        '</span>';
+    }).join('');
+    var badge = $('wcHdrBadge');
+    if (badge) {
+      var loaded = state.games.filter(function (g) { return g.parsed; });
+      badge.textContent = loaded.length ? loaded.map(function (g) { return g.label; }).join(' · ')
+        : 'Load the Pinnacle slate and pick matches';
+    }
+  }
+
   function render() {
     var bodyEl = $('wcBody');
     if (!bodyEl) return;
-    if (!state.parsed) {
-      bodyEl.innerHTML = '<div class="empty">Upload a Pinnacle World Cup match PDF to begin.</div>';
+    var loaded = state.games.filter(function (g) { return g.parsed; });
+    if (!loaded.length) {
+      bodyEl.innerHTML = '<div class="empty">Load the Pinnacle slate and pick one or more matches to begin.</div>';
+      var cnt0 = $('wcCount');
+      if (cnt0) cnt0.textContent = '';
       return;
     }
-    var rows = state.candidates
-      .filter(function (c) { return state.enabledCats[KIND_CATS[c.market_key] || 'team'] !== false; })
-      .map(function (c) {
-        var dk = state.dkById[c.id];
-        return { c: c, dk: dk, ev: evFor(c) };
-      })
+    var multi = loaded.length > 1;
+    var rows = [];
+    loaded.forEach(function (g) {
+      g.candidates
+        .filter(function (c) { return state.enabledCats[KIND_CATS[c.market_key] || 'team'] !== false; })
+        .forEach(function (c) {
+          rows.push({ g: g, c: c, dk: g.dkById[c.id], ev: evFor(g, c) });
+        });
+    });
+    rows = rows
       .filter(function (r) {
         if (state.matchedOnly && !r.ev) return false;
         if (r.ev && r.ev.evPct < state.minEv) return false;
@@ -332,6 +300,7 @@
 
     var html = '<table style="width:100%;border-collapse:collapse;font-family:Space Mono,monospace;font-size:12px">' +
       '<thead><tr style="color:var(--mu);font-size:10px;letter-spacing:.5px;text-align:left">' +
+      (multi ? '<th style="padding:8px 10px">GAME</th>' : '') +
       '<th style="padding:8px 10px">MARKET</th><th style="padding:8px 10px">SELECTION</th>' +
       '<th style="padding:8px 10px;text-align:right">PIN</th>' +
       '<th style="padding:8px 10px;text-align:right" title="No-vig fair price from the devigged Pinnacle group">FV</th>' +
@@ -355,6 +324,7 @@
       }
       var missTitle = dk && dk.missing ? String(dk.missing) : '';
       html += '<tr style="border-top:1px solid var(--b1)">' +
+        (multi ? '<td style="padding:7px 10px;color:var(--mu);white-space:nowrap">' + esc(r.g.parsed.home + ' v ' + r.g.parsed.away) + '</td>' : '') +
         '<td style="padding:7px 10px;color:var(--cyan);white-space:nowrap">' + (c.group_label || MARKET_LABELS[c.market_key] || c.market_key) +
           (dk && dk.via === 'sgp' ? ' <span style="font-size:9px;color:var(--ac);border:1px solid var(--ac);border-radius:3px;padding:0 3px" title="Priced as a real 2-leg SGP via DK calculateBets — boost-eligible. Legs: ' + String(dk.dk_market || '').replace(/"/g, '&quot;') + '">SGP</span>' : '') + '</td>' +
         '<td style="padding:7px 10px;color:var(--tx)">' + c.name + '</td>' +
@@ -368,23 +338,13 @@
     });
     html += '</tbody></table>';
 
-    // Group-hold footnote (PDF path only) + DK debug market-name list.
-    var holds = {};
-    state.candidates.forEach(function (c) {
-      if (c.group_hold_pct != null) holds[c.market_key] = c.group_hold_pct;
+    loaded.forEach(function (g) {
+      if (g.dkMeta && g.dkMeta.available_markets && g.dkMeta.available_markets.length) {
+        html += '<details style="margin-top:6px;font-size:10px;color:var(--mu);font-family:Space Mono,monospace">' +
+          '<summary style="cursor:pointer">DK markets seen on ' + esc(g.label) + ' (' + g.dkMeta.available_markets.length + ')</summary>' +
+          '<div style="margin-top:4px;line-height:1.7">' + g.dkMeta.available_markets.join(' · ') + '</div></details>';
+      }
     });
-    var holdKeys = Object.keys(holds);
-    if (holdKeys.length) {
-      var holdTxt = holdKeys.map(function (k) {
-        return (MARKET_LABELS[k] || k) + ' ' + holds[k].toFixed(1) + '%';
-      }).join(' · ');
-      html += '<div style="margin-top:10px;font-size:10px;color:var(--mu);font-family:Space Mono,monospace">Pinnacle hold removed per group: ' + holdTxt + '</div>';
-    }
-    if (state.dkMeta && state.dkMeta.available_markets && state.dkMeta.available_markets.length) {
-      html += '<details style="margin-top:6px;font-size:10px;color:var(--mu);font-family:Space Mono,monospace">' +
-        '<summary style="cursor:pointer">DK markets seen on this event (' + state.dkMeta.available_markets.length + ')</summary>' +
-        '<div style="margin-top:4px;line-height:1.7">' + state.dkMeta.available_markets.join(' · ') + '</div></details>';
-    }
     bodyEl.innerHTML = html;
   }
 
@@ -402,11 +362,17 @@
     render();
   }
 
+  /* Click selects ONLY that category. Clicking the lone active category
+     again restores all categories. */
   function onMarketBtn(btn) {
     var key = btn.getAttribute('data-wc-cat');
     if (!key) return;
-    state.enabledCats[key] = !state.enabledCats[key];
-    btn.classList.toggle('active', state.enabledCats[key]);
+    var active = CATS.filter(function (k) { return state.enabledCats[k]; });
+    var soloAlready = active.length === 1 && active[0] === key;
+    CATS.forEach(function (k) { state.enabledCats[k] = soloAlready ? true : (k === key); });
+    document.querySelectorAll('[data-wc-cat]').forEach(function (b) {
+      b.classList.toggle('active', !!state.enabledCats[b.getAttribute('data-wc-cat')]);
+    });
     render();
   }
 
@@ -421,28 +387,14 @@
     activated = true;
     var el = $('wcLeagueId');
     if (el) try { el.value = localStorage.getItem('wcLeagueId') || ''; } catch (_) {}
-    var drop = $('wcDrop');
-    if (drop) {
-      ['dragover', 'dragenter'].forEach(function (evn) {
-        drop.addEventListener(evn, function (e) { e.preventDefault(); drop.style.borderColor = 'var(--ac)'; });
-      });
-      ['dragleave', 'drop'].forEach(function (evn) {
-        drop.addEventListener(evn, function (e) { e.preventDefault(); drop.style.borderColor = 'var(--b2)'; });
-      });
-      drop.addEventListener('drop', function (e) {
-        var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-        if (f) onUpload({ target: { files: [f], value: '' } });
-      });
-      drop.addEventListener('click', function () { var fi = $('wcFile'); if (fi) fi.click(); });
-    }
     render();
   }
 
   window.worldcupTab = {
     onActivate: onActivate,
-    onUpload: onUpload,
     loadPinnySlate: loadPinnySlate,
     onPinMatchPick: onPinMatchPick,
+    removeGame: removeGame,
     runScan: runScan,
     onFilter: onFilter,
     onMarketBtn: onMarketBtn,

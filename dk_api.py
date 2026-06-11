@@ -2346,11 +2346,29 @@ def _norm_soccer(s):
     return re.sub(r"\s+", " ", s.lower()).strip()
 
 
+# Country names that differ between Pinnacle and DK (official FIFA name vs
+# common short form). Each set's members all refer to the same nation.
+_SOCCER_COUNTRY_ALIASES = [
+    {"czechia", "czech republic"},
+    {"south korea", "korea republic"},
+    {"north korea", "korea dpr"},
+    {"usa", "united states", "united states of america"},
+    {"iran", "ir iran"},
+    {"turkey", "turkiye"},
+    {"ivory coast", "cote d'ivoire", "cote divoire"},
+    {"bosnia", "bosnia and herzegovina", "bosnia & herzegovina"},
+    {"cape verde", "cabo verde"},
+    {"uae", "united arab emirates"},
+    {"dr congo", "congo dr", "democratic republic of congo"},
+]
+
 def _team_matches_soccer(want, have):
     w, h = _norm_soccer(want), _norm_soccer(have)
     if not w or not h:
         return False
-    return w == h or w in h or h in w
+    if w == h or w in h or h in w:
+        return True
+    return any(w in al and h in al for al in _SOCCER_COUNTRY_ALIASES)
 
 
 def _event_for_soccer_match(home, away, events):
