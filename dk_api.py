@@ -2346,8 +2346,39 @@ def _norm_soccer(s):
     return re.sub(r"\s+", " ", s.lower()).strip()
 
 
+# Pinnacle and DK disagree on several country names ("Czechia" vs "Czech
+# Republic" broke the South Korea–Czechia event match). Both sides map to
+# one canonical form before comparison.
+_TEAM_ALIASES = {
+    "czechia": "czech republic",
+    "czech rep": "czech republic",
+    "korea republic": "south korea",
+    "korea rep": "south korea",
+    "korea dpr": "north korea",
+    "dpr korea": "north korea",
+    "turkiye": "turkey",
+    "ir iran": "iran",
+    "cote divoire": "ivory coast",
+    "bosnia and herzegovina": "bosnia",
+    "bosnia herzegovina": "bosnia",
+    "cabo verde": "cape verde",
+    "united states": "usa",
+    "united states of america": "usa",
+    "united arab emirates": "uae",
+    "holland": "netherlands",
+    "republic of ireland": "ireland",
+}
+
+
+def _canon_team(s):
+    n = _norm_soccer(s)
+    n = re.sub(r"[^a-z0-9 ]", "", n)
+    n = re.sub(r"\s+", " ", n).strip()
+    return _TEAM_ALIASES.get(n, n)
+
+
 def _team_matches_soccer(want, have):
-    w, h = _norm_soccer(want), _norm_soccer(have)
+    w, h = _canon_team(want), _canon_team(have)
     if not w or not h:
         return False
     return w == h or w in h or h in w

@@ -1,33 +1,24 @@
 /* worldcupEvTab.js — World Cup (soccer) SGP +EV tab.
-   Flow: upload a Pinnacle match-page PDF → server parses the combo market
-   groups (BTTS/Total, BTTS/Winner, Winner/Total, HT/FT, Odd-Even/Total) →
-   client devigs each group (straight multiplicative no-vig: the groups are
-   mutually exclusive + exhaustive partitions, so normalizing the implied
-   probabilities removes the hold) → scan DK for the match's posted combo
-   markets → EV% = fairProb × dkDecimal − 1, ranked descending.
-   No correlation model needed: Pinnacle prices the joint outcome directly. */
+   Flow: LOAD SLATE pulls the World Cup match list from Pinnacle's guest
+   API → check one or more matches → PULL & SCAN fetches each match's
+   markets live (server devigs every exhaustive group to fair probs) and
+   prices the same selections on DK (combos as real 2-leg SGPs via DK's
+   calculateBets, straights off the listed odds). One merged table across
+   all selected games, ranked by EV% = fairProb × dkDecimal − 1. */
 (function () {
   'use strict';
   var M = window.sgpMath;
 
   var state = {
-    parsed: null,        // /api/extract-worldcup-pdf response
-    candidates: [],      // devigged Pinnacle combo selections
-    dkById: {},          // candidate id -> DK match result
-    dkMeta: null,        // event/league info from the DK scan
+    slate: [],           // [{id, home, away, startTime}] from pinnacle
+    games: [],           // pulled games: {mid, label, parsed, candidates, dkById, dkMeta, error}
     scanning: false,
-    minEv: 0,
+    minEv: -10,          // slider floor == "ALL" (no EV cutoff)
     matchedOnly: true,
     enabledCats: { combos: true, gamelines: true, team: true, corners: true, cards: true, players: true },
   };
 
-  var MARKET_LABELS = {
-    btts_total: 'BTTS / Total Goals',
-    btts_winner: 'BTTS / Winner',
-    winner_total: 'Winner / Total Goals',
-    ht_ft: 'HT / FT',
-    oddeven_total: 'Odd-Even / Total',
-  };
+  var ALL_CATS = ['combos', 'gamelines', 'team', 'corners', 'cards', 'players'];
 
   /* Filter category per market kind. Combos = the joint SGP markets; the
      rest are straight Pinnacle partitions paired with DK's listed markets. */
@@ -53,132 +44,31 @@
     return (o > 0 ? '+' : '') + Math.round(o);
   }
 
-  /* ---- Pinnacle selection-name parsing into structured fields ---- */
+  /* ---- candidates from the server-devigged groups ---- */
 
-  function resultToken(token, home, away) {
-    var t = (token || '').trim().toLowerCase();
-    if (!t) return null;
-    if (t.indexOf('draw') >= 0) return 'draw';
-    var h = (home || '').toLowerCase(), a = (away || '').toLowerCase();
-    if (h && (t === h || t.indexOf(h) >= 0 || h.indexOf(t) >= 0)) return 'home';
-    if (a && (t === a || t.indexOf(a) >= 0 || a.indexOf(t) >= 0)) return 'away';
-    return null;
-  }
-
-  function parseTotal(s) {
-    var side = /\bover\b/i.test(s) ? 'Over' : (/\bunder\b/i.test(s) ? 'Under' : null);
-    var m = s.match(/(\d+(?:\.\d+)?)/);
-    return { side: side, line: m ? parseFloat(m[1]) : null };
-  }
-
-  /* Turn one Pinnacle selection name into the structured candidate fields
-     dk_api.py's matcher expects. Returns null when the name doesn't parse —
-     that selection is dropped (and reported) rather than mismatched. */
-  function structureSelection(key, name, home, away) {
-    var parts = name.split('&').map(function (s) { return s.trim(); });
-    if (key === 'btts_total') {
-      if (parts.length !== 2) return null;
-      var t = parseTotal(parts[1]);
-      if (!/^(yes|no)$/i.test(parts[0]) || !t.side) return null;
-      return { btts: parts[0].charAt(0).toUpperCase() === 'Y' ? 'Yes' : 'No', total_side: t.side, total_line: t.line };
-    }
-    if (key === 'btts_winner') {
-      if (parts.length !== 2) return null;
-      var r = resultToken(parts[1], home, away);
-      if (!/^(yes|no)$/i.test(parts[0]) || !r) return null;
-      return { btts: parts[0].charAt(0).toUpperCase() === 'Y' ? 'Yes' : 'No', result: r };
-    }
-    if (key === 'winner_total') {
-      if (parts.length !== 2) return null;
-      var r2 = resultToken(parts[0], home, away);
-      var t2 = parseTotal(parts[1]);
-      if (!r2 || !t2.side) return null;
-      return { result: r2, total_side: t2.side, total_line: t2.line };
-    }
-    if (key === 'oddeven_total') {
-      if (parts.length !== 2) return null;
-      var t3 = parseTotal(parts[1]);
-      if (!/^(odd|even)$/i.test(parts[0]) || !t3.side) return null;
-      return { odd_even: /^odd$/i.test(parts[0]) ? 'Odd' : 'Even', total_side: t3.side, total_line: t3.line };
-    }
-    if (key === 'ht_ft') {
-      var seg = name.split(/\s+-\s+/);
-      if (seg.length !== 2) return null;
-      var ht = resultToken(seg[0], home, away), ft = resultToken(seg[1], home, away);
-      if (!ht || !ft) return null;
-      return { ht: ht, ft: ft };
-    }
-    return null;
-  }
-
-  /* Devig one market group (multiplicative): fair_i = implied_i / Σ implied.
-     Live Pinnacle pulls arrive with server-computed groups (fair_prob +
-     structured fields included) covering far more markets than the PDF can;
-     the PDF path falls back to client-side parsing of the 5 combo groups. */
-  function buildCandidates(parsed) {
-    if (parsed.groups && parsed.groups.length) {
-      var out2 = [];
-      parsed.groups.forEach(function (g, gi) {
-        g.sels.forEach(function (s, i) {
-          if (s.fair_prob == null) return;
-          out2.push({
-            id: g.key + ':' + i,
-            market_key: g.kind,
-            group_label: g.label,
-            name: s.name,
-            pin_odds: s.odds,
-            fair_prob: s.fair_prob,
-            fair_american: s.fair_american != null ? s.fair_american : M.probToAmerican(s.fair_prob),
-            fields: s.fields || null,
-          });
-        });
-      });
-      return out2;
-    }
+  function buildCandidates(mid, parsed) {
     var out = [];
-    var keys = Object.keys(MARKET_LABELS);
-    keys.forEach(function (key) {
-      var sels = (parsed.markets || {})[key] || [];
-      if (sels.length < 2) return;
-      var implied = sels.map(function (s) { return M.americanToProb(s.odds); });
-      if (implied.some(function (p) { return p == null; })) return;
-      var sum = implied.reduce(function (a, b) { return a + b; }, 0);
-      if (sum <= 0) return;
-      sels.forEach(function (s, i) {
-        var fields = structureSelection(key, s.name, parsed.home, parsed.away);
-        var fairProb = implied[i] / sum;
+    (parsed.groups || []).forEach(function (g) {
+      g.sels.forEach(function (s, i) {
+        if (s.fair_prob == null) return;
         out.push({
-          id: key + ':' + i,
-          market_key: key,
+          id: mid + '|' + g.key + ':' + i,
+          market_key: g.kind,
+          group_label: g.label,
           name: s.name,
           pin_odds: s.odds,
-          fair_prob: fairProb,
-          fair_american: M.probToAmerican(fairProb),
-          group_hold_pct: (sum - 1) * 100,
-          fields: fields,            // null → can't be matched on DK
+          fair_prob: s.fair_prob,
+          fair_american: s.fair_american != null ? s.fair_american : M.probToAmerican(s.fair_prob),
+          fields: s.fields || null,
         });
       });
     });
     return out;
   }
 
-  /* ---- live pull from Pinnacle ---- */
-
-  function applyParsed(j, sourceLabel) {
-    state.parsed = j;
-    state.candidates = buildCandidates(j);
-    state.dkById = {};
-    state.dkMeta = null;
-    var badge = $('wcHdrBadge');
-    if (badge) badge.textContent = j.home + ' vs ' + j.away + (j.kickoff ? ' · ' + j.kickoff : '');
-    setStatus(j.home + ' vs ' + j.away + ' (' + sourceLabel + ') — ' + state.candidates.length +
-      ' SGP selections across ' + (j.sgp_markets_found || []).length + ' combo markets. Scanning DK…');
-    render();
-    runScan();
-  }
+  /* ---- slate load + multi-game pull ---- */
 
   function loadPinnySlate() {
-    var sel = $('wcPinMatch');
     var btn = $('wcPinLoad');
     if (btn) { btn.disabled = true; btn.textContent = 'LOADING…'; }
     fetch('/api/pinnacle/worldcup-games')
@@ -186,15 +76,9 @@
       .then(function (j) {
         if (btn) { btn.disabled = false; btn.textContent = '↻ LOAD SLATE'; }
         if (j.error) { setStatus('Pinnacle slate: ' + j.error, true); return; }
-        var matches = j.matches || [];
-        if (!sel) return;
-        sel.innerHTML = '<option value="">— pick a match (' + matches.length + ') —</option>' +
-          matches.map(function (m) {
-            var d = m.startTime ? m.startTime.replace('T', ' ').replace(':00Z', 'Z') : '';
-            return '<option value="' + m.id + '">' + m.home + ' vs ' + m.away + (d ? ' · ' + d : '') + '</option>';
-          }).join('');
-        sel.style.display = '';
-        setStatus('Pinnacle slate loaded — ' + matches.length + ' World Cup matches. Pick one.');
+        state.slate = j.matches || [];
+        renderSlatePicker();
+        setStatus('Pinnacle slate loaded — ' + state.slate.length + ' World Cup matches. Check the games you want, then PULL & SCAN.');
       })
       .catch(function (e) {
         if (btn) { btn.disabled = false; btn.textContent = '↻ LOAD SLATE'; }
@@ -202,91 +86,136 @@
       });
   }
 
-  function onPinMatchPick() {
-    var sel = $('wcPinMatch');
-    var mid = sel && sel.value;
-    if (!mid) return;
-    setStatus('Pulling live Pinnacle odds…');
-    fetch('/api/pinnacle/worldcup-match/' + mid)
-      .then(function (r) { return r.json(); })
-      .then(function (j) {
-        if (j.error) { setStatus('Pinnacle pull: ' + j.error, true); return; }
-        applyParsed(j, 'live pinny');
-      })
-      .catch(function (e) { setStatus('Pinnacle pull failed: ' + e.message, true); });
+  function renderSlatePicker() {
+    var box = $('wcPinMatches');
+    if (!box) return;
+    if (!state.slate.length) { box.style.display = 'none'; return; }
+    box.style.display = '';
+    box.innerHTML = state.slate.map(function (m) {
+      var d = m.startTime ? m.startTime.replace('T', ' ').replace(':00Z', 'Z') : '';
+      return '<label style="display:flex;gap:8px;align-items:center;padding:3px 6px;cursor:pointer;white-space:nowrap">' +
+        '<input type="checkbox" value="' + m.id + '" style="accent-color:var(--ac)">' +
+        '<span style="color:var(--tx)">' + m.home + ' vs ' + m.away + '</span>' +
+        '<span style="color:var(--mu);font-size:10px">' + d + '</span></label>';
+    }).join('');
+    var pull = $('wcPullBtn');
+    if (pull) pull.style.display = '';
   }
 
-  /* ---- upload ---- */
-
-  function onUpload(ev) {
-    var file = ev && ev.target && ev.target.files && ev.target.files[0];
-    if (!file) return;
-    ev.target.value = '';
-    var fd = new FormData();
-    fd.append('file', file);
-    setStatus('Parsing PDF…');
-    fetch('/api/extract-worldcup-pdf', { method: 'POST', body: fd })
-      .then(function (r) { return r.json(); })
-      .then(function (j) {
-        if (j.error) { setStatus(j.error, true); return; }
-        applyParsed(j, 'pdf');
-      })
-      .catch(function (e) { setStatus('Upload failed: ' + e.message, true); });
+  function selectedMatchIds() {
+    var box = $('wcPinMatches');
+    if (!box) return [];
+    return Array.prototype.slice.call(box.querySelectorAll('input:checked'))
+      .map(function (cb) { return cb.value; });
   }
 
-  /* ---- DK scan ---- */
-
-  function runScan() {
-    if (!state.parsed) { setStatus('Upload a Pinnacle PDF first.', true); return; }
+  function pullSelected() {
+    var mids = selectedMatchIds();
+    if (!mids.length) { setStatus('Check at least one match first.', true); return; }
     if (state.scanning) return;
-    var cands = state.candidates.filter(function (c) { return c.fields; });
-    if (!cands.length) { setStatus('No parseable SGP candidates in this PDF.', true); return; }
     state.scanning = true;
-    var btn = $('wcScanBtn');
-    if (btn) { btn.disabled = true; btn.textContent = 'SCANNING…'; }
+    var pull = $('wcPullBtn');
+    if (pull) { pull.disabled = true; pull.textContent = 'WORKING…'; }
+    state.games = [];
+
+    var idx = 0;
+    function step() {
+      if (idx >= mids.length) {
+        state.scanning = false;
+        if (pull) { pull.disabled = false; pull.textContent = '⚡ PULL & SCAN'; }
+        var nOk = state.games.filter(function (g) { return !g.error; }).length;
+        setStatus('Done — ' + nOk + '/' + mids.length + ' games priced.');
+        updateBadge();
+        render();
+        return;
+      }
+      var mid = mids[idx];
+      var slateEntry = state.slate.filter(function (m) { return String(m.id) === String(mid); })[0] || {};
+      var game = { mid: mid, label: (slateEntry.home || '?') + ' vs ' + (slateEntry.away || '?'),
+                   parsed: null, candidates: [], dkById: {}, dkMeta: null, error: null };
+      state.games.push(game);
+      setStatus('(' + (idx + 1) + '/' + mids.length + ') Pulling Pinnacle — ' + game.label + '…');
+      fetch('/api/pinnacle/worldcup-match/' + mid)
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (j.error) throw new Error('pinnacle: ' + j.error);
+          game.parsed = j;
+          game.label = j.home + ' vs ' + j.away;
+          game.candidates = buildCandidates(mid, j);
+          render();
+          setStatus('(' + (idx + 1) + '/' + mids.length + ') Scanning DK — ' + game.label + '…');
+          return scanGame(game);
+        })
+        .catch(function (e) { game.error = e.message; })
+        .then(function () { idx++; render(); step(); });
+    }
+    step();
+  }
+
+  function scanGame(game) {
+    var cands = game.candidates.filter(function (c) { return c.fields; });
+    if (!cands.length || !game.parsed) return Promise.resolve();
     var body = {
-      home: state.parsed.home,
-      away: state.parsed.away,
+      home: game.parsed.home,
+      away: game.parsed.away,
       candidates: cands.map(function (c) {
         return Object.assign({ id: c.id, market_key: c.market_key }, c.fields);
       }),
     };
     var lid = ($('wcLeagueId') && $('wcLeagueId').value || '').trim();
     if (/^\d+$/.test(lid)) body.league_id = lid;
-    fetch('/api/dk/find-sgps-worldcup', {
+    return fetch('/api/dk/find-sgps-worldcup', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     })
       .then(function (r) { return r.json(); })
       .then(function (j) {
-        state.scanning = false;
-        if (btn) { btn.disabled = false; btn.textContent = '✨ SCAN DK'; }
         if (j.error) {
-          setStatus('DK scan: ' + j.error + (j.dk_events ? ' · slate: ' + j.dk_events : ''), true);
-          render();
+          game.error = 'DK: ' + j.error + (j.dk_events ? ' · slate: ' + j.dk_events : '');
           return;
         }
-        state.dkById = {};
-        (j.results || []).forEach(function (r) { state.dkById[r.id] = r; });
-        state.dkMeta = j;
-        var matched = (j.results || []).filter(function (r) { return r.matched; }).length;
-        setStatus('DK event: ' + (j.event_name || (j.away + ' @ ' + j.home)) +
-          ' — matched ' + matched + '/' + (j.results || []).length + ' selections' +
-          (j.cached ? ' (cached ' + j.cache_age_s + 's)' : ''));
-        render();
+        (j.results || []).forEach(function (r) { game.dkById[r.id] = r; });
+        game.dkMeta = j;
       })
-      .catch(function (e) {
-        state.scanning = false;
-        if (btn) { btn.disabled = false; btn.textContent = '✨ SCAN DK'; }
-        setStatus('DK scan failed: ' + e.message, true);
+      .catch(function (e) { game.error = 'DK scan failed: ' + e.message; });
+  }
+
+  /* Re-run the DK scan for already-pulled games (prices move). */
+  function runScan() {
+    if (!state.games.length) { setStatus('Pull at least one game first.', true); return; }
+    if (state.scanning) return;
+    state.scanning = true;
+    var btn = $('wcScanBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'SCANNING…'; }
+    var chain = Promise.resolve();
+    state.games.forEach(function (g, i) {
+      chain = chain.then(function () {
+        setStatus('(' + (i + 1) + '/' + state.games.length + ') Re-scanning DK — ' + g.label + '…');
+        g.error = null;
+        return scanGame(g);
       });
+    });
+    chain.then(function () {
+      state.scanning = false;
+      if (btn) { btn.disabled = false; btn.textContent = '✨ RESCAN DK'; }
+      setStatus('Re-scan complete.');
+      render();
+    });
+  }
+
+  function updateBadge() {
+    var badge = $('wcHdrBadge');
+    if (!badge) return;
+    var n = state.games.filter(function (g) { return !g.error; }).length;
+    var sels = state.games.reduce(function (a, g) { return a + g.candidates.length; }, 0);
+    badge.textContent = n ? (n + ' game' + (n > 1 ? 's' : '') + ' · ' + sels + ' selections') :
+      'Load the slate and pick matches';
   }
 
   /* ---- EV + render ---- */
 
-  function evFor(cand) {
-    var dk = state.dkById[cand.id];
+  function evFor(cand, dk) {
     if (!dk || !dk.matched) return null;
     var dec = dk.dk_decimal != null ? parseFloat(dk.dk_decimal) : null;
     if (!dec || isNaN(dec) || dec <= 1) dec = M.americanToDecimal(dk.dk_american);
@@ -302,36 +231,48 @@
   function render() {
     var bodyEl = $('wcBody');
     if (!bodyEl) return;
-    if (!state.parsed) {
-      bodyEl.innerHTML = '<div class="empty">Upload a Pinnacle World Cup match PDF to begin.</div>';
+    if (!state.games.length) {
+      bodyEl.innerHTML = '<div class="empty">Load the Pinnacle slate, check one or more matches, then PULL &amp; SCAN.</div>';
       return;
     }
-    var rows = state.candidates
-      .filter(function (c) { return state.enabledCats[KIND_CATS[c.market_key] || 'team'] !== false; })
-      .map(function (c) {
-        var dk = state.dkById[c.id];
-        return { c: c, dk: dk, ev: evFor(c) };
-      })
-      .filter(function (r) {
-        if (state.matchedOnly && !r.ev) return false;
-        if (r.ev && r.ev.evPct < state.minEv) return false;
-        return true;
-      })
-      .sort(function (a, b) {
-        var ea = a.ev ? a.ev.evPct : -1e9, eb = b.ev ? b.ev.evPct : -1e9;
-        return eb - ea;
+    var multi = state.games.length > 1;
+    var noEvFloor = state.minEv <= -10;
+    var rows = [];
+    state.games.forEach(function (g) {
+      g.candidates.forEach(function (c) {
+        if (state.enabledCats[KIND_CATS[c.market_key] || 'team'] === false) return;
+        var dk = g.dkById[c.id];
+        var ev = evFor(c, dk);
+        if (state.matchedOnly && !ev) return;
+        if (ev && !noEvFloor && ev.evPct < state.minEv) return;
+        rows.push({ g: g, c: c, dk: dk, ev: ev });
       });
+    });
+    rows.sort(function (a, b) {
+      var ea = a.ev ? a.ev.evPct : -1e9, eb = b.ev ? b.ev.evPct : -1e9;
+      return eb - ea;
+    });
 
     var cnt = $('wcCount');
     if (cnt) cnt.textContent = rows.length + ' rows';
 
+    var html = '';
+    var gameErrs = state.games.filter(function (g) { return g.error; });
+    if (gameErrs.length) {
+      html += gameErrs.map(function (g) {
+        return '<div style="margin:6px 0;font-size:11px;color:var(--red,#f87171);font-family:Space Mono,monospace">' +
+          g.label + ' — ' + g.error + '</div>';
+      }).join('');
+    }
+
     if (!rows.length) {
-      bodyEl.innerHTML = '<div class="empty">No selections pass the current filters.</div>';
+      bodyEl.innerHTML = html + '<div class="empty">No selections pass the current filters.</div>';
       return;
     }
 
-    var html = '<table style="width:100%;border-collapse:collapse;font-family:Space Mono,monospace;font-size:12px">' +
+    html += '<table style="width:100%;border-collapse:collapse;font-family:Space Mono,monospace;font-size:12px">' +
       '<thead><tr style="color:var(--mu);font-size:10px;letter-spacing:.5px;text-align:left">' +
+      (multi ? '<th style="padding:8px 10px">GAME</th>' : '') +
       '<th style="padding:8px 10px">MARKET</th><th style="padding:8px 10px">SELECTION</th>' +
       '<th style="padding:8px 10px;text-align:right">PIN</th>' +
       '<th style="padding:8px 10px;text-align:right" title="No-vig fair price from the devigged Pinnacle group">FV</th>' +
@@ -354,9 +295,12 @@
         dkTxt = dk && dk.missing ? 'no match' : (c.fields ? '—' : 'unparsed');
       }
       var missTitle = dk && dk.missing ? String(dk.missing) : '';
+      var sgpTag = dk && dk.via === 'sgp'
+        ? ' <span style="font-size:9px;color:var(--ac);border:1px solid var(--ac);border-radius:3px;padding:0 3px" title="Priced as a real 2-leg SGP via DK calculateBets — boost-eligible. Legs: ' + String(dk.dk_market || '').replace(/"/g, '&quot;') + '">SGP</span>'
+        : '';
       html += '<tr style="border-top:1px solid var(--b1)">' +
-        '<td style="padding:7px 10px;color:var(--cyan);white-space:nowrap">' + (c.group_label || MARKET_LABELS[c.market_key] || c.market_key) +
-          (dk && dk.via === 'sgp' ? ' <span style="font-size:9px;color:var(--ac);border:1px solid var(--ac);border-radius:3px;padding:0 3px" title="Priced as a real 2-leg SGP via DK calculateBets — boost-eligible. Legs: ' + String(dk.dk_market || '').replace(/"/g, '&quot;') + '">SGP</span>' : '') + '</td>' +
+        (multi ? '<td style="padding:7px 10px;color:var(--mu);white-space:nowrap;font-size:11px">' + r.g.label + '</td>' : '') +
+        '<td style="padding:7px 10px;color:var(--cyan);white-space:nowrap">' + (c.group_label || c.market_key) + sgpTag + '</td>' +
         '<td style="padding:7px 10px;color:var(--tx)">' + c.name + '</td>' +
         '<td style="padding:7px 10px;text-align:right;color:var(--mu)">' + fmtAm(c.pin_odds) + '</td>' +
         '<td style="padding:7px 10px;text-align:right;color:var(--tx)">' + fmtAm(c.fair_american) + '</td>' +
@@ -368,23 +312,13 @@
     });
     html += '</tbody></table>';
 
-    // Group-hold footnote (PDF path only) + DK debug market-name list.
-    var holds = {};
-    state.candidates.forEach(function (c) {
-      if (c.group_hold_pct != null) holds[c.market_key] = c.group_hold_pct;
+    state.games.forEach(function (g) {
+      if (g.dkMeta && g.dkMeta.available_markets && g.dkMeta.available_markets.length) {
+        html += '<details style="margin-top:6px;font-size:10px;color:var(--mu);font-family:Space Mono,monospace">' +
+          '<summary style="cursor:pointer">DK markets — ' + g.label + ' (' + g.dkMeta.available_markets.length + ')</summary>' +
+          '<div style="margin-top:4px;line-height:1.7">' + g.dkMeta.available_markets.join(' · ') + '</div></details>';
+      }
     });
-    var holdKeys = Object.keys(holds);
-    if (holdKeys.length) {
-      var holdTxt = holdKeys.map(function (k) {
-        return (MARKET_LABELS[k] || k) + ' ' + holds[k].toFixed(1) + '%';
-      }).join(' · ');
-      html += '<div style="margin-top:10px;font-size:10px;color:var(--mu);font-family:Space Mono,monospace">Pinnacle hold removed per group: ' + holdTxt + '</div>';
-    }
-    if (state.dkMeta && state.dkMeta.available_markets && state.dkMeta.available_markets.length) {
-      html += '<details style="margin-top:6px;font-size:10px;color:var(--mu);font-family:Space Mono,monospace">' +
-        '<summary style="cursor:pointer">DK markets seen on this event (' + state.dkMeta.available_markets.length + ')</summary>' +
-        '<div style="margin-top:4px;line-height:1.7">' + state.dkMeta.available_markets.join(' · ') + '</div></details>';
-    }
     bodyEl.innerHTML = html;
   }
 
@@ -395,18 +329,32 @@
     if (s) {
       state.minEv = parseInt(s.value, 10) || 0;
       var v = $('wcMinEvV');
-      if (v) v.textContent = (state.minEv >= 0 ? '+' : '') + state.minEv + '%';
+      if (v) v.textContent = state.minEv <= -10 ? 'ALL' : (state.minEv >= 0 ? '+' : '') + state.minEv + '%';
     }
     var mo = $('wcMatchedOnly');
     if (mo) state.matchedOnly = !!mo.checked;
     render();
   }
 
+  /* Category buttons act as an isolate-then-toggle filter: with everything
+     enabled (default "all shown"), clicking one shows ONLY that family;
+     further clicks add/remove families; emptying the set resets to all. */
   function onMarketBtn(btn) {
     var key = btn.getAttribute('data-wc-cat');
     if (!key) return;
-    state.enabledCats[key] = !state.enabledCats[key];
-    btn.classList.toggle('active', state.enabledCats[key]);
+    var allOn = ALL_CATS.every(function (k) { return state.enabledCats[k]; });
+    if (allOn) {
+      ALL_CATS.forEach(function (k) { state.enabledCats[k] = (k === key); });
+    } else {
+      state.enabledCats[key] = !state.enabledCats[key];
+      if (!ALL_CATS.some(function (k) { return state.enabledCats[k]; })) {
+        ALL_CATS.forEach(function (k) { state.enabledCats[k] = true; });
+      }
+    }
+    ALL_CATS.forEach(function (k) {
+      var b = document.querySelector('[data-wc-cat="' + k + '"]');
+      if (b) b.classList.toggle('active', !!state.enabledCats[k]);
+    });
     render();
   }
 
@@ -421,28 +369,14 @@
     activated = true;
     var el = $('wcLeagueId');
     if (el) try { el.value = localStorage.getItem('wcLeagueId') || ''; } catch (_) {}
-    var drop = $('wcDrop');
-    if (drop) {
-      ['dragover', 'dragenter'].forEach(function (evn) {
-        drop.addEventListener(evn, function (e) { e.preventDefault(); drop.style.borderColor = 'var(--ac)'; });
-      });
-      ['dragleave', 'drop'].forEach(function (evn) {
-        drop.addEventListener(evn, function (e) { e.preventDefault(); drop.style.borderColor = 'var(--b2)'; });
-      });
-      drop.addEventListener('drop', function (e) {
-        var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-        if (f) onUpload({ target: { files: [f], value: '' } });
-      });
-      drop.addEventListener('click', function () { var fi = $('wcFile'); if (fi) fi.click(); });
-    }
+    onFilter();
     render();
   }
 
   window.worldcupTab = {
     onActivate: onActivate,
-    onUpload: onUpload,
     loadPinnySlate: loadPinnySlate,
-    onPinMatchPick: onPinMatchPick,
+    pullSelected: pullSelected,
     runScan: runScan,
     onFilter: onFilter,
     onMarketBtn: onMarketBtn,
