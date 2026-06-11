@@ -15,6 +15,7 @@
     scanning: false,
     minEv: -10,          // slider floor == "ALL" (no EV cutoff)
     matchedOnly: true,
+    maxOddsCap: true,    // hide longshots priced above +1000
     enabledCats: { combos: true, gamelines: true, team: true, corners: true, cards: true, players: true },
   };
 
@@ -215,6 +216,15 @@
 
   /* ---- EV + render ---- */
 
+  /* Numeric American price of the DK side (DK strings use unicode minus). */
+  function dkAmericanNum(dk, ev) {
+    if (!dk) return null;
+    var s = String(dk.dk_american || '').replace(/−/g, '-').replace(/[^0-9+-]/g, '');
+    var n = parseInt(s, 10);
+    if (!isNaN(n) && n !== 0) return n;
+    return ev ? M.decimalToAmerican(ev.dec) : null;
+  }
+
   function evFor(cand, dk) {
     if (!dk || !dk.matched) return null;
     var dec = dk.dk_decimal != null ? parseFloat(dk.dk_decimal) : null;
@@ -245,6 +255,10 @@
         var ev = evFor(c, dk);
         if (state.matchedOnly && !ev) return;
         if (ev && !noEvFloor && ev.evPct < state.minEv) return;
+        if (state.maxOddsCap) {
+          var am = ev ? dkAmericanNum(dk, ev) : c.pin_odds;
+          if (am != null && am > 1000) return;
+        }
         rows.push({ g: g, c: c, dk: dk, ev: ev });
       });
     });
@@ -333,6 +347,8 @@
     }
     var mo = $('wcMatchedOnly');
     if (mo) state.matchedOnly = !!mo.checked;
+    var cap = $('wcMaxOdds');
+    if (cap) state.maxOddsCap = !!cap.checked;
     render();
   }
 
