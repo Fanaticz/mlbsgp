@@ -13,7 +13,6 @@
     slate: [],           // [{id, home, away, startTime}] from pinnacle
     games: [],           // pulled games: {mid, label, parsed, candidates, dkById, dkMeta, error}
     scanning: false,
-    minEv: -10,          // slider floor == "ALL" (no EV cutoff)
     matchedOnly: true,
     maxOddsCap: true,    // hide longshots priced above +1000
     enabledCats: { combos: true, gamelines: true, team: true, corners: true, cards: true, players: true },
@@ -246,7 +245,6 @@
       return;
     }
     var multi = state.games.length > 1;
-    var noEvFloor = state.minEv <= -10;
     var rows = [];
     state.games.forEach(function (g) {
       g.candidates.forEach(function (c) {
@@ -254,7 +252,6 @@
         var dk = g.dkById[c.id];
         var ev = evFor(c, dk);
         if (state.matchedOnly && !ev) return;
-        if (ev && !noEvFloor && ev.evPct < state.minEv) return;
         if (state.maxOddsCap) {
           var am = ev ? dkAmericanNum(dk, ev) : c.pin_odds;
           if (am != null && am > 1000) return;
@@ -267,8 +264,14 @@
       return eb - ea;
     });
 
+    // Always the top 20 of whatever passes the filters — changing a filter
+    // recomputes a fresh top 20.
+    var total = rows.length;
+    rows = rows.slice(0, 20);
+
     var cnt = $('wcCount');
-    if (cnt) cnt.textContent = rows.length + ' rows';
+    if (cnt) cnt.textContent = total > rows.length ?
+      ('top ' + rows.length + ' of ' + total) : (rows.length + ' rows');
 
     var html = '';
     var gameErrs = state.games.filter(function (g) { return g.error; });
@@ -339,12 +342,6 @@
   /* ---- controls ---- */
 
   function onFilter() {
-    var s = $('wcMinEv');
-    if (s) {
-      state.minEv = parseInt(s.value, 10) || 0;
-      var v = $('wcMinEvV');
-      if (v) v.textContent = state.minEv <= -10 ? 'ALL' : (state.minEv >= 0 ? '+' : '') + state.minEv + '%';
-    }
     var mo = $('wcMatchedOnly');
     if (mo) state.matchedOnly = !!mo.checked;
     var cap = $('wcMaxOdds');
