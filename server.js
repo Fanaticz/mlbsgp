@@ -1410,6 +1410,170 @@ app.post('/api/dk/tennis-autoscan', async (req, res) => {
   }
 });
 
+// ===== World Cup (soccer) =====
+// Flow: user prints the Pinnacle match page to PDF and uploads it here.
+// We extract the text layer (pdf-parse), parse the combo market groups
+// (pinnacleSoccer.js), and return them raw — the client devigs each group
+// (they're exhaustive partitions) and computes EV against DK's posted
+// combo-market odds from /api/dk/find-sgps-worldcup.
+const { parsePinnacleSoccerText, MARKET_DEFS: WC_MARKET_DEFS } = require('./pinnacleSoccer');
+
+const WC_PDF_MAX_BYTES = 20 * 1024 * 1024;
+const wcPdfUpload = (() => {
+  const multer = require('multer');
+  return multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: WC_PDF_MAX_BYTES, files: 1, fields: 4 },
+  });
+})();
+
+app.post('/api/extract-worldcup-pdf', (req, res) => {
+  wcPdfUpload.single('file')(req, res, async function (err) {
+    if (err) {
+      const status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+      return res.status(status).json({ error: 'Upload rejected: ' + err.message });
+    }
+    try {
+      if (!req.file || !req.file.buffer) {
+        return res.status(400).json({ error: 'No PDF file in request (field name: file)' });
+      }
+      if (!/^%PDF/.test(req.file.buffer.slice(0, 5).toString('latin1'))) {
+        return res.status(400).json({ error: 'File is not a PDF' });
+      }
+      const pdfParse = require('pdf-parse');
+      const data = await pdfParse(req.file.buffer);
+      const parsed = parsePinnacleSoccerText(data.text || '');
+      if (!parsed.home || !parsed.away) {
+        return res.status(422).json({
+          error: 'Could not find the two team names in this PDF — is it a Pinnacle soccer match page?',
+          pages: data.numpages,
+        });
+      }
+      const sgpKeys = WC_MARKET_DEFS.filter(d => d.sgp).map(d => d.key);
+      const foundSgp = sgpKeys.filter(k => (parsed.markets[k] || []).length >= 2);
+      return res.json({
+        ok: true,
+        pages: data.numpages,
+        home: parsed.home,
+        away: parsed.away,
+        league: parsed.league,
+        kickoff: parsed.kickoff,
+        markets: parsed.markets,
+        market_defs: WC_MARKET_DEFS.map(d => ({ key: d.key, label: d.label, sgp: !!d.sgp })),
+        sgp_markets_found: foundSgp,
+      });
+    } catch (e) {
+      return res.status(500).json({ error: 'PDF parse failed: ' + e.message });
+    }
+  });
+});
+
+// Live pull from Pinnacle's guest API — no PDF required. Same output shape
+// as /api/extract-worldcup-pdf so the client reuses one code path.
+const PIN_WC_GAMES_CACHE = { ts: 0, body: null };
+const PIN_WC_GAMES_TTL_MS = 5 * 60 * 1000;
+
+app.get('/api/pinnacle/worldcup-games', async (_req, res) => {
+  try {
+    if (PIN_WC_GAMES_CACHE.body && Date.now() - PIN_WC_GAMES_CACHE.ts < PIN_WC_GAMES_TTL_MS) {
+      return res.json(Object.assign({}, PIN_WC_GAMES_CACHE.body, { cached: true }));
+    }
+    const result = await dkCall(['pinnacle-wc-games']);
+    if (!result.error) { PIN_WC_GAMES_CACHE.ts = Date.now(); PIN_WC_GAMES_CACHE.body = result; }
+    return res.json(result);
+  } catch (e) {
+    return res.status(500).json({ error: 'Pinnacle games failed: ' + e.message });
+  }
+});
+
+const PIN_WC_MATCH_CACHE = new Map();
+const PIN_WC_MATCH_TTL_MS = 2 * 60 * 1000;
+
+app.get('/api/pinnacle/worldcup-match/:matchupId', async (req, res) => {
+  try {
+    const mid = String(req.params.matchupId || '');
+    if (!/^\d+$/.test(mid)) return res.status(400).json({ error: 'numeric matchupId required' });
+    const hit = PIN_WC_MATCH_CACHE.get(mid);
+    if (hit && Date.now() - hit.ts < PIN_WC_MATCH_TTL_MS) {
+      return res.json(Object.assign({}, hit.body, { cached: true }));
+    }
+    const result = await dkCall(['pinnacle-wc-specials', mid]);
+    if (!result.error) PIN_WC_MATCH_CACHE.set(mid, { ts: Date.now(), body: result });
+    return res.json(result);
+  } catch (e) {
+    return res.status(500).json({ error: 'Pinnacle match fetch failed: ' + e.message });
+  }
+});
+
+// GET /api/dk/worldcup-resolve-league?slug=world-cup-2026
+const WC_LEAGUE_RESOLVE_CACHE = new Map();
+const WC_LEAGUE_RESOLVE_TTL_MS = 30 * 60 * 1000;
+
+app.get('/api/dk/worldcup-resolve-league', async (req, res) => {
+  try {
+    const slug = String(req.query.slug || 'world-cup-2026').trim();
+    if (!/^[a-z0-9-]+$/i.test(slug)) {
+      return res.status(400).json({ error: 'slug must be alphanumeric with dashes only' });
+    }
+    const hit = WC_LEAGUE_RESOLVE_CACHE.get(slug);
+    if (hit && Date.now() - hit.ts < WC_LEAGUE_RESOLVE_TTL_MS) {
+      return res.json(Object.assign({}, hit.body, {
+        cached: true, cache_age_s: Math.round((Date.now() - hit.ts) / 1000),
+      }));
+    }
+    const result = await dkCall(['resolve-worldcup-league', slug]);
+    if (!result.error && result.league_id) {
+      WC_LEAGUE_RESOLVE_CACHE.set(slug, { ts: Date.now(), body: result });
+    }
+    return res.json(result);
+  } catch (e) {
+    return res.status(500).json({ error: 'DK league resolve failed: ' + e.message });
+  }
+});
+
+// GET /api/dk/worldcup-games — DK World Cup slate (league via env or slug resolve)
+app.get('/api/dk/worldcup-games', async (req, res) => {
+  try {
+    const args = ['games-worldcup'];
+    if (req.query.league_id && /^\d+$/.test(String(req.query.league_id))) {
+      args.push(String(req.query.league_id));
+    }
+    const result = await dkCall(args);
+    return res.json(result);
+  } catch (e) {
+    return res.status(500).json({ error: 'DK worldcup games failed: ' + e.message });
+  }
+});
+
+// POST /api/dk/find-sgps-worldcup — match Pinnacle combo candidates to DK's
+// posted combo markets for one match, return DK odds per candidate.
+const WC_DK_CACHE = new Map();
+const WC_DK_CACHE_TTL_MS = 5 * 60 * 1000;
+
+app.post('/api/dk/find-sgps-worldcup', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const { candidates, home, away } = body;
+    if (!Array.isArray(candidates) || !candidates.length) {
+      return res.status(400).json({ error: 'candidates array required' });
+    }
+    if (!home || !away) {
+      return res.status(400).json({ error: 'home and away required' });
+    }
+    const key = JSON.stringify([home, away, body.league_id || '', body.league_slug || '',
+      candidates.map(c => c.id).sort()]);
+    const hit = WC_DK_CACHE.get(key);
+    if (hit && Date.now() - hit.ts < WC_DK_CACHE_TTL_MS) {
+      return res.json(Object.assign({}, hit.body, { cached: true, cache_age_s: Math.round((Date.now() - hit.ts) / 1000) }));
+    }
+    const result = await dkCall(['find-sgps-worldcup'], JSON.stringify(body));
+    if (!result.error) WC_DK_CACHE.set(key, { ts: Date.now(), body: result });
+    return res.json(result);
+  } catch (e) {
+    return res.status(500).json({ error: 'DK find-sgps-worldcup failed: ' + e.message });
+  }
+});
+
 // ===== SGP AI Insight =====
 app.post('/api/sgp-insight', async (req, res) => {
   try {
