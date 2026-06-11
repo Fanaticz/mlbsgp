@@ -661,8 +661,7 @@ h1 em{color:var(--ac);font-style:normal;}
       <button id="wcScanBtn" type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.runScan()" style="align-self:center;padding:10px 22px;font-size:12px;font-weight:700;border:1px solid var(--ac);border-radius:6px;background:rgba(34,197,94,.16);color:var(--ac);cursor:pointer;letter-spacing:.6px;font-family:Space Mono,monospace">&#10024; SCAN DK</button>
     </div>
     <div class="ctrl" id="wcFilterBar" style="flex-wrap:wrap;gap:10px;align-items:center;padding:0;border:none;background:transparent">
-      <div class="tm-slider"><span class="tm-label">MIN EV%</span><input type="range" id="wcMinEv" min="-10" max="30" step="1" value="0" oninput="window.worldcupTab&amp;&amp;window.worldcupTab.onFilter()"><span class="v" id="wcMinEvV">+0%</span></div>
-      <div style="display:inline-flex;gap:4px;flex-wrap:wrap" title="Which market families to include.">
+      <div style="display:inline-flex;gap:4px;flex-wrap:wrap" title="Which market families to include. Table always shows the top 20 by EV% of whatever passes the filters.">
         <button class="fb active" data-wc-cat="combos"    type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.onMarketBtn(this)">SGP COMBOS</button>
         <button class="fb active" data-wc-cat="gamelines" type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.onMarketBtn(this)">GAME LINES</button>
         <button class="fb active" data-wc-cat="team"      type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.onMarketBtn(this)">TEAM</button>
@@ -671,6 +670,7 @@ h1 em{color:var(--ac);font-style:normal;}
         <button class="fb active" data-wc-cat="players"   type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.onMarketBtn(this)">PLAYERS</button>
       </div>
       <label class="tm-toggle" title="If on, hide selections with no DK price."><input type="checkbox" id="wcMatchedOnly" checked onchange="window.worldcupTab&amp;&amp;window.worldcupTab.onFilter()"><span>MATCHED ONLY</span></label>
+      <label class="tm-toggle" title="If on, hide longshots priced above +1000."><input type="checkbox" id="wcMaxOdds" checked onchange="window.worldcupTab&amp;&amp;window.worldcupTab.onFilter()"><span>&le; +1000</span></label>
       <span id="wcCount" style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace;margin-left:auto"></span>
     </div>
     <div id="wcStatus" style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace;min-height:16px"></div>
