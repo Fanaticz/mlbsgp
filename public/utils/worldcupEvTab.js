@@ -13,8 +13,8 @@
 
   var state = {
     games: [],           // [{ id, label, parsed, candidates, dkById, dkMeta, loading, scanning, error }]
-    minEv: 0,
     matchedOnly: true,
+    maxOddsCap: true,    // hide longshots priced above +1000
     enabledCats: { combos: true, gamelines: true, team: true, corners: true, cards: true, players: true },
   };
 
@@ -217,6 +217,15 @@
 
   /* ---- EV + render ---- */
 
+  /* Numeric American price of the DK side (DK strings use unicode minus). */
+  function dkAmericanNum(dk, ev) {
+    if (!dk) return null;
+    var s = String(dk.dk_american || '').replace(/−/g, '-').replace(/[^0-9+-]/g, '');
+    var n = parseInt(s, 10);
+    if (!isNaN(n) && n !== 0) return n;
+    return ev ? M.decimalToAmerican(ev.dec) : null;
+  }
+
   function evFor(game, cand) {
     var dk = game.dkById[cand.id];
     if (!dk || !dk.matched) return null;
@@ -282,7 +291,10 @@
     rows = rows
       .filter(function (r) {
         if (state.matchedOnly && !r.ev) return false;
-        if (r.ev && r.ev.evPct < state.minEv) return false;
+        if (state.maxOddsCap) {
+          var am = r.ev ? dkAmericanNum(r.dk, r.ev) : r.c.pin_odds;
+          if (am != null && am > 1000) return false;
+        }
         return true;
       })
       .sort(function (a, b) {
@@ -290,8 +302,14 @@
         return eb - ea;
       });
 
+    // Always the top 20 of whatever passes the filters — changing a filter
+    // recomputes a fresh top 20.
+    var total = rows.length;
+    rows = rows.slice(0, 20);
+
     var cnt = $('wcCount');
-    if (cnt) cnt.textContent = rows.length + ' rows';
+    if (cnt) cnt.textContent = total > rows.length ?
+      ('top ' + rows.length + ' of ' + total) : (rows.length + ' rows');
 
     if (!rows.length) {
       bodyEl.innerHTML = '<div class="empty">No selections pass the current filters.</div>';
@@ -351,14 +369,10 @@
   /* ---- controls ---- */
 
   function onFilter() {
-    var s = $('wcMinEv');
-    if (s) {
-      state.minEv = parseInt(s.value, 10) || 0;
-      var v = $('wcMinEvV');
-      if (v) v.textContent = (state.minEv >= 0 ? '+' : '') + state.minEv + '%';
-    }
     var mo = $('wcMatchedOnly');
     if (mo) state.matchedOnly = !!mo.checked;
+    var cap = $('wcMaxOdds');
+    if (cap) state.maxOddsCap = !!cap.checked;
     render();
   }
 
