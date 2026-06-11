@@ -1,5 +1,21 @@
 # Changes
 
+## 2026-06-11 session
+
+### World Cup SGP +EV tab
+New top-level sport (`WORLD CUP` in the `.sport-bar`) for soccer same-game-parlay combo markets at the FIFA World Cup. Unlike tennis/NBA there is **no correlation model**: Pinnacle prices each joint outcome directly, so the fair probability is a straight multiplicative devig of each combo market group (every group is a mutually exclusive, exhaustive partition).
+
+**Markets.** `Both Teams To Score/Total Goals`, `Both Teams To Score/Winner`, `Winner/Total Goals` (the mains), plus `Half-Time/Full-Time` and `Odd/Even / Total Goals` as bonus combos. Correct-score / exact-total-style markets are ignored by design.
+
+**Inputs (two paths, one client code path).**
+- *Live pull (primary)* — `LOAD SLATE` hits Pinnacle's guest API (`guest.api.arcadia.pinnacle.com`, static guest key, via the same curl_cffi Chrome-TLS session that talks to DK) and lists all World Cup matches; picking one fetches its special markets live. League 2686, override via `PINNACLE_WC_LEAGUE_ID`.
+- *PDF upload (fallback)* — print the Pinnacle match page to PDF and drop it on the tab. `POST /api/extract-worldcup-pdf` (multer + `pdf-parse`, new dep) extracts the text layer; `pinnacleSoccer.js` tokenizes it (American-odds tokens terminate selection names, icon-font PUA glyphs stripped) into the same `{home, away, kickoff, markets}` shape.
+
+**DK side.** No SGP pricing engine needed — DK lists these combos as straight markets. `find_sgps_worldcup` (dk_api.py) resolves the league (env `DK_WORLDCUP_LEAGUE_ID`, else scrapes slug `world-cup-2026`; live id 209533), matches the event by team names either orientation, scans soccer subcats, and maps each candidate to a DK selection using the verified label grammar: `"Mexico Win and Over 2.5"`, `"Tie with Goals"` / `"Win to Zero"` (BTTS yes/no), `"Mexico/Tie"` (HT/FT). Two traps encoded: DK's `Both Teams to Score / Over 2.5 Goals` "No" is the *complement* of (Yes & Over), not Pinnacle's "No & Over", so only the Yes cell maps; and `Half Time / Full Time / Over/Under 2.5` shares HT/FT labels and must not shadow plain HT/FT. The response includes `available_markets` for renaming debuggability.
+
+**Output.** Table ranked by `EV% = fair_prob × dk_decimal − 1`, with Pinnacle price, no-vig FV, fair %, DK price, and full-Kelly %. Filters: min-EV slider, per-market toggles, matched-only. Endpoints: `/api/pinnacle/worldcup-games`, `/api/pinnacle/worldcup-match/:id`, `/api/dk/find-sgps-worldcup`, `/api/dk/worldcup-games`, `/api/dk/worldcup-resolve-league`.
+
+
 ## 2026-05-26 session
 
 ### Tennis SGP +EV tab (French Open M)

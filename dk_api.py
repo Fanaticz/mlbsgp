@@ -30,6 +30,11 @@ DK_NBA_LEAGUE_ID = _os.environ.get("DK_NBA_LEAGUE_ID", "42648")
 # the environment to the live French Open Men's league ID (check the
 # /nav/leagues response or the DK URL on the slate page).
 DK_TENNIS_LEAGUE_ID = _os.environ.get("DK_TENNIS_LEAGUE_ID", "40841")
+# FIFA World Cup league ID. Empty default: get_games_soccer() auto-resolves
+# via the public slug page on first use (same scrape as tennis). Set
+# DK_WORLDCUP_LEAGUE_ID to pin it and skip the extra request.
+DK_WORLDCUP_LEAGUE_ID = _os.environ.get("DK_WORLDCUP_LEAGUE_ID", "")
+DK_WORLDCUP_SLUG = _os.environ.get("DK_WORLDCUP_SLUG", "world-cup-2026")
 DK_NAV = "https://sportsbook-nash.draftkings.com/api/sportscontent/navigation/dkusnj/v1/nav/leagues"
 DK_MARKETS = "https://sportsbook-nash.draftkings.com/sites/US-SB/api/sportscontent/controldata/event/eventSubcategory/v1/markets"
 DK_SGP = "https://sportsbook-nash.draftkings.com/sites/US-SB/api/sportscontent/parlays/v1/sgp/events"
@@ -308,7 +313,7 @@ def _fetch_subcategory(event_id, sc):
     return mkts, sels
 
 
-def get_markets(event_id, pitcher_only=False, batter_only=False, nba_only=False, tennis_only=False):
+def get_markets(event_id, pitcher_only=False, batter_only=False, nba_only=False, tennis_only=False, soccer_only=False):
     """Return all markets and selections for an event, scoped properly to that event.
 
     When pitcher_only=True, skip subcategories that are clearly batter/team/game
@@ -412,6 +417,28 @@ def get_markets(event_id, pitcher_only=False, batter_only=False, nba_only=False,
                 return False
             return any(k in n for k in _SC_TENNIS_HINTS)
         subcats = [sc for sc in subcats if _keep_tennis(sc)]
+    elif soccer_only:
+        # Keep subcats that could hold the full-match combo markets we price
+        # (BTTS & Total, BTTS & Result, Result & Total, HT/FT, Odd/Even &
+        # Total). DK's exact soccer subcat names are unverified — the tennis
+        # scan taught us hint lists miss real names — so this is exclude-first
+        # (drop the obviously irrelevant prop families) and keep-generous on
+        # anything score/result/goal/half-flavored. The response surfaces the
+        # fetched market names so mismatches are debuggable from the UI.
+        _SC_SOCCER_EXCLUDE = ("corner", "card", "booking", "player", "shot",
+                              "goalscorer", "scorer", "assist", "saves",
+                              "foul", "offside", "penalt", "minute",
+                              "time of", "to score in", "quick pick",
+                              "parlay", "same game")
+        _SC_SOCCER_HINTS = ("score", "result", "goal", "half", "margin",
+                            "total", "winner", "game lines", "moneyline",
+                            "odd", "even", "1x2", "combo")
+        def _keep_soccer(sc):
+            n = (sc.get("name") or "").lower()
+            if any(h in n for h in _SC_SOCCER_EXCLUDE):
+                return False
+            return any(k in n for k in _SC_SOCCER_HINTS)
+        subcats = [sc for sc in subcats if _keep_soccer(sc)]
 
     # Step 2: Fetch markets for each subcategory in parallel
     all_markets = []
@@ -512,6 +539,7 @@ def get_markets(event_id, pitcher_only=False, batter_only=False, nba_only=False,
                 "subcategory": m.get("_subCategoryName", ""),
                 "player": pname,
                 "outcomeType": outcome_type,
+                "label": s.get("label", ""),
                 "displayPoints": display,
                 "points": points,
                 "oddsAmerican": s.get("displayOdds", {}).get("american", ""),
@@ -2220,6 +2248,492 @@ def enumerate_sgps_tennis(payload=None):
     return resp
 
 
+# ===== Soccer / World Cup =====
+
+def resolve_soccer_league_by_slug(slug=None):
+    """Resolve a DK public soccer slug (e.g. 'fifa-world-cup') to the numeric
+    league ID by scraping the public league page. Mirrors
+    resolve_tennis_league_by_slug — see that docstring for why."""
+    slug = slug or DK_WORLDCUP_SLUG
+    url = f"https://sportsbook.draftkings.com/leagues/soccer/{slug}"
+    try:
+        r = _get_with_retry(url, attempts=4, timeout=12)
+    except Exception as e:
+        return {"slug": slug, "error": f"fetch failed: {e}"}
+    html = r.text or ""
+    patterns = [
+        r'"leagueId"\s*:\s*"?(\d{3,7})"?',
+        r'"league_id"\s*:\s*"?(\d{3,7})"?',
+        r'/nav/leagues/(\d{3,7})',
+        r'data-leagueid="(\d{3,7})"',
+        r'/leagues/(\d{3,7})\b',
+    ]
+    for pat in patterns:
+        m = re.search(pat, html)
+        if m:
+            return {"slug": slug, "league_id": m.group(1),
+                    "source": "page-scrape"}
+    return {"slug": slug, "error": "no league id found in page",
+            "html_len": len(html)}
+
+
+def get_games_soccer(league_id=None, slug=None):
+    """Return soccer events for a league (default: FIFA World Cup).
+
+    Caller league_id wins over the env default; if neither is set, the
+    public slug page is scraped once to find it (so the tab works with
+    zero config the day the tournament shows up on DK)."""
+    lid = str(league_id) if league_id else DK_WORLDCUP_LEAGUE_ID
+    resolved_from = None
+    if not lid:
+        res = resolve_soccer_league_by_slug(slug)
+        if res.get("error"):
+            raise RuntimeError(f"league id unset and slug resolve failed: {res['error']}")
+        lid = res["league_id"]
+        resolved_from = res.get("slug")
+    r = _get_with_retry(f"{DK_NAV}/{lid}")
+    events = r.json().get("events", [])
+    out = []
+    for e in events:
+        tags = e.get("tags", [])
+        participants = e.get("participants", []) or []
+        home = next((p for p in participants if p.get("venueRole") == "Home"), None)
+        away = next((p for p in participants if p.get("venueRole") == "Away"), None)
+        if not home and len(participants) >= 1: home = participants[0]
+        if not away and len(participants) >= 2: away = participants[1]
+        home = home or {}
+        away = away or {}
+        out.append({
+            "id": e.get("eventId"),
+            "name": e.get("name", ""),
+            "startDate": e.get("startDate", ""),
+            "homeTeam": home.get("name", e.get("teamName2", "")),
+            "awayTeam": away.get("name", e.get("teamName1", "")),
+            "hasSGP": "SGP" in tags,
+            "isLive": e.get("isLive", False),
+            "status": e.get("status", ""),
+        })
+    out.sort(key=lambda x: x["startDate"])
+    resp = {"events": out, "leagueId": lid}
+    if resolved_from:
+        resp["resolvedFromSlug"] = resolved_from
+    return resp
+
+
+def _norm_soccer(s):
+    """Lowercase, fold accents-ish, collapse whitespace for team matching."""
+    import unicodedata
+    s = unicodedata.normalize("NFKD", str(s or ""))
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", s.lower()).strip()
+
+
+def _team_matches_soccer(want, have):
+    w, h = _norm_soccer(want), _norm_soccer(have)
+    if not w or not h:
+        return False
+    return w == h or w in h or h in w
+
+
+def _event_for_soccer_match(home, away, events):
+    """Pick the DK event whose two participants match the Pinnacle teams
+    (either orientation — Pinnacle and DK occasionally disagree on which
+    side is 'home' for neutral-venue tournament games)."""
+    for e in events:
+        ht, at = e.get("homeTeam", ""), e.get("awayTeam", "")
+        straight = _team_matches_soccer(home, ht) and _team_matches_soccer(away, at)
+        flipped  = _team_matches_soccer(home, at) and _team_matches_soccer(away, ht)
+        if straight or flipped:
+            return e
+    return None
+
+
+# Per-half / per-period qualifiers that disqualify a DK market from matching
+# our full-match Pinnacle groups — EXCEPT ht_ft, which spans both halves and
+# legitimately contains "half"-flavored wording.
+_SOCCER_PERIOD_EXCLUDE = ("1st half", "first half", "2nd half", "second half",
+                          "1st 30", "first 15", "1st 15", "extra time",
+                          "halftime result", "half time result")
+
+def _soccer_market_kind(blob):
+    """Classify a DK market name blob into one of our Pinnacle combo keys,
+    or None. Patterns are deliberately loose ('&' vs 'and', 'result' vs
+    'winner' vs 'moneyline') because DK's exact soccer market names vary."""
+    b = blob.lower()
+    if "halftime/fulltime" in b or "half time/full time" in b or \
+       "halftime / fulltime" in b or "ht/ft" in b or "double result" in b:
+        # "Half Time / Full Time / Over/Under 2.5" is a 3-way combo we don't
+        # price — without this guard its selections shadow the plain HT/FT
+        # market's (same "Mexico/Tie" labels, different odds).
+        if re.search(r"\b(over|under)\b", b) or "total" in b or "o/u" in b:
+            return None
+        return "ht_ft"
+    if any(p in b for p in _SOCCER_PERIOD_EXCLUDE):
+        return None
+    has_btts   = "both teams to score" in b or "btts" in b
+    has_total  = ("total" in b) or ("over/under" in b) or ("o/u" in b) or \
+                 re.search(r"\b(over|under)\b", b) is not None
+    has_result = ("result" in b) or ("winner" in b) or ("moneyline" in b) or ("1x2" in b)
+    has_oddeven = ("odd" in b and "even" in b)
+    if has_btts and has_total:
+        return "btts_total"
+    if has_btts and has_result:
+        return "btts_winner"
+    if has_oddeven and has_total:
+        return "oddeven_total"
+    if has_result and has_total and not has_btts:
+        return "winner_total"
+    return None
+
+
+def _label_result_token(token, home, away):
+    """Map a label fragment to 'home'/'draw'/'away' or None. DK says 'Tie',
+    Pinnacle says 'Draw'. Strip DK's 'Win'/'and' filler before team-matching
+    so 'Mexico Win and' still resolves to the home side."""
+    t = _norm_soccer(token)
+    t = re.sub(r"\b(win|and|to|or)\b", " ", t).strip()
+    t = re.sub(r"\s+", " ", t)
+    if not t:
+        return None
+    if "draw" in t or "tie" in t:
+        return "draw"
+    if _team_matches_soccer(home, t):
+        return "home"
+    if _team_matches_soccer(away, t):
+        return "away"
+    return None
+
+
+def _label_has_word(label, word):
+    return re.search(r"\b" + re.escape(word) + r"\b", label, re.I) is not None
+
+
+def _label_total(label, points):
+    """Extract (side, line) from a label like '... & Over 2.5'."""
+    side = "Over" if _label_has_word(label, "over") else \
+           ("Under" if _label_has_word(label, "under") else None)
+    line = None
+    m = re.search(r"(\d+(?:\.\d+)?)", label)
+    if m:
+        line = float(m.group(1))
+    elif points is not None:
+        try: line = float(points)
+        except (TypeError, ValueError): pass
+    return side, line
+
+
+def _match_soccer_selection(cand, props_for_kind, home, away):
+    """Find the DK selection matching one Pinnacle combo candidate.
+
+    Verified DK label formats (World Cup 2026 slate):
+      winner_total ("Moneyline / Over/Under 2.5"):
+        "Mexico Win and Over 2.5" / "Tie and Over 2.5"
+      btts_winner ("Moneyline / Both Teams to Score"):
+        "Mexico Win and Both to Score" (= home & Yes)
+        "Mexico Win to Zero"           (= home & No)
+        "Tie with Goals" / "Tie without Goals" (= draw & Yes / draw & No)
+      ht_ft ("Half Time / Full Time"): "Mexico/Tie", "Tie/South Africa", ...
+      btts_total ("Both Teams to Score / Over 2.5 Goals"):
+        labels are just "Yes"/"No", the total lives in the MARKET name —
+        and DK's "No" is the complement of (Yes & Over), NOT Pinnacle's
+        "No & Over". Only the Yes cell maps 1:1.
+
+    cand fields by market_key:
+      btts_total:    btts (Yes/No), total_side (Over/Under), total_line
+      btts_winner:   btts, result (home/draw/away)
+      winner_total:  result, total_side, total_line
+      oddeven_total: odd_even (Odd/Even), total_side, total_line
+      ht_ft:         ht (home/draw/away), ft (home/draw/away)
+    """
+    key = cand.get("market_key")
+    for p in props_for_kind:
+        label = p.get("label") or p.get("outcomeType") or ""
+        if not label:
+            continue
+
+        if key == "ht_ft":
+            parts = re.split(r"\s*/\s*", label)
+            if len(parts) != 2:
+                parts = re.split(r"\s+-\s+", label)
+            if len(parts) != 2:
+                continue
+            ht = _label_result_token(parts[0], home, away)
+            ft = _label_result_token(parts[1], home, away)
+            if ht and ft and ht == cand.get("ht") and ft == cand.get("ft"):
+                return p
+            continue
+
+        if key == "btts_total":
+            if str(cand.get("btts", "")).lower() != "yes":
+                continue  # DK only lists the Yes cell; "No" is a complement
+            mside, mline = _label_total(p.get("marketName", ""), None)
+            if mside != cand.get("total_side"):
+                continue
+            want_line = cand.get("total_line")
+            if want_line is not None and mline is not None and \
+               abs(float(want_line) - mline) > 1e-6:
+                continue
+            if _label_has_word(label, "yes"):
+                return p
+            continue
+
+        if key == "btts_winner":
+            lab = label.lower()
+            is_yes = ("both to score" in lab or "both teams to score" in lab
+                      or "with goals" in lab)
+            is_no = ("to zero" in lab or "to nil" in lab or "without goals" in lab)
+            want_yes = str(cand.get("btts", "")).lower() == "yes"
+            if (want_yes and not is_yes) or (not want_yes and not is_no):
+                continue
+            # outcomeType carries Home/Tie/Away cleanly on this market.
+            ot = (p.get("outcomeType") or "").lower()
+            res = {"home": "home", "tie": "draw", "draw": "draw",
+                   "away": "away"}.get(ot)
+            if res is None:
+                res = _label_result_token(
+                    re.sub(r"\b(both to score|with goals|without goals|to zero|to nil)\b",
+                           "", lab), home, away)
+            if res == cand.get("result"):
+                return p
+            continue
+
+        if key == "winner_total":
+            side, line = _label_total(label, p.get("points"))
+            if side != cand.get("total_side"):
+                continue
+            want_line = cand.get("total_line")
+            if want_line is not None and line is not None and \
+               abs(float(want_line) - line) > 1e-6:
+                continue
+            res_part = re.sub(r"\b(over|under)\b.*$", "", label, flags=re.I)
+            if _label_result_token(res_part, home, away) == cand.get("result"):
+                return p
+            continue
+
+        if key == "oddeven_total":
+            # DK doesn't list an Odd/Even × Total combo on this slate; this
+            # branch only fires if one ever appears with explicit labels.
+            want_odd = str(cand.get("odd_even", "")).lower() == "odd"
+            if want_odd != _label_has_word(label, "odd"):
+                continue
+            side, line = _label_total(label, p.get("points"))
+            if side != cand.get("total_side"):
+                continue
+            want_line = cand.get("total_line")
+            if want_line is not None and line is not None and \
+               abs(float(want_line) - line) > 1e-6:
+                continue
+            return p
+    return None
+
+
+def find_sgps_worldcup(payload):
+    """Match a batch of Pinnacle soccer combo candidates against DK's listed
+    combo markets for one match and return DK's posted odds.
+
+    Unlike the tennis flow there is no SGP pricing call: DK lists these
+    combos (BTTS & Total, Result & BTTS, Result & Total, HT/FT) as straight
+    markets, so the posted selection odds ARE the SGP price.
+
+    Input (stdin JSON):
+      { "league_id": "...",          # optional, else env/slug resolve
+        "league_slug": "...",        # optional slug override
+        "home": "Mexico", "away": "South Africa",
+        "candidates": [ { "id", "market_key", ...key-specific fields } ] }
+    """
+    payload = payload or {}
+    candidates = payload.get("candidates", []) or []
+    if not isinstance(candidates, list) or not candidates:
+        return {"error": "candidates array required"}
+    home, away = payload.get("home", ""), payload.get("away", "")
+    if not home or not away:
+        return {"error": "home and away team names required"}
+
+    try:
+        games_data = get_games_soccer(league_id=payload.get("league_id"),
+                                      slug=payload.get("league_slug"))
+    except Exception as e:
+        return {"error": f"DK soccer games unavailable: {e}. Set "
+                         f"DK_WORLDCUP_LEAGUE_ID or pass league_id from the UI "
+                         f"(grab it from sportsbook.draftkings.com/leagues/soccer/...)."}
+    events = games_data["events"]
+    event = _event_for_soccer_match(home, away, events)
+    if not event:
+        avail = ", ".join(f"{e.get('awayTeam','?')} @ {e.get('homeTeam','?')}"
+                          for e in events[:10])
+        return {"error": f"no DK event matches {home} vs {away}",
+                "league_id": games_data.get("leagueId"),
+                "dk_events": avail or "(none on slate)"}
+
+    eid = event["id"]
+    try:
+        md = get_markets(eid, soccer_only=True)
+    except Exception as e:
+        return {"error": f"DK market scan failed for event {eid}: {e}"}
+
+    # Bucket selections by the combo kind their market classifies into.
+    props_by_kind = {}
+    market_names_by_kind = {}
+    for p in md["props"]:
+        blob = " ".join([p.get("marketName", ""), p.get("marketType", ""),
+                         p.get("subcategory", "")])
+        kind = _soccer_market_kind(blob)
+        if not kind:
+            continue
+        props_by_kind.setdefault(kind, []).append(p)
+        market_names_by_kind.setdefault(kind, set()).add(p.get("marketName", ""))
+
+    results = []
+    for c in candidates:
+        key = c.get("market_key")
+        pool = props_by_kind.get(key, [])
+        m = _match_soccer_selection(c, pool, home, away) if pool else None
+        out = {"id": c.get("id"), "market_key": key}
+        if m:
+            out["matched"] = True
+            out["dk_american"] = m.get("oddsAmerican")
+            out["dk_decimal"] = m.get("oddsDecimal")
+            out["dk_label"] = m.get("outcomeType")
+            out["dk_market"] = m.get("marketName")
+            out["isDisabled"] = m.get("isDisabled", False)
+        else:
+            out["matched"] = False
+            out["missing"] = ("no DK market of this kind" if not pool
+                              else "no selection matched in: " +
+                                   ", ".join(sorted(market_names_by_kind.get(key, []))[:4]))
+        results.append(out)
+
+    # Unique fetched market names — the debugging lifeline when DK renames
+    # things (the tennis scan shipped blind and burned a day on this).
+    seen_markets = sorted({p.get("marketName", "") for p in md["props"] if p.get("marketName")})
+    return {"results": results,
+            "event_id": eid,
+            "event_name": event.get("name", ""),
+            "league_id": games_data.get("leagueId"),
+            "home": event.get("homeTeam"), "away": event.get("awayTeam"),
+            "available_markets": seen_markets[:80]}
+
+
+# ===== Pinnacle guest API (live World Cup specials — no PDF needed) =====
+# Pinnacle's own web app talks to guest.api.arcadia.pinnacle.com with a
+# static guest key baked into the JS bundle. curl_cffi's Chrome TLS
+# fingerprint gets through their Cloudflare layer the same way it gets
+# through DK's Akamai. Output shape intentionally mirrors the PDF parser
+# (pinnacleSoccer.js) so the front end has one code path for both sources.
+PIN_API = "https://guest.api.arcadia.pinnacle.com/0.1"
+PIN_GUEST_KEY = _os.environ.get("PINNACLE_GUEST_KEY",
+                                "CmX2KcMrXuFmNg6YFbmTxE0y9CIrOi2R")
+PIN_WC_LEAGUE_ID = _os.environ.get("PINNACLE_WC_LEAGUE_ID", "2686")
+
+# Pinnacle special "description" → our canonical market keys. Same anchored
+# patterns as MARKET_DEFS in pinnacleSoccer.js — full-match combos only.
+_PIN_SPECIAL_KEYS = [
+    ("btts_total",    re.compile(r"^Both Teams To Score/Total Goals$", re.I)),
+    ("btts_winner",   re.compile(r"^Both Teams To Score/Winner$", re.I)),
+    ("winner_total",  re.compile(r"^Winner/Total Goals$", re.I)),
+    ("ht_ft",         re.compile(r"^Half-Time/Full-Time$", re.I)),
+    ("oddeven_total", re.compile(r"^Odd/Even ?/ ?Total Goals$", re.I)),
+    ("btts",          re.compile(r"^Both Teams To Score\?$", re.I)),
+]
+
+
+def _pin_get(path, attempts=4):
+    headers = {"X-API-Key": PIN_GUEST_KEY, "Accept": "application/json"}
+    last_err = None
+    for i in range(attempts):
+        _wait_for_cooloff()
+        try:
+            r = session.get(f"{PIN_API}{path}", headers=headers, timeout=15)
+            if r.status_code == 200:
+                return r.json()
+            last_err = f"HTTP {r.status_code}"
+            if r.status_code in (403, 429, 503):
+                _trigger_cooloff(1.5 * (i + 1))
+                _rotate_session()
+        except Exception as e:
+            last_err = str(e)
+        _time.sleep(0.5 * (i + 1))
+    raise RuntimeError(f"pinnacle GET {path} failed: {last_err}")
+
+
+def pinnacle_wc_games(league_id=None):
+    """List World Cup matches straight from Pinnacle's guest API."""
+    lid = str(league_id) if league_id else PIN_WC_LEAGUE_ID
+    data = _pin_get(f"/leagues/{lid}/matchups")
+    out = []
+    for m in data:
+        if m.get("type") != "matchup" or m.get("parentId"):
+            continue
+        ps = {p.get("alignment"): p.get("name") for p in m.get("participants", [])}
+        if not ps.get("home") or not ps.get("away"):
+            continue
+        out.append({
+            "id": m.get("id"),
+            "home": ps.get("home"),
+            "away": ps.get("away"),
+            "startTime": m.get("startTime", ""),
+        })
+    out.sort(key=lambda x: x["startTime"])
+    return {"matches": out, "leagueId": lid}
+
+
+def pinnacle_wc_specials(matchup_id):
+    """Fetch one match's combo-special markets live from Pinnacle and return
+    the same {home, away, kickoff, markets} shape the PDF parser produces."""
+    mid = int(matchup_id)
+    rel = _pin_get(f"/matchups/{mid}/related")
+    parent = next((m for m in rel if m.get("type") == "matchup"
+                   and m.get("id") == mid), None)
+    if parent is None:
+        parent = next((m for m in rel if m.get("type") == "matchup"), None)
+    if parent is None:
+        return {"error": f"matchup {matchup_id} not found on pinnacle"}
+    ps = {p.get("alignment"): p.get("name") for p in parent.get("participants", [])}
+
+    # Map each tracked special matchup to (our key, participantId -> name)
+    specials = {}
+    for m in rel:
+        desc = (m.get("special") or {}).get("description") or ""
+        for key, pat in _PIN_SPECIAL_KEYS:
+            if pat.match(desc.strip()):
+                parts = {p.get("id"): p.get("name") for p in m.get("participants", [])}
+                specials[m.get("id")] = (key, parts)
+                break
+
+    prices = _pin_get(f"/matchups/{mid}/markets/related/straight")
+    markets = {}
+    for mk in prices:
+        sid = mk.get("matchupId")
+        if sid not in specials or mk.get("type") != "moneyline":
+            continue
+        if mk.get("period") not in (0, None):  # full match only
+            continue
+        key, parts = specials[sid]
+        sels = []
+        for pr in mk.get("prices", []):
+            name = parts.get(pr.get("participantId"))
+            price = pr.get("price")
+            if name and isinstance(price, (int, float)):
+                sels.append({"name": name, "odds": int(price)})
+        if sels:
+            markets[key] = sels
+
+    return {
+        "ok": True,
+        "source": "pinnacle-api",
+        "matchup_id": mid,
+        "home": ps.get("home"),
+        "away": ps.get("away"),
+        "league": (parent.get("league") or {}).get("name", "FIFA - World Cup"),
+        "kickoff": parent.get("startTime", ""),
+        "markets": markets,
+        "sgp_markets_found": [k for k in markets
+                              if k in ("btts_total", "btts_winner", "winner_total",
+                                       "ht_ft", "oddeven_total")
+                              and len(markets[k]) >= 2],
+    }
+
+
 def find_sgps(legs, enum_size=2):
     """Given OCR'd legs, auto-match them to DK selections, enumerate combos
     of the requested size, and return DK-priced SGPs. Frontend computes FV
@@ -2495,6 +3009,21 @@ if __name__ == "__main__":
             stdin_data = sys.stdin.read().strip()
             payload = json.loads(stdin_data) if stdin_data else {}
             result = enumerate_sgps_tennis(payload)
+        elif cmd == "games-worldcup":
+            lid = sys.argv[2] if len(sys.argv) >= 3 else None
+            result = get_games_soccer(league_id=lid)
+        elif cmd == "find-sgps-worldcup":
+            stdin_data = sys.stdin.read().strip()
+            payload = json.loads(stdin_data) if stdin_data else {}
+            result = find_sgps_worldcup(payload)
+        elif cmd == "pinnacle-wc-games":
+            lid = sys.argv[2] if len(sys.argv) >= 3 else None
+            result = pinnacle_wc_games(league_id=lid)
+        elif cmd == "pinnacle-wc-specials" and len(sys.argv) >= 3:
+            result = pinnacle_wc_specials(sys.argv[2])
+        elif cmd == "resolve-worldcup-league":
+            slug = sys.argv[2] if len(sys.argv) >= 3 else None
+            result = resolve_soccer_league_by_slug(slug)
         elif cmd == "resolve-tennis-league":
             slug = sys.argv[2] if len(sys.argv) >= 3 else "french-open-men"
             result = resolve_tennis_league_by_slug(slug)

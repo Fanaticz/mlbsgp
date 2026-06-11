@@ -258,6 +258,7 @@ h1 em{color:var(--ac);font-style:normal;}
   <button class="sport-btn active" id="sportBtnMlb" type="button" onclick="setSport('mlb')" aria-pressed="true"><span class="sport-dot"></span>MLB</button>
   <button class="sport-btn" id="sportBtnNba" type="button" onclick="setSport('nba')" aria-pressed="false"><span class="sport-dot"></span>NBA</button>
   <button class="sport-btn" id="sportBtnTennis" type="button" onclick="setSport('tennis')" aria-pressed="false"><span class="sport-dot"></span>TENNIS</button>
+  <button class="sport-btn" id="sportBtnWorldcup" type="button" onclick="setSport('worldcup')" aria-pressed="false"><span class="sport-dot"></span>WORLD CUP</button>
 </div>
 <div class="nav" id="navMlb">
   <button class="nav-tab active" onclick="showPage('global')">Global</button>
@@ -271,6 +272,9 @@ h1 em{color:var(--ac);font-style:normal;}
 </div>
 <div class="nav" id="navTennis" style="display:none">
   <button class="nav-tab active" data-tennis-tab="evfinder" onclick="showTennisPage('evfinder')">Tennis +EV (French Open M)</button>
+</div>
+<div class="nav" id="navWorldcup" style="display:none">
+  <button class="nav-tab active" data-wc-tab="evfinder" onclick="showWorldcupPage('evfinder')">World Cup SGP +EV</button>
 </div>
 <div class="header" id="headerMlb">
   <div class="badge"><span class="dot"></span> <span id="hdrBadge">Loading historical data...</span></div>
@@ -303,6 +307,19 @@ h1 em{color:var(--ac);font-style:normal;}
     <div class="stat"><span class="n">8.5 / 9.5 / 10.5 / 12.5</span><span class="l">1ST SET TOTAL LINES</span></div>
     <div class="stat"><span class="n">.20 / .27 / .30 / .34</span><span class="l">CORR vs DOG SPREAD</span></div>
     <div class="stat"><span class="n">FRENCH OPEN M</span><span class="l">SLATE SCOPE</span></div>
+  </div>
+</div>
+<!-- World Cup header. No correlation model at all: Pinnacle prices the
+     joint outcome directly (BTTS & Total, Result & Total, ...), so a
+     straight multiplicative devig of each exhaustive market group IS the
+     fair joint probability. -->
+<div class="header" id="headerWorldcup" style="display:none">
+  <div class="badge"><span class="dot"></span> <span id="wcHdrBadge">Upload a Pinnacle match PDF to begin</span></div>
+  <h1>World Cup SGP <em>Fair Value</em></h1>
+  <div class="stats-row">
+    <div class="stat"><span class="n">BTTS&times;TOTAL / BTTS&times;WINNER / WINNER&times;TOTAL</span><span class="l">MAIN COMBOS</span></div>
+    <div class="stat"><span class="n">HT/FT &middot; ODD-EVEN&times;TOTAL</span><span class="l">BONUS COMBOS</span></div>
+    <div class="stat"><span class="n">PINNACLE NO-VIG</span><span class="l">FAIR SOURCE</span></div>
   </div>
 </div>
 <div id="page-global" class="page active">
@@ -615,6 +632,54 @@ h1 em{color:var(--ac);font-style:normal;}
   </div>
   <div id="tnsDiag" style="display:none;margin-top:10px;background:var(--s1);border:1px solid var(--b1);border-radius:9px;padding:12px 14px;font-family:Space Mono,monospace"></div>
   <div id="tnsBody"></div>
+</div>
+<!-- World Cup SGP +EV tab. Feed it a Pinnacle match-page PDF (print the
+     pinnacle.com soccer match page to PDF); the server extracts the combo
+     market groups, the client devigs each group to fair probabilities and
+     prices the same selections on DK's posted combo markets. EV% ranked. -->
+<div id="page-worldcup-evfinder" class="page worldcup-page">
+  <div class="ctrl" style="flex-direction:column;align-items:stretch;gap:10px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span style="font-size:13px;color:var(--cyan);font-family:Syne,sans-serif;font-weight:700">WORLD CUP SGP +EV</span>
+      <span style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace">live pinny (or PDF) &rarr; devig &rarr; DK combo markets &rarr; EV%</span>
+    </div>
+    <!-- Primary path: pull odds live from Pinnacle's guest API. -->
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:14px 16px;background:var(--s2);border:1px solid var(--b1);border-radius:9px">
+      <div style="flex:1;min-width:200px">
+        <div style="font-size:12px;color:var(--tx);font-weight:600;margin-bottom:4px">Pull live from Pinnacle</div>
+        <div style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">loads the World Cup slate &middot; pick a match &middot; fetches SGP combos + auto-scans DK</div>
+      </div>
+      <button id="wcPinLoad" type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.loadPinnySlate()" style="padding:10px 18px;font-size:12px;font-weight:700;border:1px solid var(--cyan);border-radius:6px;background:rgba(34,211,238,.12);color:var(--cyan);cursor:pointer;letter-spacing:.6px;font-family:Space Mono,monospace">&#8635; LOAD SLATE</button>
+      <select id="wcPinMatch" style="display:none;max-width:320px;padding:8px;font-size:11px;border:1px solid var(--b1);border-radius:5px;background:var(--s1);color:var(--tx);font-family:Space Mono,monospace" onchange="window.worldcupTab&amp;&amp;window.worldcupTab.onPinMatchPick()"></select>
+    </div>
+    <!-- Fallback path: upload a printed-to-PDF Pinnacle match page. -->
+    <div style="display:flex;gap:12px;align-items:stretch;flex-wrap:wrap">
+      <div id="wcDrop" style="flex:1;min-width:240px;border:2px dashed var(--b2);border-radius:9px;padding:14px 12px;text-align:center;cursor:pointer;transition:all .15s;background:var(--s2)">
+        <div style="font-size:12px;color:var(--tx);font-weight:600;margin-bottom:4px">Pinnacle match page — PDF</div>
+        <div style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">print the Pinnacle match page to PDF &middot; drop it here or click to pick</div>
+        <input type="file" id="wcFile" accept="application/pdf,.pdf" style="display:none" onchange="window.worldcupTab&amp;&amp;window.worldcupTab.onUpload(event)">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:2px;justify-content:center;font-family:Space Mono,monospace">
+        <label for="wcLeagueId" style="font-size:9px;color:var(--mu);letter-spacing:.6px" title="Optional. Blank = auto-resolve the FIFA World Cup league from DK's public page. Find it manually in the DK URL: sportsbook.draftkings.com/leagues/soccer/<slug>.">DK LEAGUE ID (optional)</label>
+        <input id="wcLeagueId" type="text" inputmode="numeric" placeholder="auto" oninput="window.worldcupTab&amp;&amp;window.worldcupTab.onLeagueIdChange()" style="width:120px;padding:6px 8px;font-size:11px;font-weight:600;border:1px solid var(--b1);border-radius:5px;background:var(--s1);color:var(--tx);font-family:Space Mono,monospace">
+      </div>
+      <button id="wcScanBtn" type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.runScan()" style="align-self:center;padding:10px 22px;font-size:12px;font-weight:700;border:1px solid var(--ac);border-radius:6px;background:rgba(34,197,94,.16);color:var(--ac);cursor:pointer;letter-spacing:.6px;font-family:Space Mono,monospace">&#10024; SCAN DK</button>
+    </div>
+    <div class="ctrl" id="wcFilterBar" style="flex-wrap:wrap;gap:10px;align-items:center;padding:0;border:none;background:transparent">
+      <div class="tm-slider"><span class="tm-label">MIN EV%</span><input type="range" id="wcMinEv" min="-10" max="30" step="1" value="0" oninput="window.worldcupTab&amp;&amp;window.worldcupTab.onFilter()"><span class="v" id="wcMinEvV">+0%</span></div>
+      <div style="display:inline-flex;gap:4px;flex-wrap:wrap" title="Which Pinnacle combo markets to include.">
+        <button class="fb active" data-wc-mkt="btts_total"    type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.onMarketBtn(this)">BTTS&times;TOTAL</button>
+        <button class="fb active" data-wc-mkt="btts_winner"   type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.onMarketBtn(this)">BTTS&times;WINNER</button>
+        <button class="fb active" data-wc-mkt="winner_total"  type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.onMarketBtn(this)">WINNER&times;TOTAL</button>
+        <button class="fb active" data-wc-mkt="ht_ft"         type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.onMarketBtn(this)">HT/FT</button>
+        <button class="fb active" data-wc-mkt="oddeven_total" type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.onMarketBtn(this)">ODD-EVEN&times;TOTAL</button>
+      </div>
+      <label class="tm-toggle" title="If on, hide selections with no DK price."><input type="checkbox" id="wcMatchedOnly" checked onchange="window.worldcupTab&amp;&amp;window.worldcupTab.onFilter()"><span>MATCHED ONLY</span></label>
+      <span id="wcCount" style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace;margin-left:auto"></span>
+    </div>
+    <div id="wcStatus" style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace;min-height:16px"></div>
+  </div>
+  <div id="wcBody"></div>
 </div>
 <div class="tm-overlay" id="tmOverlay" onclick="tmClose()"></div>
 <div class="tm-drawer" id="tmDrawer"><button class="tm-close" onclick="tmClose()">&#10005;</button><div id="tmDrawerBody"></div></div>
@@ -3084,27 +3149,32 @@ function getRawCorr(rc,leg1,leg2){if(!rc)return null;var s1=statOf(leg1);var s2=
    keep behaving exactly as before. NBA side is a shell in this phase —
    its page content fills in during Phase 3. */
 function getSportFromUrl(){
-  var m = window.location.search.match(/[?&]sport=(mlb|nba|tennis)(?:&|$)/i);
+  var m = window.location.search.match(/[?&]sport=(mlb|nba|tennis|worldcup)(?:&|$)/i);
   return m ? m[1].toLowerCase() : 'mlb';
 }
 function setSport(sport){
-  if(sport !== 'nba' && sport !== 'tennis') sport = 'mlb';
+  if(sport !== 'nba' && sport !== 'tennis' && sport !== 'worldcup') sport = 'mlb';
   document.body.classList.toggle('sport-mlb', sport==='mlb');
   document.body.classList.toggle('sport-nba', sport==='nba');
   document.body.classList.toggle('sport-tennis', sport==='tennis');
+  document.body.classList.toggle('sport-worldcup', sport==='worldcup');
   var show = function(id, on){var el=document.getElementById(id); if(el) el.style.display = on ? '' : 'none';};
   show('navMlb',       sport==='mlb');
   show('navNba',       sport==='nba');
   show('navTennis',    sport==='tennis');
+  show('navWorldcup',  sport==='worldcup');
   show('headerMlb',    sport==='mlb');
   show('headerNba',    sport==='nba');
   show('headerTennis', sport==='tennis');
+  show('headerWorldcup', sport==='worldcup');
   var btnMlb=document.getElementById('sportBtnMlb');
   var btnNba=document.getElementById('sportBtnNba');
   var btnTns=document.getElementById('sportBtnTennis');
+  var btnWc=document.getElementById('sportBtnWorldcup');
   if(btnMlb){btnMlb.classList.toggle('active', sport==='mlb'); btnMlb.setAttribute('aria-pressed', sport==='mlb');}
   if(btnNba){btnNba.classList.toggle('active', sport==='nba'); btnNba.setAttribute('aria-pressed', sport==='nba');}
   if(btnTns){btnTns.classList.toggle('active', sport==='tennis'); btnTns.setAttribute('aria-pressed', sport==='tennis');}
+  if(btnWc){btnWc.classList.toggle('active', sport==='worldcup'); btnWc.setAttribute('aria-pressed', sport==='worldcup');}
   /* Swap which .page is active. We deactivate everything, then re-activate
      the default page for the chosen sport. MLB has 5 pages and we remember
      the last-opened one so toggling back to MLB returns to wherever the
@@ -3123,6 +3193,11 @@ function setSport(sport){
     var tns=document.getElementById('page-tennis-evfinder'); if(tns) tns.classList.add('active');
     showTennisPage('evfinder');
     if(window.tennisTab && typeof window.tennisTab.onActivate==='function') window.tennisTab.onActivate();
+  } else if(sport === 'worldcup'){
+    var al = document.getElementById('appLoading'); if(al) al.style.display = 'none';
+    var wc=document.getElementById('page-worldcup-evfinder'); if(wc) wc.classList.add('active');
+    showWorldcupPage('evfinder');
+    if(window.worldcupTab && typeof window.worldcupTab.onActivate==='function') window.worldcupTab.onActivate();
   } else {
     var remembered = window._MLB_LAST_PAGE || 'global';
     var el = document.getElementById('page-' + remembered) || document.getElementById('page-global');
@@ -3138,6 +3213,7 @@ function setSport(sport){
     var u = new URL(window.location.href);
     if(sport === 'nba') u.searchParams.set('sport','nba');
     else if(sport === 'tennis') u.searchParams.set('sport','tennis');
+    else if(sport === 'worldcup') u.searchParams.set('sport','worldcup');
     else u.searchParams.delete('sport');
     window.history.replaceState({}, '', u.toString());
   } catch(_){}
@@ -3148,6 +3224,14 @@ function showNbaPage(p){
   if(btn) btn.classList.add('active');
   document.querySelectorAll('.nba-page').forEach(function(e){e.classList.remove('active');});
   var tgt = document.getElementById('page-nba-'+p);
+  if(tgt) tgt.classList.add('active');
+}
+function showWorldcupPage(p){
+  document.querySelectorAll('#navWorldcup .nav-tab').forEach(function(t){t.classList.remove('active');});
+  var btn = document.querySelector('#navWorldcup .nav-tab[data-wc-tab="'+p+'"]');
+  if(btn) btn.classList.add('active');
+  document.querySelectorAll('.worldcup-page').forEach(function(e){e.classList.remove('active');});
+  var tgt = document.getElementById('page-worldcup-'+p);
   if(tgt) tgt.classList.add('active');
 }
 function showTennisPage(p){
@@ -3270,5 +3354,6 @@ function applyPF(){
 <script src="/utils/teammateEvTab.js"></script>
 <script src="/utils/nbaEvTab.js"></script>
 <script src="/utils/tennisEvTab.js"></script>
+<script src="/utils/worldcupEvTab.js"></script>
 </body>
 </html>
