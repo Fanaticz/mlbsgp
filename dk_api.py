@@ -425,16 +425,32 @@ def get_markets(event_id, pitcher_only=False, batter_only=False, nba_only=False,
         # (drop the obviously irrelevant prop families) and keep-generous on
         # anything score/result/goal/half-flavored. The response surfaces the
         # fetched market names so mismatches are debuggable from the UI.
-        _SC_SOCCER_EXCLUDE = ("corner", "card", "booking", "player", "shot",
-                              "goalscorer", "scorer", "assist", "saves",
-                              "foul", "offside", "penalt", "minute",
-                              "time of", "to score in", "quick pick",
-                              "parlay", "same game")
+        _SC_SOCCER_EXCLUDE = ("player", "shot", "assist", "saves", "foul",
+                              "offside", "penalt", "minute", "time of",
+                              "to score in", "quick pick", "parlay",
+                              "same game", "race to", "method", "interval",
+                              "first/last", "1st corner", "first card",
+                              "to receive", "goalkeeper", "each half",
+                              "1st half", "2nd half", "- 1st", "- 2nd",
+                              "halves", "either half", "combined",
+                              "goalscorer &", "goalscorer /",
+                              "team first goalscorer", "last goalscorer",
+                              "either player", "any player", "outside",
+                              "header", "tackle", "from behind",
+                              "highest scoring", "3+ goals", "2+ goals")
         _SC_SOCCER_HINTS = ("score", "result", "goal", "half", "margin",
                             "total", "winner", "game lines", "moneyline",
-                            "odd", "even", "1x2", "combo")
+                            "odd", "even", "1x2", "combo", "corner",
+                            "card", "booking", "goalscorer", "clean sheet",
+                            "spread", "handicap", "double chance",
+                            "tie no bet", "bands", "multi")
         def _keep_soccer(sc):
             n = (sc.get("name") or "").lower()
+            # 1st-half moneyline lives in "Moneyline - Halves (3-Way)" —
+            # needed as the HT leg of HT/FT SGPs, so it survives the
+            # halves/period exclusions below.
+            if "moneyline - halves" in n:
+                return True
             if any(h in n for h in _SC_SOCCER_EXCLUDE):
                 return False
             return any(k in n for k in _SC_SOCCER_HINTS)
@@ -538,6 +554,8 @@ def get_markets(event_id, pitcher_only=False, batter_only=False, nba_only=False,
                 "marketType": mtype,
                 "subcategory": m.get("_subCategoryName", ""),
                 "player": pname,
+                "participantRole": (sel_players[0].get("venueRole", "")
+                                    if sel_players else ""),
                 "outcomeType": outcome_type,
                 "label": s.get("label", ""),
                 "displayPoints": display,
@@ -2379,10 +2397,63 @@ def _soccer_market_kind(blob):
         return "btts_total"
     if has_btts and has_result:
         return "btts_winner"
-    if has_oddeven and has_total:
+    if has_oddeven and re.search(r"\b(over|under)\b|o/u|over/under", b):
+        # Plain "Total Goals Odd/Even" (no O/U dimension) is the SGP *leg*
+        # market — _soccer_straight_kind classifies it as "oddeven".
         return "oddeven_total"
     if has_result and has_total and not has_btts:
         return "winner_total"
+    return None
+
+
+def _soccer_straight_kind(market_name, subcat):
+    """Classify a DK straight (non-combo) market into one of the extended
+    Pinnacle group kinds. Name-anchored — these were verified against the
+    live World Cup 2026 slate. Returns None for anything unrecognized."""
+    n = (market_name or "").strip()
+    nl = n.lower()
+    sl = (subcat or "").lower()
+    blob = nl + " " + sl
+    # SGP leg markets that intentionally precede the period guard:
+    if nl == "moneyline 1st half" or nl == "moneyline - 1st half":
+        return "ml_1h"
+    if any(p in blob for p in _SOCCER_PERIOD_EXCLUDE) or \
+       "1st half" in blob or "2nd half" in blob:
+        return None
+    if nl == "moneyline":
+        return "moneyline"
+    if nl in ("total goals odd/even", "total goals - odd/even"):
+        return "oddeven"
+    if nl == "total goals":
+        return "total_goals"
+    if nl == "spread" and "asian handicap" in sl:
+        return "spread"
+    if nl.endswith(": team total goals"):
+        return "team_goals"
+    if nl == "double chance":
+        return "double_chance"
+    if nl == "tie no bet" or nl == "draw no bet":
+        return "draw_no_bet"
+    if nl == "both teams to score":
+        return "btts"
+    if nl == "multi goals":
+        return "total_goals_range"
+    if nl == "winning margin":
+        return "winning_margin"
+    if nl == "1st goal" or nl == "first goal":
+        return "first_team_to_score"
+    if nl == "team clean sheet":
+        return "team_to_score"
+    if nl == "total corners":
+        return "corners_total"
+    if nl.endswith(": team total corners"):
+        return "team_corners"
+    if nl == "total cards":
+        return "cards_total"
+    if nl.endswith(": team total cards"):
+        return "team_cards"
+    if nl == "anytime goalscorer":
+        return "player_to_score"
     return None
 
 
@@ -2510,6 +2581,159 @@ def _match_soccer_selection(cand, props_for_kind, home, away):
                 return p
             continue
 
+        if key in ("moneyline", "ml_1h"):
+            ot = (p.get("outcomeType") or "").lower()
+            res = {"home": "home", "tie": "draw", "draw": "draw",
+                   "away": "away"}.get(ot) or _label_result_token(label, home, away)
+            if res == cand.get("result"):
+                return p
+            continue
+
+        if key == "oddeven":
+            want_odd = str(cand.get("odd_even", "")).lower() == "odd"
+            if want_odd == _label_has_word(label, "odd") and \
+               want_odd != _label_has_word(label, "even"):
+                return p
+            continue
+
+        if key in ("total_goals", "corners_total", "cards_total"):
+            ot = (p.get("outcomeType") or "").title()
+            if ot != cand.get("total_side"):
+                continue
+            pts = p.get("points")
+            if pts is None or cand.get("total_line") is None or \
+               abs(float(pts) - float(cand["total_line"])) > 1e-6:
+                continue
+            return p
+
+        if key in ("team_goals", "team_corners", "team_cards"):
+            team_name = home if cand.get("team") == "home" else away
+            if not _team_matches_soccer(team_name,
+                                        (p.get("marketName") or "").split(":")[0]):
+                continue
+            ot = (p.get("outcomeType") or "").title()
+            if ot != cand.get("total_side"):
+                continue
+            pts = p.get("points")
+            if pts is None or cand.get("total_line") is None or \
+               abs(float(pts) - float(cand["total_line"])) > 1e-6:
+                continue
+            return p
+
+        if key == "spread":
+            ot = (p.get("outcomeType") or "").lower()
+            side = {"home": "home", "away": "away"}.get(ot)
+            if side != cand.get("team"):
+                continue
+            pts = p.get("points")
+            if pts is None or cand.get("line") is None or \
+               abs(float(pts) - float(cand["line"])) > 1e-6:
+                continue
+            return p
+
+        if key == "double_chance":
+            ot = (p.get("outcomeType") or "").upper()
+            want = {"home_draw": "1X", "home_away": "12", "draw_away": "X2"}.get(cand.get("dc"))
+            if ot == want and want:
+                return p
+            # Fallback on label text ("Mexico or Tie")
+            if not want:
+                continue
+            toks = re.split(r"\bor\b", label, flags=re.I)
+            if len(toks) == 2:
+                a = _label_result_token(toks[0], home, away)
+                b = _label_result_token(toks[1], home, away)
+                pairs = {"home_draw": {"draw", "home"}, "home_away": {"away", "home"},
+                         "draw_away": {"away", "draw"}}
+                if {a, b} == pairs.get(cand.get("dc"), set()):
+                    return p
+            continue
+
+        if key == "draw_no_bet":
+            ot = (p.get("outcomeType") or "").lower()
+            res = {"home": "home", "away": "away"}.get(ot) or \
+                  _label_result_token(label, home, away)
+            if res == cand.get("result"):
+                return p
+            continue
+
+        if key == "btts":
+            want_yes = str(cand.get("btts", "")).lower() == "yes"
+            if want_yes == _label_has_word(label, "yes") and \
+               want_yes != _label_has_word(label, "no"):
+                return p
+            continue
+
+        if key == "total_goals_range":
+            # DK "Multi Goals" bands: "1-2 Goals" (Yes side only; the
+            # "Anything Other Than" rows are complements).
+            if (p.get("outcomeType") or "").lower() == "no" or \
+               "anything other" in label.lower():
+                continue
+            m_band = re.match(r"^(\d+)\s*-\s*(\d+) Goals?$", label.strip(), re.I)
+            if m_band and f"{m_band.group(1)}-{m_band.group(2)}" == cand.get("range"):
+                return p
+            continue
+
+        if key == "winning_margin":
+            ot = (p.get("outcomeType") or "").lower()
+            side = {"home": "home", "tie": "draw", "away": "away"}.get(ot)
+            if side != cand.get("side"):
+                continue
+            lab = label.lower()
+            margin = cand.get("margin")
+            if margin == "score_draw":
+                if "score tie" in lab and "no score" not in lab:
+                    return p
+            elif margin == "no_goal":
+                if "no score tie" in lab or "no goal" in lab:
+                    return p
+            elif margin and margin.endswith("+"):
+                if re.search(rf"by {margin[:-1]} goals? or more", lab):
+                    return p
+            elif margin:
+                if re.search(rf"by {margin} goals?$", lab.strip()):
+                    return p
+            continue
+
+        if key == "first_team_to_score":
+            ot = (p.get("outcomeType") or "").lower()
+            res = {"home": "home", "away": "away", "tie": "neither"}.get(ot)
+            if res is None:
+                res = "neither" if "no goal" in label.lower() else \
+                      _label_result_token(label, home, away)
+            if res == cand.get("result"):
+                return p
+            continue
+
+        if key == "team_to_score":
+            # DK lists "Team Clean Sheet" per team: clean sheet for team T
+            # means the OPPONENT doesn't score, so home-to-score=Yes maps to
+            # away clean sheet=No (and vice versa).
+            opp = "away" if cand.get("team") == "home" else "home"
+            opp_name = home if opp == "home" else away
+            # Participant names can be localized ("Sudáfrica") — venueRole is
+            # the reliable team identifier on this market.
+            role = (p.get("participantRole") or "").lower()
+            if role in ("home", "away"):
+                if role != opp:
+                    continue
+            elif not _team_matches_soccer(opp_name, p.get("player") or ""):
+                continue
+            is_yes = _label_has_word(label, "yes")
+            want_cs_yes = not cand.get("yes")  # to-score Yes ⇒ clean sheet No
+            if is_yes == want_cs_yes:
+                return p
+            continue
+
+        if key == "player_to_score":
+            if not cand.get("yes"):
+                continue  # DK lists anytime-scorer Yes prices only
+            pl, ll = _norm_soccer(cand.get("player", "")), _norm_soccer(label)
+            if pl and ll and (pl in ll or ll in pl):
+                return p
+            continue
+
         if key == "oddeven_total":
             # DK doesn't list an Odd/Even × Total combo on this slate; this
             # branch only fires if one ever appears with explicit labels.
@@ -2577,26 +2801,125 @@ def find_sgps_worldcup(payload):
     for p in md["props"]:
         blob = " ".join([p.get("marketName", ""), p.get("marketType", ""),
                          p.get("subcategory", "")])
-        kind = _soccer_market_kind(blob)
+        kind = _soccer_market_kind(blob) or \
+               _soccer_straight_kind(p.get("marketName", ""), p.get("subcategory", ""))
         if not kind:
             continue
         props_by_kind.setdefault(kind, []).append(p)
         market_names_by_kind.setdefault(kind, set()).add(p.get("marketName", ""))
 
-    results = []
-    for c in candidates:
+    # Combo candidates are priced as REAL 2-leg SGPs (leg selections fed to
+    # DK's calculateBets) rather than read off the prebuilt combo markets —
+    # SGP-only boosts apply to these tickets, and the SGP engine prices
+    # cells DK never prebuilds (e.g. Under 2.5 & BTTS No). The prebuilt
+    # combo market remains the fallback when a leg can't be resolved or
+    # DK refuses the combination.
+    import concurrent.futures as _cf
+    COMBO_KINDS = {"btts_total", "btts_winner", "winner_total", "ht_ft",
+                   "oddeven_total"}
+
+    def _leg_specs(c):
         key = c.get("market_key")
-        pool = props_by_kind.get(key, [])
-        m = _match_soccer_selection(c, pool, home, away) if pool else None
+        tot = {"market_key": "total_goals",
+               "total_side": c.get("total_side"),
+               "total_line": c.get("total_line")}
+        if key == "btts_total":
+            return [{"market_key": "btts", "btts": c.get("btts")}, tot]
+        if key == "btts_winner":
+            return [{"market_key": "btts", "btts": c.get("btts")},
+                    {"market_key": "moneyline", "result": c.get("result")}]
+        if key == "winner_total":
+            return [{"market_key": "moneyline", "result": c.get("result")}, tot]
+        if key == "ht_ft":
+            return [{"market_key": "ml_1h", "result": c.get("ht")},
+                    {"market_key": "moneyline", "result": c.get("ft")}]
+        if key == "oddeven_total":
+            return [{"market_key": "oddeven", "odd_even": c.get("odd_even")}, tot]
+        return None
+
+    def _match_prebuilt(c):
+        pool = props_by_kind.get(c.get("market_key"), [])
+        return _match_soccer_selection(c, pool, home, away) if pool else None
+
+    resolved = []
+    for c in candidates:
+        entry = {"c": c, "legs": None, "prebuilt": None}
+        if c.get("market_key") in COMBO_KINDS:
+            legs = []
+            for sp in _leg_specs(c) or []:
+                pool = props_by_kind.get(sp["market_key"], [])
+                m = _match_soccer_selection(sp, pool, home, away) if pool else None
+                if not m:
+                    legs = None
+                    break
+                legs.append(m)
+            entry["legs"] = legs
+            if legs is None:
+                entry["prebuilt"] = _match_prebuilt(c)
+        else:
+            entry["prebuilt"] = _match_prebuilt(c)
+        resolved.append(entry)
+
+    price_cache = {}
+    jobs = []
+    for e in resolved:
+        if e["legs"]:
+            ids = frozenset(l["selectionId"] for l in e["legs"])
+            if len(ids) == 2 and ids not in price_cache:
+                price_cache[ids] = "pending"
+                jobs.append(ids)
+
+    truncated = False
+    deadline = _time.monotonic() + 110.0
+    def _price_job(ids):
+        return ids, _price_combo(sorted(ids))
+    if jobs:
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            futs = [ex.submit(_price_job, j) for j in jobs]
+            try:
+                for f in as_completed(futs, timeout=max(0.5, deadline - _time.monotonic())):
+                    try:
+                        k, price = f.result()
+                        price_cache[k] = price
+                    except Exception:
+                        pass
+            except _cf.TimeoutError:
+                truncated = True
+                for f in futs:
+                    f.cancel()
+
+    results = []
+    for e in resolved:
+        c = e["c"]
+        key = c.get("market_key")
         out = {"id": c.get("id"), "market_key": key}
+        if e["legs"]:
+            ids = frozenset(l["selectionId"] for l in e["legs"])
+            price = price_cache.get(ids)
+            if price and price != "pending":
+                out["matched"] = True
+                out["via"] = "sgp"
+                out["dk_american"] = price.get("sgpOdds")
+                out["dk_decimal"] = price.get("sgpDecimal")
+                out["dk_market"] = "SGP: " + " + ".join(
+                    l.get("marketName", "") for l in e["legs"])
+                out["dk_label"] = " + ".join(
+                    (l.get("label") or l.get("outcomeType") or "") for l in e["legs"])
+                results.append(out)
+                continue
+            # SGP pricing refused/failed — fall back to the prebuilt market.
+            e["prebuilt"] = _match_prebuilt(c)
+        m = e["prebuilt"]
         if m:
             out["matched"] = True
+            out["via"] = "prebuilt"
             out["dk_american"] = m.get("oddsAmerican")
             out["dk_decimal"] = m.get("oddsDecimal")
-            out["dk_label"] = m.get("outcomeType")
+            out["dk_label"] = m.get("label") or m.get("outcomeType")
             out["dk_market"] = m.get("marketName")
             out["isDisabled"] = m.get("isDisabled", False)
         else:
+            pool = props_by_kind.get(key, [])
             out["matched"] = False
             out["missing"] = ("no DK market of this kind" if not pool
                               else "no selection matched in: " +
@@ -2606,12 +2929,15 @@ def find_sgps_worldcup(payload):
     # Unique fetched market names — the debugging lifeline when DK renames
     # things (the tennis scan shipped blind and burned a day on this).
     seen_markets = sorted({p.get("marketName", "") for p in md["props"] if p.get("marketName")})
-    return {"results": results,
+    resp = {"results": results,
             "event_id": eid,
             "event_name": event.get("name", ""),
             "league_id": games_data.get("leagueId"),
             "home": event.get("homeTeam"), "away": event.get("awayTeam"),
             "available_markets": seen_markets[:80]}
+    if truncated:
+        resp["truncated"] = True
+    return resp
 
 
 # ===== Pinnacle guest API (live World Cup specials — no PDF needed) =====
@@ -2677,9 +3003,95 @@ def pinnacle_wc_games(league_id=None):
     return {"matches": out, "leagueId": lid}
 
 
+def _pin_amer_to_prob(o):
+    o = float(o)
+    return 100.0 / (o + 100.0) if o > 0 else -o / (-o + 100.0)
+
+
+def _pin_prob_to_amer(p):
+    if p <= 0 or p >= 1:
+        return None
+    return int(round(-p / (1 - p) * 100)) if p >= 0.5 else int(round((1 - p) / p * 100))
+
+
+def _pin_devig(sels):
+    """Multiplicative devig in place. Valid only for mutually exclusive,
+    exhaustive partitions — every group built below is one."""
+    probs = [_pin_amer_to_prob(s["odds"]) for s in sels]
+    t = sum(probs)
+    if t <= 0:
+        return
+    for s, p in zip(sels, probs):
+        s["fair_prob"] = round(p / t, 6)
+
+
+def _pin_is_half_line(x):
+    """True for clean .5 lines (2.5, 9.5). Quarter/integer lines carry push /
+    half-win semantics that break the straight-devig assumption."""
+    try:
+        return abs(float(x) * 2 - round(float(x) * 2)) < 1e-9 and \
+               int(round(float(x) * 2)) % 2 == 1
+    except (TypeError, ValueError):
+        return False
+
+
+def _pin_result_of(name, home, away):
+    n = _norm_soccer(name)
+    if "draw" in n or "tie" in n:
+        return "draw"
+    if _team_matches_soccer(home, n):
+        return "home"
+    if _team_matches_soccer(away, n):
+        return "away"
+    return None
+
+
+def _pin_combo_fields(key, name, home, away):
+    """Structured DK-matcher fields for a combo selection name (mirrors
+    structureSelection in worldcupEvTab.js, which still serves the PDF path)."""
+    def total_of(s):
+        side = "Over" if re.search(r"\bover\b", s, re.I) else \
+               ("Under" if re.search(r"\bunder\b", s, re.I) else None)
+        m = re.search(r"(\d+(?:\.\d+)?)", s)
+        return side, (float(m.group(1)) if m else None)
+    parts = [p.strip() for p in name.split("&")]
+    if key == "btts_total" and len(parts) == 2:
+        side, line = total_of(parts[1])
+        if re.match(r"^(yes|no)$", parts[0], re.I) and side:
+            return {"btts": parts[0].title(), "total_side": side, "total_line": line}
+    if key == "btts_winner" and len(parts) == 2:
+        r = _pin_result_of(parts[1], home, away)
+        if re.match(r"^(yes|no)$", parts[0], re.I) and r:
+            return {"btts": parts[0].title(), "result": r}
+    if key == "winner_total" and len(parts) == 2:
+        r = _pin_result_of(parts[0], home, away)
+        side, line = total_of(parts[1])
+        if r and side:
+            return {"result": r, "total_side": side, "total_line": line}
+    if key == "oddeven_total" and len(parts) == 2:
+        side, line = total_of(parts[1])
+        if re.match(r"^(odd|even)$", parts[0], re.I) and side:
+            return {"odd_even": parts[0].title(), "total_side": side, "total_line": line}
+    if key == "ht_ft":
+        seg = re.split(r"\s+-\s+", name)
+        if len(seg) == 2:
+            ht, ft = _pin_result_of(seg[0], home, away), _pin_result_of(seg[1], home, away)
+            if ht and ft:
+                return {"ht": ht, "ft": ft}
+    return None
+
+
 def pinnacle_wc_specials(matchup_id):
-    """Fetch one match's combo-special markets live from Pinnacle and return
-    the same {home, away, kickoff, markets} shape the PDF parser produces."""
+    """Fetch one match's markets live from Pinnacle.
+
+    Returns the legacy {markets} dict (combo specials — same shape as the
+    PDF parser) PLUS a richer "groups" list covering every devig-able
+    partition we can pair with a DK market: 3-way moneyline, totals, asian
+    spread (.5 lines), team goals, double chance / draw-no-bet (derived
+    from the devigged moneyline), BTTS, goal bands, winning margin, first
+    team to score, team to score, corners + cards totals (team & match),
+    and per-player "To Score" specials. Each group selection carries
+    fair_prob (no-vig) and the structured fields the DK matcher consumes."""
     mid = int(matchup_id)
     rel = _pin_get(f"/matchups/{mid}/related")
     parent = next((m for m in rel if m.get("type") == "matchup"
@@ -2689,44 +3101,254 @@ def pinnacle_wc_specials(matchup_id):
     if parent is None:
         return {"error": f"matchup {matchup_id} not found on pinnacle"}
     ps = {p.get("alignment"): p.get("name") for p in parent.get("participants", [])}
+    home, away = ps.get("home"), ps.get("away")
 
-    # Map each tracked special matchup to (our key, participantId -> name)
-    specials = {}
+    # Sub-matchups: corners and bookings ride along as separate matchup ids.
+    corners_id = next((m.get("id") for m in rel if m.get("type") == "matchup"
+                       and m.get("units") == "Corners"), None)
+    bookings_id = next((m.get("id") for m in rel if m.get("type") == "matchup"
+                        and m.get("units") == "Bookings"), None)
+
+    # Classify every special matchup we know how to price.
+    combo_specials = {}   # special matchup id -> (combo key, pid->name)
+    other_specials = {}   # special matchup id -> (kind, payload)
     for m in rel:
-        desc = (m.get("special") or {}).get("description") or ""
+        if m.get("type") != "special":
+            continue
+        sp = m.get("special") or {}
+        desc = (sp.get("description") or "").strip()
+        parts = {p.get("id"): p.get("name") for p in m.get("participants", [])}
+        matched_combo = False
         for key, pat in _PIN_SPECIAL_KEYS:
-            if pat.match(desc.strip()):
-                parts = {p.get("id"): p.get("name") for p in m.get("participants", [])}
-                specials[m.get("id")] = (key, parts)
+            if pat.match(desc):
+                combo_specials[m.get("id")] = (key, parts)
+                matched_combo = True
                 break
+        if matched_combo:
+            continue
+        if desc == "Total Goals Range":
+            other_specials[m.get("id")] = ("total_goals_range", parts)
+        elif desc == "Winning Margin":
+            other_specials[m.get("id")] = ("winning_margin", parts)
+        elif desc == "First Team To Score":
+            other_specials[m.get("id")] = ("first_team_to_score", parts)
+        elif home and desc == f"{home} To Score?":
+            other_specials[m.get("id")] = ("team_to_score:home", parts)
+        elif away and desc == f"{away} To Score?":
+            other_specials[m.get("id")] = ("team_to_score:away", parts)
+        elif sp.get("category") == "Player Props" and desc.endswith(" To Score"):
+            player = desc[: -len(" To Score")].strip()
+            other_specials[m.get("id")] = (f"player_to_score:{player}", parts)
 
     prices = _pin_get(f"/matchups/{mid}/markets/related/straight")
-    markets = {}
-    for mk in prices:
-        sid = mk.get("matchupId")
-        if sid not in specials or mk.get("type") != "moneyline":
-            continue
-        if mk.get("period") not in (0, None):  # full match only
-            continue
-        key, parts = specials[sid]
-        sels = []
-        for pr in mk.get("prices", []):
+
+    groups = []   # [{key, label, kind, sels:[{name, odds, fair_prob, fields}]}]
+    markets = {}  # legacy combo dict (PDF-parser shape)
+
+    def add_group(key, label, kind, sels, devig=True):
+        if not sels:
+            return
+        if devig:
+            _pin_devig(sels)
+        groups.append({"key": key, "label": label, "kind": kind, "sels": sels})
+
+    def special_sels(price_entry, parts):
+        out = []
+        for pr in price_entry.get("prices", []):
             name = parts.get(pr.get("participantId"))
             price = pr.get("price")
             if name and isinstance(price, (int, float)):
-                sels.append({"name": name, "odds": int(price)})
-        if sels:
-            markets[key] = sels
+                out.append({"name": name, "odds": int(price)})
+        return out
+
+    ml_fair = None  # {'home':p,'draw':p,'away':p} once the moneyline devigs
+
+    for mk in prices:
+        if mk.get("period") not in (0, None):
+            continue
+        sid = mk.get("matchupId")
+        mtype = mk.get("type")
+
+        # --- combo specials (legacy behavior, now with fields + fair) ---
+        if sid in combo_specials and mtype == "moneyline":
+            key, parts = combo_specials[sid]
+            sels = special_sels(mk, parts)
+            if sels:
+                markets[key] = [{"name": s["name"], "odds": s["odds"]} for s in sels]
+                for s in sels:
+                    s["fields"] = _pin_combo_fields(key, s["name"], home, away)
+                labels = {"btts_total": "BTTS / Total Goals",
+                          "btts_winner": "BTTS / Winner",
+                          "winner_total": "Winner / Total Goals",
+                          "ht_ft": "HT / FT",
+                          "oddeven_total": "Odd-Even / Total",
+                          "btts": "Both Teams To Score"}
+                if key == "btts":
+                    for s in sels:
+                        s["fields"] = {"btts": s["name"].title()}
+                add_group(key, labels.get(key, key), key, sels)
+            continue
+
+        # --- named non-combo specials ---
+        if sid in other_specials and mtype == "moneyline":
+            kind, parts = other_specials[sid]
+            sels = special_sels(mk, parts)
+            if not sels:
+                continue
+            if kind == "total_goals_range":
+                for s in sels:
+                    s["fields"] = {"range": re.sub(r"\s*-\s*", "-", s["name"]).strip()}
+                add_group("total_goals_range", "Total Goals Range", "total_goals_range", sels)
+            elif kind == "winning_margin":
+                for s in sels:
+                    n = s["name"]
+                    m_by = re.match(r"^(.*?) By (\d+\+?)$", n)
+                    if m_by:
+                        side = _pin_result_of(m_by.group(1), home, away)
+                        s["fields"] = {"side": side, "margin": m_by.group(2)} if side else None
+                    elif "Any Score Draw" in n:
+                        s["fields"] = {"side": "draw", "margin": "score_draw"}
+                    elif n.strip() == "No Goal":
+                        s["fields"] = {"side": "draw", "margin": "no_goal"}
+                    else:
+                        s["fields"] = None
+                add_group("winning_margin", "Winning Margin", "winning_margin", sels)
+            elif kind == "first_team_to_score":
+                for s in sels:
+                    r = "neither" if "neither" in s["name"].lower() else \
+                        _pin_result_of(s["name"], home, away)
+                    s["fields"] = {"result": r} if r else None
+                add_group("first_team_to_score", "First Team To Score",
+                          "first_team_to_score", sels)
+            elif kind.startswith("team_to_score:"):
+                team = kind.split(":", 1)[1]
+                team_name = home if team == "home" else away
+                for s in sels:
+                    s["fields"] = {"team": team,
+                                   "yes": s["name"].strip().lower() == "yes"}
+                add_group(f"team_to_score_{team}", f"{team_name} To Score",
+                          "team_to_score", sels)
+            elif kind.startswith("player_to_score:"):
+                player = kind.split(":", 1)[1]
+                for s in sels:
+                    s["fields"] = ({"player": player, "yes": True}
+                                   if s["name"].strip().lower() == "yes" else None)
+                add_group(f"player_to_score_{_norm_soccer(player).replace(' ', '_')}",
+                          f"{player} To Score", "player_to_score", sels)
+            continue
+
+        # --- parent / corners / bookings straight markets ---
+        scope = ("goals" if sid == mid else
+                 "corners" if sid == corners_id else
+                 "cards" if sid == bookings_id else None)
+        if scope is None:
+            continue
+
+        if mtype == "moneyline" and scope == "goals":
+            sels = []
+            for pr in mk.get("prices", []):
+                d = pr.get("designation")
+                if d in ("home", "draw", "away") and isinstance(pr.get("price"), (int, float)):
+                    name = home if d == "home" else (away if d == "away" else "Draw")
+                    sels.append({"name": name, "odds": int(pr["price"]),
+                                 "fields": {"result": d}})
+            add_group("moneyline", "Moneyline (3-way)", "moneyline", sels)
+            if len(sels) == 3:
+                ml_fair = {s["fields"]["result"]: s["fair_prob"] for s in sels}
+
+        elif mtype == "total":
+            line = next((pr.get("points") for pr in mk.get("prices", [])
+                         if pr.get("points") is not None), None)
+            if not _pin_is_half_line(line):
+                continue
+            kind = {"goals": "total_goals", "corners": "corners_total",
+                    "cards": "cards_total"}[scope]
+            label = {"goals": "Total Goals", "corners": "Total Corners",
+                     "cards": "Total Cards"}[scope]
+            sels = []
+            for pr in mk.get("prices", []):
+                d = pr.get("designation")
+                if d in ("over", "under") and isinstance(pr.get("price"), (int, float)):
+                    sels.append({"name": f"{d.title()} {line:g}", "odds": int(pr["price"]),
+                                 "fields": {"total_side": d.title(), "total_line": float(line)}})
+            add_group(f"{kind}_{line:g}", f"{label} {line:g}", kind, sels)
+
+        elif mtype == "team_total":
+            side = mk.get("side")
+            line = next((pr.get("points") for pr in mk.get("prices", [])
+                         if pr.get("points") is not None), None)
+            if side not in ("home", "away") or not _pin_is_half_line(line):
+                continue
+            kind = {"goals": "team_goals", "corners": "team_corners",
+                    "cards": "team_cards"}[scope]
+            noun = {"goals": "Goals", "corners": "Corners", "cards": "Cards"}[scope]
+            team_name = home if side == "home" else away
+            sels = []
+            for pr in mk.get("prices", []):
+                d = pr.get("designation")
+                if d in ("over", "under") and isinstance(pr.get("price"), (int, float)):
+                    sels.append({"name": f"{team_name} {d.title()} {line:g}",
+                                 "odds": int(pr["price"]),
+                                 "fields": {"team": side, "total_side": d.title(),
+                                            "total_line": float(line)}})
+            add_group(f"{kind}_{side}_{line:g}", f"{team_name} {noun} {line:g}", kind, sels)
+
+        elif mtype == "spread" and scope == "goals":
+            prs = mk.get("prices", [])
+            hline = next((pr.get("points") for pr in prs
+                          if pr.get("designation") == "home"), None)
+            if hline is None or not _pin_is_half_line(hline):
+                continue
+            sels = []
+            for pr in prs:
+                d = pr.get("designation")
+                if d in ("home", "away") and isinstance(pr.get("price"), (int, float)):
+                    pts = float(pr.get("points"))
+                    team_name = home if d == "home" else away
+                    sels.append({"name": f"{team_name} {pts:+g}", "odds": int(pr["price"]),
+                                 "fields": {"team": d, "line": pts}})
+            add_group(f"spread_{hline:+g}", f"Spread {home} {hline:+g}", "spread", sels)
+
+    # Derived 2-from-3 markets: exact transforms of the devigged moneyline.
+    if ml_fair and all(k in ml_fair for k in ("home", "draw", "away")):
+        dc = [
+            {"name": f"{home} or Draw", "fields": {"dc": "home_draw"},
+             "fair_prob": ml_fair["home"] + ml_fair["draw"]},
+            {"name": f"Draw or {away}", "fields": {"dc": "draw_away"},
+             "fair_prob": ml_fair["draw"] + ml_fair["away"]},
+            {"name": f"{home} or {away}", "fields": {"dc": "home_away"},
+             "fair_prob": ml_fair["home"] + ml_fair["away"]},
+        ]
+        for s in dc:
+            s["odds"] = None
+        add_group("double_chance", "Double Chance (from ML)", "double_chance",
+                  dc, devig=False)
+        ph, pa = ml_fair["home"], ml_fair["away"]
+        if ph + pa > 0:
+            dnb = [
+                {"name": home, "fields": {"result": "home"}, "odds": None,
+                 "fair_prob": round(ph / (ph + pa), 6)},
+                {"name": away, "fields": {"result": "away"}, "odds": None,
+                 "fair_prob": round(pa / (ph + pa), 6)},
+            ]
+            add_group("draw_no_bet", "Draw No Bet (from ML)", "draw_no_bet",
+                      dnb, devig=False)
+
+    for g in groups:
+        for s in g["sels"]:
+            if "fair_prob" in s and s["fair_prob"] is not None:
+                s["fair_american"] = _pin_prob_to_amer(s["fair_prob"])
 
     return {
         "ok": True,
         "source": "pinnacle-api",
         "matchup_id": mid,
-        "home": ps.get("home"),
-        "away": ps.get("away"),
+        "home": home,
+        "away": away,
         "league": (parent.get("league") or {}).get("name", "FIFA - World Cup"),
         "kickoff": parent.get("startTime", ""),
         "markets": markets,
+        "groups": groups,
         "sgp_markets_found": [k for k in markets
                               if k in ("btts_total", "btts_winner", "winner_total",
                                        "ht_ft", "oddeven_total")

@@ -18,7 +18,7 @@
     scanning: false,
     minEv: 0,
     matchedOnly: true,
-    enabledMarkets: { btts_total: true, btts_winner: true, winner_total: true, ht_ft: true, oddeven_total: true },
+    enabledCats: { combos: true, gamelines: true, team: true, corners: true, cards: true, players: true },
   };
 
   var MARKET_LABELS = {
@@ -27,6 +27,20 @@
     winner_total: 'Winner / Total Goals',
     ht_ft: 'HT / FT',
     oddeven_total: 'Odd-Even / Total',
+  };
+
+  /* Filter category per market kind. Combos = the joint SGP markets; the
+     rest are straight Pinnacle partitions paired with DK's listed markets. */
+  var KIND_CATS = {
+    btts_total: 'combos', btts_winner: 'combos', winner_total: 'combos',
+    ht_ft: 'combos', oddeven_total: 'combos',
+    moneyline: 'gamelines', total_goals: 'gamelines', spread: 'gamelines',
+    double_chance: 'gamelines', draw_no_bet: 'gamelines', btts: 'gamelines',
+    team_goals: 'team', team_to_score: 'team', winning_margin: 'team',
+    total_goals_range: 'team', first_team_to_score: 'team',
+    corners_total: 'corners', team_corners: 'corners',
+    cards_total: 'cards', team_cards: 'cards',
+    player_to_score: 'players',
   };
 
   function $(id) { return document.getElementById(id); }
@@ -97,8 +111,30 @@
     return null;
   }
 
-  /* Devig one market group (multiplicative): fair_i = implied_i / Σ implied. */
+  /* Devig one market group (multiplicative): fair_i = implied_i / Σ implied.
+     Live Pinnacle pulls arrive with server-computed groups (fair_prob +
+     structured fields included) covering far more markets than the PDF can;
+     the PDF path falls back to client-side parsing of the 5 combo groups. */
   function buildCandidates(parsed) {
+    if (parsed.groups && parsed.groups.length) {
+      var out2 = [];
+      parsed.groups.forEach(function (g, gi) {
+        g.sels.forEach(function (s, i) {
+          if (s.fair_prob == null) return;
+          out2.push({
+            id: g.key + ':' + i,
+            market_key: g.kind,
+            group_label: g.label,
+            name: s.name,
+            pin_odds: s.odds,
+            fair_prob: s.fair_prob,
+            fair_american: s.fair_american != null ? s.fair_american : M.probToAmerican(s.fair_prob),
+            fields: s.fields || null,
+          });
+        });
+      });
+      return out2;
+    }
     var out = [];
     var keys = Object.keys(MARKET_LABELS);
     keys.forEach(function (key) {
@@ -271,7 +307,7 @@
       return;
     }
     var rows = state.candidates
-      .filter(function (c) { return state.enabledMarkets[c.market_key]; })
+      .filter(function (c) { return state.enabledCats[KIND_CATS[c.market_key] || 'team'] !== false; })
       .map(function (c) {
         var dk = state.dkById[c.id];
         return { c: c, dk: dk, ev: evFor(c) };
@@ -319,7 +355,8 @@
       }
       var missTitle = dk && dk.missing ? String(dk.missing) : '';
       html += '<tr style="border-top:1px solid var(--b1)">' +
-        '<td style="padding:7px 10px;color:var(--cyan);white-space:nowrap">' + (MARKET_LABELS[c.market_key] || c.market_key) + '</td>' +
+        '<td style="padding:7px 10px;color:var(--cyan);white-space:nowrap">' + (c.group_label || MARKET_LABELS[c.market_key] || c.market_key) +
+          (dk && dk.via === 'sgp' ? ' <span style="font-size:9px;color:var(--ac);border:1px solid var(--ac);border-radius:3px;padding:0 3px" title="Priced as a real 2-leg SGP via DK calculateBets — boost-eligible. Legs: ' + String(dk.dk_market || '').replace(/"/g, '&quot;') + '">SGP</span>' : '') + '</td>' +
         '<td style="padding:7px 10px;color:var(--tx)">' + c.name + '</td>' +
         '<td style="padding:7px 10px;text-align:right;color:var(--mu)">' + fmtAm(c.pin_odds) + '</td>' +
         '<td style="padding:7px 10px;text-align:right;color:var(--tx)">' + fmtAm(c.fair_american) + '</td>' +
@@ -331,13 +368,18 @@
     });
     html += '</tbody></table>';
 
-    // Group-hold footnote + DK debug: which market names DK actually lists.
+    // Group-hold footnote (PDF path only) + DK debug market-name list.
     var holds = {};
-    state.candidates.forEach(function (c) { holds[c.market_key] = c.group_hold_pct; });
-    var holdTxt = Object.keys(holds).map(function (k) {
-      return (MARKET_LABELS[k] || k) + ' ' + holds[k].toFixed(1) + '%';
-    }).join(' · ');
-    html += '<div style="margin-top:10px;font-size:10px;color:var(--mu);font-family:Space Mono,monospace">Pinnacle hold removed per group: ' + holdTxt + '</div>';
+    state.candidates.forEach(function (c) {
+      if (c.group_hold_pct != null) holds[c.market_key] = c.group_hold_pct;
+    });
+    var holdKeys = Object.keys(holds);
+    if (holdKeys.length) {
+      var holdTxt = holdKeys.map(function (k) {
+        return (MARKET_LABELS[k] || k) + ' ' + holds[k].toFixed(1) + '%';
+      }).join(' · ');
+      html += '<div style="margin-top:10px;font-size:10px;color:var(--mu);font-family:Space Mono,monospace">Pinnacle hold removed per group: ' + holdTxt + '</div>';
+    }
     if (state.dkMeta && state.dkMeta.available_markets && state.dkMeta.available_markets.length) {
       html += '<details style="margin-top:6px;font-size:10px;color:var(--mu);font-family:Space Mono,monospace">' +
         '<summary style="cursor:pointer">DK markets seen on this event (' + state.dkMeta.available_markets.length + ')</summary>' +
@@ -361,10 +403,10 @@
   }
 
   function onMarketBtn(btn) {
-    var key = btn.getAttribute('data-wc-mkt');
+    var key = btn.getAttribute('data-wc-cat');
     if (!key) return;
-    state.enabledMarkets[key] = !state.enabledMarkets[key];
-    btn.classList.toggle('active', state.enabledMarkets[key]);
+    state.enabledCats[key] = !state.enabledCats[key];
+    btn.classList.toggle('active', state.enabledCats[key]);
     render();
   }
 
