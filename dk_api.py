@@ -2874,19 +2874,21 @@ def find_sgps_worldcup(payload):
 
     resolved = []
     for c in candidates:
-        entry = {"c": c, "legs": None, "prebuilt": None}
+        entry = {"c": c, "legs": None, "prebuilt": None, "leg_fail": None}
         if c.get("market_key") in COMBO_KINDS:
+            # Combos are hand-built SGPs ONLY — no prebuilt-market fallback.
+            # A prebuilt combo price isn't an SGP ticket (not boost-eligible),
+            # so a failed leg or refused combination reports as unmatched.
             legs = []
             for sp in _leg_specs(c) or []:
                 pool = props_by_kind.get(sp["market_key"], [])
                 m = _match_soccer_selection(sp, pool, home, away) if pool else None
                 if not m:
+                    entry["leg_fail"] = sp["market_key"]
                     legs = None
                     break
                 legs.append(m)
             entry["legs"] = legs
-            if legs is None:
-                entry["prebuilt"] = _match_prebuilt(c)
         else:
             entry["prebuilt"] = _match_prebuilt(c)
         resolved.append(entry)
@@ -2924,22 +2926,27 @@ def find_sgps_worldcup(payload):
         c = e["c"]
         key = c.get("market_key")
         out = {"id": c.get("id"), "market_key": key}
-        if e["legs"]:
-            ids = frozenset(l["selectionId"] for l in e["legs"])
-            price = price_cache.get(ids)
-            if price and price != "pending":
-                out["matched"] = True
-                out["via"] = "sgp"
-                out["dk_american"] = price.get("sgpOdds")
-                out["dk_decimal"] = price.get("sgpDecimal")
-                out["dk_market"] = "SGP: " + " + ".join(
-                    l.get("marketName", "") for l in e["legs"])
-                out["dk_label"] = " + ".join(
-                    (l.get("label") or l.get("outcomeType") or "") for l in e["legs"])
-                results.append(out)
-                continue
-            # SGP pricing refused/failed — fall back to the prebuilt market.
-            e["prebuilt"] = _match_prebuilt(c)
+        if key in COMBO_KINDS:
+            if e["legs"]:
+                ids = frozenset(l["selectionId"] for l in e["legs"])
+                price = price_cache.get(ids)
+                if price and price != "pending":
+                    out["matched"] = True
+                    out["via"] = "sgp"
+                    out["dk_american"] = price.get("sgpOdds")
+                    out["dk_decimal"] = price.get("sgpDecimal")
+                    out["dk_market"] = "SGP: " + " + ".join(
+                        l.get("marketName", "") for l in e["legs"])
+                    out["dk_label"] = " + ".join(
+                        (l.get("label") or l.get("outcomeType") or "") for l in e["legs"])
+                else:
+                    out["matched"] = False
+                    out["missing"] = "dk:sgp_price_unavailable (combination refused or timed out)"
+            else:
+                out["matched"] = False
+                out["missing"] = "sgp leg unresolved: " + str(e.get("leg_fail"))
+            results.append(out)
+            continue
         m = e["prebuilt"]
         if m:
             out["matched"] = True
