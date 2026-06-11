@@ -314,7 +314,7 @@ h1 em{color:var(--ac);font-style:normal;}
      straight multiplicative devig of each exhaustive market group IS the
      fair joint probability. -->
 <div class="header" id="headerWorldcup" style="display:none">
-  <div class="badge"><span class="dot"></span> <span id="wcHdrBadge">Upload a Pinnacle match PDF to begin</span></div>
+  <div class="badge"><span class="dot"></span> <span id="wcHdrBadge">Load the Pinnacle slate and pick matches</span></div>
   <h1>World Cup SGP <em>Fair Value</em></h1>
   <div class="stats-row">
     <div class="stat"><span class="n">BTTS&times;TOTAL / BTTS&times;WINNER / WINNER&times;TOTAL</span><span class="l">MAIN COMBOS</span></div>
@@ -641,24 +641,19 @@ h1 em{color:var(--ac);font-style:normal;}
   <div class="ctrl" style="flex-direction:column;align-items:stretch;gap:10px">
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <span style="font-size:13px;color:var(--cyan);font-family:Syne,sans-serif;font-weight:700">WORLD CUP SGP +EV</span>
-      <span style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace">live pinny (or PDF) &rarr; devig &rarr; DK combo markets &rarr; EV%</span>
+      <span style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace">live pinny &rarr; devig &rarr; DK combo markets &rarr; EV%</span>
     </div>
     <!-- Primary path: pull odds live from Pinnacle's guest API. -->
     <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:14px 16px;background:var(--s2);border:1px solid var(--b1);border-radius:9px">
       <div style="flex:1;min-width:200px">
         <div style="font-size:12px;color:var(--tx);font-weight:600;margin-bottom:4px">Pull live from Pinnacle</div>
-        <div style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">loads the World Cup slate &middot; pick a match &middot; fetches SGP combos + auto-scans DK</div>
+        <div style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">loads the World Cup slate &middot; pick one or more matches &middot; fetches SGP combos + auto-scans DK</div>
       </div>
       <button id="wcPinLoad" type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.loadPinnySlate()" style="padding:10px 18px;font-size:12px;font-weight:700;border:1px solid var(--cyan);border-radius:6px;background:rgba(34,211,238,.12);color:var(--cyan);cursor:pointer;letter-spacing:.6px;font-family:Space Mono,monospace">&#8635; LOAD SLATE</button>
       <select id="wcPinMatch" style="display:none;max-width:320px;padding:8px;font-size:11px;border:1px solid var(--b1);border-radius:5px;background:var(--s1);color:var(--tx);font-family:Space Mono,monospace" onchange="window.worldcupTab&amp;&amp;window.worldcupTab.onPinMatchPick()"></select>
     </div>
-    <!-- Fallback path: upload a printed-to-PDF Pinnacle match page. -->
+    <div id="wcGames" style="display:none;gap:6px;flex-wrap:wrap"></div>
     <div style="display:flex;gap:12px;align-items:stretch;flex-wrap:wrap">
-      <div id="wcDrop" style="flex:1;min-width:240px;border:2px dashed var(--b2);border-radius:9px;padding:14px 12px;text-align:center;cursor:pointer;transition:all .15s;background:var(--s2)">
-        <div style="font-size:12px;color:var(--tx);font-weight:600;margin-bottom:4px">Pinnacle match page — PDF</div>
-        <div style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">print the Pinnacle match page to PDF &middot; drop it here or click to pick</div>
-        <input type="file" id="wcFile" accept="application/pdf,.pdf" style="display:none" onchange="window.worldcupTab&amp;&amp;window.worldcupTab.onUpload(event)">
-      </div>
       <div style="display:flex;flex-direction:column;gap:2px;justify-content:center;font-family:Space Mono,monospace">
         <label for="wcLeagueId" style="font-size:9px;color:var(--mu);letter-spacing:.6px" title="Optional. Blank = auto-resolve the FIFA World Cup league from DK's public page. Find it manually in the DK URL: sportsbook.draftkings.com/leagues/soccer/<slug>.">DK LEAGUE ID (optional)</label>
         <input id="wcLeagueId" type="text" inputmode="numeric" placeholder="auto" oninput="window.worldcupTab&amp;&amp;window.worldcupTab.onLeagueIdChange()" style="width:120px;padding:6px 8px;font-size:11px;font-weight:600;border:1px solid var(--b1);border-radius:5px;background:var(--s1);color:var(--tx);font-family:Space Mono,monospace">
