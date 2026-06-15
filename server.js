@@ -2218,6 +2218,136 @@ app.post('/api/nba/correlations/rollback', async (_req, res) => {
   }
 });
 
+// ===== Long Ball Jackpot — "Today's 3" button =====
+// Splits math from judgment: pick3.py runs the deterministic model and returns a
+// candidate pool as data; Claude (below) reads that data and picks 3 players with
+// rationale. Claude is never asked to compute numbers or recall stats — only to
+// choose among the candidates. The button never dead-ends: any failure in the
+// Claude call falls back to the model's own top-3 by EV.
+const PICK3_PY = path.join(__dirname, 'pick3.py');
+
+// Cache the fetched candidate pool ~15 min so repeated clicks don't re-pull DK/Savant.
+let _pick3Cache = { at: 0, ctx: null };
+const PICK3_TTL_MS = 15 * 60 * 1000;
+
+function pick3Context() {
+  return new Promise((resolve, reject) => {
+    const proc = require('child_process').spawn('python3', [PICK3_PY], {
+      maxBuffer: 16 * 1024 * 1024,
+      timeout: 150000,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '', stderr = '';
+    proc.stdout.on('data', d => stdout += d);
+    proc.stderr.on('data', d => stderr += d);
+    proc.on('close', code => {
+      if (code !== 0) return reject(new Error(stderr || 'pick3.py exited ' + code));
+      try { resolve(JSON.parse(stdout)); }
+      catch (e) { reject(new Error('pick3.py output parse failed: ' + stdout.slice(0, 200))); }
+    });
+  });
+}
+
+const PICK3_SYSTEM = `You are the decision layer of a longest-home-run jackpot model. The math is already done; the numbers in the candidate list are ground truth — never invent stats or players outside the list. The promo splits $50,000 equally among everyone who bet the player who hits MLB's single longest HR today, so the edge is high distance ceiling + low ownership (long HR odds), not raw HR probability. Popular short-odds bats pay almost nothing even when they win.
+
+From the candidate list, choose exactly 3 players. Optimize for expected FanCash per $5 ticket, not for the highest chance of winning. Prefer the 445+ ceiling band in the least-crowded tiers (LIGHT/DART). If one game is an environmental outlier (very high total), you may stack 2 of your 3 from that game. Penalize unconfirmed lineups (lineup_confirmed: null means unconfirmed). Note platoon edges if visible. Label one pick "core" (most trustworthy) and the others "dart" (higher payout, lower hit rate).
+
+Return ONLY valid JSON, no prose:
+{"picks":[{"player":"","label":"core|dart","one_line_why":""}],"slate_read":""}`;
+
+// Build the top-3-by-EV fallback the spec requires, so a malformed Claude
+// response still yields a usable answer.
+function pick3Fallback(ctx) {
+  const top = (ctx.candidates || []).slice(0, 3);
+  return {
+    picks: top.map((c, i) => ({
+      player: c.player,
+      label: i === 0 ? 'core' : 'dart',
+      one_line_why: `Model top-${i + 1} by EV: ${c.ceil_adj}ft ceiling, est. $${c.payout_if_win} split.`,
+    })),
+    slate_read: 'Showing the model\'s top 3 by EV (Claude rationale unavailable).',
+    fallback: true,
+  };
+}
+
+// POST /api/pick3 — fetch live data, run the model, ask Claude for 3 picks.
+app.post('/api/pick3', async (req, res) => {
+  try {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not set on server' });
+
+    // 1. Candidate pool (cached ~15 min; ?refresh=1 forces a re-pull)
+    const force = req.query.refresh === '1' || (req.body && req.body.refresh);
+    let ctx = _pick3Cache.ctx;
+    if (force || !ctx || Date.now() - _pick3Cache.at > PICK3_TTL_MS) {
+      ctx = await pick3Context();
+      _pick3Cache = { at: Date.now(), ctx };
+    }
+    if (ctx.error) return res.status(502).json({ error: 'Model build failed: ' + ctx.error });
+    if (!ctx.candidates || !ctx.candidates.length) {
+      return res.status(200).json({ context: ctx, result: { picks: [], slate_read: 'No candidates clear the floor yet — odds/lineups may not be posted. Check back closer to first pitch.' } });
+    }
+
+    // 2. Ask Claude to choose 3 from the candidate pool (data, not prose).
+    const userContent = 'Today\'s candidate pool and slate context (all numbers are ground truth):\n\n'
+      + JSON.stringify({
+          date: ctx.date, floor: ctx.floor, ceiling_gate: ctx.ceiling_gate,
+          biggest_total: ctx.biggest_total, winning_distances: ctx.winning_distances,
+          launchpad: ctx.launchpad, candidates: ctx.candidates,
+        }, null, 1);
+
+    const body = {
+      model: 'claude-sonnet-4-6',
+      max_tokens: 700,
+      temperature: 0.3,
+      system: PICK3_SYSTEM,
+      messages: [{ role: 'user', content: userContent }],
+    };
+
+    let result;
+    try {
+      const r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify(body),
+      });
+      const j = await r.json();
+      if (j.error) throw new Error(j.error.message || 'Anthropic API error');
+      const txt = (j.content && j.content[0] && j.content[0].text) || '';
+      const m = txt.match(/\{[\s\S]*\}/);
+      if (!m) throw new Error('no JSON in model output');
+      const parsed = JSON.parse(m[0]);
+
+      // 3. Guardrail: every picked player must exist in the candidate pool.
+      // Drop hallucinated names and backfill from top EV so we always return 3.
+      const valid = new Set(ctx.candidates.map(c => c.player));
+      const seen = new Set();
+      const picks = (Array.isArray(parsed.picks) ? parsed.picks : [])
+        .filter(p => p && valid.has(p.player) && !seen.has(p.player) && seen.add(p.player));
+      for (const c of ctx.candidates) {
+        if (picks.length >= 3) break;
+        if (!seen.has(c.player)) { picks.push({ player: c.player, label: 'dart', one_line_why: 'Backfilled by model EV rank.' }); seen.add(c.player); }
+      }
+      result = { picks: picks.slice(0, 3), slate_read: parsed.slate_read || '' };
+    } catch (e) {
+      // Malformed / failed Claude response -> top-3-by-EV fallback (never dead-end).
+      result = pick3Fallback(ctx);
+      result.warning = 'Claude rationale unavailable: ' + e.message;
+    }
+
+    // Attach the numbers for each pick so the UI can render the cards.
+    const byName = Object.fromEntries(ctx.candidates.map(c => [c.player, c]));
+    result.picks = result.picks.map(p => ({ ...p, ...(byName[p.player] || {}) }));
+    return res.json({ context: { date: ctx.date, floor: ctx.floor, biggest_total: ctx.biggest_total }, result });
+  } catch (e) {
+    return res.status(500).json({ error: 'pick3 failed: ' + e.message });
+  }
+});
+
 app.get('/healthz', (_req, res) => res.send('ok'));
 
 app.listen(PORT, '0.0.0.0', () => console.log('Listening on 0.0.0.0:' + PORT));

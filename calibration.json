@@ -1,0 +1,35 @@
+{
+  "_comment": "Calibration constants for the Long Ball model, updated as real Fanatics boards come in. pool_size, k, alpha fit the ownership-from-odds curve est_entries = pool_size * k * implied_prob**alpha (alpha>1: the public over-concentrates on favorites).",
+  "pool_size": 5200,
+  "games_elapsed": 69,
+  "min_payout_floor": 1000,
+  "ceiling_gate": 445,
+  "entries_from_odds": {
+    "k": 2.71,
+    "alpha": 2.77,
+    "_fit_note": "Fit to: Kurtz ~435 entries @ implied~0.30 (Jun12), Soderstrom 137 @ ~0.19, Caballero 5 @ ~0.06, Duran 1 @ ~0.04 (Jun14). Refit with calibrate.py as more boards with known pre-game odds are logged."
+  },
+  "env": {
+    "mult": 1.8,
+    "cap": 9.0,
+    "base": 8.5,
+    "_note": "env_from_total(total) = clamp((total-base)*mult, +-cap). Gentled from 2.5/cap13 after Jun13 over-shot Sacramento (13.5 total -> +12.5 ft moonshots that never came)."
+  },
+  "model": {
+    "tau": 9.0,
+    "field_hrs": 28,
+    "field_ceil": 417,
+    "pot": 50000,
+    "min_hr_sample": 4,
+    "vig_haircut": 0.88
+  },
+  "winning_distances": [483, 446, 466, 445, 471, 454, 462],
+  "anchors": [
+    {"date": "2026-06-12", "player": "Nick Kurtz", "entries": 435, "won": true, "win_dist": 471, "payout": 115},
+    {"date": "2026-06-14", "player": "Tyler Soderstrom", "entries": 137, "won": true, "win_dist": 462, "payout": 365},
+    {"date": "2026-06-14", "player": "Hunter Goodman", "entries": 198, "won": false},
+    {"date": "2026-06-14", "player": "Noelvi Marte", "entries": 15, "won": false},
+    {"date": "2026-06-14", "player": "Jose Caballero", "entries": 5, "won": false},
+    {"date": "2026-06-14", "player": "Rodolfo Duran", "entries": 1, "won": false}
+  ]
+}

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Long Ball — Today's 3</title>
+<style>
+  :root { --bg:#0f1216; --card:#1a1f27; --line:#2a313c; --ink:#e9edf2; --mut:#9aa6b2;
+          --core:#3fb950; --dart:#d29922; --accent:#e0533d; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  .wrap { max-width:880px; margin:0 auto; padding:28px 18px 60px; }
+  h1 { font-size:22px; margin:0 0 2px; letter-spacing:.2px; }
+  .sub { color:var(--mut); font-size:13px; margin-bottom:20px; }
+  .go { appearance:none; border:0; cursor:pointer; background:var(--accent); color:#fff;
+        font-size:17px; font-weight:650; padding:14px 26px; border-radius:12px;
+        box-shadow:0 2px 0 #a83a28; transition:transform .05s ease, opacity .2s; }
+  .go:active { transform:translateY(1px); box-shadow:0 1px 0 #a83a28; }
+  .go[disabled] { opacity:.55; cursor:progress; }
+  .slate { margin:22px 0 4px; font-size:15px; color:var(--ink); min-height:1px; }
+  .slate b { color:var(--accent); }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:14px; margin-top:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; }
+  .badge { display:inline-block; font-size:11px; font-weight:700; letter-spacing:.6px;
+           text-transform:uppercase; padding:3px 9px; border-radius:999px; margin-bottom:10px; }
+  .badge.core { background:rgba(63,185,80,.15); color:var(--core); border:1px solid rgba(63,185,80,.4); }
+  .badge.dart { background:rgba(210,153,34,.15); color:var(--dart); border:1px solid rgba(210,153,34,.4); }
+  .name { font-size:18px; font-weight:650; }
+  .team { color:var(--mut); font-size:13px; margin-bottom:12px; }
+  .nums { display:flex; gap:14px; border-top:1px solid var(--line); border-bottom:1px solid var(--line);
+          padding:11px 0; margin-bottom:11px; }
+  .num { flex:1; }
+  .num .k { font-size:11px; color:var(--mut); text-transform:uppercase; letter-spacing:.4px; }
+  .num .v { font-size:17px; font-weight:650; }
+  .why { color:var(--ink); font-size:13.5px; }
+  .note { margin-top:14px; color:var(--mut); font-size:12.5px; }
+  .err { margin-top:18px; color:#f0857a; }
+  .foot { margin-top:34px; padding-top:16px; border-top:1px solid var(--line);
+          color:var(--mut); font-size:12px; line-height:1.6; }
+  .spin { display:inline-block; width:15px; height:15px; border:2px solid #fff;
+          border-top-color:transparent; border-radius:50%; vertical-align:-2px;
+          margin-right:8px; animation:spin .7s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Long Ball — Today's 3</h1>
+  <div class="sub">Highest distance ceiling × lowest ownership. Fade the chalk. The math is the model's; the call is Claude's.</div>
+
+  <button id="go" class="go">Today's 3</button>
+
+  <div id="slate" class="slate"></div>
+  <div id="cards" class="cards"></div>
+  <div id="err" class="err"></div>
+
+  <div class="foot">
+    High-variance <b>FanCash</b> lottery, not a grinder — expect long dry stretches.
+    Always confirm the bat is in today's starting lineup before betting. Stake the $5 minimum;
+    more doesn't grow your share. Bet responsibly.
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const odds = o => o == null ? '—' : (o > 0 ? '+' + o : '' + o);
+
+function card(p) {
+  const label = (p.label === 'core') ? 'core' : 'dart';
+  return `<div class="card">
+    <span class="badge ${label}">${label}</span>
+    <div class="name">${p.player ?? ''}</div>
+    <div class="team">${p.team ?? ''} · ${p.game ?? ''}${p.tier ? ' · ' + p.tier : ''}</div>
+    <div class="nums">
+      <div class="num"><div class="k">Ceiling</div><div class="v">${p.ceil_adj ?? '—'} ft</div></div>
+      <div class="num"><div class="k">HR Odds</div><div class="v">${odds(p.hr_odds)}</div></div>
+      <div class="num"><div class="k">Est. Pay</div><div class="v">$${p.payout_if_win ?? '—'}</div></div>
+    </div>
+    <div class="why">${p.one_line_why ?? ''}</div>
+  </div>`;
+}
+
+async function run() {
+  const btn = $('go'); btn.disabled = true;
+  const orig = btn.textContent; btn.innerHTML = '<span class="spin"></span>Crunching the slate…';
+  $('err').textContent = ''; $('slate').textContent = ''; $('cards').innerHTML = '';
+  try {
+    const r = await fetch('/api/pick3', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+    const j = await r.json();
+    if (j.error) { $('err').textContent = j.error; return; }
+    const res = j.result || {};
+    $('slate').innerHTML = res.slate_read
+      ? res.slate_read + (res.fallback || res.warning ? ' <span style="color:var(--mut)">(model fallback)</span>' : '')
+      : '';
+    const picks = res.picks || [];
+    if (!picks.length) { $('err').textContent = res.slate_read || 'No qualifying bats yet.'; return; }
+    $('cards').innerHTML = picks.map(card).join('');
+  } catch (e) {
+    $('err').textContent = 'Request failed: ' + e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = orig;
+  }
+}
+$('go').addEventListener('click', run);
+</script>
+</body>
+</html>
