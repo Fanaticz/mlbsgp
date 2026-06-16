@@ -20,7 +20,7 @@ Outputs:
   - A human-readable summary table to stdout.
 
 Usage:
-  python3 scripts/wnba_fetch_correlations.py                 # seasons 2024,2025
+  python3 scripts/wnba_fetch_correlations.py                 # seasons 2024,2025,2026
   python3 scripts/wnba_fetch_correlations.py --seasons 2024 2025
   python3 scripts/wnba_fetch_correlations.py --min-games 25 --workers 8
 """
@@ -262,8 +262,8 @@ def process_player(
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--seasons", type=int, nargs="+", default=[2024, 2025],
-                    help="Seasons to pool (default: 2024 2025).")
+    ap.add_argument("--seasons", type=int, nargs="+", default=[2024, 2025, 2026],
+                    help="Seasons to pool (default: 2024 2025 2026; 2026 in progress).")
     ap.add_argument("--min-games", type=int, default=20,
                     help="Min pooled games for a player to count as 'reportable'.")
     ap.add_argument("--workers", type=int, default=8,

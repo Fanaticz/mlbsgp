@@ -1,185 +1,234 @@
 {
-  "generated_at": "2026-06-16T22:18:54.264291Z",
+  "generated_at": "2026-06-16T22:51:34.241416Z",
   "source": "ESPN WNBA public API",
   "seasons": [
     2024,
-    2025
+    2025,
+    2026
   ],
   "scope": "regular-season games, pooled across seasons; correlations per player",
   "min_games_reportable": 20,
-  "n_players": 139,
-  "n_players_reportable": 131,
-  "total_game_rows": 7973,
+  "n_players": 191,
+  "n_players_reportable": 132,
+  "total_game_rows": 9974,
   "league_weighted_mean_r": {
-    "pts_reb": 0.3314,
-    "pts_ast": 0.2099
+    "pts_reb": 0.3437,
+    "pts_ast": 0.2238
   },
   "players": [
     {
       "athlete_id": "3149391",
       "name": "A'ja Wilson",
       "position": "C",
-      "n_games": 80,
+      "n_games": 94,
       "games_by_season": {
         "2024": 39,
-        "2025": 41
+        "2025": 41,
+        "2026": 14
       },
-      "pts_mean": 24.8,
-      "reb_mean": 10.82,
-      "ast_mean": 2.69,
+      "pts_mean": 24.93,
+      "reb_mean": 10.55,
+      "ast_mean": 2.74,
       "pts_reb": {
-        "r": 0.3555,
-        "p_value": 0.00121
+        "r": 0.2995,
+        "p_value": 0.00336
       },
       "pts_ast": {
-        "r": -0.1548,
-        "p_value": 0.17043
+        "r": -0.0603,
+        "p_value": 0.5637
       }
     },
     {
       "athlete_id": "4433408",
       "name": "Aaliyah Edwards",
       "position": "F",
-      "n_games": 70,
+      "n_games": 79,
       "games_by_season": {
         "2024": 34,
-        "2025": 36
+        "2025": 36,
+        "2026": 9
       },
-      "pts_mean": 6.46,
-      "reb_mean": 4.61,
-      "ast_mean": 0.97,
+      "pts_mean": 6.91,
+      "reb_mean": 4.53,
+      "ast_mean": 0.94,
       "pts_reb": {
-        "r": 0.5867,
+        "r": 0.4913,
         "p_value": 0.0
       },
       "pts_ast": {
-        "r": 0.1617,
-        "p_value": 0.18101
+        "r": 0.1039,
+        "p_value": 0.36235
       }
     },
     {
       "athlete_id": "4597509",
       "name": "Aaliyah Nye",
       "position": "G",
-      "n_games": 44,
+      "n_games": 54,
       "games_by_season": {
-        "2025": 44
+        "2025": 44,
+        "2026": 10
       },
-      "pts_mean": 3.84,
-      "reb_mean": 1.5,
-      "ast_mean": 0.55,
+      "pts_mean": 3.19,
+      "reb_mean": 1.22,
+      "ast_mean": 0.48,
       "pts_reb": {
-        "r": 0.1705,
-        "p_value": 0.26859
+        "r": 0.2921,
+        "p_value": 0.03208
       },
       "pts_ast": {
-        "r": -0.0351,
-        "p_value": 0.82126
+        "r": 0.0254,
+        "p_value": 0.85543
+      }
+    },
+    {
+      "athlete_id": "4433433",
+      "name": "Aicha Coulibaly",
+      "position": "G",
+      "n_games": 7,
+      "games_by_season": {
+        "2026": 7
+      },
+      "pts_mean": 5.0,
+      "reb_mean": 2.57,
+      "ast_mean": 0.71,
+      "pts_reb": {
+        "r": 0.0256,
+        "p_value": 0.95652
+      },
+      "pts_ast": {
+        "r": -0.1804,
+        "p_value": 0.69864
       }
     },
     {
       "athlete_id": "3913881",
       "name": "Alanna Smith",
       "position": "F",
-      "n_games": 83,
+      "n_games": 96,
       "games_by_season": {
         "2024": 40,
-        "2025": 43
+        "2025": 43,
+        "2026": 13
       },
-      "pts_mean": 9.88,
-      "reb_mean": 5.35,
-      "ast_mean": 3.02,
+      "pts_mean": 9.01,
+      "reb_mean": 5.05,
+      "ast_mean": 2.81,
       "pts_reb": {
-        "r": 0.0397,
-        "p_value": 0.72182
+        "r": 0.1628,
+        "p_value": 0.11311
       },
       "pts_ast": {
-        "r": -0.131,
-        "p_value": 0.23767
+        "r": 0.0212,
+        "p_value": 0.83788
+      }
+    },
+    {
+      "athlete_id": "5349415",
+      "name": "Alicia Florez",
+      "position": "G",
+      "n_games": 7,
+      "games_by_season": {
+        "2026": 7
+      },
+      "pts_mean": 4.71,
+      "reb_mean": 2.0,
+      "ast_mean": 3.43,
+      "pts_reb": {
+        "r": 0.2366,
+        "p_value": 0.60942
+      },
+      "pts_ast": {
+        "r": 0.4404,
+        "p_value": 0.32271
       }
     },
     {
       "athlete_id": "4432831",
       "name": "Aliyah Boston",
       "position": "C",
-      "n_games": 87,
+      "n_games": 99,
       "games_by_season": {
         "2024": 41,
-        "2025": 46
+        "2025": 46,
+        "2026": 12
       },
-      "pts_mean": 14.31,
-      "reb_mean": 8.45,
-      "ast_mean": 3.43,
+      "pts_mean": 14.64,
+      "reb_mean": 8.44,
+      "ast_mean": 3.33,
       "pts_reb": {
-        "r": 0.3838,
-        "p_value": 0.00024
+        "r": 0.3712,
+        "p_value": 0.00016
       },
       "pts_ast": {
-        "r": -0.0185,
-        "p_value": 0.86524
+        "r": -0.0159,
+        "p_value": 0.87619
       }
     },
     {
       "athlete_id": "3058901",
       "name": "Allisha Gray",
       "position": "G",
-      "n_games": 84,
+      "n_games": 97,
       "games_by_season": {
         "2024": 41,
-        "2025": 43
+        "2025": 43,
+        "2026": 13
       },
-      "pts_mean": 17.01,
-      "reb_mean": 4.77,
-      "ast_mean": 3.08,
+      "pts_mean": 17.36,
+      "reb_mean": 4.63,
+      "ast_mean": 2.96,
       "pts_reb": {
-        "r": 0.1087,
-        "p_value": 0.32503
+        "r": 0.1409,
+        "p_value": 0.16878
       },
       "pts_ast": {
-        "r": 0.0559,
-        "p_value": 0.6137
+        "r": 0.0451,
+        "p_value": 0.66092
       }
     },
     {
       "athlete_id": "924",
       "name": "Alysha Clark",
       "position": "F",
-      "n_games": 82,
+      "n_games": 94,
       "games_by_season": {
         "2024": 40,
-        "2025": 42
+        "2025": 42,
+        "2026": 12
       },
-      "pts_mean": 4.91,
-      "reb_mean": 3.2,
-      "ast_mean": 1.48,
+      "pts_mean": 4.51,
+      "reb_mean": 2.94,
+      "ast_mean": 1.34,
       "pts_reb": {
-        "r": 0.1115,
-        "p_value": 0.31872
+        "r": 0.2273,
+        "p_value": 0.02758
       },
       "pts_ast": {
-        "r": 0.1487,
-        "p_value": 0.18239
+        "r": 0.2187,
+        "p_value": 0.03423
       }
     },
     {
       "athlete_id": "2529140",
       "name": "Alyssa Thomas",
       "position": "F",
-      "n_games": 81,
+      "n_games": 95,
       "games_by_season": {
         "2024": 41,
-        "2025": 40
+        "2025": 40,
+        "2026": 14
       },
-      "pts_mean": 12.74,
-      "reb_mean": 8.52,
-      "ast_mean": 8.4,
+      "pts_mean": 13.0,
+      "reb_mean": 8.33,
+      "ast_mean": 8.36,
       "pts_reb": {
-        "r": 0.3252,
-        "p_value": 0.00305
+        "r": 0.3018,
+        "p_value": 0.00295
       },
       "pts_ast": {
-        "r": 0.0855,
-        "p_value": 0.44806
+        "r": 0.0783,
+        "p_value": 0.45079
       }
     },
     {
@@ -206,185 +255,334 @@
       "athlete_id": "5278237",
       "name": "Anastasiia Olairi Kosu",
       "position": "F",
-      "n_games": 21,
+      "n_games": 34,
       "games_by_season": {
-        "2025": 21
+        "2025": 21,
+        "2026": 13
       },
-      "pts_mean": 1.67,
-      "reb_mean": 0.71,
-      "ast_mean": 0.24,
+      "pts_mean": 2.79,
+      "reb_mean": 1.38,
+      "ast_mean": 0.44,
       "pts_reb": {
-        "r": 0.61,
-        "p_value": 0.00332
+        "r": 0.8145,
+        "p_value": 0.0
       },
       "pts_ast": {
-        "r": 0.2104,
-        "p_value": 0.35992
+        "r": 0.348,
+        "p_value": 0.04369
       }
     },
     {
       "athlete_id": "4684384",
       "name": "Aneesah Morrow",
       "position": "F",
-      "n_games": 41,
+      "n_games": 54,
       "games_by_season": {
-        "2025": 41
+        "2025": 41,
+        "2026": 13
       },
-      "pts_mean": 7.66,
-      "reb_mean": 6.88,
-      "ast_mean": 0.51,
+      "pts_mean": 8.7,
+      "reb_mean": 7.74,
+      "ast_mean": 0.74,
       "pts_reb": {
-        "r": 0.6495,
+        "r": 0.6753,
         "p_value": 0.0
       },
       "pts_ast": {
-        "r": 0.2026,
-        "p_value": 0.20385
+        "r": 0.2764,
+        "p_value": 0.04302
       }
     },
     {
       "athlete_id": "4433402",
       "name": "Angel Reese",
       "position": "F",
-      "n_games": 66,
+      "n_games": 79,
       "games_by_season": {
         "2024": 35,
-        "2025": 31
+        "2025": 31,
+        "2026": 13
       },
-      "pts_mean": 13.94,
-      "reb_mean": 12.77,
-      "ast_mean": 2.65,
+      "pts_mean": 14.05,
+      "reb_mean": 12.7,
+      "ast_mean": 2.71,
       "pts_reb": {
-        "r": 0.0943,
-        "p_value": 0.45153
+        "r": 0.0942,
+        "p_value": 0.4089
       },
       "pts_ast": {
-        "r": 0.1223,
-        "p_value": 0.32798
+        "r": 0.0998,
+        "p_value": 0.38158
+      }
+    },
+    {
+      "athlete_id": "4433411",
+      "name": "Angela Dugalic",
+      "position": "F",
+      "n_games": 12,
+      "games_by_season": {
+        "2026": 12
+      },
+      "pts_mean": 5.33,
+      "reb_mean": 4.5,
+      "ast_mean": 0.67,
+      "pts_reb": {
+        "r": 0.2982,
+        "p_value": 0.34646
+      },
+      "pts_ast": {
+        "r": 0.0869,
+        "p_value": 0.7884
+      }
+    },
+    {
+      "athlete_id": "4281930",
+      "name": "Anneli Maley",
+      "position": "F",
+      "n_games": 3,
+      "games_by_season": {
+        "2026": 3
+      },
+      "pts_mean": 0.33,
+      "reb_mean": 1.67,
+      "ast_mean": 0.0,
+      "pts_reb": {
+        "r": 0.189,
+        "p_value": 0.87896
+      },
+      "pts_ast": {
+        "r": null,
+        "p_value": null
+      }
+    },
+    {
+      "athlete_id": "4873358",
+      "name": "Antonia Delaere",
+      "position": "F",
+      "n_games": 14,
+      "games_by_season": {
+        "2026": 14
+      },
+      "pts_mean": 2.86,
+      "reb_mean": 0.86,
+      "ast_mean": 2.0,
+      "pts_reb": {
+        "r": 0.2485,
+        "p_value": 0.39165
+      },
+      "pts_ast": {
+        "r": 0.6639,
+        "p_value": 0.00962
       }
     },
     {
       "athlete_id": "3146151",
       "name": "Ariel Atkins",
       "position": "G",
-      "n_games": 74,
+      "n_games": 86,
       "games_by_season": {
         "2024": 40,
-        "2025": 34
+        "2025": 34,
+        "2026": 12
       },
-      "pts_mean": 14.11,
-      "reb_mean": 3.36,
-      "ast_mean": 3.32,
+      "pts_mean": 13.37,
+      "reb_mean": 3.33,
+      "ast_mean": 3.19,
       "pts_reb": {
-        "r": 0.1578,
-        "p_value": 0.17936
+        "r": 0.1812,
+        "p_value": 0.09508
       },
       "pts_ast": {
-        "r": -0.0484,
-        "p_value": 0.68189
+        "r": 0.0028,
+        "p_value": 0.9793
       }
     },
     {
       "athlete_id": "3904577",
       "name": "Arike Ogunbowale",
       "position": "G",
-      "n_games": 68,
+      "n_games": 82,
       "games_by_season": {
         "2024": 39,
-        "2025": 29
+        "2025": 29,
+        "2026": 14
       },
-      "pts_mean": 19.54,
-      "reb_mean": 3.65,
-      "ast_mean": 4.72,
+      "pts_mean": 18.77,
+      "reb_mean": 3.57,
+      "ast_mean": 4.46,
       "pts_reb": {
-        "r": 0.4206,
-        "p_value": 0.00036
+        "r": 0.4001,
+        "p_value": 0.0002
       },
       "pts_ast": {
-        "r": 0.1862,
-        "p_value": 0.12839
+        "r": 0.3034,
+        "p_value": 0.00559
+      }
+    },
+    {
+      "athlete_id": "5106232",
+      "name": "Ashlon Jackson",
+      "position": "G",
+      "n_games": 5,
+      "games_by_season": {
+        "2026": 5
+      },
+      "pts_mean": 2.0,
+      "reb_mean": 1.2,
+      "ast_mean": 1.0,
+      "pts_reb": {
+        "r": -0.3953,
+        "p_value": 0.51014
+      },
+      "pts_ast": {
+        "r": 0.0,
+        "p_value": 1.0
+      }
+    },
+    {
+      "athlete_id": "5345325",
+      "name": "Awa Fam",
+      "position": "C",
+      "n_games": 9,
+      "games_by_season": {
+        "2026": 9
+      },
+      "pts_mean": 10.0,
+      "reb_mean": 4.89,
+      "ast_mean": 1.44,
+      "pts_reb": {
+        "r": -0.0516,
+        "p_value": 0.89517
+      },
+      "pts_ast": {
+        "r": 0.1048,
+        "p_value": 0.78839
+      }
+    },
+    {
+      "athlete_id": "4790266",
+      "name": "Awak Kuier",
+      "position": "F",
+      "n_games": 11,
+      "games_by_season": {
+        "2026": 11
+      },
+      "pts_mean": 6.09,
+      "reb_mean": 3.27,
+      "ast_mean": 1.0,
+      "pts_reb": {
+        "r": 0.6577,
+        "p_value": 0.02784
+      },
+      "pts_ast": {
+        "r": -0.028,
+        "p_value": 0.93481
       }
     },
     {
       "athlete_id": "4433807",
       "name": "Aziaha James",
       "position": "G",
-      "n_games": 38,
+      "n_games": 52,
       "games_by_season": {
-        "2025": 38
+        "2025": 38,
+        "2026": 14
       },
-      "pts_mean": 7.5,
-      "reb_mean": 2.92,
-      "ast_mean": 1.55,
+      "pts_mean": 7.52,
+      "reb_mean": 2.87,
+      "ast_mean": 1.54,
       "pts_reb": {
-        "r": 0.5989,
-        "p_value": 7e-05
+        "r": 0.5973,
+        "p_value": 0.0
       },
       "pts_ast": {
-        "r": 0.6663,
-        "p_value": 0.0
+        "r": 0.5644,
+        "p_value": 1e-05
       }
     },
     {
       "athlete_id": "3142010",
       "name": "Azura Stevens",
       "position": "F",
-      "n_games": 64,
+      "n_games": 72,
       "games_by_season": {
         "2024": 20,
-        "2025": 44
+        "2025": 44,
+        "2026": 8
       },
-      "pts_mean": 11.77,
-      "reb_mean": 7.69,
+      "pts_mean": 11.51,
+      "reb_mean": 7.46,
       "ast_mean": 2.06,
       "pts_reb": {
-        "r": 0.3465,
-        "p_value": 0.00503
+        "r": 0.3831,
+        "p_value": 0.00089
       },
       "pts_ast": {
-        "r": 0.1044,
-        "p_value": 0.41166
+        "r": 0.075,
+        "p_value": 0.531
+      }
+    },
+    {
+      "athlete_id": "4433790",
+      "name": "Azzi Fudd",
+      "position": "G",
+      "n_games": 13,
+      "games_by_season": {
+        "2026": 13
+      },
+      "pts_mean": 12.92,
+      "reb_mean": 1.46,
+      "ast_mean": 1.46,
+      "pts_reb": {
+        "r": 0.5393,
+        "p_value": 0.05715
+      },
+      "pts_ast": {
+        "r": 0.7175,
+        "p_value": 0.00576
       }
     },
     {
       "athlete_id": "2593770",
       "name": "Betnijah Laney-Hamilton",
       "position": "G",
-      "n_games": 29,
+      "n_games": 40,
       "games_by_season": {
-        "2024": 29
+        "2024": 29,
+        "2026": 11
       },
-      "pts_mean": 11.79,
-      "reb_mean": 4.17,
-      "ast_mean": 3.41,
+      "pts_mean": 10.32,
+      "reb_mean": 3.55,
+      "ast_mean": 2.98,
       "pts_reb": {
-        "r": 0.0542,
-        "p_value": 0.7801
+        "r": 0.3373,
+        "p_value": 0.03328
       },
       "pts_ast": {
-        "r": 0.2424,
-        "p_value": 0.20518
+        "r": 0.3771,
+        "p_value": 0.01645
       }
     },
     {
       "athlete_id": "2998928",
       "name": "Breanna Stewart",
       "position": "F",
-      "n_games": 72,
+      "n_games": 86,
       "games_by_season": {
         "2024": 40,
-        "2025": 32
+        "2025": 32,
+        "2026": 14
       },
-      "pts_mean": 19.53,
-      "reb_mean": 7.65,
-      "ast_mean": 3.47,
+      "pts_mean": 19.59,
+      "reb_mean": 7.87,
+      "ast_mean": 3.34,
       "pts_reb": {
-        "r": 0.1687,
-        "p_value": 0.15668
+        "r": 0.1496,
+        "p_value": 0.16914
       },
       "pts_ast": {
-        "r": 0.0085,
-        "p_value": 0.94331
+        "r": -0.0258,
+        "p_value": 0.81356
       }
     },
     {
@@ -411,42 +609,44 @@
       "athlete_id": "3142086",
       "name": "Brianna Turner",
       "position": "F",
-      "n_games": 53,
+      "n_games": 66,
       "games_by_season": {
         "2024": 27,
-        "2025": 26
+        "2025": 26,
+        "2026": 13
       },
-      "pts_mean": 1.19,
-      "reb_mean": 1.96,
-      "ast_mean": 0.51,
+      "pts_mean": 1.14,
+      "reb_mean": 1.92,
+      "ast_mean": 0.45,
       "pts_reb": {
-        "r": 0.6488,
+        "r": 0.6049,
         "p_value": 0.0
       },
       "pts_ast": {
-        "r": 0.2534,
-        "p_value": 0.06718
+        "r": 0.2663,
+        "p_value": 0.0307
       }
     },
     {
       "athlete_id": "3906972",
       "name": "Bridget Carleton",
       "position": "F",
-      "n_games": 85,
+      "n_games": 100,
       "games_by_season": {
         "2024": 40,
-        "2025": 45
+        "2025": 45,
+        "2026": 15
       },
-      "pts_mean": 8.01,
-      "reb_mean": 3.68,
-      "ast_mean": 2.14,
+      "pts_mean": 8.77,
+      "reb_mean": 3.62,
+      "ast_mean": 2.1,
       "pts_reb": {
-        "r": 0.1449,
-        "p_value": 0.18565
+        "r": 0.0607,
+        "p_value": 0.54852
       },
       "pts_ast": {
-        "r": 0.2038,
-        "p_value": 0.0614
+        "r": 0.1034,
+        "p_value": 0.3058
       }
     },
     {
@@ -474,187 +674,276 @@
       "athlete_id": "2490553",
       "name": "Brittney Griner",
       "position": "C",
-      "n_games": 70,
+      "n_games": 77,
       "games_by_season": {
         "2024": 31,
-        "2025": 39
+        "2025": 39,
+        "2026": 7
       },
-      "pts_mean": 13.23,
-      "reb_mean": 5.81,
-      "ast_mean": 1.46,
+      "pts_mean": 13.16,
+      "reb_mean": 5.71,
+      "ast_mean": 1.57,
       "pts_reb": {
-        "r": 0.4041,
-        "p_value": 0.00052
+        "r": 0.416,
+        "p_value": 0.00017
       },
       "pts_ast": {
-        "r": 0.5475,
-        "p_value": 0.0
+        "r": 0.4933,
+        "p_value": 1e-05
       }
     },
     {
       "athlete_id": "2988756",
       "name": "Brittney Sykes",
       "position": "G",
-      "n_games": 58,
+      "n_games": 72,
       "games_by_season": {
         "2024": 18,
-        "2025": 40
+        "2025": 40,
+        "2026": 14
       },
-      "pts_mean": 13.55,
-      "reb_mean": 3.43,
-      "ast_mean": 3.74,
+      "pts_mean": 14.94,
+      "reb_mean": 3.53,
+      "ast_mean": 3.69,
       "pts_reb": {
-        "r": 0.2244,
-        "p_value": 0.0904
+        "r": 0.2407,
+        "p_value": 0.04165
       },
       "pts_ast": {
-        "r": 0.3671,
-        "p_value": 0.00458
+        "r": 0.2302,
+        "p_value": 0.05176
       }
     },
     {
       "athlete_id": "4433403",
       "name": "Caitlin Clark",
       "position": "G",
-      "n_games": 54,
+      "n_games": 66,
       "games_by_season": {
         "2024": 41,
-        "2025": 13
+        "2025": 13,
+        "2026": 12
       },
-      "pts_mean": 18.28,
-      "reb_mean": 5.43,
-      "ast_mean": 8.56,
+      "pts_mean": 18.65,
+      "reb_mean": 5.27,
+      "ast_mean": 8.42,
       "pts_reb": {
-        "r": 0.1566,
-        "p_value": 0.25808
+        "r": 0.1339,
+        "p_value": 0.28361
       },
       "pts_ast": {
-        "r": 0.3084,
-        "p_value": 0.02328
+        "r": 0.3056,
+        "p_value": 0.01258
       }
     },
     {
       "athlete_id": "4433404",
       "name": "Cameron Brink",
       "position": "F",
-      "n_games": 34,
+      "n_games": 48,
       "games_by_season": {
         "2024": 15,
-        "2025": 19
+        "2025": 19,
+        "2026": 14
       },
-      "pts_mean": 6.15,
-      "reb_mean": 4.76,
-      "ast_mean": 1.0,
+      "pts_mean": 7.04,
+      "reb_mean": 4.67,
+      "ast_mean": 1.02,
       "pts_reb": {
-        "r": 0.2965,
-        "p_value": 0.08858
+        "r": 0.2959,
+        "p_value": 0.04116
       },
       "pts_ast": {
-        "r": 0.4723,
-        "p_value": 0.0048
+        "r": 0.3021,
+        "p_value": 0.03688
       }
     },
     {
       "athlete_id": "5208982",
       "name": "Carla Leite",
       "position": "G",
-      "n_games": 37,
+      "n_games": 51,
       "games_by_season": {
-        "2025": 37
+        "2025": 37,
+        "2026": 14
       },
-      "pts_mean": 7.24,
-      "reb_mean": 1.3,
-      "ast_mean": 2.03,
+      "pts_mean": 9.02,
+      "reb_mean": 1.53,
+      "ast_mean": 2.92,
       "pts_reb": {
-        "r": 0.4079,
-        "p_value": 0.01222
+        "r": 0.3631,
+        "p_value": 0.00881
       },
       "pts_ast": {
-        "r": 0.6807,
+        "r": 0.6051,
         "p_value": 0.0
+      }
+    },
+    {
+      "athlete_id": "5122345",
+      "name": "Cassandre Prosper",
+      "position": "G",
+      "n_games": 12,
+      "games_by_season": {
+        "2026": 12
+      },
+      "pts_mean": 3.42,
+      "reb_mean": 1.25,
+      "ast_mean": 0.67,
+      "pts_reb": {
+        "r": 0.421,
+        "p_value": 0.17288
+      },
+      "pts_ast": {
+        "r": 0.089,
+        "p_value": 0.78334
       }
     },
     {
       "athlete_id": "4257500",
       "name": "Cecilia Zandalasini",
       "position": "F",
-      "n_games": 60,
+      "n_games": 70,
       "games_by_season": {
         "2024": 41,
-        "2025": 19
+        "2025": 19,
+        "2026": 10
       },
-      "pts_mean": 6.62,
+      "pts_mean": 6.73,
       "reb_mean": 1.7,
-      "ast_mean": 1.28,
+      "ast_mean": 1.33,
       "pts_reb": {
-        "r": 0.5532,
+        "r": 0.5519,
         "p_value": 0.0
       },
       "pts_ast": {
-        "r": 0.4711,
-        "p_value": 0.00015
+        "r": 0.5008,
+        "p_value": 1e-05
+      }
+    },
+    {
+      "athlete_id": "5105729",
+      "name": "Chance Gray",
+      "position": "G",
+      "n_games": 13,
+      "games_by_season": {
+        "2026": 13
+      },
+      "pts_mean": 2.0,
+      "reb_mean": 1.31,
+      "ast_mean": 0.46,
+      "pts_reb": {
+        "r": 0.6753,
+        "p_value": 0.01132
+      },
+      "pts_ast": {
+        "r": 0.1666,
+        "p_value": 0.58648
+      }
+    },
+    {
+      "athlete_id": "4703609",
+      "name": "Charlisse Leger-Walker",
+      "position": "G",
+      "n_games": 15,
+      "games_by_season": {
+        "2026": 15
+      },
+      "pts_mean": 6.0,
+      "reb_mean": 1.4,
+      "ast_mean": 2.53,
+      "pts_reb": {
+        "r": 0.346,
+        "p_value": 0.20654
+      },
+      "pts_ast": {
+        "r": 0.1396,
+        "p_value": 0.61973
       }
     },
     {
       "athlete_id": "2529122",
       "name": "Chelsea Gray",
       "position": "G",
-      "n_games": 72,
+      "n_games": 86,
       "games_by_season": {
         "2024": 28,
-        "2025": 44
+        "2025": 44,
+        "2026": 14
       },
-      "pts_mean": 10.15,
-      "reb_mean": 3.5,
-      "ast_mean": 5.22,
+      "pts_mean": 10.51,
+      "reb_mean": 3.59,
+      "ast_mean": 5.51,
       "pts_reb": {
-        "r": 0.2265,
-        "p_value": 0.05576
+        "r": 0.2455,
+        "p_value": 0.02271
       },
       "pts_ast": {
-        "r": -0.1062,
-        "p_value": 0.37452
+        "r": -0.1191,
+        "p_value": 0.2749
       }
     },
     {
       "athlete_id": "4280892",
       "name": "Chennedy Carter",
       "position": "G",
-      "n_games": 33,
+      "n_games": 43,
       "games_by_season": {
-        "2024": 33
+        "2024": 33,
+        "2026": 10
       },
-      "pts_mean": 17.48,
-      "reb_mean": 3.55,
-      "ast_mean": 3.09,
+      "pts_mean": 16.77,
+      "reb_mean": 3.19,
+      "ast_mean": 2.7,
       "pts_reb": {
-        "r": 0.0544,
-        "p_value": 0.76355
+        "r": 0.2584,
+        "p_value": 0.09432
       },
       "pts_ast": {
-        "r": 0.344,
-        "p_value": 0.04994
+        "r": 0.4286,
+        "p_value": 0.00413
       }
     },
     {
       "athlete_id": "2529458",
       "name": "Cheyenne Parker-Tyus",
       "position": "F",
-      "n_games": 27,
+      "n_games": 38,
       "games_by_season": {
         "2024": 25,
-        "2025": 2
+        "2025": 2,
+        "2026": 11
       },
-      "pts_mean": 9.15,
-      "reb_mean": 4.56,
-      "ast_mean": 1.37,
+      "pts_mean": 7.84,
+      "reb_mean": 3.97,
+      "ast_mean": 1.24,
       "pts_reb": {
-        "r": 0.2487,
-        "p_value": 0.21088
+        "r": 0.366,
+        "p_value": 0.02384
       },
       "pts_ast": {
-        "r": 0.3012,
-        "p_value": 0.12678
+        "r": 0.2934,
+        "p_value": 0.0738
+      }
+    },
+    {
+      "athlete_id": "4583144",
+      "name": "Cotie McMahon",
+      "position": "G",
+      "n_games": 10,
+      "games_by_season": {
+        "2026": 10
+      },
+      "pts_mean": 6.6,
+      "reb_mean": 2.4,
+      "ast_mean": 1.6,
+      "pts_reb": {
+        "r": 0.5448,
+        "p_value": 0.10344
+      },
+      "pts_ast": {
+        "r": 0.2014,
+        "p_value": 0.57689
       }
     },
     {
@@ -682,42 +971,44 @@
       "athlete_id": "2987891",
       "name": "Courtney Williams",
       "position": "G",
-      "n_games": 87,
+      "n_games": 101,
       "games_by_season": {
         "2024": 41,
-        "2025": 46
+        "2025": 46,
+        "2026": 14
       },
-      "pts_mean": 12.4,
-      "reb_mean": 4.74,
-      "ast_mean": 5.85,
+      "pts_mean": 13.03,
+      "reb_mean": 4.84,
+      "ast_mean": 5.6,
       "pts_reb": {
-        "r": 0.1313,
-        "p_value": 0.22545
+        "r": 0.1401,
+        "p_value": 0.16236
       },
       "pts_ast": {
-        "r": 0.1423,
-        "p_value": 0.18869
+        "r": 0.0241,
+        "p_value": 0.81109
       }
     },
     {
       "athlete_id": "2955898",
       "name": "Damiris Dantas",
       "position": "C",
-      "n_games": 58,
+      "n_games": 64,
       "games_by_season": {
         "2024": 20,
-        "2025": 38
+        "2025": 38,
+        "2026": 6
       },
-      "pts_mean": 4.55,
-      "reb_mean": 2.31,
-      "ast_mean": 0.64,
+      "pts_mean": 4.45,
+      "reb_mean": 2.19,
+      "ast_mean": 0.59,
       "pts_reb": {
-        "r": 0.4522,
-        "p_value": 0.00037
+        "r": 0.4512,
+        "p_value": 0.00018
       },
       "pts_ast": {
-        "r": 0.09,
-        "p_value": 0.50165
+        "r": 0.1191,
+        "p_value": 0.34844
       }
     },
     {
@@ -745,63 +1036,66 @@
       "athlete_id": "2566106",
       "name": "Dearica Hamby",
       "position": "F",
-      "n_games": 85,
+      "n_games": 99,
       "games_by_season": {
         "2024": 41,
-        "2025": 44
+        "2025": 44,
+        "2026": 14
       },
-      "pts_mean": 17.67,
-      "reb_mean": 8.46,
-      "ast_mean": 3.34,
+      "pts_mean": 17.14,
+      "reb_mean": 8.39,
+      "ast_mean": 3.2,
       "pts_reb": {
-        "r": 0.0929,
-        "p_value": 0.39755
+        "r": 0.1577,
+        "p_value": 0.11899
       },
       "pts_ast": {
-        "r": 0.1737,
-        "p_value": 0.11194
+        "r": 0.2039,
+        "p_value": 0.0429
       }
     },
     {
       "athlete_id": "869",
       "name": "DeWanna Bonner",
       "position": "F",
-      "n_games": 74,
+      "n_games": 89,
       "games_by_season": {
         "2024": 41,
-        "2025": 33
+        "2025": 33,
+        "2026": 15
       },
-      "pts_mean": 12.58,
-      "reb_mean": 5.12,
-      "ast_mean": 1.59,
+      "pts_mean": 11.89,
+      "reb_mean": 5.03,
+      "ast_mean": 1.52,
       "pts_reb": {
-        "r": 0.2687,
-        "p_value": 0.02061
+        "r": 0.2794,
+        "p_value": 0.00801
       },
       "pts_ast": {
-        "r": 0.2166,
-        "p_value": 0.06382
+        "r": 0.3065,
+        "p_value": 0.00348
       }
     },
     {
       "athlete_id": "4433635",
       "name": "Diamond Miller",
       "position": "F",
-      "n_games": 61,
+      "n_games": 76,
       "games_by_season": {
         "2024": 20,
-        "2025": 41
+        "2025": 41,
+        "2026": 15
       },
-      "pts_mean": 3.62,
-      "reb_mean": 1.48,
-      "ast_mean": 0.72,
+      "pts_mean": 4.64,
+      "reb_mean": 1.62,
+      "ast_mean": 0.8,
       "pts_reb": {
-        "r": 0.3435,
-        "p_value": 0.00672
+        "r": 0.441,
+        "p_value": 7e-05
       },
       "pts_ast": {
-        "r": 0.301,
-        "p_value": 0.01843
+        "r": 0.3939,
+        "p_value": 0.00043
       }
     },
     {
@@ -829,20 +1123,21 @@
       "athlete_id": "5220150",
       "name": "Dominique Malonga",
       "position": "C",
-      "n_games": 42,
+      "n_games": 49,
       "games_by_season": {
-        "2025": 42
+        "2025": 42,
+        "2026": 7
       },
-      "pts_mean": 7.69,
-      "reb_mean": 4.64,
-      "ast_mean": 0.86,
+      "pts_mean": 8.59,
+      "reb_mean": 4.88,
+      "ast_mean": 0.84,
       "pts_reb": {
-        "r": 0.7647,
+        "r": 0.7191,
         "p_value": 0.0
       },
       "pts_ast": {
-        "r": 0.1971,
-        "p_value": 0.21084
+        "r": 0.1347,
+        "p_value": 0.35604
       }
     },
     {
@@ -866,86 +1161,130 @@
       }
     },
     {
+      "athlete_id": "5345478",
+      "name": "Eliska Hamzova",
+      "position": "G",
+      "n_games": 4,
+      "games_by_season": {
+        "2026": 4
+      },
+      "pts_mean": 2.5,
+      "reb_mean": 1.75,
+      "ast_mean": 0.75,
+      "pts_reb": {
+        "r": 0.5152,
+        "p_value": 0.48485
+      },
+      "pts_ast": {
+        "r": 0.8182,
+        "p_value": 0.18182
+      }
+    },
+    {
       "athlete_id": "2566081",
       "name": "Elizabeth Williams",
       "position": "C",
-      "n_games": 52,
+      "n_games": 65,
       "games_by_season": {
         "2024": 9,
-        "2025": 43
+        "2025": 43,
+        "2026": 13
       },
-      "pts_mean": 8.73,
-      "reb_mean": 5.5,
-      "ast_mean": 1.77,
+      "pts_mean": 8.11,
+      "reb_mean": 5.28,
+      "ast_mean": 1.72,
       "pts_reb": {
-        "r": 0.5747,
-        "p_value": 1e-05
+        "r": 0.5063,
+        "p_value": 2e-05
       },
       "pts_ast": {
-        "r": 0.1397,
-        "p_value": 0.32319
+        "r": 0.2544,
+        "p_value": 0.04084
       }
     },
     {
       "athlete_id": "4398729",
       "name": "Emily Engstler",
       "position": "F",
-      "n_games": 72,
+      "n_games": 88,
       "games_by_season": {
         "2024": 32,
-        "2025": 40
+        "2025": 40,
+        "2026": 16
       },
-      "pts_mean": 4.76,
-      "reb_mean": 3.58,
-      "ast_mean": 1.46,
+      "pts_mean": 5.57,
+      "reb_mean": 3.77,
+      "ast_mean": 1.42,
       "pts_reb": {
-        "r": 0.5599,
+        "r": 0.5758,
         "p_value": 0.0
       },
       "pts_ast": {
-        "r": 0.3971,
-        "p_value": 0.00055
+        "r": 0.3117,
+        "p_value": 0.00311
       }
     },
     {
       "athlete_id": "2284331",
       "name": "Emma Cannon",
       "position": "F",
-      "n_games": 26,
+      "n_games": 28,
       "games_by_season": {
         "2024": 5,
-        "2025": 21
+        "2025": 21,
+        "2026": 2
       },
-      "pts_mean": 3.73,
-      "reb_mean": 1.54,
-      "ast_mean": 0.35,
+      "pts_mean": 3.57,
+      "reb_mean": 1.43,
+      "ast_mean": 0.32,
       "pts_reb": {
-        "r": 0.145,
-        "p_value": 0.47958
+        "r": 0.1753,
+        "p_value": 0.37219
       },
       "pts_ast": {
-        "r": 0.0934,
-        "p_value": 0.64997
+        "r": 0.1193,
+        "p_value": 0.54549
+      }
+    },
+    {
+      "athlete_id": "5345322",
+      "name": "Emma Cechova",
+      "position": "F",
+      "n_games": 3,
+      "games_by_season": {
+        "2026": 3
+      },
+      "pts_mean": 8.33,
+      "reb_mean": 3.67,
+      "ast_mean": 0.0,
+      "pts_reb": {
+        "r": 0.6251,
+        "p_value": 0.57012
+      },
+      "pts_ast": {
+        "r": null,
+        "p_value": null
       }
     },
     {
       "athlete_id": "2491214",
       "name": "Erica Wheeler",
       "position": "G",
-      "n_games": 83,
+      "n_games": 97,
       "games_by_season": {
         "2024": 39,
-        "2025": 44
+        "2025": 44,
+        "2026": 14
       },
-      "pts_mean": 7.19,
-      "reb_mean": 2.07,
-      "ast_mean": 2.57,
+      "pts_mean": 7.25,
+      "reb_mean": 2.04,
+      "ast_mean": 2.87,
       "pts_reb": {
-        "r": 0.359,
-        "p_value": 0.00086
+        "r": 0.3216,
+        "p_value": 0.00132
       },
       "pts_ast": {
-        "r": 0.4942,
+        "r": 0.4545,
         "p_value": 0.0
       }
     },
@@ -971,44 +1310,186 @@
       }
     },
     {
+      "athlete_id": "4698736",
+      "name": "Flau'jae Johnson",
+      "position": "G",
+      "n_games": 15,
+      "games_by_season": {
+        "2026": 15
+      },
+      "pts_mean": 11.53,
+      "reb_mean": 5.33,
+      "ast_mean": 2.53,
+      "pts_reb": {
+        "r": 0.5236,
+        "p_value": 0.04517
+      },
+      "pts_ast": {
+        "r": 0.1495,
+        "p_value": 0.59481
+      }
+    },
+    {
+      "athlete_id": "5105406",
+      "name": "Frieda Buhner",
+      "position": "F",
+      "n_games": 13,
+      "games_by_season": {
+        "2026": 13
+      },
+      "pts_mean": 5.08,
+      "reb_mean": 1.31,
+      "ast_mean": 0.31,
+      "pts_reb": {
+        "r": 0.233,
+        "p_value": 0.44371
+      },
+      "pts_ast": {
+        "r": 0.0851,
+        "p_value": 0.78232
+      }
+    },
+    {
       "athlete_id": "3142328",
       "name": "Gabby Williams",
       "position": "F",
-      "n_games": 57,
+      "n_games": 71,
       "games_by_season": {
         "2024": 12,
-        "2025": 45
+        "2025": 45,
+        "2026": 14
       },
-      "pts_mean": 11.4,
-      "reb_mean": 4.16,
-      "ast_mean": 4.11,
+      "pts_mean": 12.25,
+      "reb_mean": 4.07,
+      "ast_mean": 3.76,
       "pts_reb": {
-        "r": 0.2535,
-        "p_value": 0.0571
+        "r": 0.2234,
+        "p_value": 0.06113
       },
       "pts_ast": {
-        "r": 0.3069,
-        "p_value": 0.02024
+        "r": 0.0868,
+        "p_value": 0.47163
+      }
+    },
+    {
+      "athlete_id": "4858656",
+      "name": "Gabriela Jaquez",
+      "position": "G",
+      "n_games": 9,
+      "games_by_season": {
+        "2026": 9
+      },
+      "pts_mean": 9.89,
+      "reb_mean": 4.56,
+      "ast_mean": 1.0,
+      "pts_reb": {
+        "r": 0.5646,
+        "p_value": 0.11321
+      },
+      "pts_ast": {
+        "r": 0.1746,
+        "p_value": 0.65328
+      }
+    },
+    {
+      "athlete_id": "4898898",
+      "name": "Gianna Kneepkens",
+      "position": "G",
+      "n_games": 14,
+      "games_by_season": {
+        "2026": 14
+      },
+      "pts_mean": 3.21,
+      "reb_mean": 1.29,
+      "ast_mean": 0.64,
+      "pts_reb": {
+        "r": 0.5638,
+        "p_value": 0.03573
+      },
+      "pts_ast": {
+        "r": 0.3214,
+        "p_value": 0.26248
+      }
+    },
+    {
+      "athlete_id": "5105731",
+      "name": "Grace VanSlooten",
+      "position": "F",
+      "n_games": 6,
+      "games_by_season": {
+        "2026": 6
+      },
+      "pts_mean": 3.17,
+      "reb_mean": 1.0,
+      "ast_mean": 0.5,
+      "pts_reb": {
+        "r": 0.4272,
+        "p_value": 0.39821
+      },
+      "pts_ast": {
+        "r": 0.4203,
+        "p_value": 0.40669
       }
     },
     {
       "athlete_id": "4433412",
       "name": "Hailey Van Lith",
       "position": "G",
-      "n_games": 29,
+      "n_games": 39,
       "games_by_season": {
-        "2025": 29
+        "2025": 29,
+        "2026": 10
       },
-      "pts_mean": 3.52,
-      "reb_mean": 1.07,
-      "ast_mean": 1.55,
+      "pts_mean": 4.59,
+      "reb_mean": 1.08,
+      "ast_mean": 1.67,
       "pts_reb": {
-        "r": 0.4631,
-        "p_value": 0.01141
+        "r": 0.3518,
+        "p_value": 0.02805
       },
       "pts_ast": {
-        "r": 0.3258,
-        "p_value": 0.08461
+        "r": 0.4404,
+        "p_value": 0.00502
+      }
+    },
+    {
+      "athlete_id": "4337216",
+      "name": "Han Xu",
+      "position": "C",
+      "n_games": 14,
+      "games_by_season": {
+        "2026": 14
+      },
+      "pts_mean": 5.5,
+      "reb_mean": 2.36,
+      "ast_mean": 0.86,
+      "pts_reb": {
+        "r": 0.546,
+        "p_value": 0.04338
+      },
+      "pts_ast": {
+        "r": 0.164,
+        "p_value": 0.57527
+      }
+    },
+    {
+      "athlete_id": "4433690",
+      "name": "Holly Winterburn",
+      "position": "G",
+      "n_games": 7,
+      "games_by_season": {
+        "2026": 7
+      },
+      "pts_mean": 2.0,
+      "reb_mean": 1.0,
+      "ast_mean": 2.29,
+      "pts_reb": {
+        "r": 0.875,
+        "p_value": 0.00991
+      },
+      "pts_ast": {
+        "r": 0.7722,
+        "p_value": 0.0419
       }
     },
     {
@@ -1032,500 +1513,624 @@
       }
     },
     {
+      "athlete_id": "5105740",
+      "name": "Indya Nivar",
+      "position": "G",
+      "n_games": 11,
+      "games_by_season": {
+        "2026": 11
+      },
+      "pts_mean": 1.09,
+      "reb_mean": 1.36,
+      "ast_mean": 0.55,
+      "pts_reb": {
+        "r": -0.1289,
+        "p_value": 0.70555
+      },
+      "pts_ast": {
+        "r": -0.3365,
+        "p_value": 0.31163
+      }
+    },
+    {
       "athlete_id": "2566453",
       "name": "Isabelle Harrison",
       "position": "F",
-      "n_games": 70,
+      "n_games": 74,
       "games_by_season": {
         "2024": 36,
-        "2025": 34
+        "2025": 34,
+        "2026": 4
       },
-      "pts_mean": 5.73,
-      "reb_mean": 3.29,
-      "ast_mean": 0.73,
+      "pts_mean": 6.01,
+      "reb_mean": 3.35,
+      "ast_mean": 0.78,
       "pts_reb": {
-        "r": 0.6486,
+        "r": 0.6276,
         "p_value": 0.0
       },
       "pts_ast": {
-        "r": 0.2465,
-        "p_value": 0.03964
+        "r": 0.2305,
+        "p_value": 0.04823
+      }
+    },
+    {
+      "athlete_id": "5208983",
+      "name": "Isobel Borlase",
+      "position": "G",
+      "n_games": 13,
+      "games_by_season": {
+        "2026": 13
+      },
+      "pts_mean": 4.23,
+      "reb_mean": 1.23,
+      "ast_mean": 0.69,
+      "pts_reb": {
+        "r": 0.6666,
+        "p_value": 0.01283
+      },
+      "pts_ast": {
+        "r": 0.3686,
+        "p_value": 0.2152
       }
     },
     {
       "athlete_id": "4065870",
       "name": "Jackie Young",
       "position": "G",
-      "n_games": 83,
+      "n_games": 97,
       "games_by_season": {
         "2024": 38,
-        "2025": 45
+        "2025": 45,
+        "2026": 14
       },
-      "pts_mean": 15.81,
-      "reb_mean": 4.3,
-      "ast_mean": 5.13,
+      "pts_mean": 15.65,
+      "reb_mean": 4.37,
+      "ast_mean": 5.36,
       "pts_reb": {
-        "r": 0.3861,
-        "p_value": 0.00031
+        "r": 0.3374,
+        "p_value": 0.00073
       },
       "pts_ast": {
-        "r": 0.1256,
-        "p_value": 0.25791
+        "r": 0.1495,
+        "p_value": 0.14385
       }
     },
     {
       "athlete_id": "4432865",
       "name": "Jacy Sheldon",
       "position": "G",
-      "n_games": 70,
+      "n_games": 83,
       "games_by_season": {
         "2024": 40,
-        "2025": 30
+        "2025": 30,
+        "2026": 13
       },
-      "pts_mean": 6.3,
-      "reb_mean": 1.99,
-      "ast_mean": 2.21,
+      "pts_mean": 6.51,
+      "reb_mean": 1.9,
+      "ast_mean": 2.22,
       "pts_reb": {
-        "r": 0.4291,
-        "p_value": 0.00021
+        "r": 0.4354,
+        "p_value": 4e-05
       },
       "pts_ast": {
-        "r": 0.0341,
-        "p_value": 0.77915
+        "r": 0.0934,
+        "p_value": 0.40082
       }
     },
     {
       "athlete_id": "5017726",
       "name": "Jade Melbourne",
       "position": "G",
-      "n_games": 80,
+      "n_games": 95,
       "games_by_season": {
         "2024": 37,
-        "2025": 43
+        "2025": 43,
+        "2026": 15
       },
-      "pts_mean": 5.67,
-      "reb_mean": 1.69,
-      "ast_mean": 2.29,
+      "pts_mean": 6.19,
+      "reb_mean": 1.74,
+      "ast_mean": 2.46,
       "pts_reb": {
-        "r": 0.1397,
-        "p_value": 0.21665
+        "r": 0.1409,
+        "p_value": 0.17319
       },
       "pts_ast": {
-        "r": 0.1972,
-        "p_value": 0.07951
+        "r": 0.2212,
+        "p_value": 0.03119
       }
     },
     {
       "athlete_id": "4790264",
       "name": "Janelle Salaun",
       "position": "F",
-      "n_games": 36,
+      "n_games": 50,
       "games_by_season": {
-        "2025": 36
+        "2025": 36,
+        "2026": 14
       },
-      "pts_mean": 11.31,
-      "reb_mean": 5.08,
-      "ast_mean": 1.19,
+      "pts_mean": 12.0,
+      "reb_mean": 4.8,
+      "ast_mean": 1.24,
       "pts_reb": {
-        "r": 0.4177,
-        "p_value": 0.01126
+        "r": 0.3682,
+        "p_value": 0.00852
       },
       "pts_ast": {
-        "r": 0.2794,
-        "p_value": 0.09892
+        "r": 0.3154,
+        "p_value": 0.02566
       }
     },
     {
       "athlete_id": "3906949",
       "name": "Jessica Shepard",
       "position": "F",
-      "n_games": 41,
+      "n_games": 55,
       "games_by_season": {
-        "2025": 41
+        "2025": 41,
+        "2026": 14
       },
-      "pts_mean": 8.02,
-      "reb_mean": 7.27,
-      "ast_mean": 2.54,
+      "pts_mean": 9.47,
+      "reb_mean": 8.36,
+      "ast_mean": 3.35,
       "pts_reb": {
-        "r": 0.6896,
+        "r": 0.7441,
         "p_value": 0.0
       },
       "pts_ast": {
-        "r": 0.4776,
-        "p_value": 0.00159
+        "r": 0.6095,
+        "p_value": 0.0
       }
     },
     {
       "athlete_id": "2987869",
       "name": "Jewell Loyd",
       "position": "G",
-      "n_games": 82,
+      "n_games": 94,
       "games_by_season": {
         "2024": 38,
-        "2025": 44
+        "2025": 44,
+        "2026": 12
       },
-      "pts_mean": 14.88,
-      "reb_mean": 3.78,
-      "ast_mean": 2.67,
+      "pts_mean": 13.97,
+      "reb_mean": 3.63,
+      "ast_mean": 2.53,
       "pts_reb": {
-        "r": 0.2333,
-        "p_value": 0.03492
+        "r": 0.2425,
+        "p_value": 0.01854
       },
       "pts_ast": {
-        "r": 0.2439,
-        "p_value": 0.02724
+        "r": 0.2552,
+        "p_value": 0.01306
+      }
+    },
+    {
+      "athlete_id": "4874375",
+      "name": "Jihyun Park",
+      "position": "F",
+      "n_games": 9,
+      "games_by_season": {
+        "2026": 9
+      },
+      "pts_mean": 0.67,
+      "reb_mean": 0.56,
+      "ast_mean": 0.44,
+      "pts_reb": {
+        "r": 0.6325,
+        "p_value": 0.06758
+      },
+      "pts_ast": {
+        "r": 0.5735,
+        "p_value": 0.10639
       }
     },
     {
       "athlete_id": "2999101",
       "name": "Jonquel Jones",
       "position": "C",
-      "n_games": 72,
+      "n_games": 85,
       "games_by_season": {
         "2024": 41,
-        "2025": 31
+        "2025": 31,
+        "2026": 13
       },
-      "pts_mean": 13.68,
-      "reb_mean": 8.61,
-      "ast_mean": 3.04,
+      "pts_mean": 13.71,
+      "reb_mean": 8.69,
+      "ast_mean": 3.0,
       "pts_reb": {
-        "r": 0.2527,
-        "p_value": 0.0322
+        "r": 0.2406,
+        "p_value": 0.02657
       },
       "pts_ast": {
-        "r": 0.0171,
-        "p_value": 0.88672
+        "r": 0.0074,
+        "p_value": 0.9465
       }
     },
     {
       "athlete_id": "4432830",
       "name": "Jordan Horston",
       "position": "F",
-      "n_games": 39,
+      "n_games": 54,
       "games_by_season": {
-        "2024": 39
+        "2024": 39,
+        "2026": 15
       },
-      "pts_mean": 6.82,
-      "reb_mean": 4.31,
-      "ast_mean": 1.77,
+      "pts_mean": 6.2,
+      "reb_mean": 4.22,
+      "ast_mean": 1.72,
       "pts_reb": {
-        "r": 0.3014,
-        "p_value": 0.06227
+        "r": 0.2579,
+        "p_value": 0.05975
       },
       "pts_ast": {
-        "r": 0.1172,
-        "p_value": 0.47746
+        "r": 0.1574,
+        "p_value": 0.25556
       }
     },
     {
       "athlete_id": "3142250",
       "name": "Jordin Canada",
       "position": "G",
-      "n_games": 48,
+      "n_games": 61,
       "games_by_season": {
         "2024": 20,
-        "2025": 28
+        "2025": 28,
+        "2026": 13
       },
-      "pts_mean": 10.94,
-      "reb_mean": 3.33,
-      "ast_mean": 5.73,
+      "pts_mean": 10.87,
+      "reb_mean": 3.38,
+      "ast_mean": 5.97,
       "pts_reb": {
-        "r": -0.0058,
-        "p_value": 0.96864
+        "r": 0.0161,
+        "p_value": 0.90173
       },
       "pts_ast": {
-        "r": 0.2362,
-        "p_value": 0.10599
+        "r": 0.1673,
+        "p_value": 0.19751
+      }
+    },
+    {
+      "athlete_id": "3906769",
+      "name": "Jovana Nogic",
+      "position": "G",
+      "n_games": 15,
+      "games_by_season": {
+        "2026": 15
+      },
+      "pts_mean": 10.27,
+      "reb_mean": 1.13,
+      "ast_mean": 1.73,
+      "pts_reb": {
+        "r": 0.3373,
+        "p_value": 0.21883
+      },
+      "pts_ast": {
+        "r": 0.0504,
+        "p_value": 0.85853
       }
     },
     {
       "athlete_id": "4001679",
       "name": "Julie Allemand",
       "position": "G",
-      "n_games": 34,
+      "n_games": 43,
       "games_by_season": {
-        "2025": 34
+        "2025": 34,
+        "2026": 9
       },
-      "pts_mean": 5.38,
-      "reb_mean": 3.74,
-      "ast_mean": 5.0,
+      "pts_mean": 5.53,
+      "reb_mean": 3.53,
+      "ast_mean": 4.74,
       "pts_reb": {
-        "r": 0.0815,
-        "p_value": 0.64693
+        "r": 0.0382,
+        "p_value": 0.80767
       },
       "pts_ast": {
-        "r": 0.0388,
-        "p_value": 0.82737
+        "r": 0.0409,
+        "p_value": 0.7946
+      }
+    },
+    {
+      "athlete_id": "5277552",
+      "name": "Juste Jocyte",
+      "position": "G",
+      "n_games": 6,
+      "games_by_season": {
+        "2026": 6
+      },
+      "pts_mean": 3.5,
+      "reb_mean": 0.5,
+      "ast_mean": 1.0,
+      "pts_reb": {
+        "r": 0.7977,
+        "p_value": 0.05724
+      },
+      "pts_ast": {
+        "r": 0.5685,
+        "p_value": 0.23908
       }
     },
     {
       "athlete_id": "2998938",
       "name": "Kahleah Copper",
       "position": "G",
-      "n_games": 66,
+      "n_games": 80,
       "games_by_season": {
         "2024": 38,
-        "2025": 28
+        "2025": 28,
+        "2026": 14
       },
-      "pts_mean": 18.59,
-      "reb_mean": 3.79,
-      "ast_mean": 1.94,
+      "pts_mean": 18.62,
+      "reb_mean": 3.71,
+      "ast_mean": 1.93,
       "pts_reb": {
-        "r": 0.1984,
-        "p_value": 0.1102
+        "r": 0.2633,
+        "p_value": 0.0183
       },
       "pts_ast": {
-        "r": 0.0846,
-        "p_value": 0.49969
+        "r": 0.0466,
+        "p_value": 0.68146
       }
     },
     {
       "athlete_id": "4065780",
       "name": "Kaila Charles",
       "position": "G",
-      "n_games": 35,
+      "n_games": 49,
       "games_by_season": {
-        "2025": 35
+        "2025": 35,
+        "2026": 14
       },
-      "pts_mean": 6.37,
-      "reb_mean": 4.26,
-      "ast_mean": 1.0,
+      "pts_mean": 6.29,
+      "reb_mean": 4.51,
+      "ast_mean": 1.08,
       "pts_reb": {
-        "r": 0.4544,
-        "p_value": 0.0061
+        "r": 0.504,
+        "p_value": 0.00022
       },
       "pts_ast": {
-        "r": 0.1972,
-        "p_value": 0.25611
+        "r": 0.2496,
+        "p_value": 0.08365
       }
     },
     {
       "athlete_id": "4899328",
       "name": "Kaitlyn Chen",
       "position": "G",
-      "n_games": 24,
+      "n_games": 38,
       "games_by_season": {
-        "2025": 24
+        "2025": 24,
+        "2026": 14
       },
-      "pts_mean": 2.0,
-      "reb_mean": 0.92,
-      "ast_mean": 1.0,
+      "pts_mean": 3.29,
+      "reb_mean": 1.16,
+      "ast_mean": 1.18,
       "pts_reb": {
-        "r": 0.1567,
-        "p_value": 0.46465
+        "r": 0.1047,
+        "p_value": 0.5316
       },
       "pts_ast": {
-        "r": 0.3233,
-        "p_value": 0.12333
+        "r": 0.2276,
+        "p_value": 0.16928
       }
     },
     {
       "athlete_id": "4433405",
       "name": "Kamilla Cardoso",
       "position": "C",
-      "n_games": 72,
+      "n_games": 85,
       "games_by_season": {
         "2024": 32,
-        "2025": 40
+        "2025": 40,
+        "2026": 13
       },
-      "pts_mean": 11.89,
-      "reb_mean": 8.26,
-      "ast_mean": 2.11,
+      "pts_mean": 11.92,
+      "reb_mean": 8.32,
+      "ast_mean": 2.16,
       "pts_reb": {
-        "r": 0.1918,
-        "p_value": 0.10648
+        "r": 0.2386,
+        "p_value": 0.0279
       },
       "pts_ast": {
-        "r": 0.215,
-        "p_value": 0.06975
+        "r": 0.1994,
+        "p_value": 0.06734
       }
     },
     {
       "athlete_id": "3056730",
       "name": "Karlie Samuelson",
       "position": "G",
-      "n_games": 45,
+      "n_games": 53,
       "games_by_season": {
         "2024": 29,
-        "2025": 16
+        "2025": 16,
+        "2026": 8
       },
-      "pts_mean": 6.58,
-      "reb_mean": 2.09,
-      "ast_mean": 1.76,
+      "pts_mean": 6.04,
+      "reb_mean": 1.98,
+      "ast_mean": 1.68,
       "pts_reb": {
-        "r": 0.3627,
-        "p_value": 0.01435
+        "r": 0.3902,
+        "p_value": 0.00387
       },
       "pts_ast": {
-        "r": 0.4038,
-        "p_value": 0.00595
+        "r": 0.3604,
+        "p_value": 0.00802
       }
     },
     {
       "athlete_id": "4398907",
       "name": "Kate Martin",
       "position": "G",
-      "n_games": 76,
+      "n_games": 85,
       "games_by_season": {
         "2024": 34,
-        "2025": 42
+        "2025": 42,
+        "2026": 9
       },
-      "pts_mean": 4.58,
-      "reb_mean": 2.18,
-      "ast_mean": 0.92,
+      "pts_mean": 4.4,
+      "reb_mean": 2.01,
+      "ast_mean": 0.87,
       "pts_reb": {
-        "r": 0.5644,
+        "r": 0.5417,
         "p_value": 0.0
       },
       "pts_ast": {
-        "r": 0.227,
-        "p_value": 0.04863
+        "r": 0.2258,
+        "p_value": 0.03772
       }
     },
     {
       "athlete_id": "2529205",
       "name": "Kayla McBride",
       "position": "G",
-      "n_games": 82,
+      "n_games": 96,
       "games_by_season": {
         "2024": 41,
-        "2025": 41
+        "2025": 41,
+        "2026": 14
       },
-      "pts_mean": 14.35,
-      "reb_mean": 2.38,
-      "ast_mean": 3.29,
+      "pts_mean": 14.33,
+      "reb_mean": 2.65,
+      "ast_mean": 3.22,
       "pts_reb": {
-        "r": 0.1174,
-        "p_value": 0.29368
+        "r": 0.1088,
+        "p_value": 0.29142
       },
       "pts_ast": {
         "r": 0.0267,
-        "p_value": 0.81186
+        "p_value": 0.79593
       }
     },
     {
       "athlete_id": "2529622",
       "name": "Kayla Thornton",
       "position": "F",
-      "n_games": 64,
+      "n_games": 78,
       "games_by_season": {
         "2024": 41,
-        "2025": 23
+        "2025": 23,
+        "2026": 14
       },
-      "pts_mean": 8.77,
-      "reb_mean": 4.23,
-      "ast_mean": 1.05,
+      "pts_mean": 8.83,
+      "reb_mean": 4.38,
+      "ast_mean": 0.97,
       "pts_reb": {
-        "r": 0.6264,
+        "r": 0.5698,
         "p_value": 0.0
       },
       "pts_ast": {
-        "r": 0.3332,
-        "p_value": 0.00713
+        "r": 0.2828,
+        "p_value": 0.0121
       }
     },
     {
       "athlete_id": "3142191",
       "name": "Kelsey Mitchell",
       "position": "G",
-      "n_games": 87,
+      "n_games": 100,
       "games_by_season": {
         "2024": 41,
-        "2025": 46
+        "2025": 46,
+        "2026": 13
       },
-      "pts_mean": 19.56,
-      "reb_mean": 2.06,
-      "ast_mean": 2.61,
+      "pts_mean": 19.66,
+      "reb_mean": 1.98,
+      "ast_mean": 2.62,
       "pts_reb": {
-        "r": 0.2361,
-        "p_value": 0.0277
+        "r": 0.2132,
+        "p_value": 0.03322
       },
       "pts_ast": {
-        "r": 0.2858,
-        "p_value": 0.00728
+        "r": 0.2536,
+        "p_value": 0.01091
       }
     },
     {
       "athlete_id": "3065570",
       "name": "Kelsey Plum",
       "position": "G",
-      "n_games": 83,
+      "n_games": 94,
       "games_by_season": {
         "2024": 39,
-        "2025": 44
+        "2025": 44,
+        "2026": 11
       },
-      "pts_mean": 18.57,
-      "reb_mean": 2.86,
-      "ast_mean": 5.0,
+      "pts_mean": 19.32,
+      "reb_mean": 2.77,
+      "ast_mean": 5.16,
       "pts_reb": {
-        "r": 0.032,
-        "p_value": 0.77366
+        "r": -0.0018,
+        "p_value": 0.9865
       },
       "pts_ast": {
-        "r": -0.0035,
-        "p_value": 0.97488
+        "r": 0.1116,
+        "p_value": 0.28414
       }
     },
     {
       "athlete_id": "3922628",
       "name": "Kennedy Burke",
       "position": "G",
-      "n_games": 75,
+      "n_games": 89,
       "games_by_season": {
         "2024": 39,
-        "2025": 36
+        "2025": 36,
+        "2026": 14
       },
-      "pts_mean": 5.69,
-      "reb_mean": 1.92,
-      "ast_mean": 1.07,
+      "pts_mean": 5.92,
+      "reb_mean": 2.2,
+      "ast_mean": 1.17,
       "pts_reb": {
-        "r": 0.3713,
-        "p_value": 0.00104
+        "r": 0.4244,
+        "p_value": 3e-05
       },
       "pts_ast": {
-        "r": 0.1568,
-        "p_value": 0.17916
+        "r": 0.1413,
+        "p_value": 0.18664
       }
     },
     {
       "athlete_id": "3142327",
       "name": "Kia Nurse",
       "position": "G",
-      "n_games": 84,
+      "n_games": 98,
       "games_by_season": {
         "2024": 40,
-        "2025": 44
+        "2025": 44,
+        "2026": 14
       },
-      "pts_mean": 7.37,
-      "reb_mean": 1.99,
-      "ast_mean": 1.29,
+      "pts_mean": 6.81,
+      "reb_mean": 1.86,
+      "ast_mean": 1.16,
       "pts_reb": {
-        "r": 0.179,
-        "p_value": 0.10329
+        "r": 0.2665,
+        "p_value": 0.008
       },
       "pts_ast": {
-        "r": 0.1241,
-        "p_value": 0.26076
+        "r": 0.2157,
+        "p_value": 0.03289
       }
     },
     {
       "athlete_id": "2590093",
       "name": "Kiah Stokes",
       "position": "C",
-      "n_games": 79,
+      "n_games": 93,
       "games_by_season": {
         "2024": 39,
-        "2025": 40
+        "2025": 40,
+        "2026": 14
       },
-      "pts_mean": 1.25,
-      "reb_mean": 4.15,
-      "ast_mean": 0.57,
+      "pts_mean": 1.61,
+      "reb_mean": 4.26,
+      "ast_mean": 0.7,
       "pts_reb": {
-        "r": 0.3307,
-        "p_value": 0.00291
+        "r": 0.3186,
+        "p_value": 0.00185
       },
       "pts_ast": {
-        "r": 0.5812,
+        "r": 0.634,
         "p_value": 0.0
       }
     },
@@ -1533,286 +2138,360 @@
       "athlete_id": "4282168",
       "name": "Kiana Williams",
       "position": "G",
-      "n_games": 23,
+      "n_games": 31,
       "games_by_season": {
         "2024": 13,
-        "2025": 10
+        "2025": 10,
+        "2026": 8
       },
-      "pts_mean": 2.43,
-      "reb_mean": 0.57,
-      "ast_mean": 0.65,
+      "pts_mean": 3.03,
+      "reb_mean": 0.52,
+      "ast_mean": 0.61,
       "pts_reb": {
-        "r": 0.7277,
+        "r": 0.6488,
         "p_value": 8e-05
       },
       "pts_ast": {
-        "r": 0.8246,
-        "p_value": 0.0
+        "r": 0.7003,
+        "p_value": 1e-05
       }
     },
     {
       "athlete_id": "4433633",
       "name": "Kierstan Bell",
       "position": "F",
-      "n_games": 41,
+      "n_games": 51,
       "games_by_season": {
         "2024": 6,
-        "2025": 35
+        "2025": 35,
+        "2026": 10
       },
-      "pts_mean": 3.98,
-      "reb_mean": 1.66,
-      "ast_mean": 0.68,
+      "pts_mean": 3.39,
+      "reb_mean": 1.65,
+      "ast_mean": 0.69,
       "pts_reb": {
-        "r": 0.6184,
-        "p_value": 2e-05
+        "r": 0.5214,
+        "p_value": 9e-05
       },
       "pts_ast": {
-        "r": 0.3128,
-        "p_value": 0.04642
+        "r": 0.2604,
+        "p_value": 0.06497
       }
     },
     {
       "athlete_id": "4898384",
       "name": "Kiki Iriafen",
       "position": "F",
-      "n_games": 45,
+      "n_games": 55,
       "games_by_season": {
-        "2025": 45
+        "2025": 45,
+        "2026": 10
       },
-      "pts_mean": 13.36,
-      "reb_mean": 8.58,
+      "pts_mean": 13.58,
+      "reb_mean": 8.64,
       "ast_mean": 1.56,
       "pts_reb": {
-        "r": 0.3032,
-        "p_value": 0.04291
+        "r": 0.2929,
+        "p_value": 0.02997
       },
       "pts_ast": {
-        "r": 0.2526,
-        "p_value": 0.09415
+        "r": 0.2962,
+        "p_value": 0.02811
+      }
+    },
+    {
+      "athlete_id": "4565505",
+      "name": "Kiki Rice",
+      "position": "G",
+      "n_games": 10,
+      "games_by_season": {
+        "2026": 10
+      },
+      "pts_mean": 12.7,
+      "reb_mean": 4.7,
+      "ast_mean": 2.6,
+      "pts_reb": {
+        "r": 0.3858,
+        "p_value": 0.27088
+      },
+      "pts_ast": {
+        "r": 0.223,
+        "p_value": 0.53567
       }
     },
     {
       "athlete_id": "4873359",
       "name": "Kyara Linskens",
       "position": "C",
-      "n_games": 4,
+      "n_games": 14,
       "games_by_season": {
-        "2025": 4
+        "2025": 4,
+        "2026": 10
       },
-      "pts_mean": 1.0,
-      "reb_mean": 1.5,
-      "ast_mean": 0.25,
+      "pts_mean": 3.0,
+      "reb_mean": 2.07,
+      "ast_mean": 0.43,
       "pts_reb": {
-        "r": 0.8944,
-        "p_value": 0.10557
+        "r": 0.3151,
+        "p_value": 0.27249
       },
       "pts_ast": {
-        "r": 0.5774,
-        "p_value": 0.42265
+        "r": 0.047,
+        "p_value": 0.87322
       }
     },
     {
       "athlete_id": "4432834",
       "name": "Laeticia Amihere",
       "position": "F",
-      "n_games": 45,
+      "n_games": 55,
       "games_by_season": {
         "2024": 16,
-        "2025": 29
+        "2025": 29,
+        "2026": 10
       },
-      "pts_mean": 3.89,
-      "reb_mean": 3.38,
-      "ast_mean": 0.67,
+      "pts_mean": 3.91,
+      "reb_mean": 3.42,
+      "ast_mean": 0.8,
       "pts_reb": {
-        "r": 0.7316,
+        "r": 0.7106,
         "p_value": 0.0
       },
       "pts_ast": {
-        "r": 0.4778,
-        "p_value": 0.0009
+        "r": 0.5453,
+        "p_value": 2e-05
+      }
+    },
+    {
+      "athlete_id": "5345444",
+      "name": "Laura Juskaite",
+      "position": "F",
+      "n_games": 14,
+      "games_by_season": {
+        "2026": 14
+      },
+      "pts_mean": 8.64,
+      "reb_mean": 3.5,
+      "ast_mean": 1.36,
+      "pts_reb": {
+        "r": 0.535,
+        "p_value": 0.04867
+      },
+      "pts_ast": {
+        "r": 0.3895,
+        "p_value": 0.16869
+      }
+    },
+    {
+      "athlete_id": "5105737",
+      "name": "Lauren Betts",
+      "position": "C",
+      "n_games": 12,
+      "games_by_season": {
+        "2026": 12
+      },
+      "pts_mean": 6.67,
+      "reb_mean": 3.08,
+      "ast_mean": 0.5,
+      "pts_reb": {
+        "r": 0.0569,
+        "p_value": 0.86054
+      },
+      "pts_ast": {
+        "r": 0.1136,
+        "p_value": 0.72531
       }
     },
     {
       "athlete_id": "5208981",
       "name": "Leila Lacan",
       "position": "G",
-      "n_games": 25,
+      "n_games": 31,
       "games_by_season": {
-        "2025": 25
+        "2025": 25,
+        "2026": 6
       },
-      "pts_mean": 10.36,
-      "reb_mean": 2.36,
-      "ast_mean": 3.68,
+      "pts_mean": 10.55,
+      "reb_mean": 2.13,
+      "ast_mean": 3.97,
       "pts_reb": {
-        "r": 0.2391,
-        "p_value": 0.24966
+        "r": 0.1909,
+        "p_value": 0.30365
       },
       "pts_ast": {
-        "r": -0.1083,
-        "p_value": 0.60619
+        "r": 0.0093,
+        "p_value": 0.96028
       }
     },
     {
       "athlete_id": "4399342",
       "name": "Lexi Held",
       "position": "G",
-      "n_games": 32,
+      "n_games": 46,
       "games_by_season": {
-        "2025": 32
+        "2025": 32,
+        "2026": 14
       },
-      "pts_mean": 5.31,
-      "reb_mean": 1.06,
-      "ast_mean": 1.09,
+      "pts_mean": 4.85,
+      "reb_mean": 1.11,
+      "ast_mean": 1.13,
       "pts_reb": {
-        "r": 0.0944,
-        "p_value": 0.60734
+        "r": 0.2227,
+        "p_value": 0.13685
       },
       "pts_ast": {
-        "r": 0.348,
-        "p_value": 0.05098
+        "r": 0.3176,
+        "p_value": 0.03147
       }
     },
     {
       "athlete_id": "4398829",
       "name": "Lexie Hull",
       "position": "G",
-      "n_games": 79,
+      "n_games": 92,
       "games_by_season": {
         "2024": 34,
-        "2025": 45
+        "2025": 45,
+        "2026": 13
       },
-      "pts_mean": 6.44,
-      "reb_mean": 3.49,
-      "ast_mean": 1.47,
+      "pts_mean": 6.37,
+      "reb_mean": 3.59,
+      "ast_mean": 1.38,
       "pts_reb": {
-        "r": 0.2506,
-        "p_value": 0.0259
+        "r": 0.3005,
+        "p_value": 0.00361
       },
       "pts_ast": {
-        "r": 0.131,
-        "p_value": 0.24988
+        "r": 0.1454,
+        "p_value": 0.16662
       }
     },
     {
       "athlete_id": "4336633",
       "name": "Li Yueru",
       "position": "C",
-      "n_games": 69,
+      "n_games": 78,
       "games_by_season": {
         "2024": 38,
-        "2025": 31
+        "2025": 31,
+        "2026": 9
       },
-      "pts_mean": 5.51,
-      "reb_mean": 4.07,
-      "ast_mean": 0.74,
+      "pts_mean": 5.1,
+      "reb_mean": 3.9,
+      "ast_mean": 0.71,
       "pts_reb": {
-        "r": 0.5884,
+        "r": 0.6018,
         "p_value": 0.0
       },
       "pts_ast": {
-        "r": 0.2262,
-        "p_value": 0.06169
+        "r": 0.2626,
+        "p_value": 0.02018
       }
     },
     {
       "athlete_id": "4596309",
       "name": "Liatu King",
       "position": "F",
-      "n_games": 14,
+      "n_games": 19,
       "games_by_season": {
-        "2025": 14
+        "2025": 14,
+        "2026": 5
       },
-      "pts_mean": 2.71,
-      "reb_mean": 2.07,
-      "ast_mean": 0.29,
+      "pts_mean": 2.95,
+      "reb_mean": 2.53,
+      "ast_mean": 0.21,
       "pts_reb": {
-        "r": -0.0402,
-        "p_value": 0.89147
+        "r": 0.2914,
+        "p_value": 0.22605
       },
       "pts_ast": {
-        "r": -0.064,
-        "p_value": 0.82803
+        "r": -0.0956,
+        "p_value": 0.69704
       }
     },
     {
       "athlete_id": "4433815",
       "name": "Lucy Olsen",
       "position": "G",
-      "n_games": 41,
+      "n_games": 47,
       "games_by_season": {
-        "2025": 41
+        "2025": 41,
+        "2026": 6
       },
-      "pts_mean": 4.02,
-      "reb_mean": 1.17,
-      "ast_mean": 1.2,
+      "pts_mean": 3.89,
+      "reb_mean": 1.09,
+      "ast_mean": 1.21,
       "pts_reb": {
-        "r": 0.3198,
-        "p_value": 0.0415
+        "r": 0.2861,
+        "p_value": 0.05123
       },
       "pts_ast": {
-        "r": 0.5242,
-        "p_value": 0.00043
+        "r": 0.4987,
+        "p_value": 0.00036
       }
     },
     {
       "athlete_id": "4682797",
       "name": "Luisa Geiselsoder",
       "position": "C",
-      "n_games": 28,
+      "n_games": 44,
       "games_by_season": {
-        "2025": 28
+        "2025": 28,
+        "2026": 16
       },
-      "pts_mean": 6.86,
-      "reb_mean": 4.75,
-      "ast_mean": 1.57,
+      "pts_mean": 6.36,
+      "reb_mean": 4.07,
+      "ast_mean": 1.55,
       "pts_reb": {
-        "r": 0.111,
-        "p_value": 0.57402
+        "r": 0.2676,
+        "p_value": 0.07909
       },
       "pts_ast": {
-        "r": 0.2922,
-        "p_value": 0.13136
+        "r": 0.2219,
+        "p_value": 0.14764
       }
     },
     {
       "athlete_id": "4433643",
       "name": "Mackenzie Holmes",
       "position": "F",
-      "n_games": 10,
+      "n_games": 25,
       "games_by_season": {
-        "2025": 10
+        "2025": 10,
+        "2026": 15
       },
-      "pts_mean": 1.0,
-      "reb_mean": 0.9,
-      "ast_mean": 0.2,
+      "pts_mean": 2.68,
+      "reb_mean": 2.8,
+      "ast_mean": 0.56,
       "pts_reb": {
-        "r": 0.4152,
-        "p_value": 0.23276
+        "r": 0.6116,
+        "p_value": 0.00116
       },
       "pts_ast": {
-        "r": -0.0,
-        "p_value": 1.0
+        "r": 0.2811,
+        "p_value": 0.17347
       }
     },
     {
       "athlete_id": "4399415",
       "name": "Maddy Siegrist",
       "position": "F",
-      "n_games": 53,
+      "n_games": 67,
       "games_by_season": {
         "2024": 27,
-        "2025": 26
+        "2025": 26,
+        "2026": 14
       },
-      "pts_mean": 11.04,
-      "reb_mean": 3.79,
-      "ast_mean": 0.91,
+      "pts_mean": 10.07,
+      "reb_mean": 3.69,
+      "ast_mean": 0.9,
       "pts_reb": {
-        "r": 0.4848,
-        "p_value": 0.00023
+        "r": 0.4517,
+        "p_value": 0.00012
       },
       "pts_ast": {
-        "r": 0.2664,
-        "p_value": 0.05388
+        "r": 0.26,
+        "p_value": 0.03359
       }
     },
     {
@@ -1836,168 +2515,256 @@
       }
     },
     {
+      "athlete_id": "5108587",
+      "name": "Madina Okot",
+      "position": "C",
+      "n_games": 13,
+      "games_by_season": {
+        "2026": 13
+      },
+      "pts_mean": 4.15,
+      "reb_mean": 3.38,
+      "ast_mean": 0.23,
+      "pts_reb": {
+        "r": 0.5288,
+        "p_value": 0.06317
+      },
+      "pts_ast": {
+        "r": 0.4542,
+        "p_value": 0.11899
+      }
+    },
+    {
       "athlete_id": "4433546",
       "name": "Makayla Timpson",
       "position": "F",
-      "n_games": 30,
+      "n_games": 43,
       "games_by_season": {
-        "2025": 30
+        "2025": 30,
+        "2026": 13
       },
-      "pts_mean": 2.73,
-      "reb_mean": 1.97,
-      "ast_mean": 0.03,
+      "pts_mean": 2.95,
+      "reb_mean": 2.42,
+      "ast_mean": 0.19,
       "pts_reb": {
-        "r": 0.6448,
-        "p_value": 0.00012
+        "r": 0.5658,
+        "p_value": 8e-05
       },
       "pts_ast": {
-        "r": 0.6041,
-        "p_value": 0.00041
+        "r": 0.4961,
+        "p_value": 0.00072
+      }
+    },
+    {
+      "athlete_id": "3910470",
+      "name": "Maria Conde",
+      "position": "F",
+      "n_games": 14,
+      "games_by_season": {
+        "2026": 14
+      },
+      "pts_mean": 7.0,
+      "reb_mean": 4.14,
+      "ast_mean": 1.57,
+      "pts_reb": {
+        "r": 0.5792,
+        "p_value": 0.02997
+      },
+      "pts_ast": {
+        "r": -0.058,
+        "p_value": 0.8438
       }
     },
     {
       "athlete_id": "3904576",
       "name": "Marina Mabrey",
       "position": "G",
-      "n_games": 75,
+      "n_games": 89,
       "games_by_season": {
         "2024": 40,
-        "2025": 35
+        "2025": 35,
+        "2026": 14
       },
-      "pts_mean": 14.39,
-      "reb_mean": 4.27,
-      "ast_mean": 4.05,
+      "pts_mean": 14.94,
+      "reb_mean": 4.13,
+      "ast_mean": 3.96,
       "pts_reb": {
-        "r": 0.1801,
-        "p_value": 0.122
+        "r": 0.1666,
+        "p_value": 0.11876
       },
       "pts_ast": {
-        "r": 0.1674,
-        "p_value": 0.15117
+        "r": 0.1513,
+        "p_value": 0.157
+      }
+    },
+    {
+      "athlete_id": "4790260",
+      "name": "Marine Fauthoux",
+      "position": "G",
+      "n_games": 3,
+      "games_by_season": {
+        "2026": 3
+      },
+      "pts_mean": 0.0,
+      "reb_mean": 0.67,
+      "ast_mean": 0.67,
+      "pts_reb": {
+        "r": null,
+        "p_value": null
+      },
+      "pts_ast": {
+        "r": null,
+        "p_value": null
       }
     },
     {
       "athlete_id": "4038379",
       "name": "Marine Johannes",
       "position": "G",
-      "n_games": 44,
+      "n_games": 58,
       "games_by_season": {
-        "2025": 44
+        "2025": 44,
+        "2026": 14
       },
-      "pts_mean": 6.39,
-      "reb_mean": 1.91,
-      "ast_mean": 1.59,
+      "pts_mean": 7.64,
+      "reb_mean": 2.16,
+      "ast_mean": 1.98,
       "pts_reb": {
-        "r": 0.2904,
-        "p_value": 0.0558
+        "r": 0.2117,
+        "p_value": 0.11062
       },
       "pts_ast": {
-        "r": 0.1901,
-        "p_value": 0.21635
+        "r": 0.1611,
+        "p_value": 0.22698
+      }
+    },
+    {
+      "athlete_id": "4704594",
+      "name": "Marta Suarez",
+      "position": "F",
+      "n_games": 3,
+      "games_by_season": {
+        "2026": 3
+      },
+      "pts_mean": 2.0,
+      "reb_mean": 1.33,
+      "ast_mean": 0.33,
+      "pts_reb": {
+        "r": -0.189,
+        "p_value": 0.87896
+      },
+      "pts_ast": {
+        "r": -0.5,
+        "p_value": 0.66667
       }
     },
     {
       "athlete_id": "4280850",
       "name": "Maya Caldwell",
       "position": "G",
-      "n_games": 65,
+      "n_games": 79,
       "games_by_season": {
         "2024": 25,
-        "2025": 40
+        "2025": 40,
+        "2026": 14
       },
-      "pts_mean": 5.42,
-      "reb_mean": 2.65,
-      "ast_mean": 1.55,
+      "pts_mean": 5.29,
+      "reb_mean": 2.54,
+      "ast_mean": 1.46,
       "pts_reb": {
-        "r": 0.4353,
-        "p_value": 0.00029
+        "r": 0.4518,
+        "p_value": 3e-05
       },
       "pts_ast": {
-        "r": 0.5027,
-        "p_value": 2e-05
+        "r": 0.4801,
+        "p_value": 1e-05
       }
     },
     {
       "athlete_id": "3934218",
       "name": "Megan Gustafson",
       "position": "C",
-      "n_games": 58,
+      "n_games": 74,
       "games_by_season": {
         "2024": 38,
-        "2025": 20
+        "2025": 20,
+        "2026": 16
       },
-      "pts_mean": 3.47,
-      "reb_mean": 1.88,
-      "ast_mean": 0.24,
+      "pts_mean": 5.18,
+      "reb_mean": 2.28,
+      "ast_mean": 0.34,
       "pts_reb": {
-        "r": 0.5373,
-        "p_value": 1e-05
+        "r": 0.5166,
+        "p_value": 0.0
       },
       "pts_ast": {
-        "r": 0.3332,
-        "p_value": 0.01058
+        "r": 0.3269,
+        "p_value": 0.00447
       }
     },
     {
       "athlete_id": "4282173",
       "name": "Michaela Onyenwere",
       "position": "F",
-      "n_games": 76,
+      "n_games": 84,
       "games_by_season": {
         "2024": 34,
-        "2025": 42
+        "2025": 42,
+        "2026": 8
       },
-      "pts_mean": 6.2,
-      "reb_mean": 1.72,
-      "ast_mean": 1.07,
+      "pts_mean": 6.7,
+      "reb_mean": 1.87,
+      "ast_mean": 1.08,
       "pts_reb": {
-        "r": 0.4802,
-        "p_value": 1e-05
+        "r": 0.5194,
+        "p_value": 0.0
       },
       "pts_ast": {
-        "r": 0.1137,
-        "p_value": 0.32818
+        "r": 0.1187,
+        "p_value": 0.2822
       }
     },
     {
       "athlete_id": "5274110",
       "name": "Monique Akoa Makani",
       "position": "G",
-      "n_games": 41,
+      "n_games": 49,
       "games_by_season": {
-        "2025": 41
+        "2025": 41,
+        "2026": 8
       },
-      "pts_mean": 7.68,
-      "reb_mean": 2.22,
-      "ast_mean": 2.71,
+      "pts_mean": 8.24,
+      "reb_mean": 2.27,
+      "ast_mean": 2.78,
       "pts_reb": {
-        "r": -0.0511,
-        "p_value": 0.75117
+        "r": 0.0509,
+        "p_value": 0.72823
       },
       "pts_ast": {
-        "r": 0.191,
-        "p_value": 0.23169
+        "r": 0.1906,
+        "p_value": 0.18964
       }
     },
     {
       "athlete_id": "3142255",
       "name": "Monique Billings",
       "position": "F",
-      "n_games": 63,
+      "n_games": 75,
       "games_by_season": {
         "2024": 37,
-        "2025": 26
+        "2025": 26,
+        "2026": 12
       },
-      "pts_mean": 7.37,
-      "reb_mean": 5.22,
-      "ast_mean": 1.06,
+      "pts_mean": 7.08,
+      "reb_mean": 5.19,
+      "ast_mean": 1.07,
       "pts_reb": {
-        "r": 0.63,
+        "r": 0.6457,
         "p_value": 0.0
       },
       "pts_ast": {
-        "r": 0.3235,
-        "p_value": 0.0097
+        "r": 0.3444,
+        "p_value": 0.00248
       }
     },
     {
@@ -2024,42 +2791,44 @@
       "athlete_id": "3142055",
       "name": "Myisha Hines-Allen",
       "position": "F",
-      "n_games": 80,
+      "n_games": 93,
       "games_by_season": {
         "2024": 40,
-        "2025": 40
+        "2025": 40,
+        "2026": 13
       },
-      "pts_mean": 7.69,
-      "reb_mean": 5.34,
-      "ast_mean": 2.73,
+      "pts_mean": 7.24,
+      "reb_mean": 5.08,
+      "ast_mean": 2.63,
       "pts_reb": {
-        "r": 0.5126,
+        "r": 0.5345,
         "p_value": 0.0
       },
       "pts_ast": {
-        "r": 0.2069,
-        "p_value": 0.06558
+        "r": 0.2484,
+        "p_value": 0.01634
       }
     },
     {
       "athlete_id": "4398776",
       "name": "NaLyssa Smith",
       "position": "F",
-      "n_games": 85,
+      "n_games": 99,
       "games_by_season": {
         "2024": 40,
-        "2025": 45
+        "2025": 45,
+        "2026": 14
       },
-      "pts_mean": 8.99,
-      "reb_mean": 6.07,
+      "pts_mean": 9.3,
+      "reb_mean": 6.2,
       "ast_mean": 0.87,
       "pts_reb": {
-        "r": 0.3886,
-        "p_value": 0.00024
+        "r": 0.409,
+        "p_value": 3e-05
       },
       "pts_ast": {
-        "r": 0.1784,
-        "p_value": 0.10238
+        "r": 0.1608,
+        "p_value": 0.11181
       }
     },
     {
@@ -2087,376 +2856,594 @@
       "athlete_id": "2529137",
       "name": "Natasha Cloud",
       "position": "G",
-      "n_games": 79,
+      "n_games": 91,
       "games_by_season": {
         "2024": 38,
-        "2025": 41
+        "2025": 41,
+        "2026": 12
       },
-      "pts_mean": 10.78,
+      "pts_mean": 10.67,
       "reb_mean": 3.86,
-      "ast_mean": 6.0,
+      "ast_mean": 5.77,
       "pts_reb": {
-        "r": 0.2509,
-        "p_value": 0.02573
+        "r": 0.3143,
+        "p_value": 0.00242
       },
       "pts_ast": {
-        "r": 0.2237,
-        "p_value": 0.04749
+        "r": 0.2619,
+        "p_value": 0.01214
       }
     },
     {
       "athlete_id": "2529130",
       "name": "Natasha Howard",
       "position": "F",
-      "n_games": 72,
+      "n_games": 86,
       "games_by_season": {
         "2024": 27,
-        "2025": 45
+        "2025": 45,
+        "2026": 14
       },
-      "pts_mean": 13.75,
-      "reb_mean": 6.72,
-      "ast_mean": 2.06,
+      "pts_mean": 14.41,
+      "reb_mean": 6.83,
+      "ast_mean": 2.21,
       "pts_reb": {
-        "r": 0.3334,
-        "p_value": 0.00421
+        "r": 0.3178,
+        "p_value": 0.00287
       },
       "pts_ast": {
-        "r": 0.1604,
-        "p_value": 0.17824
+        "r": 0.2092,
+        "p_value": 0.05327
       }
     },
     {
       "athlete_id": "4068042",
       "name": "Natasha Mack",
       "position": "F",
-      "n_games": 74,
+      "n_games": 89,
       "games_by_season": {
         "2024": 40,
-        "2025": 34
+        "2025": 34,
+        "2026": 15
       },
-      "pts_mean": 4.22,
-      "reb_mean": 5.35,
-      "ast_mean": 1.0,
+      "pts_mean": 5.21,
+      "reb_mean": 5.84,
+      "ast_mean": 1.1,
       "pts_reb": {
-        "r": 0.4119,
-        "p_value": 0.00027
+        "r": 0.4167,
+        "p_value": 5e-05
       },
       "pts_ast": {
-        "r": 0.0142,
-        "p_value": 0.90443
+        "r": 0.1633,
+        "p_value": 0.12619
       }
     },
     {
       "athlete_id": "3906753",
       "name": "Natisha Hiedeman",
       "position": "G",
-      "n_games": 86,
+      "n_games": 101,
       "games_by_season": {
         "2024": 41,
-        "2025": 45
+        "2025": 45,
+        "2026": 15
       },
-      "pts_mean": 6.95,
-      "reb_mean": 1.67,
-      "ast_mean": 2.55,
+      "pts_mean": 8.11,
+      "reb_mean": 1.79,
+      "ast_mean": 2.79,
       "pts_reb": {
-        "r": 0.283,
-        "p_value": 0.00829
+        "r": 0.2992,
+        "p_value": 0.00237
       },
       "pts_ast": {
-        "r": 0.2439,
-        "p_value": 0.02366
+        "r": 0.3523,
+        "p_value": 0.0003
       }
     },
     {
       "athlete_id": "4398915",
       "name": "Naz Hillmon",
       "position": "F",
-      "n_games": 84,
+      "n_games": 97,
       "games_by_season": {
         "2024": 40,
-        "2025": 44
+        "2025": 44,
+        "2026": 13
       },
-      "pts_mean": 7.25,
-      "reb_mean": 5.52,
-      "ast_mean": 1.87,
+      "pts_mean": 7.47,
+      "reb_mean": 5.48,
+      "ast_mean": 1.82,
       "pts_reb": {
-        "r": 0.3496,
-        "p_value": 0.00112
+        "r": 0.36,
+        "p_value": 0.00029
       },
       "pts_ast": {
-        "r": 0.2373,
-        "p_value": 0.02974
+        "r": 0.2214,
+        "p_value": 0.02927
+      }
+    },
+    {
+      "athlete_id": "5345319",
+      "name": "Nell Angloma",
+      "position": "F",
+      "n_games": 12,
+      "games_by_season": {
+        "2026": 12
+      },
+      "pts_mean": 4.75,
+      "reb_mean": 1.42,
+      "ast_mean": 0.42,
+      "pts_reb": {
+        "r": 0.779,
+        "p_value": 0.00283
+      },
+      "pts_ast": {
+        "r": 0.1074,
+        "p_value": 0.73972
       }
     },
     {
       "athlete_id": "3054590",
       "name": "Nia Coffey",
       "position": "F",
-      "n_games": 84,
+      "n_games": 98,
       "games_by_season": {
         "2024": 40,
-        "2025": 44
+        "2025": 44,
+        "2026": 14
       },
-      "pts_mean": 3.57,
-      "reb_mean": 2.49,
-      "ast_mean": 1.1,
+      "pts_mean": 4.31,
+      "reb_mean": 2.98,
+      "ast_mean": 1.24,
       "pts_reb": {
-        "r": 0.5747,
+        "r": 0.6405,
         "p_value": 0.0
       },
       "pts_ast": {
-        "r": 0.2801,
-        "p_value": 0.00986
+        "r": 0.2847,
+        "p_value": 0.00449
       }
     },
     {
       "athlete_id": "1068",
       "name": "Nneka Ogwumike",
       "position": "F",
-      "n_games": 83,
+      "n_games": 96,
       "games_by_season": {
         "2024": 38,
-        "2025": 45
+        "2025": 45,
+        "2026": 13
       },
-      "pts_mean": 17.49,
-      "reb_mean": 7.22,
-      "ast_mean": 2.29,
+      "pts_mean": 17.24,
+      "reb_mean": 7.46,
+      "ast_mean": 2.28,
       "pts_reb": {
-        "r": 0.1854,
-        "p_value": 0.09327
+        "r": 0.1753,
+        "p_value": 0.08764
       },
       "pts_ast": {
-        "r": 0.068,
-        "p_value": 0.54137
+        "r": 0.064,
+        "p_value": 0.53547
+      }
+    },
+    {
+      "athlete_id": "5345524",
+      "name": "Noemie Brochant",
+      "position": "F",
+      "n_games": 15,
+      "games_by_season": {
+        "2026": 15
+      },
+      "pts_mean": 5.53,
+      "reb_mean": 2.4,
+      "ast_mean": 1.07,
+      "pts_reb": {
+        "r": 0.113,
+        "p_value": 0.68833
+      },
+      "pts_ast": {
+        "r": 0.3002,
+        "p_value": 0.27703
+      }
+    },
+    {
+      "athlete_id": "5209202",
+      "name": "Nyadiew Puoch",
+      "position": "F",
+      "n_games": 15,
+      "games_by_season": {
+        "2026": 15
+      },
+      "pts_mean": 3.4,
+      "reb_mean": 1.8,
+      "ast_mean": 0.8,
+      "pts_reb": {
+        "r": 0.4333,
+        "p_value": 0.10662
+      },
+      "pts_ast": {
+        "r": 0.4347,
+        "p_value": 0.10537
       }
     },
     {
       "athlete_id": "4398768",
       "name": "Nyara Sabally",
       "position": "F",
-      "n_games": 43,
+      "n_games": 53,
       "games_by_season": {
         "2024": 26,
-        "2025": 17
+        "2025": 17,
+        "2026": 10
       },
-      "pts_mean": 5.12,
-      "reb_mean": 4.23,
-      "ast_mean": 0.65,
+      "pts_mean": 6.49,
+      "reb_mean": 4.45,
+      "ast_mean": 0.89,
       "pts_reb": {
-        "r": 0.5586,
+        "r": 0.5082,
         "p_value": 0.0001
       },
       "pts_ast": {
-        "r": -0.0225,
-        "p_value": 0.88636
+        "r": 0.2569,
+        "p_value": 0.06331
       }
     },
     {
       "athlete_id": "2529047",
       "name": "Odyssey Sims",
       "position": "G",
-      "n_games": 48,
+      "n_games": 58,
       "games_by_season": {
         "2024": 24,
-        "2025": 24
+        "2025": 24,
+        "2026": 10
       },
-      "pts_mean": 11.33,
-      "reb_mean": 2.25,
-      "ast_mean": 4.52,
+      "pts_mean": 10.41,
+      "reb_mean": 2.02,
+      "ast_mean": 4.21,
       "pts_reb": {
-        "r": 0.3714,
-        "p_value": 0.00934
+        "r": 0.428,
+        "p_value": 0.0008
       },
       "pts_ast": {
-        "r": 0.2908,
-        "p_value": 0.04498
+        "r": 0.3438,
+        "p_value": 0.00824
+      }
+    },
+    {
+      "athlete_id": "4433791",
+      "name": "Olivia Miles",
+      "position": "G",
+      "n_games": 14,
+      "games_by_season": {
+        "2026": 14
+      },
+      "pts_mean": 18.14,
+      "reb_mean": 5.0,
+      "ast_mean": 5.86,
+      "pts_reb": {
+        "r": -0.1775,
+        "p_value": 0.54377
+      },
+      "pts_ast": {
+        "r": -0.0582,
+        "p_value": 0.84335
       }
     },
     {
       "athlete_id": "4398966",
       "name": "Olivia Nelson-Ododa",
       "position": "C",
-      "n_games": 74,
+      "n_games": 85,
       "games_by_season": {
         "2024": 37,
-        "2025": 37
+        "2025": 37,
+        "2026": 11
       },
-      "pts_mean": 5.81,
-      "reb_mean": 3.74,
-      "ast_mean": 0.57,
+      "pts_mean": 6.04,
+      "reb_mean": 3.85,
+      "ast_mean": 0.73,
       "pts_reb": {
-        "r": 0.5131,
+        "r": 0.5144,
         "p_value": 0.0
       },
       "pts_ast": {
-        "r": 0.3541,
-        "p_value": 0.00197
+        "r": 0.276,
+        "p_value": 0.01055
       }
     },
     {
       "athlete_id": "4433730",
       "name": "Paige Bueckers",
       "position": "G",
-      "n_games": 37,
+      "n_games": 50,
       "games_by_season": {
-        "2025": 37
+        "2025": 37,
+        "2026": 13
       },
-      "pts_mean": 18.86,
-      "reb_mean": 3.89,
-      "ast_mean": 5.46,
+      "pts_mean": 18.9,
+      "reb_mean": 3.84,
+      "ast_mean": 5.56,
       "pts_reb": {
-        "r": 0.2325,
-        "p_value": 0.16618
+        "r": 0.1719,
+        "p_value": 0.23263
       },
       "pts_ast": {
-        "r": -0.1408,
-        "p_value": 0.40571
+        "r": -0.1749,
+        "p_value": 0.22455
+      }
+    },
+    {
+      "athlete_id": "5345320",
+      "name": "Pauline Astier",
+      "position": "G",
+      "n_games": 14,
+      "games_by_season": {
+        "2026": 14
+      },
+      "pts_mean": 11.29,
+      "reb_mean": 3.43,
+      "ast_mean": 3.93,
+      "pts_reb": {
+        "r": 0.5132,
+        "p_value": 0.06052
+      },
+      "pts_ast": {
+        "r": 0.1408,
+        "p_value": 0.63103
+      }
+    },
+    {
+      "athlete_id": "5107404",
+      "name": "Quionche Carter",
+      "position": "G",
+      "n_games": 7,
+      "games_by_season": {
+        "2026": 7
+      },
+      "pts_mean": 1.71,
+      "reb_mean": 0.86,
+      "ast_mean": 0.57,
+      "pts_reb": {
+        "r": -0.1667,
+        "p_value": 0.72097
+      },
+      "pts_ast": {
+        "r": 0.7077,
+        "p_value": 0.07525
       }
     },
     {
       "athlete_id": "2566186",
       "name": "Rachel Banham",
       "position": "G",
-      "n_games": 81,
+      "n_games": 94,
       "games_by_season": {
         "2024": 37,
-        "2025": 44
+        "2025": 44,
+        "2026": 13
       },
-      "pts_mean": 7.48,
-      "reb_mean": 1.57,
-      "ast_mean": 1.96,
+      "pts_mean": 7.11,
+      "reb_mean": 1.49,
+      "ast_mean": 1.84,
       "pts_reb": {
-        "r": 0.4032,
-        "p_value": 0.00019
+        "r": 0.3898,
+        "p_value": 0.0001
       },
       "pts_ast": {
-        "r": 0.3839,
-        "p_value": 0.0004
+        "r": 0.3834,
+        "p_value": 0.00014
       }
     },
     {
       "athlete_id": "4398764",
       "name": "Rae Burrell",
       "position": "G",
-      "n_games": 65,
+      "n_games": 79,
       "games_by_season": {
         "2024": 37,
-        "2025": 28
+        "2025": 28,
+        "2026": 14
       },
-      "pts_mean": 6.63,
-      "reb_mean": 2.05,
-      "ast_mean": 1.17,
+      "pts_mean": 7.33,
+      "reb_mean": 2.11,
+      "ast_mean": 1.23,
       "pts_reb": {
-        "r": 0.4435,
-        "p_value": 0.00022
+        "r": 0.3757,
+        "p_value": 0.00065
       },
       "pts_ast": {
-        "r": 0.3871,
-        "p_value": 0.00144
+        "r": 0.2708,
+        "p_value": 0.01577
+      }
+    },
+    {
+      "athlete_id": "5105732",
+      "name": "Raegan Beers",
+      "position": "F",
+      "n_games": 13,
+      "games_by_season": {
+        "2026": 13
+      },
+      "pts_mean": 3.92,
+      "reb_mean": 3.62,
+      "ast_mean": 0.92,
+      "pts_reb": {
+        "r": 0.4502,
+        "p_value": 0.12268
+      },
+      "pts_ast": {
+        "r": 0.3115,
+        "p_value": 0.30024
+      }
+    },
+    {
+      "athlete_id": "4790258",
+      "name": "Raquel Carrera",
+      "position": "F",
+      "n_games": 5,
+      "games_by_season": {
+        "2026": 5
+      },
+      "pts_mean": 2.8,
+      "reb_mean": 1.0,
+      "ast_mean": 0.4,
+      "pts_reb": {
+        "r": 0.796,
+        "p_value": 0.10716
+      },
+      "pts_ast": {
+        "r": 0.2166,
+        "p_value": 0.72633
+      }
+    },
+    {
+      "athlete_id": "4433797",
+      "name": "Raven Johnson",
+      "position": "G",
+      "n_games": 13,
+      "games_by_season": {
+        "2026": 13
+      },
+      "pts_mean": 4.31,
+      "reb_mean": 1.77,
+      "ast_mean": 1.31,
+      "pts_reb": {
+        "r": 0.6582,
+        "p_value": 0.01445
+      },
+      "pts_ast": {
+        "r": 0.4002,
+        "p_value": 0.17537
       }
     },
     {
       "athlete_id": "3102133",
       "name": "Rebecca Allen",
       "position": "G",
-      "n_games": 62,
+      "n_games": 67,
       "games_by_season": {
         "2024": 18,
-        "2025": 44
+        "2025": 44,
+        "2026": 5
       },
-      "pts_mean": 5.77,
-      "reb_mean": 2.97,
-      "ast_mean": 1.24,
+      "pts_mean": 5.52,
+      "reb_mean": 2.88,
+      "ast_mean": 1.21,
       "pts_reb": {
-        "r": 0.4635,
-        "p_value": 0.00015
+        "r": 0.4786,
+        "p_value": 4e-05
       },
       "pts_ast": {
-        "r": 0.1586,
-        "p_value": 0.21835
+        "r": 0.185,
+        "p_value": 0.13389
       }
     },
     {
       "athlete_id": "2327695",
       "name": "Rebekah Gardner",
       "position": "G",
-      "n_games": 41,
+      "n_games": 55,
       "games_by_season": {
-        "2025": 41
+        "2025": 41,
+        "2026": 14
       },
-      "pts_mean": 3.71,
-      "reb_mean": 1.8,
-      "ast_mean": 0.61,
+      "pts_mean": 4.33,
+      "reb_mean": 1.91,
+      "ast_mean": 0.8,
       "pts_reb": {
-        "r": 0.371,
-        "p_value": 0.01693
+        "r": 0.4098,
+        "p_value": 0.00189
       },
       "pts_ast": {
-        "r": -0.079,
-        "p_value": 0.62343
+        "r": 0.1501,
+        "p_value": 0.27398
       }
     },
     {
       "athlete_id": "4398674",
       "name": "Rhyne Howard",
       "position": "G",
-      "n_games": 63,
+      "n_games": 75,
       "games_by_season": {
         "2024": 30,
-        "2025": 33
+        "2025": 33,
+        "2026": 12
       },
-      "pts_mean": 17.4,
-      "reb_mean": 4.43,
-      "ast_mean": 3.92,
+      "pts_mean": 17.64,
+      "reb_mean": 4.31,
+      "ast_mean": 3.83,
       "pts_reb": {
-        "r": 0.1065,
-        "p_value": 0.40596
+        "r": 0.09,
+        "p_value": 0.44277
       },
       "pts_ast": {
-        "r": -0.0256,
-        "p_value": 0.84217
+        "r": -0.0253,
+        "p_value": 0.82947
       }
     },
     {
       "athlete_id": "4433630",
       "name": "Rickea Jackson",
       "position": "F",
-      "n_games": 78,
+      "n_games": 82,
       "games_by_season": {
         "2024": 40,
-        "2025": 38
+        "2025": 38,
+        "2026": 4
       },
-      "pts_mean": 14.01,
-      "reb_mean": 3.55,
-      "ast_mean": 1.58,
+      "pts_mean": 14.21,
+      "reb_mean": 3.61,
+      "ast_mean": 1.6,
       "pts_reb": {
-        "r": 0.4185,
-        "p_value": 0.00014
+        "r": 0.451,
+        "p_value": 2e-05
       },
       "pts_ast": {
-        "r": 0.4162,
-        "p_value": 0.00015
+        "r": 0.3831,
+        "p_value": 0.00038
+      }
+    },
+    {
+      "athlete_id": "4433523",
+      "name": "Rori Harmon",
+      "position": "G",
+      "n_games": 8,
+      "games_by_season": {
+        "2026": 8
+      },
+      "pts_mean": 1.0,
+      "reb_mean": 1.0,
+      "ast_mean": 1.38,
+      "pts_reb": {
+        "r": 0.6708,
+        "p_value": 0.06861
+      },
+      "pts_ast": {
+        "r": 0.5506,
+        "p_value": 0.1573
       }
     },
     {
       "athlete_id": "4066533",
       "name": "Sabrina Ionescu",
       "position": "G",
-      "n_games": 79,
+      "n_games": 81,
       "games_by_season": {
         "2024": 40,
-        "2025": 39
+        "2025": 39,
+        "2026": 2
       },
-      "pts_mean": 18.03,
-      "reb_mean": 4.67,
-      "ast_mean": 5.89,
+      "pts_mean": 17.78,
+      "reb_mean": 4.65,
+      "ast_mean": 5.86,
       "pts_reb": {
-        "r": 0.2435,
-        "p_value": 0.03061
+        "r": 0.2507,
+        "p_value": 0.02399
       },
       "pts_ast": {
-        "r": -0.0179,
-        "p_value": 0.87591
+        "r": 0.0032,
+        "p_value": 0.97759
       }
     },
     {
@@ -2484,392 +3471,571 @@
       "athlete_id": "4433795",
       "name": "Sania Feagin",
       "position": "F",
-      "n_games": 16,
+      "n_games": 18,
       "games_by_season": {
-        "2025": 16
+        "2025": 16,
+        "2026": 2
       },
-      "pts_mean": 1.25,
-      "reb_mean": 0.69,
-      "ast_mean": 0.25,
+      "pts_mean": 1.11,
+      "reb_mean": 0.67,
+      "ast_mean": 0.22,
       "pts_reb": {
-        "r": 0.1753,
-        "p_value": 0.51602
+        "r": 0.1825,
+        "p_value": 0.46869
       },
       "pts_ast": {
-        "r": 0.1509,
-        "p_value": 0.57683
+        "r": 0.1739,
+        "p_value": 0.49009
       }
     },
     {
       "athlete_id": "4433514",
       "name": "Saniya Rivers",
       "position": "G",
-      "n_games": 42,
+      "n_games": 57,
       "games_by_season": {
-        "2025": 42
+        "2025": 42,
+        "2026": 15
       },
-      "pts_mean": 8.83,
-      "reb_mean": 2.81,
-      "ast_mean": 2.69,
+      "pts_mean": 8.58,
+      "reb_mean": 2.72,
+      "ast_mean": 2.96,
       "pts_reb": {
-        "r": 0.2785,
-        "p_value": 0.0741
+        "r": 0.2567,
+        "p_value": 0.05387
       },
       "pts_ast": {
-        "r": 0.0057,
-        "p_value": 0.9716
+        "r": 0.1073,
+        "p_value": 0.42706
       }
     },
     {
       "athlete_id": "4703794",
       "name": "Sarah Ashlee Barker",
       "position": "G",
-      "n_games": 34,
+      "n_games": 50,
       "games_by_season": {
-        "2025": 34
+        "2025": 34,
+        "2026": 16
       },
-      "pts_mean": 3.09,
-      "reb_mean": 1.94,
-      "ast_mean": 0.91,
+      "pts_mean": 5.36,
+      "reb_mean": 2.64,
+      "ast_mean": 1.42,
       "pts_reb": {
-        "r": 0.4542,
-        "p_value": 0.00697
+        "r": 0.4391,
+        "p_value": 0.00142
       },
       "pts_ast": {
-        "r": 0.3075,
-        "p_value": 0.07691
+        "r": 0.4102,
+        "p_value": 0.00309
       }
     },
     {
       "athlete_id": "4281929",
       "name": "Satou Sabally",
       "position": "F",
-      "n_games": 54,
+      "n_games": 63,
       "games_by_season": {
         "2024": 15,
-        "2025": 39
+        "2025": 39,
+        "2026": 9
       },
-      "pts_mean": 16.76,
-      "reb_mean": 6.06,
-      "ast_mean": 3.2,
+      "pts_mean": 15.81,
+      "reb_mean": 5.6,
+      "ast_mean": 2.97,
       "pts_reb": {
-        "r": 0.1545,
-        "p_value": 0.26454
+        "r": 0.2784,
+        "p_value": 0.02716
       },
       "pts_ast": {
-        "r": 0.1772,
-        "p_value": 0.19993
+        "r": 0.2211,
+        "p_value": 0.08163
+      }
+    },
+    {
+      "athlete_id": "4433542",
+      "name": "Saylor Poffenbarger",
+      "position": "G",
+      "n_games": 4,
+      "games_by_season": {
+        "2026": 4
+      },
+      "pts_mean": 0.0,
+      "reb_mean": 1.5,
+      "ast_mean": 0.25,
+      "pts_reb": {
+        "r": null,
+        "p_value": null
+      },
+      "pts_ast": {
+        "r": null,
+        "p_value": null
+      }
+    },
+    {
+      "athlete_id": "5108550",
+      "name": "Serah Williams",
+      "position": "C",
+      "n_games": 12,
+      "games_by_season": {
+        "2026": 12
+      },
+      "pts_mean": 3.0,
+      "reb_mean": 2.42,
+      "ast_mean": 0.5,
+      "pts_reb": {
+        "r": -0.1247,
+        "p_value": 0.69929
+      },
+      "pts_ast": {
+        "r": -0.65,
+        "p_value": 0.02213
       }
     },
     {
       "athlete_id": "4398911",
       "name": "Shakira Austin",
       "position": "C",
-      "n_games": 50,
+      "n_games": 62,
       "games_by_season": {
         "2024": 12,
-        "2025": 38
+        "2025": 38,
+        "2026": 12
       },
-      "pts_mean": 12.44,
-      "reb_mean": 6.48,
-      "ast_mean": 1.58,
+      "pts_mean": 12.84,
+      "reb_mean": 6.84,
+      "ast_mean": 1.85,
       "pts_reb": {
-        "r": 0.3114,
-        "p_value": 0.02774
+        "r": 0.3797,
+        "p_value": 0.00233
       },
       "pts_ast": {
-        "r": 0.2162,
-        "p_value": 0.13155
+        "r": 0.2167,
+        "p_value": 0.0907
       }
     },
     {
       "athlete_id": "5017721",
       "name": "Sika Kone",
       "position": "F",
-      "n_games": 44,
+      "n_games": 57,
       "games_by_season": {
         "2024": 25,
-        "2025": 19
+        "2025": 19,
+        "2026": 13
       },
-      "pts_mean": 3.05,
-      "reb_mean": 1.68,
-      "ast_mean": 0.41,
+      "pts_mean": 2.7,
+      "reb_mean": 1.56,
+      "ast_mean": 0.35,
       "pts_reb": {
-        "r": 0.7259,
+        "r": 0.7537,
         "p_value": 0.0
       },
       "pts_ast": {
-        "r": 0.5375,
-        "p_value": 0.00017
+        "r": 0.5836,
+        "p_value": 0.0
       }
     },
     {
       "athlete_id": "2491205",
       "name": "Skylar Diggins",
       "position": "G",
-      "n_games": 84,
+      "n_games": 96,
       "games_by_season": {
         "2024": 40,
-        "2025": 44
+        "2025": 44,
+        "2026": 12
       },
-      "pts_mean": 15.27,
-      "reb_mean": 2.67,
-      "ast_mean": 6.31,
+      "pts_mean": 15.26,
+      "reb_mean": 2.78,
+      "ast_mean": 6.05,
       "pts_reb": {
-        "r": -0.0181,
-        "p_value": 0.86999
+        "r": 0.0303,
+        "p_value": 0.76932
       },
       "pts_ast": {
-        "r": -0.0347,
-        "p_value": 0.75424
+        "r": 0.0136,
+        "p_value": 0.89511
       }
     },
     {
       "athlete_id": "4433524",
       "name": "Sonia Citron",
       "position": "G",
-      "n_games": 45,
+      "n_games": 56,
       "games_by_season": {
-        "2025": 45
+        "2025": 45,
+        "2026": 11
       },
-      "pts_mean": 14.84,
-      "reb_mean": 3.91,
-      "ast_mean": 2.36,
+      "pts_mean": 15.2,
+      "reb_mean": 3.75,
+      "ast_mean": 2.54,
       "pts_reb": {
-        "r": -0.1012,
-        "p_value": 0.50835
+        "r": -0.0398,
+        "p_value": 0.77063
       },
       "pts_ast": {
-        "r": 0.0688,
-        "p_value": 0.65329
+        "r": 0.1205,
+        "p_value": 0.37628
       }
     },
     {
       "athlete_id": "3907781",
       "name": "Sophie Cunningham",
       "position": "G",
-      "n_games": 71,
+      "n_games": 83,
       "games_by_season": {
         "2024": 40,
-        "2025": 31
+        "2025": 31,
+        "2026": 12
       },
-      "pts_mean": 8.51,
-      "reb_mean": 3.79,
+      "pts_mean": 8.57,
+      "reb_mean": 3.59,
       "ast_mean": 1.63,
       "pts_reb": {
-        "r": 0.1949,
-        "p_value": 0.10341
+        "r": 0.1875,
+        "p_value": 0.0896
       },
       "pts_ast": {
-        "r": 0.0598,
-        "p_value": 0.62012
+        "r": 0.0296,
+        "p_value": 0.79028
       }
     },
     {
       "athlete_id": "2529183",
       "name": "Stefanie Dolson",
       "position": "C",
-      "n_games": 82,
+      "n_games": 97,
       "games_by_season": {
         "2024": 39,
-        "2025": 43
+        "2025": 43,
+        "2026": 15
       },
-      "pts_mean": 6.49,
-      "reb_mean": 3.54,
-      "ast_mean": 1.96,
+      "pts_mean": 6.32,
+      "reb_mean": 3.45,
+      "ast_mean": 1.89,
       "pts_reb": {
-        "r": 0.4364,
-        "p_value": 4e-05
+        "r": 0.4258,
+        "p_value": 1e-05
       },
       "pts_ast": {
-        "r": 0.2968,
-        "p_value": 0.00678
+        "r": 0.272,
+        "p_value": 0.00704
       }
     },
     {
       "athlete_id": "3099736",
       "name": "Stephanie Talbot",
       "position": "F",
-      "n_games": 75,
+      "n_games": 89,
       "games_by_season": {
         "2024": 37,
-        "2025": 38
+        "2025": 38,
+        "2026": 14
       },
-      "pts_mean": 3.24,
-      "reb_mean": 2.69,
-      "ast_mean": 1.89,
+      "pts_mean": 3.38,
+      "reb_mean": 2.84,
+      "ast_mean": 1.9,
       "pts_reb": {
-        "r": 0.6229,
+        "r": 0.6035,
         "p_value": 0.0
       },
       "pts_ast": {
-        "r": 0.4946,
-        "p_value": 1e-05
+        "r": 0.488,
+        "p_value": 0.0
       }
     },
     {
       "athlete_id": "4068159",
       "name": "Sug Sutton",
       "position": "G",
-      "n_games": 72,
+      "n_games": 76,
       "games_by_season": {
         "2024": 29,
-        "2025": 43
+        "2025": 43,
+        "2026": 4
       },
-      "pts_mean": 5.33,
-      "reb_mean": 1.46,
-      "ast_mean": 3.17,
+      "pts_mean": 5.55,
+      "reb_mean": 1.47,
+      "ast_mean": 3.28,
       "pts_reb": {
-        "r": 0.2465,
-        "p_value": 0.03687
+        "r": 0.2247,
+        "p_value": 0.05098
       },
       "pts_ast": {
-        "r": 0.3312,
-        "p_value": 0.00448
+        "r": 0.3447,
+        "p_value": 0.0023
+      }
+    },
+    {
+      "athlete_id": "4594786",
+      "name": "Sydney Taylor",
+      "position": "G",
+      "n_games": 11,
+      "games_by_season": {
+        "2026": 11
+      },
+      "pts_mean": 9.45,
+      "reb_mean": 1.0,
+      "ast_mean": 1.09,
+      "pts_reb": {
+        "r": 0.7439,
+        "p_value": 0.00866
+      },
+      "pts_ast": {
+        "r": 0.4718,
+        "p_value": 0.14286
+      }
+    },
+    {
+      "athlete_id": "4609797",
+      "name": "Ta'Niya Latson",
+      "position": "G",
+      "n_games": 7,
+      "games_by_season": {
+        "2026": 7
+      },
+      "pts_mean": 1.43,
+      "reb_mean": 0.57,
+      "ast_mean": 0.14,
+      "pts_reb": {
+        "r": 0.0433,
+        "p_value": 0.92654
+      },
+      "pts_ast": {
+        "r": 0.1803,
+        "p_value": 0.69881
       }
     },
     {
       "athlete_id": "4898400",
       "name": "Taylor Thierry",
       "position": "F",
-      "n_games": 13,
+      "n_games": 16,
       "games_by_season": {
-        "2025": 13
+        "2025": 13,
+        "2026": 3
       },
-      "pts_mean": 0.46,
-      "reb_mean": 0.46,
-      "ast_mean": 0.15,
+      "pts_mean": 0.75,
+      "reb_mean": 0.56,
+      "ast_mean": 0.12,
       "pts_reb": {
-        "r": 0.6914,
-        "p_value": 0.00885
+        "r": 0.706,
+        "p_value": 0.00224
       },
       "pts_ast": {
-        "r": 0.0176,
-        "p_value": 0.95438
+        "r": -0.059,
+        "p_value": 0.82809
       }
     },
     {
       "athlete_id": "4433431",
       "name": "Te-Hina Paopao",
       "position": "G",
-      "n_games": 43,
+      "n_games": 56,
       "games_by_season": {
-        "2025": 43
+        "2025": 43,
+        "2026": 13
       },
-      "pts_mean": 5.81,
-      "reb_mean": 1.6,
-      "ast_mean": 2.44,
+      "pts_mean": 5.57,
+      "reb_mean": 1.57,
+      "ast_mean": 2.23,
       "pts_reb": {
-        "r": 0.4274,
-        "p_value": 0.00426
+        "r": 0.3571,
+        "p_value": 0.00689
       },
       "pts_ast": {
-        "r": 0.558,
-        "p_value": 0.0001
+        "r": 0.5194,
+        "p_value": 4e-05
       }
     },
     {
       "athlete_id": "3913903",
       "name": "Teaira McCowan",
       "position": "C",
-      "n_games": 56,
+      "n_games": 63,
       "games_by_season": {
         "2024": 39,
-        "2025": 17
+        "2025": 17,
+        "2026": 7
       },
-      "pts_mean": 9.88,
-      "reb_mean": 7.0,
-      "ast_mean": 1.27,
+      "pts_mean": 8.94,
+      "reb_mean": 6.54,
+      "ast_mean": 1.17,
       "pts_reb": {
-        "r": 0.7144,
+        "r": 0.7457,
         "p_value": 0.0
       },
       "pts_ast": {
-        "r": 0.2921,
-        "p_value": 0.02893
+        "r": 0.3449,
+        "p_value": 0.00564
+      }
+    },
+    {
+      "athlete_id": "5346554",
+      "name": "Teja Oblak",
+      "position": "G",
+      "n_games": 10,
+      "games_by_season": {
+        "2026": 10
+      },
+      "pts_mean": 6.6,
+      "reb_mean": 1.9,
+      "ast_mean": 3.9,
+      "pts_reb": {
+        "r": 0.3561,
+        "p_value": 0.31251
+      },
+      "pts_ast": {
+        "r": 0.007,
+        "p_value": 0.98467
       }
     },
     {
       "athlete_id": "2569044",
       "name": "Temi Fagbenle",
       "position": "C",
-      "n_games": 61,
+      "n_games": 64,
       "games_by_season": {
         "2024": 22,
-        "2025": 39
+        "2025": 39,
+        "2026": 3
       },
-      "pts_mean": 7.02,
-      "reb_mean": 4.82,
+      "pts_mean": 6.83,
+      "reb_mean": 4.7,
       "ast_mean": 1.33,
       "pts_reb": {
-        "r": 0.3952,
-        "p_value": 0.00162
+        "r": 0.4176,
+        "p_value": 0.0006
       },
       "pts_ast": {
-        "r": 0.2891,
-        "p_value": 0.02384
+        "r": 0.2927,
+        "p_value": 0.01893
+      }
+    },
+    {
+      "athlete_id": "4434020",
+      "name": "Teonni Key",
+      "position": "F",
+      "n_games": 14,
+      "games_by_season": {
+        "2026": 14
+      },
+      "pts_mean": 2.14,
+      "reb_mean": 2.36,
+      "ast_mean": 0.57,
+      "pts_reb": {
+        "r": 0.4128,
+        "p_value": 0.14237
+      },
+      "pts_ast": {
+        "r": -0.4003,
+        "p_value": 0.15616
       }
     },
     {
       "athlete_id": "1054",
       "name": "Tiffany Hayes",
       "position": "G",
-      "n_games": 59,
+      "n_games": 71,
       "games_by_season": {
         "2024": 33,
-        "2025": 26
+        "2025": 26,
+        "2026": 12
       },
-      "pts_mean": 10.44,
-      "reb_mean": 3.25,
-      "ast_mean": 2.47,
+      "pts_mean": 9.97,
+      "reb_mean": 2.97,
+      "ast_mean": 2.44,
       "pts_reb": {
-        "r": 0.4105,
-        "p_value": 0.00124
+        "r": 0.4702,
+        "p_value": 4e-05
       },
       "pts_ast": {
-        "r": 0.3677,
-        "p_value": 0.00417
+        "r": 0.3629,
+        "p_value": 0.00187
+      }
+    },
+    {
+      "athlete_id": "5355509",
+      "name": "Tima Pouye",
+      "position": "G",
+      "n_games": 6,
+      "games_by_season": {
+        "2026": 6
+      },
+      "pts_mean": 1.67,
+      "reb_mean": 0.5,
+      "ast_mean": 1.0,
+      "pts_reb": {
+        "r": -0.1588,
+        "p_value": 0.76384
+      },
+      "pts_ast": {
+        "r": 0.6301,
+        "p_value": 0.17991
       }
     },
     {
       "athlete_id": "4065760",
       "name": "Tyasha Harris",
       "position": "G",
-      "n_games": 44,
+      "n_games": 54,
       "games_by_season": {
         "2024": 39,
-        "2025": 5
+        "2025": 5,
+        "2026": 10
       },
-      "pts_mean": 9.82,
-      "reb_mean": 1.68,
-      "ast_mean": 2.98,
+      "pts_mean": 8.44,
+      "reb_mean": 1.54,
+      "ast_mean": 2.74,
       "pts_reb": {
-        "r": 0.0365,
-        "p_value": 0.81423
+        "r": 0.153,
+        "p_value": 0.26932
       },
       "pts_ast": {
-        "r": -0.0817,
-        "p_value": 0.59801
+        "r": 0.0938,
+        "p_value": 0.49981
+      }
+    },
+    {
+      "athlete_id": "3919496",
+      "name": "Valeriane Ayayi",
+      "position": "F",
+      "n_games": 9,
+      "games_by_season": {
+        "2026": 9
+      },
+      "pts_mean": 2.56,
+      "reb_mean": 2.0,
+      "ast_mean": 1.22,
+      "pts_reb": {
+        "r": 0.3602,
+        "p_value": 0.34096
+      },
+      "pts_ast": {
+        "r": 0.0598,
+        "p_value": 0.87862
       }
     },
     {
       "athlete_id": "4398935",
       "name": "Veronica Burton",
       "position": "G",
-      "n_games": 75,
+      "n_games": 89,
       "games_by_season": {
         "2024": 31,
-        "2025": 44
+        "2025": 44,
+        "2026": 14
       },
-      "pts_mean": 8.28,
-      "reb_mean": 3.15,
-      "ast_mean": 4.31,
+      "pts_mean": 9.21,
+      "reb_mean": 3.17,
+      "ast_mean": 4.53,
       "pts_reb": {
-        "r": 0.4672,
-        "p_value": 2e-05
+        "r": 0.4447,
+        "p_value": 1e-05
       },
       "pts_ast": {
-        "r": 0.5653,
+        "r": 0.5153,
         "p_value": 0.0
       }
     },
@@ -2877,21 +4043,22 @@
       "athlete_id": "4432832",
       "name": "Zia Cooke",
       "position": "G",
-      "n_games": 55,
+      "n_games": 70,
       "games_by_season": {
         "2024": 29,
-        "2025": 26
+        "2025": 26,
+        "2026": 15
       },
-      "pts_mean": 3.51,
-      "reb_mean": 0.58,
-      "ast_mean": 0.56,
+      "pts_mean": 4.47,
+      "reb_mean": 0.87,
+      "ast_mean": 0.66,
       "pts_reb": {
-        "r": 0.4375,
-        "p_value": 0.00084
+        "r": 0.63,
+        "p_value": 0.0
       },
       "pts_ast": {
-        "r": 0.2242,
-        "p_value": 0.09981
+        "r": 0.371,
+        "p_value": 0.00157
       }
     }
   ]
