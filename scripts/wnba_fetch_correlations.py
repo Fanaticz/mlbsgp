@@ -52,7 +52,7 @@ SITE = "https://site.web.api.espn.com/apis/common/v3/sports/basketball/wnba"
 # Column positions inside each gamelog event's `stats` array. The order is
 # fixed by the league-level `names` array returned alongside the events:
 #   ['minutes','points','totalRebounds','assists','steals','blocks', ...]
-PTS_IDX, REB_IDX, AST_IDX = 1, 2, 3
+MIN_IDX, PTS_IDX, REB_IDX, AST_IDX = 0, 1, 2, 3
 
 ID_RE = re.compile(r"/athletes/(\d+)")
 
@@ -115,8 +115,8 @@ def _num(v: Any) -> float | None:
 
 def regular_season_games(
     sess: requests.Session, aid: str, season: int
-) -> list[tuple[float, float, float]]:
-    """Return list of (pts, reb, ast) for each regular-season game in `season`.
+) -> list[tuple[float, float, float, float]]:
+    """Return (pts, reb, ast, minutes) for each regular-season game in `season`.
 
     Categories within a season type are monthly partitions; we dedupe on
     eventId so any overlap can't double-count a game.
@@ -125,7 +125,7 @@ def regular_season_games(
     data = get_json(sess, url)
     if not data:
         return []
-    out: list[tuple[float, float, float]] = []
+    out: list[tuple[float, float, float, float]] = []
     seen: set[str] = set()
     for st in data.get("seasonTypes") or []:
         if "Regular Season" not in (st.get("displayName") or ""):
@@ -141,11 +141,12 @@ def regular_season_games(
                 pts = _num(stats[PTS_IDX])
                 reb = _num(stats[REB_IDX])
                 ast = _num(stats[AST_IDX])
+                mins = _num(stats[MIN_IDX])
                 if pts is None or reb is None or ast is None:
                     continue
                 if eid:
                     seen.add(eid)
-                out.append((pts, reb, ast))
+                out.append((pts, reb, ast, 0.0 if mins is None else mins))
     return out
 
 
@@ -263,11 +264,13 @@ def _pair(r: float | None, n: float | None) -> dict:
 
 
 def process_player(
-    sess: requests.Session, aid: str, seasons: list[int], weights: dict[int, float]
+    sess: requests.Session, aid: str, seasons: list[int], weights: dict[int, float],
+    min_mpg: float
 ) -> dict | None:
     pts: list[float] = []
     reb: list[float] = []
     ast: list[float] = []
+    mins: list[float] = []
     ws: list[float] = []
     per_season: dict[str, int] = {}
     for yr in seasons:
@@ -276,11 +279,18 @@ def process_player(
             continue
         per_season[str(yr)] = len(g)
         w = weights.get(yr, 0.0)
-        for p, r, a in g:
-            pts.append(p); reb.append(r); ast.append(a); ws.append(w)
+        for p, r, a, m in g:
+            pts.append(p); reb.append(r); ast.append(a); mins.append(m); ws.append(w)
     n = len(pts)
     if n < 3:
         return None
+
+    # Substantial-player gate: drop garbage-time / deep-bench players whose
+    # minutes are too low for their box-score correlations to be meaningful.
+    mpg = sum(mins) / n
+    if mpg < min_mpg:
+        return None
+
     name, pos = athlete_name(sess, max(seasons), aid)
 
     # Unweighted (pooled, every game equal) for reference/comparison.
@@ -298,6 +308,7 @@ def process_player(
         "position": pos,
         "n_games": n,
         "effective_n": None if n_eff is None else round(n_eff, 1),
+        "min_mean": round(mpg, 1),
         "games_by_season": per_season,
         "pts_mean": round(sum(pts) / n, 2),
         "reb_mean": round(sum(reb) / n, 2),
@@ -324,6 +335,9 @@ def main() -> None:
                          "weights). Seasons absent here default to weight 0.")
     ap.add_argument("--min-games", type=int, default=20,
                     help="Min pooled games for a player to count as 'reportable'.")
+    ap.add_argument("--min-mpg", type=float, default=15.0,
+                    help="Min average minutes/game to be included at all "
+                         "(filters out garbage-time / deep-bench players).")
     ap.add_argument("--workers", type=int, default=8,
                     help="Concurrent HTTP workers.")
     ap.add_argument("--out", default=os.path.join("public", "data", "wnba_correlations.json"))
@@ -361,7 +375,7 @@ def main() -> None:
         sessions = [make_session() for _ in range(args.workers)]
         futs = {
             ex.submit(process_player, sessions[i % args.workers], aid,
-                      args.seasons, weights): aid
+                      args.seasons, weights, args.min_mpg): aid
             for i, aid in enumerate(id_list)
         }
         for fut in cf.as_completed(futs):
@@ -393,6 +407,7 @@ def main() -> None:
             "per_game_season_weights": {str(k): v for k, v in sorted(weights.items())},
         },
         "min_games_reportable": args.min_games,
+        "min_mpg_included": args.min_mpg,
         "n_players": len(players),
         "n_players_reportable": len(reportable),
         "total_game_rows": total_games,
@@ -411,12 +426,12 @@ def main() -> None:
     print()
     print(f"WNBA PTS correlations — seasons {args.seasons}, recency-weighted "
           f"(per-game weights {wtxt})")
-    print(f"Players with >= {args.min_games} games: {len(reportable)} "
-          f"(of {len(players)} with any games); {total_games} total game rows")
+    print(f"Players with >= {args.min_games} games and >= {args.min_mpg} mpg: "
+          f"{len(reportable)} (of {len(players)} included); {total_games} game rows")
     print("rw = recency-weighted r (headline); r = unweighted; nEff = effective "
           "sample size after weighting")
     print()
-    hdr = (f"{'Player':<24}{'Pos':<4}{'G':>4}{'nEff':>6}  "
+    hdr = (f"{'Player':<24}{'Pos':<4}{'G':>4}{'nEff':>6}{'MIN':>6}  "
            f"{'PTS':>5}{'REB':>5}{'AST':>5}  "
            f"{'rwP-R':>7}{'p':>8}{'rP-R':>7}  "
            f"{'rwP-A':>7}{'p':>8}{'rP-A':>7}")
@@ -426,7 +441,7 @@ def main() -> None:
                                                -(x["pts_reb"]["weighted"]["r"] or 0))):
         pr, pa = p["pts_reb"], p["pts_ast"]
         print(f"{p['name'][:23]:<24}{p['position']:<4}{p['n_games']:>4}"
-              f"{cell(p['effective_n'], 6, 1)}  "
+              f"{cell(p['effective_n'], 6, 1)}{cell(p['min_mean'], 6, 1)}  "
               f"{p['pts_mean']:>5}{p['reb_mean']:>5}{p['ast_mean']:>5}  "
               f"{cell(pr['weighted']['r'], 7, 3)}{cell(pr['weighted']['p_value'], 8, 4)}"
               f"{cell(pr['unweighted']['r'], 7, 3)}  "
