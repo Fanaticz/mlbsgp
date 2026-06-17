@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>WNBA PTS Correlations</title>
+<style>
+  :root {
+    --bg:#0f1419; --panel:#1a2129; --line:#2a333d; --txt:#e6edf3;
+    --muted:#8b98a5; --accent:#f5a623; --pos:#3fb950; --neg:#f85149;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+    font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  header { padding:18px 22px 10px; border-bottom:1px solid var(--line); }
+  h1 { margin:0 0 4px; font-size:19px; }
+  .sub { color:var(--muted); font-size:12.5px; }
+  .controls { display:flex; flex-wrap:wrap; gap:14px; align-items:center;
+    padding:12px 22px; border-bottom:1px solid var(--line); position:sticky;
+    top:0; background:var(--bg); z-index:5; }
+  .toggle { display:inline-flex; border:1px solid var(--line); border-radius:8px;
+    overflow:hidden; }
+  .toggle button { background:transparent; color:var(--muted); border:0;
+    padding:7px 14px; font-size:13px; cursor:pointer; }
+  .toggle button.on { background:var(--accent); color:#1a1a1a; font-weight:600; }
+  input[type=search] { background:var(--panel); border:1px solid var(--line);
+    color:var(--txt); border-radius:8px; padding:7px 10px; font-size:13px; width:180px; }
+  select { background:var(--panel); border:1px solid var(--line); color:var(--txt);
+    border-radius:8px; padding:7px 8px; font-size:13px; }
+  .count { color:var(--muted); font-size:12.5px; margin-left:auto; }
+  .sched { padding:8px 22px; border-bottom:1px solid var(--line); color:var(--muted);
+    font-size:12px; display:flex; flex-wrap:wrap; gap:8px 14px; }
+  .sched .g { white-space:nowrap; }
+  .sched b { color:var(--txt); }
+  .wrap { overflow-x:auto; padding:0 12px 60px; }
+  table { border-collapse:collapse; width:100%; min-width:880px; }
+  th,td { padding:7px 9px; text-align:right; white-space:nowrap; }
+  th { position:sticky; top:0; background:var(--panel); color:var(--muted);
+    font-weight:600; font-size:11.5px; text-transform:uppercase; letter-spacing:.03em;
+    cursor:pointer; border-bottom:1px solid var(--line); user-select:none; }
+  th:hover { color:var(--txt); }
+  th.sorted::after { content:" \25BC"; font-size:9px; }
+  th.sorted.asc::after { content:" \25B2"; }
+  td.l, th.l { text-align:left; }
+  tbody tr { border-bottom:1px solid #20272f; }
+  tbody tr:hover { background:#161d24; }
+  .name { font-weight:600; }
+  .team { color:var(--muted); font-size:12px; }
+  .dot { display:inline-block; width:7px; height:7px; border-radius:50%;
+    background:var(--pos); margin-right:6px; vertical-align:middle; }
+  .r { font-weight:600; }
+  .raw { color:var(--muted); font-size:11.5px; }
+  .sig { text-decoration:underline; text-decoration-color:var(--accent);
+    text-underline-offset:2px; }
+  .muted { color:var(--muted); }
+  .err { color:var(--neg); padding:20px 22px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>WNBA Points Correlations <span class="muted" style="font-size:13px">— PTS·REB &amp; PTS·AST</span></h1>
+  <div class="sub" id="meta">Loading…</div>
+</header>
+
+<div class="controls">
+  <div class="toggle" id="toggle">
+    <button data-mode="today" class="on">Playing today</button>
+    <button data-mode="all">All players</button>
+  </div>
+  <input type="search" id="search" placeholder="Filter by name…" />
+  <label class="muted">Sort:
+    <select id="sortsel">
+      <option value="pts_reb.weighted">PTS·REB r (weighted)</option>
+      <option value="pts_ast.weighted">PTS·AST r (weighted)</option>
+      <option value="pts_reb.unweighted">PTS·REB r (raw)</option>
+      <option value="pts_ast.unweighted">PTS·AST r (raw)</option>
+    </select>
+  </label>
+  <span class="count" id="count"></span>
+</div>
+
+<div class="sched" id="sched"></div>
+<div class="wrap"><table id="tbl"><thead></thead><tbody></tbody></table></div>
+<div class="err" id="err" style="display:none"></div>
+
+<script>
+const SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/scoreboard";
+let DATA = null;        // full payload
+let TODAY_IDS = null;   // Set<string> of team_ids playing today (live)
+let MODE = "today";
+let SORT = { key: "pts_reb.weighted", dir: -1 };
+
+const num = (v, d=2) => (v===null||v===undefined||Number.isNaN(v)) ? "—" : v.toFixed(d);
+const get = (o, path) => path.split(".").reduce((a,k)=> (a==null?a:a[k]), o);
+
+async function liveTodayIds() {
+  // Use the browser's local date so the toggle is correct on any day.
+  const d = new Date();
+  const ymd = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}`;
+  try {
+    const r = await fetch(`${SCOREBOARD}?dates=${ymd}`);
+    if (!r.ok) throw 0;
+    const j = await r.json();
+    const ids = new Set(), games = [];
+    for (const e of (j.events||[])) {
+      const comp = e.competitions?.[0]?.competitors || [];
+      const pair = comp.map(c => ({id:String(c.team.id), ab:c.team.abbreviation}));
+      pair.forEach(p => ids.add(p.id));
+      const st = e.status?.type?.shortDetail || e.status?.type?.state || "";
+      games.push({ matchup: pair.map(p=>p.ab).reverse().join(" @ "), st });
+    }
+    return { ids, games, date: ymd, live:true };
+  } catch (_) {
+    return null; // caller falls back to baked snapshot
+  }
+}
+
+function renderSched(games, live) {
+  const el = document.getElementById("sched");
+  if (!games || !games.length) { el.textContent = "No WNBA games today."; return; }
+  el.innerHTML = `<span class="muted">${live?"Today’s slate (live)":"Today’s slate"}:</span> ` +
+    games.map(g => `<span class="g"><b>${g.matchup}</b>${g.st?` <span class="muted">${g.st}</span>`:""}</span>`).join("");
+}
+
+const COLS = [
+  { k:"name", h:"Player", l:true,  v:p=>`${TODAY_IDS&&TODAY_IDS.has(p.team_id)?'<span class="dot"></span>':''}<span class="name">${p.name}</span>` },
+  { k:"team_abbr", h:"Tm", l:true, v:p=>`<span class="team">${p.team_abbr||"—"}</span>` },
+  { k:"position", h:"Pos", l:true, v:p=>p.position||"—" },
+  { k:"n_games", h:"G", v:p=>p.n_games },
+  { k:"effective_n", h:"nEff", v:p=>num(p.effective_n,1) },
+  { k:"min_mean", h:"Min", v:p=>num(p.min_mean,1) },
+  { k:"pts_mean", h:"Pts", v:p=>num(p.pts_mean,1) },
+  { k:"reb_mean", h:"Reb", v:p=>num(p.reb_mean,1) },
+  { k:"ast_mean", h:"Ast", v:p=>num(p.ast_mean,1) },
+  { k:"pts_reb.weighted", h:"PTS·REB r", v:p=>rCell(p.pts_reb) },
+  { k:"pts_ast.weighted", h:"PTS·AST r", v:p=>rCell(p.pts_ast) },
+];
+
+function rCell(pair) {
+  const w = pair.weighted, u = pair.unweighted;
+  if (w.r===null) return "—";
+  const col = w.r>0 ? "var(--pos)" : "var(--neg)";
+  const sig = (w.p_value!==null && w.p_value<0.05) ? "sig" : "";
+  return `<span class="r ${sig}" style="color:${col}">${num(w.r)}</span>` +
+         ` <span class="raw">p=${num(w.p_value,3)} · raw ${num(u.r)}</span>`;
+}
+
+function sortKey(p, key) {
+  if (key.includes(".")) { const v = get(p, key)?.r; return v===null||v===undefined?-Infinity:v; }
+  const v = get(p, key); return (typeof v==="string") ? v.toLowerCase() : (v??-Infinity);
+}
+
+function render() {
+  if (!DATA) return;
+  const q = document.getElementById("search").value.trim().toLowerCase();
+  let rows = DATA.players.filter(p => p.n_games >= DATA.min_games_reportable);
+  if (MODE === "today") {
+    const ids = TODAY_IDS || new Set(DATA.schedule_today.team_ids);
+    rows = rows.filter(p => p.team_id && ids.has(p.team_id));
+  }
+  if (q) rows = rows.filter(p => p.name.toLowerCase().includes(q));
+
+  rows.sort((a,b) => {
+    const av = sortKey(a, SORT.key), bv = sortKey(b, SORT.key);
+    if (av < bv) return SORT.dir; if (av > bv) return -SORT.dir; return 0;
+  });
+
+  const thead = document.querySelector("#tbl thead");
+  thead.innerHTML = "<tr>" + COLS.map(c => {
+    const on = c.k === SORT.key ? "sorted " + (SORT.dir>0?"asc":"") : "";
+    return `<th class="${c.l?'l ':''}${on}" data-k="${c.k}">${c.h}</th>`;
+  }).join("") + "</tr>";
+  thead.querySelectorAll("th").forEach(th => th.onclick = () => {
+    const k = th.dataset.k;
+    if (SORT.key === k) SORT.dir *= -1;
+    else SORT = { key:k, dir: k.includes(".")||["n_games","effective_n","min_mean","pts_mean","reb_mean","ast_mean"].includes(k) ? -1 : 1 };
+    document.getElementById("sortsel").value =
+      ["pts_reb.weighted","pts_ast.weighted","pts_reb.unweighted","pts_ast.unweighted"].includes(k) ? k : document.getElementById("sortsel").value;
+    render();
+  });
+
+  document.querySelector("#tbl tbody").innerHTML = rows.map(p =>
+    "<tr>" + COLS.map(c => `<td class="${c.l?'l':''}">${c.v(p)}</td>`).join("") + "</tr>"
+  ).join("");
+
+  document.getElementById("count").textContent =
+    `${rows.length} player${rows.length===1?"":"s"}` + (MODE==="today" ? " playing today" : "");
+}
+
+function setMode(m) {
+  MODE = m;
+  document.querySelectorAll("#toggle button").forEach(b =>
+    b.classList.toggle("on", b.dataset.mode === m));
+  render();
+}
+
+async function init() {
+  try {
+    const r = await fetch("./data/wnba_correlations.json");
+    if (!r.ok) throw new Error("could not load data/wnba_correlations.json");
+    DATA = await r.json();
+  } catch (e) {
+    document.getElementById("err").style.display = "block";
+    document.getElementById("err").textContent = "Error: " + e.message +
+      " — run scripts/wnba_fetch_correlations.py first.";
+    return;
+  }
+
+  const w = DATA.weighting?.per_game_season_weights || {};
+  const wtxt = Object.entries(w).map(([k,v])=>`${k}: ${v}`).join(", ");
+  document.getElementById("meta").innerHTML =
+    `Seasons ${DATA.seasons.join("–")} · regular season · recency weights (${wtxt}) · ` +
+    `min ${DATA.min_mpg_included} mpg &amp; ${DATA.min_games_reportable} games · ` +
+    `generated ${new Date(DATA.generated_at).toLocaleString()}`;
+
+  // Live schedule for the toggle; fall back to the baked snapshot.
+  const live = await liveTodayIds();
+  if (live) { TODAY_IDS = live.ids; renderSched(live.games, true); }
+  else {
+    TODAY_IDS = new Set(DATA.schedule_today.team_ids);
+    renderSched(DATA.schedule_today.games.map(g=>({matchup:g.matchup, st:g.state})), false);
+  }
+
+  document.querySelectorAll("#toggle button").forEach(b =>
+    b.onclick = () => setMode(b.dataset.mode));
+  document.getElementById("search").oninput = render;
+  document.getElementById("sortsel").onchange = e => {
+    SORT = { key: e.target.value, dir: -1 }; render();
+  };
+  render();
+}
+init();
+</script>
+</body>
+</html>

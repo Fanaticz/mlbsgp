@@ -48,6 +48,7 @@ import requests
 
 CORE = "https://sports.core.api.espn.com/v2/sports/basketball/leagues/wnba"
 SITE = "https://site.web.api.espn.com/apis/common/v3/sports/basketball/wnba"
+SITE_API = "https://site.api.espn.com/apis/site/v2/sports/basketball/wnba"
 
 # Column positions inside each gamelog event's `stats` array. The order is
 # fixed by the league-level `names` array returned alongside the events:
@@ -103,6 +104,63 @@ def athlete_name(sess: requests.Session, season: int, aid: str) -> tuple[str, st
     name = data.get("displayName") or data.get("fullName") or f"athlete-{aid}"
     pos = (data.get("position") or {}).get("abbreviation") or ""
     return (name, pos)
+
+
+def team_roster_map(sess: requests.Session) -> dict[str, dict]:
+    """Map athlete_id -> {team_id, team_abbr, team_name} from current rosters.
+
+    Teams are stable day-to-day, so the current roster is the right source for
+    'which team does this player suit up for today'.
+    """
+    data = get_json(sess, f"{SITE_API}/teams")
+    out: dict[str, dict] = {}
+    if not data:
+        return out
+    try:
+        teams = data["sports"][0]["leagues"][0]["teams"]
+    except (KeyError, IndexError):
+        return out
+    for t in teams:
+        tm = t.get("team") or {}
+        tid = str(tm.get("id") or "")
+        rd = get_json(sess, f"{SITE_API}/teams/{tid}/roster")
+        if not rd:
+            continue
+        info = {
+            "team_id": tid,
+            "team_abbr": tm.get("abbreviation") or "",
+            "team_name": tm.get("displayName") or "",
+        }
+        for a in rd.get("athletes", []):
+            aid = str(a.get("id") or "")
+            if aid:
+                out[aid] = info
+    return out
+
+
+def schedule_today(sess: requests.Session) -> dict:
+    """Today's WNBA slate from the public scoreboard. Returns the date used,
+    the set of team_ids playing, and a compact per-game list."""
+    day = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d")
+    data = get_json(sess, f"{SITE_API}/scoreboard?dates={day}")
+    team_ids: list[str] = []
+    games: list[dict] = []
+    if data:
+        for e in data.get("events", []):
+            try:
+                comp = e["competitions"][0]["competitors"]
+            except (KeyError, IndexError):
+                continue
+            pair = [(str(c["team"]["id"]), c["team"]["abbreviation"]) for c in comp]
+            for tid, _ in pair:
+                team_ids.append(tid)
+            games.append({
+                "start": e.get("date"),
+                "state": (e.get("status") or {}).get("type", {}).get("state"),
+                "matchup": " @ ".join(ab for _, ab in reversed(pair)),
+                "team_abbrs": [ab for _, ab in pair],
+            })
+    return {"date": day, "team_ids": sorted(set(team_ids)), "games": games}
 
 
 def _num(v: Any) -> float | None:
@@ -265,7 +323,7 @@ def _pair(r: float | None, n: float | None) -> dict:
 
 def process_player(
     sess: requests.Session, aid: str, seasons: list[int], weights: dict[int, float],
-    min_mpg: float
+    min_mpg: float, team_map: dict[str, dict]
 ) -> dict | None:
     pts: list[float] = []
     reb: list[float] = []
@@ -302,10 +360,14 @@ def process_player(
 
     # Weighted scoring means, to show what role the recency tilt emphasizes.
     W = sum(ws) or 1.0
+    team = team_map.get(aid, {})
     return {
         "athlete_id": aid,
         "name": name,
         "position": pos,
+        "team_id": team.get("team_id", ""),
+        "team_abbr": team.get("team_abbr", ""),
+        "team_name": team.get("team_name", ""),
         "n_games": n,
         "effective_n": None if n_eff is None else round(n_eff, 1),
         "min_mean": round(mpg, 1),
@@ -355,6 +417,13 @@ def main() -> None:
 
     sess = make_session()
 
+    print("Building team roster map + today's schedule ...", file=sys.stderr)
+    team_map = team_roster_map(sess)
+    sched = schedule_today(sess)
+    today_ids = set(sched["team_ids"])
+    print(f"  rosters: {len(team_map)} players mapped to teams; "
+          f"{len(sched['games'])} games today ({sched['date']})", file=sys.stderr)
+
     print(f"Fetching WNBA athlete index for seasons {args.seasons} ...",
           file=sys.stderr)
     ids: set[str] = set()
@@ -375,7 +444,7 @@ def main() -> None:
         sessions = [make_session() for _ in range(args.workers)]
         futs = {
             ex.submit(process_player, sessions[i % args.workers], aid,
-                      args.seasons, weights, args.min_mpg): aid
+                      args.seasons, weights, args.min_mpg, team_map): aid
             for i, aid in enumerate(id_list)
         }
         for fut in cf.as_completed(futs):
@@ -389,6 +458,11 @@ def main() -> None:
                 res = None
             if res:
                 players.append(res)
+
+    # Tag who plays today (generation-day snapshot; the web viewer refreshes
+    # this live so the toggle stays correct on later days).
+    for p in players:
+        p["playing_today"] = bool(p["team_id"]) and p["team_id"] in today_ids
 
     players.sort(key=lambda p: p["name"].lower())
 
@@ -408,6 +482,7 @@ def main() -> None:
         },
         "min_games_reportable": args.min_games,
         "min_mpg_included": args.min_mpg,
+        "schedule_today": sched,
         "n_players": len(players),
         "n_players_reportable": len(reportable),
         "total_game_rows": total_games,
