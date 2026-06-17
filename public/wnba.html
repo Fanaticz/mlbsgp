@@ -72,8 +72,10 @@
     <select id="sortsel">
       <option value="pts_reb.weighted">PTS·REB r (weighted)</option>
       <option value="pts_ast.weighted">PTS·AST r (weighted)</option>
+      <option value="pts_3pm.weighted">PTS·3PM r (weighted)</option>
       <option value="pts_reb.unweighted">PTS·REB r (raw)</option>
       <option value="pts_ast.unweighted">PTS·AST r (raw)</option>
+      <option value="pts_3pm.unweighted">PTS·3PM r (raw)</option>
     </select>
   </label>
   <span class="count" id="count"></span>
@@ -132,8 +134,10 @@ const COLS = [
   { k:"pts_mean", h:"Pts", v:p=>num(p.pts_mean,1) },
   { k:"reb_mean", h:"Reb", v:p=>num(p.reb_mean,1) },
   { k:"ast_mean", h:"Ast", v:p=>num(p.ast_mean,1) },
+  { k:"tpm_mean", h:"3PM", v:p=>num(p.tpm_mean,1) },
   { k:"pts_reb.weighted", h:"PTS·REB r", v:p=>rCell(p.pts_reb) },
   { k:"pts_ast.weighted", h:"PTS·AST r", v:p=>rCell(p.pts_ast) },
+  { k:"pts_3pm.weighted", h:"PTS·3PM r", v:p=>rCell(p.pts_3pm) },
 ];
 
 function rCell(pair) {
@@ -173,9 +177,9 @@ function render() {
   thead.querySelectorAll("th").forEach(th => th.onclick = () => {
     const k = th.dataset.k;
     if (SORT.key === k) SORT.dir *= -1;
-    else SORT = { key:k, dir: k.includes(".")||["n_games","effective_n","min_mean","pts_mean","reb_mean","ast_mean"].includes(k) ? -1 : 1 };
+    else SORT = { key:k, dir: k.includes(".")||["n_games","effective_n","min_mean","pts_mean","reb_mean","ast_mean","tpm_mean"].includes(k) ? -1 : 1 };
     document.getElementById("sortsel").value =
-      ["pts_reb.weighted","pts_ast.weighted","pts_reb.unweighted","pts_ast.unweighted"].includes(k) ? k : document.getElementById("sortsel").value;
+      ["pts_reb.weighted","pts_ast.weighted","pts_3pm.weighted","pts_reb.unweighted","pts_ast.unweighted","pts_3pm.unweighted"].includes(k) ? k : document.getElementById("sortsel").value;
     render();
   });
 

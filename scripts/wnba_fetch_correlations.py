@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Pull WNBA per-game logs from ESPN and compute per-player correlations
-between PTS-REB and PTS-AST over the last three seasons.
+between PTS-REB, PTS-AST and PTS-3PM over the last three seasons.
 
 Correlations are reported two ways per player: unweighted (every game equal)
 and recency-weighted, where each game carries a per-season weight (default
@@ -52,8 +52,9 @@ SITE_API = "https://site.api.espn.com/apis/site/v2/sports/basketball/wnba"
 
 # Column positions inside each gamelog event's `stats` array. The order is
 # fixed by the league-level `names` array returned alongside the events:
-#   ['minutes','points','totalRebounds','assists','steals','blocks', ...]
-MIN_IDX, PTS_IDX, REB_IDX, AST_IDX = 0, 1, 2, 3
+#   ['MIN','PTS','REB','AST','STL','BLK','TO','FG','FG%','3PT','3P%', ...]
+# The 3PT cell is a "made-attempted" string like "3-5"; we take the made part.
+MIN_IDX, PTS_IDX, REB_IDX, AST_IDX, TPM_IDX = 0, 1, 2, 3, 9
 
 ID_RE = re.compile(r"/athletes/(\d+)")
 
@@ -171,10 +172,17 @@ def _num(v: Any) -> float | None:
     return f if f == f else None
 
 
+def _made(v: Any) -> float | None:
+    """Parse the 'made' side of a 'made-attempted' cell like '3-5' -> 3."""
+    if v is None:
+        return None
+    return _num(str(v).split("-")[0])
+
+
 def regular_season_games(
     sess: requests.Session, aid: str, season: int
-) -> list[tuple[float, float, float, float]]:
-    """Return (pts, reb, ast, minutes) for each regular-season game in `season`.
+) -> list[tuple[float, float, float, float, float]]:
+    """Return (pts, reb, ast, tpm, minutes) for each regular-season game.
 
     Categories within a season type are monthly partitions; we dedupe on
     eventId so any overlap can't double-count a game.
@@ -183,7 +191,7 @@ def regular_season_games(
     data = get_json(sess, url)
     if not data:
         return []
-    out: list[tuple[float, float, float, float]] = []
+    out: list[tuple[float, float, float, float, float]] = []
     seen: set[str] = set()
     for st in data.get("seasonTypes") or []:
         if "Regular Season" not in (st.get("displayName") or ""):
@@ -194,17 +202,18 @@ def regular_season_games(
                 if eid and eid in seen:
                     continue
                 stats = ev.get("stats") or []
-                if len(stats) <= AST_IDX:
+                if len(stats) <= TPM_IDX:
                     continue
                 pts = _num(stats[PTS_IDX])
                 reb = _num(stats[REB_IDX])
                 ast = _num(stats[AST_IDX])
+                tpm = _made(stats[TPM_IDX])
                 mins = _num(stats[MIN_IDX])
-                if pts is None or reb is None or ast is None:
+                if pts is None or reb is None or ast is None or tpm is None:
                     continue
                 if eid:
                     seen.add(eid)
-                out.append((pts, reb, ast, 0.0 if mins is None else mins))
+                out.append((pts, reb, ast, tpm, 0.0 if mins is None else mins))
     return out
 
 
@@ -328,6 +337,7 @@ def process_player(
     pts: list[float] = []
     reb: list[float] = []
     ast: list[float] = []
+    tpm: list[float] = []
     mins: list[float] = []
     ws: list[float] = []
     per_season: dict[str, int] = {}
@@ -337,8 +347,9 @@ def process_player(
             continue
         per_season[str(yr)] = len(g)
         w = weights.get(yr, 0.0)
-        for p, r, a, m in g:
-            pts.append(p); reb.append(r); ast.append(a); mins.append(m); ws.append(w)
+        for p, r, a, t, m in g:
+            pts.append(p); reb.append(r); ast.append(a)
+            tpm.append(t); mins.append(m); ws.append(w)
     n = len(pts)
     if n < 3:
         return None
@@ -352,10 +363,11 @@ def process_player(
     name, pos = athlete_name(sess, max(seasons), aid)
 
     # Unweighted (pooled, every game equal) for reference/comparison.
-    r_pr, r_pa = pearson(pts, reb), pearson(pts, ast)
+    r_pr, r_pa, r_p3 = pearson(pts, reb), pearson(pts, ast), pearson(pts, tpm)
     # Recency-weighted: each game carries its season weight.
     wpr = weighted_pearson(pts, reb, ws)
     wpa = weighted_pearson(pts, ast, ws)
+    wp3 = weighted_pearson(pts, tpm, ws)
     n_eff = wpr[1] if wpr else (wpa[1] if wpa else None)
 
     # Weighted scoring means, to show what role the recency tilt emphasizes.
@@ -375,6 +387,7 @@ def process_player(
         "pts_mean": round(sum(pts) / n, 2),
         "reb_mean": round(sum(reb) / n, 2),
         "ast_mean": round(sum(ast) / n, 2),
+        "tpm_mean": round(sum(tpm) / n, 2),
         "pts_mean_weighted": round(sum(w * x for w, x in zip(ws, pts)) / W, 2),
         "pts_reb": {
             "unweighted": _pair(r_pr, n),
@@ -383,6 +396,10 @@ def process_player(
         "pts_ast": {
             "unweighted": _pair(r_pa, n),
             "weighted": _pair(wpa[0] if wpa else None, n_eff),
+        },
+        "pts_3pm": {
+            "unweighted": _pair(r_p3, n),
+            "weighted": _pair(wp3[0] if wp3 else None, n_eff),
         },
     }
 
@@ -507,21 +524,24 @@ def main() -> None:
           "sample size after weighting")
     print()
     hdr = (f"{'Player':<24}{'Pos':<4}{'G':>4}{'nEff':>6}{'MIN':>6}  "
-           f"{'PTS':>5}{'REB':>5}{'AST':>5}  "
+           f"{'PTS':>5}{'REB':>5}{'AST':>5}{'3PM':>5}  "
            f"{'rwP-R':>7}{'p':>8}{'rP-R':>7}  "
-           f"{'rwP-A':>7}{'p':>8}{'rP-A':>7}")
+           f"{'rwP-A':>7}{'p':>8}{'rP-A':>7}  "
+           f"{'rwP-3':>7}{'p':>8}{'rP-3':>7}")
     print(hdr)
     print("-" * len(hdr))
     for p in sorted(reportable, key=lambda x: (x["pts_reb"]["weighted"]["r"] is None,
                                                -(x["pts_reb"]["weighted"]["r"] or 0))):
-        pr, pa = p["pts_reb"], p["pts_ast"]
+        pr, pa, p3 = p["pts_reb"], p["pts_ast"], p["pts_3pm"]
         print(f"{p['name'][:23]:<24}{p['position']:<4}{p['n_games']:>4}"
               f"{cell(p['effective_n'], 6, 1)}{cell(p['min_mean'], 6, 1)}  "
-              f"{p['pts_mean']:>5}{p['reb_mean']:>5}{p['ast_mean']:>5}  "
+              f"{p['pts_mean']:>5}{p['reb_mean']:>5}{p['ast_mean']:>5}{p['tpm_mean']:>5}  "
               f"{cell(pr['weighted']['r'], 7, 3)}{cell(pr['weighted']['p_value'], 8, 4)}"
               f"{cell(pr['unweighted']['r'], 7, 3)}  "
               f"{cell(pa['weighted']['r'], 7, 3)}{cell(pa['weighted']['p_value'], 8, 4)}"
-              f"{cell(pa['unweighted']['r'], 7, 3)}")
+              f"{cell(pa['unweighted']['r'], 7, 3)}  "
+              f"{cell(p3['weighted']['r'], 7, 3)}{cell(p3['weighted']['p_value'], 8, 4)}"
+              f"{cell(p3['unweighted']['r'], 7, 3)}")
 
     print()
     print(f"Wrote {args.out}")
