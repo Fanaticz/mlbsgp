@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """Pull WNBA per-game logs from ESPN and compute per-player correlations
-between PTS-REB and PTS-AST, pooled over the last two seasons.
+between PTS-REB and PTS-AST over the last three seasons.
+
+Correlations are reported two ways per player: unweighted (every game equal)
+and recency-weighted, where each game carries a per-season weight (default
+2024=0.15, 2025=0.35, 2026=0.50 — only the ratios matter). The weighted
+significance test uses the Kish effective sample size so leaning on recent
+games is reflected honestly in the p-value.
 
 Data source (public ESPN endpoints, no key required):
   - Season athlete index:
@@ -159,6 +165,34 @@ def pearson(xs: list[float], ys: list[float]) -> float | None:
     return sxy / math.sqrt(sxx * syy)
 
 
+def weighted_pearson(
+    xs: list[float], ys: list[float], ws: list[float]
+) -> tuple[float, float] | None:
+    """Weighted Pearson r and Kish effective sample size.
+
+    Weighted means/(co)variances; only weight *ratios* matter, so per-game
+    season weights like 0.15/0.35/0.50 act as a 3:7:10 recency tilt. The
+    effective n = (Σw)² / Σw² (Kish) shrinks as weight concentrates on fewer
+    games, and is what we feed the significance test so heavy recency weighting
+    is honestly reflected in the p-value.
+    """
+    if len(xs) < 3:
+        return None
+    W = sum(ws)
+    if W <= 0:
+        return None
+    mx = sum(w * x for w, x in zip(ws, xs)) / W
+    my = sum(w * y for w, y in zip(ws, ys)) / W
+    sxx = sum(w * (x - mx) ** 2 for w, x in zip(ws, xs))
+    syy = sum(w * (y - my) ** 2 for w, y in zip(ws, ys))
+    sxy = sum(w * (x - mx) * (y - my) for w, x, y in zip(ws, xs, ys))
+    if sxx <= 0 or syy <= 0:
+        return None
+    r = sxy / math.sqrt(sxx * syy)
+    n_eff = (W * W) / sum(w * w for w in ws)
+    return r, n_eff
+
+
 def _betacf(a: float, b: float, x: float) -> float:
     MAXIT, EPS, FPMIN = 200, 3.0e-12, 1.0e-300
     qab, qap, qam = a + b, a + 1.0, a - 1.0
@@ -221,41 +255,61 @@ def pearson_pvalue(r: float, n: int) -> float | None:
 
 # --- driver -------------------------------------------------------------------
 
+def _pair(r: float | None, n: float | None) -> dict:
+    if r is None or n is None:
+        return {"r": None, "p_value": None}
+    p = pearson_pvalue(r, n)
+    return {"r": round(r, 4), "p_value": None if p is None else round(p, 5)}
+
+
 def process_player(
-    sess: requests.Session, aid: str, seasons: list[int]
+    sess: requests.Session, aid: str, seasons: list[int], weights: dict[int, float]
 ) -> dict | None:
-    games: list[tuple[float, float, float]] = []
+    pts: list[float] = []
+    reb: list[float] = []
+    ast: list[float] = []
+    ws: list[float] = []
     per_season: dict[str, int] = {}
     for yr in seasons:
         g = regular_season_games(sess, aid, yr)
-        if g:
-            per_season[str(yr)] = len(g)
-            games.extend(g)
-    if len(games) < 3:
+        if not g:
+            continue
+        per_season[str(yr)] = len(g)
+        w = weights.get(yr, 0.0)
+        for p, r, a in g:
+            pts.append(p); reb.append(r); ast.append(a); ws.append(w)
+    n = len(pts)
+    if n < 3:
         return None
     name, pos = athlete_name(sess, max(seasons), aid)
-    pts = [g[0] for g in games]
-    reb = [g[1] for g in games]
-    ast = [g[2] for g in games]
-    n = len(games)
-    r_pr = pearson(pts, reb)
-    r_pa = pearson(pts, ast)
+
+    # Unweighted (pooled, every game equal) for reference/comparison.
+    r_pr, r_pa = pearson(pts, reb), pearson(pts, ast)
+    # Recency-weighted: each game carries its season weight.
+    wpr = weighted_pearson(pts, reb, ws)
+    wpa = weighted_pearson(pts, ast, ws)
+    n_eff = wpr[1] if wpr else (wpa[1] if wpa else None)
+
+    # Weighted scoring means, to show what role the recency tilt emphasizes.
+    W = sum(ws) or 1.0
     return {
         "athlete_id": aid,
         "name": name,
         "position": pos,
         "n_games": n,
+        "effective_n": None if n_eff is None else round(n_eff, 1),
         "games_by_season": per_season,
         "pts_mean": round(sum(pts) / n, 2),
         "reb_mean": round(sum(reb) / n, 2),
         "ast_mean": round(sum(ast) / n, 2),
+        "pts_mean_weighted": round(sum(w * x for w, x in zip(ws, pts)) / W, 2),
         "pts_reb": {
-            "r": None if r_pr is None else round(r_pr, 4),
-            "p_value": None if r_pr is None else round(pearson_pvalue(r_pr, n), 5),
+            "unweighted": _pair(r_pr, n),
+            "weighted": _pair(wpr[0] if wpr else None, n_eff),
         },
         "pts_ast": {
-            "r": None if r_pa is None else round(r_pa, 4),
-            "p_value": None if r_pa is None else round(pearson_pvalue(r_pa, n), 5),
+            "unweighted": _pair(r_pa, n),
+            "weighted": _pair(wpa[0] if wpa else None, n_eff),
         },
     }
 
@@ -264,6 +318,10 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--seasons", type=int, nargs="+", default=[2024, 2025, 2026],
                     help="Seasons to pool (default: 2024 2025 2026; 2026 in progress).")
+    ap.add_argument("--weights", default="2024=0.15,2025=0.35,2026=0.50",
+                    help="Per-game recency weights as season=weight pairs. Only "
+                         "the ratios matter (weighted Pearson is scale-free in "
+                         "weights). Seasons absent here default to weight 0.")
     ap.add_argument("--min-games", type=int, default=20,
                     help="Min pooled games for a player to count as 'reportable'.")
     ap.add_argument("--workers", type=int, default=8,
@@ -272,6 +330,14 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=0,
                     help="Cap players processed (0 = all). For quick test runs.")
     args = ap.parse_args()
+
+    weights: dict[int, float] = {}
+    for tok in args.weights.split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        k, _, v = tok.partition("=")
+        weights[int(k)] = float(v)
 
     sess = make_session()
 
@@ -294,7 +360,8 @@ def main() -> None:
         # Each worker needs its own session for thread safety.
         sessions = [make_session() for _ in range(args.workers)]
         futs = {
-            ex.submit(process_player, sessions[i % args.workers], aid, args.seasons): aid
+            ex.submit(process_player, sessions[i % args.workers], aid,
+                      args.seasons, weights): aid
             for i, aid in enumerate(id_list)
         }
         for fut in cf.as_completed(futs):
@@ -314,34 +381,21 @@ def main() -> None:
     reportable = [p for p in players if p["n_games"] >= args.min_games]
     total_games = sum(p["n_games"] for p in players)
 
-    # League summary: games-weighted mean of per-player r's over reportable
-    # players — a stable, interpretable aggregate that avoids letting
-    # cross-player scoring-level differences inflate a naive pooled correlation.
-    def wmean(key: str) -> float | None:
-        num = den = 0.0
-        for p in reportable:
-            r = p[key]["r"]
-            if r is None:
-                continue
-            w = p["n_games"]
-            num += r * w
-            den += w
-        return round(num / den, 4) if den else None
-
     payload = {
         "generated_at": dt.datetime.now(dt.timezone.utc)
             .isoformat().replace("+00:00", "Z"),
         "source": "ESPN WNBA public API",
         "seasons": args.seasons,
         "scope": "regular-season games, pooled across seasons; correlations per player",
+        "weighting": {
+            "scheme": "per-game season weights (recency tilt); weighted Pearson, "
+                      "Kish effective-N used for significance",
+            "per_game_season_weights": {str(k): v for k, v in sorted(weights.items())},
+        },
         "min_games_reportable": args.min_games,
         "n_players": len(players),
         "n_players_reportable": len(reportable),
         "total_game_rows": total_games,
-        "league_weighted_mean_r": {
-            "pts_reb": wmean("pts_reb"),
-            "pts_ast": wmean("pts_ast"),
-        },
         "players": players,
     }
 
@@ -350,27 +404,34 @@ def main() -> None:
         json.dump(payload, f, indent=2)
 
     # --- stdout summary ---
+    def cell(v: float | None, w: int, prec: int) -> str:
+        return f"{(v if v is not None else float('nan')):>{w}.{prec}f}"
+
+    wtxt = " ".join(f"{k}={v}" for k, v in sorted(weights.items()))
     print()
-    print(f"WNBA PTS correlations — seasons {args.seasons} (regular season, pooled)")
+    print(f"WNBA PTS correlations — seasons {args.seasons}, recency-weighted "
+          f"(per-game weights {wtxt})")
     print(f"Players with >= {args.min_games} games: {len(reportable)} "
           f"(of {len(players)} with any games); {total_games} total game rows")
-    print(f"League games-weighted mean r:  "
-          f"PTS-REB={payload['league_weighted_mean_r']['pts_reb']}   "
-          f"PTS-AST={payload['league_weighted_mean_r']['pts_ast']}")
+    print("rw = recency-weighted r (headline); r = unweighted; nEff = effective "
+          "sample size after weighting")
     print()
-    hdr = f"{'Player':<24}{'Pos':<4}{'G':>4}  {'PTS':>5}{'REB':>5}{'AST':>5}  " \
-          f"{'r(P-R)':>7}{'p':>8}  {'r(P-A)':>7}{'p':>8}"
+    hdr = (f"{'Player':<24}{'Pos':<4}{'G':>4}{'nEff':>6}  "
+           f"{'PTS':>5}{'REB':>5}{'AST':>5}  "
+           f"{'rwP-R':>7}{'p':>8}{'rP-R':>7}  "
+           f"{'rwP-A':>7}{'p':>8}{'rP-A':>7}")
     print(hdr)
     print("-" * len(hdr))
-    for p in sorted(reportable, key=lambda x: (x["pts_reb"]["r"] is None,
-                                               -(x["pts_reb"]["r"] or 0))):
-        pr = p["pts_reb"]; pa = p["pts_ast"]
-        print(f"{p['name'][:23]:<24}{p['position']:<4}{p['n_games']:>4}  "
+    for p in sorted(reportable, key=lambda x: (x["pts_reb"]["weighted"]["r"] is None,
+                                               -(x["pts_reb"]["weighted"]["r"] or 0))):
+        pr, pa = p["pts_reb"], p["pts_ast"]
+        print(f"{p['name'][:23]:<24}{p['position']:<4}{p['n_games']:>4}"
+              f"{cell(p['effective_n'], 6, 1)}  "
               f"{p['pts_mean']:>5}{p['reb_mean']:>5}{p['ast_mean']:>5}  "
-              f"{(pr['r'] if pr['r'] is not None else float('nan')):>7.3f}"
-              f"{(pr['p_value'] if pr['p_value'] is not None else float('nan')):>8.4f}  "
-              f"{(pa['r'] if pa['r'] is not None else float('nan')):>7.3f}"
-              f"{(pa['p_value'] if pa['p_value'] is not None else float('nan')):>8.4f}")
+              f"{cell(pr['weighted']['r'], 7, 3)}{cell(pr['weighted']['p_value'], 8, 4)}"
+              f"{cell(pr['unweighted']['r'], 7, 3)}  "
+              f"{cell(pa['weighted']['r'], 7, 3)}{cell(pa['weighted']['p_value'], 8, 4)}"
+              f"{cell(pa['unweighted']['r'], 7, 3)}")
 
     print()
     print(f"Wrote {args.out}")
