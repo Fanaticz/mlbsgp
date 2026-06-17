@@ -23,8 +23,10 @@
   .toggle button { background:transparent; color:var(--muted); border:0;
     padding:7px 14px; font-size:13px; cursor:pointer; }
   .toggle button.on { background:var(--accent); color:#1a1a1a; font-weight:600; }
-  input[type=search] { background:var(--panel); border:1px solid var(--line);
-    color:var(--txt); border-radius:8px; padding:7px 10px; font-size:13px; width:180px; }
+  input[type=search], input[type=number] { background:var(--panel); border:1px solid var(--line);
+    color:var(--txt); border-radius:8px; padding:7px 10px; font-size:13px; }
+  input[type=search] { width:180px; }
+  label.muted input { margin-left:4px; }
   select { background:var(--panel); border:1px solid var(--line); color:var(--txt);
     border-radius:8px; padding:7px 8px; font-size:13px; }
   .count { color:var(--muted); font-size:12.5px; margin-left:auto; }
@@ -68,12 +70,20 @@
     <button data-mode="all">All players</button>
   </div>
   <input type="search" id="search" placeholder="Filter by name…" />
+  <label class="muted" title="Optional. 0 = show everyone (incl. low-minute players).">Min mpg
+    <input type="number" id="minmpg" value="0" min="0" step="1" style="width:56px" />
+  </label>
+  <label class="muted" title="Optional. 0 = show everyone (small samples included).">Min G
+    <input type="number" id="ming" value="0" min="0" step="1" style="width:56px" />
+  </label>
   <label class="muted">Sort:
     <select id="sortsel">
       <option value="pts_reb.weighted">PTS·REB r (weighted)</option>
       <option value="pts_ast.weighted">PTS·AST r (weighted)</option>
+      <option value="pts_3pm.weighted">PTS·3PM r (weighted)</option>
       <option value="pts_reb.unweighted">PTS·REB r (raw)</option>
       <option value="pts_ast.unweighted">PTS·AST r (raw)</option>
+      <option value="pts_3pm.unweighted">PTS·3PM r (raw)</option>
     </select>
   </label>
   <span class="count" id="count"></span>
@@ -132,8 +142,10 @@ const COLS = [
   { k:"pts_mean", h:"Pts", v:p=>num(p.pts_mean,1) },
   { k:"reb_mean", h:"Reb", v:p=>num(p.reb_mean,1) },
   { k:"ast_mean", h:"Ast", v:p=>num(p.ast_mean,1) },
+  { k:"tpm_mean", h:"3PM", v:p=>num(p.tpm_mean,1) },
   { k:"pts_reb.weighted", h:"PTS·REB r", v:p=>rCell(p.pts_reb) },
   { k:"pts_ast.weighted", h:"PTS·AST r", v:p=>rCell(p.pts_ast) },
+  { k:"pts_3pm.weighted", h:"PTS·3PM r", v:p=>rCell(p.pts_3pm) },
 ];
 
 function rCell(pair) {
@@ -153,7 +165,11 @@ function sortKey(p, key) {
 function render() {
   if (!DATA) return;
   const q = document.getElementById("search").value.trim().toLowerCase();
-  let rows = DATA.players.filter(p => p.n_games >= DATA.min_games_reportable);
+  const minMpg = +document.getElementById("minmpg").value || 0;
+  const minG = +document.getElementById("ming").value || 0;
+  // No baked-in filtering: show everyone (negative correlations included).
+  // The two inputs are optional, off by default (0).
+  let rows = DATA.players.filter(p => p.n_games >= minG && (p.min_mean||0) >= minMpg);
   if (MODE === "today") {
     const ids = TODAY_IDS || new Set(DATA.schedule_today.team_ids);
     rows = rows.filter(p => p.team_id && ids.has(p.team_id));
@@ -173,9 +189,9 @@ function render() {
   thead.querySelectorAll("th").forEach(th => th.onclick = () => {
     const k = th.dataset.k;
     if (SORT.key === k) SORT.dir *= -1;
-    else SORT = { key:k, dir: k.includes(".")||["n_games","effective_n","min_mean","pts_mean","reb_mean","ast_mean"].includes(k) ? -1 : 1 };
+    else SORT = { key:k, dir: k.includes(".")||["n_games","effective_n","min_mean","pts_mean","reb_mean","ast_mean","tpm_mean"].includes(k) ? -1 : 1 };
     document.getElementById("sortsel").value =
-      ["pts_reb.weighted","pts_ast.weighted","pts_reb.unweighted","pts_ast.unweighted"].includes(k) ? k : document.getElementById("sortsel").value;
+      ["pts_reb.weighted","pts_ast.weighted","pts_3pm.weighted","pts_reb.unweighted","pts_ast.unweighted","pts_3pm.unweighted"].includes(k) ? k : document.getElementById("sortsel").value;
     render();
   });
 
@@ -210,7 +226,7 @@ async function init() {
   const wtxt = Object.entries(w).map(([k,v])=>`${k}: ${v}`).join(", ");
   document.getElementById("meta").innerHTML =
     `Seasons ${DATA.seasons.join("–")} · regular season · recency weights (${wtxt}) · ` +
-    `min ${DATA.min_mpg_included} mpg &amp; ${DATA.min_games_reportable} games · ` +
+    `${DATA.players.length} players (all kept — sort/filter as you like) · ` +
     `generated ${new Date(DATA.generated_at).toLocaleString()}`;
 
   // Live schedule for the toggle; fall back to the baked snapshot.
@@ -224,6 +240,8 @@ async function init() {
   document.querySelectorAll("#toggle button").forEach(b =>
     b.onclick = () => setMode(b.dataset.mode));
   document.getElementById("search").oninput = render;
+  document.getElementById("minmpg").oninput = render;
+  document.getElementById("ming").oninput = render;
   document.getElementById("sortsel").onchange = e => {
     SORT = { key: e.target.value, dir: -1 }; render();
   };
