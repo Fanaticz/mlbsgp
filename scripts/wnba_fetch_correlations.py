@@ -414,9 +414,9 @@ def main() -> None:
                          "weights). Seasons absent here default to weight 0.")
     ap.add_argument("--min-games", type=int, default=20,
                     help="Min pooled games for a player to count as 'reportable'.")
-    ap.add_argument("--min-mpg", type=float, default=15.0,
-                    help="Min average minutes/game to be included at all "
-                         "(filters out garbage-time / deep-bench players).")
+    ap.add_argument("--min-mpg", type=float, default=0.0,
+                    help="Optional min average minutes/game to include a player "
+                         "(0 = keep everyone; filtering is done in the viewer).")
     ap.add_argument("--workers", type=int, default=8,
                     help="Concurrent HTTP workers.")
     ap.add_argument("--out", default=os.path.join("public", "data", "wnba_correlations.json"))

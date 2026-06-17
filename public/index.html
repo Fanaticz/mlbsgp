@@ -256,8 +256,14 @@ h1 em{color:var(--ac);font-style:normal;}
 <div class="sport-bar" id="sportBar">
   <span class="sport-label">SPORT</span>
   <button class="sport-btn active" id="sportBtnMlb" type="button" onclick="setSport('mlb')" aria-pressed="true"><span class="sport-dot"></span>MLB</button>
+  <!-- NBA and Tennis tabs hidden per product decision. The JS modules, nav,
+       headers and pages below are intentionally KEPT so they can be re-enabled
+       by uncommenting these two buttons. -->
+  <!--
   <button class="sport-btn" id="sportBtnNba" type="button" onclick="setSport('nba')" aria-pressed="false"><span class="sport-dot"></span>NBA</button>
   <button class="sport-btn" id="sportBtnTennis" type="button" onclick="setSport('tennis')" aria-pressed="false"><span class="sport-dot"></span>TENNIS</button>
+  -->
+  <button class="sport-btn" id="sportBtnWnba" type="button" onclick="setSport('wnba')" aria-pressed="false"><span class="sport-dot"></span>WNBA</button>
   <button class="sport-btn" id="sportBtnWorldcup" type="button" onclick="setSport('worldcup')" aria-pressed="false"><span class="sport-dot"></span>WORLD CUP</button>
 </div>
 <div class="nav" id="navMlb">
@@ -676,6 +682,14 @@ h1 em{color:var(--ac);font-style:normal;}
     <div id="wcStatus" style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace;min-height:16px"></div>
   </div>
   <div id="wcBody"></div>
+</div>
+<!-- WNBA tab: PTS·REB / PTS·AST / PTS·3PM game-log correlations. The view is
+     a self-contained page (public/wnba.html) embedded as an iframe so its
+     ESPN fetch + live "playing today" schedule logic stays isolated from the
+     MLB renderers. The iframe is lazily sourced on first activation. -->
+<div id="page-wnba" class="page" style="padding:0">
+  <iframe id="wnbaFrame" title="WNBA Correlations" data-src="wnba.html"
+    style="width:100%;height:calc(100vh - 132px);min-height:560px;border:0;display:block;background:#0f1419"></iframe>
 </div>
 <div class="tm-overlay" id="tmOverlay" onclick="tmClose()"></div>
 <div class="tm-drawer" id="tmDrawer"><button class="tm-close" onclick="tmClose()">&#10005;</button><div id="tmDrawerBody"></div></div>
@@ -3145,15 +3159,16 @@ function getRawCorr(rc,leg1,leg2){if(!rc)return null;var s1=statOf(leg1);var s2=
    keep behaving exactly as before. NBA side is a shell in this phase —
    its page content fills in during Phase 3. */
 function getSportFromUrl(){
-  var m = window.location.search.match(/[?&]sport=(mlb|nba|tennis|worldcup)(?:&|$)/i);
+  var m = window.location.search.match(/[?&]sport=(mlb|nba|tennis|worldcup|wnba)(?:&|$)/i);
   return m ? m[1].toLowerCase() : 'mlb';
 }
 function setSport(sport){
-  if(sport !== 'nba' && sport !== 'tennis' && sport !== 'worldcup') sport = 'mlb';
+  if(sport !== 'nba' && sport !== 'tennis' && sport !== 'worldcup' && sport !== 'wnba') sport = 'mlb';
   document.body.classList.toggle('sport-mlb', sport==='mlb');
   document.body.classList.toggle('sport-nba', sport==='nba');
   document.body.classList.toggle('sport-tennis', sport==='tennis');
   document.body.classList.toggle('sport-worldcup', sport==='worldcup');
+  document.body.classList.toggle('sport-wnba', sport==='wnba');
   var show = function(id, on){var el=document.getElementById(id); if(el) el.style.display = on ? '' : 'none';};
   show('navMlb',       sport==='mlb');
   show('navNba',       sport==='nba');
@@ -3167,6 +3182,8 @@ function setSport(sport){
   var btnNba=document.getElementById('sportBtnNba');
   var btnTns=document.getElementById('sportBtnTennis');
   var btnWc=document.getElementById('sportBtnWorldcup');
+  var btnWnba=document.getElementById('sportBtnWnba');
+  if(btnWnba){btnWnba.classList.toggle('active', sport==='wnba'); btnWnba.setAttribute('aria-pressed', sport==='wnba');}
   if(btnMlb){btnMlb.classList.toggle('active', sport==='mlb'); btnMlb.setAttribute('aria-pressed', sport==='mlb');}
   if(btnNba){btnNba.classList.toggle('active', sport==='nba'); btnNba.setAttribute('aria-pressed', sport==='nba');}
   if(btnTns){btnTns.classList.toggle('active', sport==='tennis'); btnTns.setAttribute('aria-pressed', sport==='tennis');}
@@ -3194,6 +3211,11 @@ function setSport(sport){
     var wc=document.getElementById('page-worldcup-evfinder'); if(wc) wc.classList.add('active');
     showWorldcupPage('evfinder');
     if(window.worldcupTab && typeof window.worldcupTab.onActivate==='function') window.worldcupTab.onActivate();
+  } else if(sport === 'wnba'){
+    var al = document.getElementById('appLoading'); if(al) al.style.display = 'none';
+    var wn=document.getElementById('page-wnba'); if(wn) wn.classList.add('active');
+    /* Lazy-source the iframe on first activation so MLB load isn't taxed. */
+    var fr=document.getElementById('wnbaFrame'); if(fr && !fr.getAttribute('src') && fr.dataset.src) fr.setAttribute('src', fr.dataset.src);
   } else {
     var remembered = window._MLB_LAST_PAGE || 'global';
     var el = document.getElementById('page-' + remembered) || document.getElementById('page-global');
@@ -3210,6 +3232,7 @@ function setSport(sport){
     if(sport === 'nba') u.searchParams.set('sport','nba');
     else if(sport === 'tennis') u.searchParams.set('sport','tennis');
     else if(sport === 'worldcup') u.searchParams.set('sport','worldcup');
+    else if(sport === 'wnba') u.searchParams.set('sport','wnba');
     else u.searchParams.delete('sport');
     window.history.replaceState({}, '', u.toString());
   } catch(_){}
