@@ -330,10 +330,31 @@ def _pair(r: float | None, n: float | None) -> dict:
     return {"r": round(r, 4), "p_value": None if p is None else round(p, 5)}
 
 
+def _season_stats(games: list[tuple[float, float, float, float, float]]) -> dict:
+    """Box-score means + within-season correlations for one season's games.
+    Single-season, so weighting is moot (every game shares one weight)."""
+    n = len(games)
+    pts = [g[0] for g in games]; reb = [g[1] for g in games]
+    ast = [g[2] for g in games]; tpm = [g[3] for g in games]
+    mins = [g[4] for g in games]
+    return {
+        "games": n,
+        "min_mean": round(sum(mins) / n, 1),
+        "pts_mean": round(sum(pts) / n, 2),
+        "reb_mean": round(sum(reb) / n, 2),
+        "ast_mean": round(sum(ast) / n, 2),
+        "tpm_mean": round(sum(tpm) / n, 2),
+        "pts_reb": _pair(pearson(pts, reb), n),
+        "pts_ast": _pair(pearson(pts, ast), n),
+        "pts_3pm": _pair(pearson(pts, tpm), n),
+    }
+
+
 def process_player(
     sess: requests.Session, aid: str, seasons: list[int], weights: dict[int, float],
     min_mpg: float, team_map: dict[str, dict]
 ) -> dict | None:
+    by_year: dict[int, list[tuple]] = {}
     pts: list[float] = []
     reb: list[float] = []
     ast: list[float] = []
@@ -345,6 +366,7 @@ def process_player(
         g = regular_season_games(sess, aid, yr)
         if not g:
             continue
+        by_year[yr] = g
         per_season[str(yr)] = len(g)
         w = weights.get(yr, 0.0)
         for p, r, a, t, m in g:
@@ -373,6 +395,10 @@ def process_player(
     # Weighted scoring means, to show what role the recency tilt emphasizes.
     W = sum(ws) or 1.0
     team = team_map.get(aid, {})
+    # Per-season breakdown (only seasons with >=3 games get correlations).
+    by_season = {str(yr): _season_stats(by_year[yr])
+                 for yr in sorted(by_year) if len(by_year[yr]) >= 3}
+    latest = max(by_year) if by_year else None
     return {
         "athlete_id": aid,
         "name": name,
@@ -384,6 +410,7 @@ def process_player(
         "effective_n": None if n_eff is None else round(n_eff, 1),
         "min_mean": round(mpg, 1),
         "games_by_season": per_season,
+        "latest_season": None if latest is None else str(latest),
         "pts_mean": round(sum(pts) / n, 2),
         "reb_mean": round(sum(reb) / n, 2),
         "ast_mean": round(sum(ast) / n, 2),
@@ -401,6 +428,7 @@ def process_player(
             "unweighted": _pair(r_p3, n),
             "weighted": _pair(wp3[0] if wp3 else None, n_eff),
         },
+        "by_season": by_season,
     }
 
 
