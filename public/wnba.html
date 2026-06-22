@@ -56,6 +56,17 @@
     text-underline-offset:2px; }
   .muted { color:var(--muted); }
   .err { color:var(--neg); padding:20px 22px; }
+  .care { display:inline-block; width:12px; color:var(--muted); }
+  tbody tr.prow { cursor:pointer; }
+  tbody tr.prow:hover .care { color:var(--accent); }
+  tbody tr.drow td { padding:0; background:#10161c; }
+  .detail-wrap { padding:10px 16px 14px; }
+  .detail-h { font-size:12px; color:var(--muted); margin-bottom:8px; }
+  table.sub { width:auto; min-width:0; border-collapse:collapse; }
+  table.sub th { position:static; top:auto; background:transparent; cursor:default;
+    border-bottom:1px solid var(--line); font-size:10.5px; padding:4px 12px; }
+  table.sub td { padding:4px 12px; border-bottom:1px solid #20272f; white-space:nowrap; }
+  table.sub tr.pool td { border-top:1px solid var(--line); }
 </style>
 </head>
 <body>
@@ -132,21 +143,26 @@ function renderSched(games, live) {
     games.map(g => `<span class="g"><b>${g.matchup}</b>${g.st?` <span class="muted">${g.st}</span>`:""}</span>`).join("");
 }
 
+// Box-score columns (G..3PM) show the player's LATEST season only (e.g. 2026)
+// via the _g/_min/... fields precomputed in init(). The correlation columns
+// remain pooled + recency-weighted across seasons; expand a row for the
+// per-season history.
 const COLS = [
-  { k:"name", h:"Player", l:true,  v:p=>`${TODAY_IDS&&TODAY_IDS.has(p.team_id)?'<span class="dot"></span>':''}<span class="name">${p.name}</span>` },
+  { k:"name", h:"Player", l:true,  v:p=>`<span class="care" >${EXPANDED.has(p.athlete_id)?"▾":"▸"}</span>${TODAY_IDS&&TODAY_IDS.has(p.team_id)?'<span class="dot"></span>':''}<span class="name">${p.name}</span>` },
   { k:"team_abbr", h:"Tm", l:true, v:p=>`<span class="team">${p.team_abbr||"—"}</span>` },
   { k:"position", h:"Pos", l:true, v:p=>p.position||"—" },
-  { k:"n_games", h:"G", v:p=>p.n_games },
-  { k:"effective_n", h:"nEff", v:p=>num(p.effective_n,1) },
-  { k:"min_mean", h:"Min", v:p=>num(p.min_mean,1) },
-  { k:"pts_mean", h:"Pts", v:p=>num(p.pts_mean,1) },
-  { k:"reb_mean", h:"Reb", v:p=>num(p.reb_mean,1) },
-  { k:"ast_mean", h:"Ast", v:p=>num(p.ast_mean,1) },
-  { k:"tpm_mean", h:"3PM", v:p=>num(p.tpm_mean,1) },
+  { k:"_g", h:"G", ht:"Games in latest season", v:p=>p._g },
+  { k:"effective_n", h:"nEff", ht:"Effective sample size of the pooled weighted correlation", v:p=>num(p.effective_n,1) },
+  { k:"_min", h:"Min", v:p=>num(p._min,1) },
+  { k:"_pts", h:"Pts", v:p=>num(p._pts,1) },
+  { k:"_reb", h:"Reb", v:p=>num(p._reb,1) },
+  { k:"_ast", h:"Ast", v:p=>num(p._ast,1) },
+  { k:"_tpm", h:"3PM", v:p=>num(p._tpm,1) },
   { k:"pts_reb.weighted", h:"PTS·REB r", v:p=>rCell(p.pts_reb) },
   { k:"pts_ast.weighted", h:"PTS·AST r", v:p=>rCell(p.pts_ast) },
   { k:"pts_3pm.weighted", h:"PTS·3PM r", v:p=>rCell(p.pts_3pm) },
 ];
+const EXPANDED = new Set();
 
 function rCell(pair) {
   const w = pair.weighted, u = pair.unweighted;
@@ -155,6 +171,35 @@ function rCell(pair) {
   const sig = (w.p_value!==null && w.p_value<0.05) ? "sig" : "";
   return `<span class="r ${sig}" style="color:${col}">${num(w.r)}</span>` +
          ` <span class="raw">p=${num(w.p_value,3)} · raw ${num(u.r)}</span>`;
+}
+
+// One r value for the per-season sub-table (single season => unweighted).
+function rMini(pair) {
+  if (!pair || pair.r===null || pair.r===undefined) return '<span class="muted">—</span>';
+  const col = pair.r>0 ? "var(--pos)" : "var(--neg)";
+  const sig = (pair.p_value!==null && pair.p_value<0.05) ? "sig" : "";
+  return `<span class="r ${sig}" style="color:${col}">${num(pair.r)}</span>` +
+         ` <span class="raw">p=${num(pair.p_value,3)}</span>`;
+}
+
+// Expanded per-season history block (rendered in a full-width detail row).
+function detailHTML(p) {
+  const yrs = Object.keys(p.by_season||{}).sort();
+  let body = yrs.map(y => {
+    const s = p.by_season[y];
+    return `<tr><td class="l"><b>${y}</b></td><td>${s.games}</td><td>${num(s.min_mean,1)}</td>`+
+           `<td>${num(s.pts_mean,1)}</td><td>${num(s.reb_mean,1)}</td><td>${num(s.ast_mean,1)}</td><td>${num(s.tpm_mean,1)}</td>`+
+           `<td class="l">${rMini(s.pts_reb)}</td><td class="l">${rMini(s.pts_ast)}</td><td class="l">${rMini(s.pts_3pm)}</td></tr>`;
+  }).join("");
+  // Pooled (all seasons, recency-weighted) reference row.
+  body += `<tr class="pool"><td class="l"><b>Pooled</b> <span class="muted">(wtd)</span></td>`+
+          `<td>${p.n_games}</td><td>${num(p.min_mean,1)}</td>`+
+          `<td>${num(p.pts_mean,1)}</td><td>${num(p.reb_mean,1)}</td><td>${num(p.ast_mean,1)}</td><td>${num(p.tpm_mean,1)}</td>`+
+          `<td class="l">${rCell(p.pts_reb)}</td><td class="l">${rCell(p.pts_ast)}</td><td class="l">${rCell(p.pts_3pm)}</td></tr>`;
+  return `<div class="detail-wrap"><div class="detail-h">Per-season history — box stats &amp; within-season correlations`+
+         ` <span class="muted">(left columns above show ${p.latest_season||"latest"} only; r columns are pooled &amp; recency-weighted)</span></div>`+
+         `<table class="sub"><thead><tr><th class="l">Season</th><th>G</th><th>Min</th><th>Pts</th><th>Reb</th><th>Ast</th><th>3PM</th>`+
+         `<th class="l">PTS·REB</th><th class="l">PTS·AST</th><th class="l">PTS·3PM</th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
 function sortKey(p, key) {
@@ -168,8 +213,9 @@ function render() {
   const minMpg = +document.getElementById("minmpg").value || 0;
   const minG = +document.getElementById("ming").value || 0;
   // No baked-in filtering: show everyone (negative correlations included).
-  // The two inputs are optional, off by default (0).
-  let rows = DATA.players.filter(p => p.n_games >= minG && (p.min_mean||0) >= minMpg);
+  // The two inputs are optional, off by default (0). Filter on the latest-
+  // season figures that the left columns display.
+  let rows = DATA.players.filter(p => p._g >= minG && (p._min||0) >= minMpg);
   if (MODE === "today") {
     const ids = TODAY_IDS || new Set(DATA.schedule_today.team_ids);
     rows = rows.filter(p => p.team_id && ids.has(p.team_id));
@@ -189,15 +235,25 @@ function render() {
   thead.querySelectorAll("th").forEach(th => th.onclick = () => {
     const k = th.dataset.k;
     if (SORT.key === k) SORT.dir *= -1;
-    else SORT = { key:k, dir: k.includes(".")||["n_games","effective_n","min_mean","pts_mean","reb_mean","ast_mean","tpm_mean"].includes(k) ? -1 : 1 };
+    else SORT = { key:k, dir: k.includes(".")||["_g","effective_n","_min","_pts","_reb","_ast","_tpm"].includes(k) ? -1 : 1 };
     document.getElementById("sortsel").value =
       ["pts_reb.weighted","pts_ast.weighted","pts_3pm.weighted","pts_reb.unweighted","pts_ast.unweighted","pts_3pm.unweighted"].includes(k) ? k : document.getElementById("sortsel").value;
     render();
   });
 
-  document.querySelector("#tbl tbody").innerHTML = rows.map(p =>
-    "<tr>" + COLS.map(c => `<td class="${c.l?'l':''}">${c.v(p)}</td>`).join("") + "</tr>"
-  ).join("");
+  const tbody = document.querySelector("#tbl tbody");
+  tbody.innerHTML = rows.map(p => {
+    const main = `<tr class="prow" data-id="${p.athlete_id}">` +
+      COLS.map(c => `<td class="${c.l?'l':''}">${c.v(p)}</td>`).join("") + "</tr>";
+    const det = EXPANDED.has(p.athlete_id)
+      ? `<tr class="drow"><td colspan="${COLS.length}">${detailHTML(p)}</td></tr>` : "";
+    return main + det;
+  }).join("");
+  tbody.querySelectorAll("tr.prow").forEach(tr => tr.onclick = () => {
+    const id = tr.dataset.id;
+    if (EXPANDED.has(id)) EXPANDED.delete(id); else EXPANDED.add(id);
+    render();
+  });
 
   document.getElementById("count").textContent =
     `${rows.length} player${rows.length===1?"":"s"}` + (MODE==="today" ? " playing today" : "");
@@ -222,12 +278,24 @@ async function init() {
     return;
   }
 
+  // Precompute the latest-season box stats shown in the left columns. Falls
+  // back to pooled values if a player somehow has no per-season block.
+  DATA.players.forEach(p => {
+    const ls = (p.by_season && p.latest_season) ? p.by_season[p.latest_season] : null;
+    p._g   = ls ? ls.games    : p.n_games;
+    p._min = ls ? ls.min_mean : p.min_mean;
+    p._pts = ls ? ls.pts_mean : p.pts_mean;
+    p._reb = ls ? ls.reb_mean : p.reb_mean;
+    p._ast = ls ? ls.ast_mean : p.ast_mean;
+    p._tpm = ls ? ls.tpm_mean : p.tpm_mean;
+  });
+
   const w = DATA.weighting?.per_game_season_weights || {};
   const wtxt = Object.entries(w).map(([k,v])=>`${k}: ${v}`).join(", ");
   document.getElementById("meta").innerHTML =
     `Seasons ${DATA.seasons.join("–")} · regular season · recency weights (${wtxt}) · ` +
-    `${DATA.players.length} players (all kept — sort/filter as you like) · ` +
-    `generated ${new Date(DATA.generated_at).toLocaleString()}`;
+    `${DATA.players.length} players · box stats = latest season · r = pooled/weighted · ` +
+    `click a row for per-season history · generated ${new Date(DATA.generated_at).toLocaleString()}`;
 
   // Live schedule for the toggle; fall back to the baked snapshot.
   const live = await liveTodayIds();
