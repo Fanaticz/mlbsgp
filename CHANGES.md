@@ -1,5 +1,20 @@
 # Changes
 
+## 2026-07-04 session
+
+### World Cup combos: prebuilt fallback + knockout-slate fixes ("no match" everywhere)
+Every combo market (Winner/Total, HT/FT, BTTS/Winner, BTTS/Total) showed `no match` on knockout-round matches. Three stacked causes, verified against the live Canada vs Morocco event (34339353):
+1. **DK's `calculateBets` endpoint is failing for every request** (MLB pairs too, so it's not soccer-specific) — every combo whose SGP legs resolved died with `sgp_price_unavailable`.
+2. **Knockout slates drop the SGP leg markets**: no regular-time `Both Teams to Score` (only the "Including Extra Time" variant, a different proposition) and no 1st-half Moneyline — so BTTS/Winner, BTTS/Total and HT/FT legs can't even be built.
+3. The 2026-06 change made combos **hand-built SGPs only, no prebuilt fallback** — so when 1+2 hit, everything reported unmatched even though DK posts prebuilt `Half Time / Full Time` (9 sels) and `Moneyline / Both Teams to Score` (6 sels) on the same event.
+
+**Fix (dk_api.py).** `find_sgps_worldcup` is SGP-first as before, but now falls back to the prebuilt combo market when a leg can't resolve or pricing fails (`via: "prebuilt"`, so the UI's SGP badge still only marks real tickets). Replayed against the live event dump: 55/97 → **72/97** matched with pricing down (HT/FT 9/9, BTTS/Winner 6/6 restored), 82/97 once `calculateBets` recovers (Winner/Total + Odd-Even/Total upgrade to `via: "sgp"`). Remaining misses are genuine DK absences on knockout slates (no regular-time BTTS or team-total-goals markets, unlisted lines/bands).
+
+**Also fixed.**
+- `_soccer_straight_kind`: alternate spread lines (±1.5, ±2.5) live under a subcat literally named `Spread`, not `Asian Handicap` — both now classify, restoring the alt-line spread rows.
+- `_price_combo` now tallies outcomes (HTTP status counts, incompatible, no-bet, exceptions) into `_PRICE_DIAG`; `find_sgps_worldcup` returns the snapshot as `sgp_price_diag` so a pricing outage is diagnosable from the API response.
+- `get_price` returns `{"error": "calculateBets HTTP <status>", "status", "body"}` instead of raising, and `dkCall` (server.js) surfaces the JSON error dk_api.py prints on exit 1 instead of the opaque `dk_api.py exited with code 1` — `/api/dk/price` now reports the real failure mode.
+
 ## 2026-06-11 session
 
 ### World Cup SGP +EV tab
