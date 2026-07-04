@@ -1624,7 +1624,16 @@ function dkCall(args, stdinData) {
     proc.stdout.on('data', d => stdout += d);
     proc.stderr.on('data', d => stderr += d);
     proc.on('close', code => {
-      if (code !== 0) return reject(new Error(stderr || 'dk_api.py exited with code ' + code));
+      if (code !== 0) {
+        // dk_api.py prints {"error": ...} to stdout before exiting 1 — that
+        // message (e.g. "calculateBets HTTP 403") is the actual diagnosis;
+        // only fall back to stderr / the opaque exit code when there is none.
+        try {
+          const parsed = JSON.parse(stdout);
+          if (parsed && parsed.error) return reject(new Error(parsed.error));
+        } catch (_) { /* not JSON — fall through */ }
+        return reject(new Error(stderr || 'dk_api.py exited with code ' + code));
+      }
       try { resolve(JSON.parse(stdout)); }
       catch (e) { reject(new Error('Failed to parse dk_api.py output: ' + stdout.slice(0, 200))); }
     });

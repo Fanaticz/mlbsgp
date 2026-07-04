@@ -585,8 +585,17 @@ def _american_from_decimal(dec):
     return f"{round(-100 / (dec - 1))}"
 
 
+# Rolling tally of calculateBets outcomes. When SGP pricing silently fails
+# (every combo shows "no match"), this is the only way to see WHY from the
+# API response without shell access to production — find_sgps_worldcup
+# returns a snapshot as `sgp_price_diag`.
+_PRICE_DIAG = {"calls": 0, "ok": 0, "incompatible": 0, "no_bet": 0,
+               "exceptions": 0, "http": {}}
+
+
 def _price_combo(selection_ids):
     """Call calculateBets for a list of selection IDs. Returns None on incompat/error."""
+    _PRICE_DIAG["calls"] += 1
     try:
         payload = {
             "selections": [],
@@ -597,20 +606,26 @@ def _price_combo(selection_ids):
         }
         r = session.post(DK_PRICE, json=payload, timeout=10)
         if r.status_code != 200:
+            k = str(r.status_code)
+            _PRICE_DIAG["http"][k] = _PRICE_DIAG["http"].get(k, 0) + 1
             return None
         data = r.json()
         if data.get("combinabilityRestrictions"):
+            _PRICE_DIAG["incompatible"] += 1
             return None
         bet = next((b for b in data.get("bets", [])
                    if b.get("trueOdds") and len(b.get("selectionsMapped", [])) >= 2), None)
         if not bet:
+            _PRICE_DIAG["no_bet"] += 1
             return None
+        _PRICE_DIAG["ok"] += 1
         return {
             "sgpOdds": bet.get("displayOdds", ""),
             "sgpDecimal": bet.get("trueOdds"),
             "legInfo": data.get("selectionsForYourBet", []),
         }
     except Exception:
+        _PRICE_DIAG["exceptions"] += 1
         return None
 
 
@@ -2444,7 +2459,10 @@ def _soccer_straight_kind(market_name, subcat):
         return "oddeven"
     if nl == "total goals":
         return "total_goals"
-    if nl == "spread" and "asian handicap" in sl:
+    if nl == "spread" and ("asian handicap" in sl or sl == "spread"):
+        # Main + quarter lines sit under the "Asian Handicap" subcat; the
+        # ±1.5/±2.5 alternate lines sit under a subcat literally named
+        # "Spread" (verified on the World Cup 2026 knockout slate).
         return "spread"
     if nl.endswith(": team total goals"):
         return "team_goals"
@@ -2863,9 +2881,13 @@ def find_sgps_worldcup(payload):
     for c in candidates:
         entry = {"c": c, "legs": None, "prebuilt": None, "leg_fail": None}
         if c.get("market_key") in COMBO_KINDS:
-            # Combos are hand-built SGPs ONLY — no prebuilt-market fallback.
-            # A prebuilt combo price isn't an SGP ticket (not boost-eligible),
-            # so a failed leg or refused combination reports as unmatched.
+            # SGP-first: a hand-built 2-leg ticket is boost-eligible and covers
+            # cells DK never prebuilds. But knockout slates drop the leg
+            # markets outright (no plain BTTS, no 1st-half moneyline — only
+            # extra-time variants), and calculateBets outages kill pricing for
+            # even resolvable legs, so the prebuilt combo market (HT/FT,
+            # Moneyline/BTTS, ...) is the fallback: a real posted DK price
+            # beats reporting "no match".
             legs = []
             for sp in _leg_specs(c) or []:
                 pool = props_by_kind.get(sp["market_key"], [])
@@ -2876,6 +2898,7 @@ def find_sgps_worldcup(payload):
                     break
                 legs.append(m)
             entry["legs"] = legs
+            entry["prebuilt"] = _match_prebuilt(c)
         else:
             entry["prebuilt"] = _match_prebuilt(c)
         resolved.append(entry)
@@ -2914,24 +2937,36 @@ def find_sgps_worldcup(payload):
         key = c.get("market_key")
         out = {"id": c.get("id"), "market_key": key}
         if key in COMBO_KINDS:
+            price = None
             if e["legs"]:
                 ids = frozenset(l["selectionId"] for l in e["legs"])
                 price = price_cache.get(ids)
-                if price and price != "pending":
-                    out["matched"] = True
-                    out["via"] = "sgp"
-                    out["dk_american"] = price.get("sgpOdds")
-                    out["dk_decimal"] = price.get("sgpDecimal")
-                    out["dk_market"] = "SGP: " + " + ".join(
-                        l.get("marketName", "") for l in e["legs"])
-                    out["dk_label"] = " + ".join(
-                        (l.get("label") or l.get("outcomeType") or "") for l in e["legs"])
-                else:
-                    out["matched"] = False
-                    out["missing"] = "dk:sgp_price_unavailable (combination refused or timed out)"
+                if price == "pending":
+                    price = None
+            if price:
+                out["matched"] = True
+                out["via"] = "sgp"
+                out["dk_american"] = price.get("sgpOdds")
+                out["dk_decimal"] = price.get("sgpDecimal")
+                out["dk_market"] = "SGP: " + " + ".join(
+                    l.get("marketName", "") for l in e["legs"])
+                out["dk_label"] = " + ".join(
+                    (l.get("label") or l.get("outcomeType") or "") for l in e["legs"])
+            elif e["prebuilt"]:
+                m = e["prebuilt"]
+                out["matched"] = True
+                out["via"] = "prebuilt"
+                out["dk_american"] = m.get("oddsAmerican")
+                out["dk_decimal"] = m.get("oddsDecimal")
+                out["dk_label"] = m.get("label") or m.get("outcomeType")
+                out["dk_market"] = m.get("marketName")
+                out["isDisabled"] = m.get("isDisabled", False)
             else:
                 out["matched"] = False
-                out["missing"] = "sgp leg unresolved: " + str(e.get("leg_fail"))
+                sgp_why = ("sgp leg unresolved: " + str(e.get("leg_fail"))
+                           if not e["legs"] else
+                           "dk:sgp_price_unavailable (combination refused or timed out)")
+                out["missing"] = sgp_why + "; no prebuilt combo market either"
             results.append(out)
             continue
         m = e["prebuilt"]
@@ -2960,6 +2995,8 @@ def find_sgps_worldcup(payload):
             "league_id": games_data.get("leagueId"),
             "home": event.get("homeTeam"), "away": event.get("awayTeam"),
             "available_markets": seen_markets[:80]}
+    if jobs:
+        resp["sgp_price_diag"] = dict(_PRICE_DIAG, http=dict(_PRICE_DIAG["http"]))
     if truncated:
         resp["truncated"] = True
     return resp
@@ -3583,7 +3620,14 @@ def get_price(selection_ids):
     if r.status_code == 422:
         return {"error": "Incompatible leg combination", "incompatible": True}
 
-    r.raise_for_status()
+    if r.status_code != 200:
+        # Return the status instead of raising: an opaque exit-1 from the
+        # subprocess hides WHICH way calculateBets is failing (Akamai 403 vs
+        # payload 400 vs outage 5xx), and that distinction is the whole
+        # diagnosis when every SGP price call starts dying at once.
+        return {"error": f"calculateBets HTTP {r.status_code}",
+                "status": r.status_code,
+                "body": (r.text or "")[:300]}
     data = r.json()
 
     restrictions = data.get("combinabilityRestrictions", [])
