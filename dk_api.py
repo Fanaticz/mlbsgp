@@ -38,7 +38,24 @@ DK_WORLDCUP_SLUG = _os.environ.get("DK_WORLDCUP_SLUG", "world-cup-2026")
 DK_NAV = "https://sportsbook-nash.draftkings.com/api/sportscontent/navigation/dkusnj/v1/nav/leagues"
 DK_MARKETS = "https://sportsbook-nash.draftkings.com/sites/US-SB/api/sportscontent/controldata/event/eventSubcategory/v1/markets"
 DK_SGP = "https://sportsbook-nash.draftkings.com/sites/US-SB/api/sportscontent/parlays/v1/sgp/events"
-DK_PRICE = "https://gaming-us-nj.draftkings.com/api/wager/v1/calculateBets"
+# Pricing host is state-scoped and Akamai-guarded separately from the
+# sportsbook-nash market hosts. When one state host starts 403-ing every
+# calculateBets POST (2026-07-04 outage), another often still serves —
+# override from the environment without a code change, e.g.
+# DK_PRICE_HOST=gaming-us-ny.draftkings.com
+DK_PRICE_HOST = _os.environ.get("DK_PRICE_HOST", "gaming-us-nj.draftkings.com")
+DK_PRICE = f"https://{DK_PRICE_HOST}/api/wager/v1/calculateBets"
+
+# calculateBets is what a logged-out browser POSTs from the bet slip; Akamai
+# expects the request to look like it came from the sportsbook page. Bare
+# JSON POSTs (no Origin/Referer, no .draftkings.com cookies) are exactly the
+# profile it 403s.
+DK_PRICE_HEADERS = {
+    "Accept": "application/json",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Origin": "https://sportsbook.draftkings.com",
+    "Referer": "https://sportsbook.draftkings.com/",
+}
 
 # Rotate TLS fingerprints so Akamai can't pin a single one as "bot" and 403
 # every subcategory request for the remainder of the subprocess. Order is
@@ -64,7 +81,37 @@ def _rotate_session():
     global session, _imp_idx
     with _session_lock:
         _imp_idx = (_imp_idx + 1) % len(_IMPERSONATES)
-        session = cffi_requests.Session(impersonate=_IMPERSONATES[_imp_idx])
+        fresh = cffi_requests.Session(impersonate=_IMPERSONATES[_imp_idx])
+        # Carry the cookie jar over: Akamai clearance cookies (_abck/bm_sz on
+        # .draftkings.com) are what let the pricing POSTs through, and losing
+        # them on every rotation put each new fingerprint back at square one.
+        try:
+            fresh.cookies.update(session.cookies)
+        except Exception:
+            pass
+        session = fresh
+
+
+_warmup_done = False
+
+
+def _warm_dk_cookies():
+    """Best-effort one-time GET of the sportsbook page to collect Akamai
+    cookies (.draftkings.com scope) into the shared jar before the first
+    calculateBets POST. The market API hosts don't set them, so without this
+    the pricing host sees a cookieless POST — the classic bot profile."""
+    global _warmup_done
+    if _warmup_done:
+        return
+    with _session_lock:
+        if _warmup_done:
+            return
+        _warmup_done = True
+    try:
+        session.get("https://sportsbook.draftkings.com/", timeout=10,
+                    headers={"Accept": "text/html,application/xhtml+xml"})
+    except Exception:
+        pass
 
 
 def _trigger_cooloff(seconds):
@@ -119,7 +166,7 @@ def _get_with_retry(url, params=None, timeout=15, attempts=6):
     raise RuntimeError(f"DK request failed after {attempts} attempts: {url} (last status={last_status})")
 
 
-def _post_with_retry(url, json=None, timeout=15, attempts=4):
+def _post_with_retry(url, json=None, timeout=15, attempts=4, headers=None):
     """POST with the same Akamai-survival kit as _get_with_retry.
 
     calculateBets POSTs used to be a single bare session.post() — no retry, no
@@ -130,13 +177,14 @@ def _post_with_retry(url, json=None, timeout=15, attempts=4):
     return the response for any other status so callers keep their 422/400
     semantics. On exhaustion, return the last response (status tallies feed
     _PRICE_DIAG) or raise if we never got one."""
+    _warm_dk_cookies()
     last_exc = None
     r = None
     for attempt in range(attempts):
         _wait_for_cooloff()
         try:
             sess = session
-            r = sess.post(url, json=json, timeout=timeout)
+            r = sess.post(url, json=json, timeout=timeout, headers=headers)
             if r.status_code not in (403, 429, 502, 503, 504):
                 return r
             if r.status_code in (403, 429):
@@ -637,7 +685,7 @@ def _price_combo(selection_ids):
             "selectionsForProgressiveParlay": [],
             "oddsStyle": "american",
         }
-        r = _post_with_retry(DK_PRICE, json=payload, timeout=10)
+        r = _post_with_retry(DK_PRICE, json=payload, timeout=10, headers=DK_PRICE_HEADERS)
         if r.status_code != 200:
             k = str(r.status_code)
             _PRICE_DIAG["http"][k] = _PRICE_DIAG["http"].get(k, 0) + 1
@@ -3652,7 +3700,7 @@ def get_price(selection_ids):
         "selectionsForProgressiveParlay": [],
         "oddsStyle": "american",
     }
-    r = _post_with_retry(DK_PRICE, json=payload, timeout=15)
+    r = _post_with_retry(DK_PRICE, json=payload, timeout=15, headers=DK_PRICE_HEADERS)
 
     if r.status_code == 422:
         return {"error": "Incompatible leg combination", "incompatible": True}
