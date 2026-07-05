@@ -2042,7 +2042,12 @@ function evRenderResults(){
     if(diag&&diag.calls>0&&diag.ok===0){
       var httpBits=Object.keys(diag.http||{}).map(function(k){return 'HTTP '+k+' ×'+diag.http[k];});
       if(httpBits.length||diag.exceptions>0){
-        diagMsg='DK\'s SGP pricing endpoint (calculateBets) rejected all '+diag.calls+' attempts ('+httpBits.concat(diag.exceptions>0?['network errors ×'+diag.exceptions]:[]).join(', ')+'). This is a DraftKings-side block/outage — the legs matched fine. Try again in a few minutes.';
+        var hostNote='';
+        if(diag.hosts_tried&&diag.hosts_tried.length){
+          var states=diag.hosts_tried.map(function(h){var m=h.match(/gaming-us-(\w+)\./);return m?m[1].toUpperCase():h;});
+          hostNote=' Tried '+states.length+' pricing host'+(states.length>1?'s':'')+' ('+states.join(', ')+'), all blocked.';
+        }
+        diagMsg='DK\'s SGP pricing endpoint (calculateBets) rejected all '+diag.calls+' attempts ('+httpBits.concat(diag.exceptions>0?['network errors ×'+diag.exceptions]:[]).join(', ')+').'+hostNote+' This is a DraftKings-side block — the legs matched fine. Try again shortly, or an admin can set DK_PRICE_HOSTS to other states.';
       }else if(diag.incompatible>0||diag.no_bet>0){
         diagMsg='DK priced 0 of '+diag.calls+' combos: '+diag.incompatible+' rejected as incompatible leg pairs, '+diag.no_bet+' returned no bet. Try different leg combinations.';
       }
