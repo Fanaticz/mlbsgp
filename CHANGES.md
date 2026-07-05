@@ -2,6 +2,9 @@
 
 ## 2026-07-05 session
 
+### calculateBets multi-host failover (round 3 — NJ host hard-blocked)
+Round 2's headers + cookies didn't clear it: prod still showed HTTP 403 ×48, and worse, grinding retries+cool-offs against the dead NJ host exhausted the 110s pricing deadline so the *second* pitcher was skipped ("pricing time budget exceeded"). DK has `gaming-us-nj` hard-blocked. Fix: `_price_calculate` now walks a list of state pricing hosts (`gaming-us-{nj,ny,pa,mi,va,il,oh}`) and fails over the moment a host 403s, via a **shared pointer** so once any thread finds a host dead the rest skip it (8 parallel combos advance the pointer once, not 8×). Few per-host attempts so a dead host is abandoned fast instead of burning the budget. `DK_PRICE_HOSTS` (comma list) or `DK_PRICE_HOST` (single) override the order from Railway env. The empty-state message now names the states tried ("Tried 3 pricing hosts (NJ, NY, PA), all blocked") and points at the `DK_PRICE_HOSTS` lever.
+
 ### calculateBets Akamai hardening (round 2 — prod diag showed HTTP 403 ×57)
 The retry fix alone wasn't enough: prod diagnostics showed all 57 pricing POSTs 403-ing while market GETs (different host) worked. The pricing POST looked exactly like a bot to Akamai: no Origin/Referer, no `.draftkings.com` cookies (market traffic lives on `sportsbook-nash`, cookies are domain-scoped), and every fingerprint rotation discarded whatever cookies existed. Now: (1) calculateBets POSTs send browser headers (`Origin`/`Referer: sportsbook.draftkings.com`, Accept, Accept-Language); (2) a one-time best-effort GET of the sportsbook homepage collects Akamai clearance cookies into the shared jar before the first pricing call; (3) `_rotate_session()` carries the cookie jar into the new session; (4) `DK_PRICE_HOST` env var switches the state pricing host (e.g. `gaming-us-ny.draftkings.com`) from Railway without a code change — the NJ host being blocked doesn't mean the others are.
 

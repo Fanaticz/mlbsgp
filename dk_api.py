@@ -39,12 +39,64 @@ DK_NAV = "https://sportsbook-nash.draftkings.com/api/sportscontent/navigation/dk
 DK_MARKETS = "https://sportsbook-nash.draftkings.com/sites/US-SB/api/sportscontent/controldata/event/eventSubcategory/v1/markets"
 DK_SGP = "https://sportsbook-nash.draftkings.com/sites/US-SB/api/sportscontent/parlays/v1/sgp/events"
 # Pricing host is state-scoped and Akamai-guarded separately from the
-# sportsbook-nash market hosts. When one state host starts 403-ing every
-# calculateBets POST (2026-07-04 outage), another often still serves —
-# override from the environment without a code change, e.g.
-# DK_PRICE_HOST=gaming-us-ny.draftkings.com
-DK_PRICE_HOST = _os.environ.get("DK_PRICE_HOST", "gaming-us-nj.draftkings.com")
-DK_PRICE = f"https://{DK_PRICE_HOST}/api/wager/v1/calculateBets"
+# sportsbook-nash market hosts. When one state host hard-403s every
+# calculateBets POST (observed 2026-07: gaming-us-nj rejected all 48/57
+# attempts while market GETs worked), another state's host often still
+# serves. We walk a candidate list and switch hosts the moment one blocks
+# us — a shared pointer means once any thread finds a host dead, the rest
+# skip it instead of each burning the retry budget (which was exhausting
+# the 110s pricing deadline and skipping later pitchers).
+#
+# Override the whole list with DK_PRICE_HOSTS (comma-separated) or pin a
+# single host with DK_PRICE_HOST. Env order wins; the rest are appended as
+# fallbacks so a pinned host that dies still fails over.
+_DEFAULT_PRICE_HOSTS = [
+    "gaming-us-nj.draftkings.com",
+    "gaming-us-ny.draftkings.com",
+    "gaming-us-pa.draftkings.com",
+    "gaming-us-mi.draftkings.com",
+    "gaming-us-va.draftkings.com",
+    "gaming-us-il.draftkings.com",
+    "gaming-us-oh.draftkings.com",
+]
+
+
+def _resolve_price_hosts():
+    ordered = []
+    env_list = _os.environ.get("DK_PRICE_HOSTS", "")
+    env_one = _os.environ.get("DK_PRICE_HOST", "")
+    for h in ([x.strip() for x in env_list.split(",")] + [env_one.strip()]
+              + _DEFAULT_PRICE_HOSTS):
+        if h and h not in ordered:
+            ordered.append(h)
+    return ordered
+
+
+DK_PRICE_HOSTS = _resolve_price_hosts()
+DK_PRICE = f"https://{DK_PRICE_HOSTS[0]}/api/wager/v1/calculateBets"  # legacy alias
+
+_price_host_lock = threading.Lock()
+_price_host_idx = 0
+
+
+def _current_price_host():
+    with _price_host_lock:
+        i = min(_price_host_idx, len(DK_PRICE_HOSTS) - 1)
+        return DK_PRICE_HOSTS[i], i
+
+
+def _advance_price_host(from_idx):
+    """Move the shared pointer past a host that just hard-blocked us. Returns
+    True if a different host is now active to retry against, False if we've
+    exhausted the list. Idempotent under concurrency: only advances if the
+    pointer is still on the host the caller used, so 8 threads all 403ing on
+    host N advance it exactly once, and a thread that used an already-stale
+    host still sees the newer pointer and retries."""
+    global _price_host_idx
+    with _price_host_lock:
+        if _price_host_idx == from_idx and _price_host_idx < len(DK_PRICE_HOSTS) - 1:
+            _price_host_idx += 1
+        return _price_host_idx > from_idx
 
 # calculateBets is what a logged-out browser POSTs from the bet slip; Akamai
 # expects the request to look like it came from the sportsbook page. Bare
@@ -198,6 +250,33 @@ def _post_with_retry(url, json=None, timeout=15, attempts=4, headers=None):
     if r is not None:
         return r
     raise last_exc if last_exc else RuntimeError(f"DK POST failed: {url}")
+
+
+def _price_calculate(payload, timeout=12):
+    """POST to calculateBets with automatic state-host failover.
+
+    Tries the active pricing host; on a hard 403 (Akamai block for that
+    state), advances the shared host pointer and retries against the next
+    candidate. Uses few per-host attempts so a dead host is abandoned fast
+    instead of burning the caller's pricing-time budget. Returns the last
+    response so callers keep their status-code handling (200/422/etc.) and
+    _PRICE_DIAG tallies still see the final code."""
+    _warm_dk_cookies()
+    r = None
+    # At most one full pass over the host list; each host gets 2 quick tries.
+    for _ in range(len(DK_PRICE_HOSTS)):
+        host, idx = _current_price_host()
+        url = f"https://{host}/api/wager/v1/calculateBets"
+        r = _post_with_retry(url, json=payload, timeout=timeout, attempts=2,
+                             headers=DK_PRICE_HEADERS)
+        if r is None or r.status_code != 403:
+            _diag_note_host(host, ok=(r is not None and r.status_code == 200))
+            return r
+        _diag_note_host(host, ok=False)
+        # Host hard-blocked us — fail over to the next state host if any.
+        if not _advance_price_host(idx):
+            return r
+    return r
 
 
 def get_games():
@@ -671,7 +750,17 @@ def _american_from_decimal(dec):
 # API response without shell access to production — find_sgps_worldcup
 # returns a snapshot as `sgp_price_diag`.
 _PRICE_DIAG = {"calls": 0, "ok": 0, "incompatible": 0, "no_bet": 0,
-               "exceptions": 0, "http": {}}
+               "exceptions": 0, "http": {}, "hosts_tried": [], "host_ok": None}
+
+
+def _diag_note_host(host, ok):
+    """Record which pricing host(s) we hit so the empty-state message can say
+    'tried NJ, NY, PA — all blocked' and the fix (DK_PRICE_HOSTS) is obvious."""
+    with _session_lock:
+        if host not in _PRICE_DIAG["hosts_tried"]:
+            _PRICE_DIAG["hosts_tried"].append(host)
+        if ok:
+            _PRICE_DIAG["host_ok"] = host
 
 
 def _price_combo(selection_ids):
@@ -685,7 +774,7 @@ def _price_combo(selection_ids):
             "selectionsForProgressiveParlay": [],
             "oddsStyle": "american",
         }
-        r = _post_with_retry(DK_PRICE, json=payload, timeout=10, headers=DK_PRICE_HEADERS)
+        r = _price_calculate(payload, timeout=10)
         if r.status_code != 200:
             k = str(r.status_code)
             _PRICE_DIAG["http"][k] = _PRICE_DIAG["http"].get(k, 0) + 1
@@ -3700,7 +3789,7 @@ def get_price(selection_ids):
         "selectionsForProgressiveParlay": [],
         "oddsStyle": "american",
     }
-    r = _post_with_retry(DK_PRICE, json=payload, timeout=15, headers=DK_PRICE_HEADERS)
+    r = _price_calculate(payload, timeout=15)
 
     if r.status_code == 422:
         return {"error": "Incompatible leg combination", "incompatible": True}
