@@ -119,6 +119,39 @@ def _get_with_retry(url, params=None, timeout=15, attempts=6):
     raise RuntimeError(f"DK request failed after {attempts} attempts: {url} (last status={last_status})")
 
 
+def _post_with_retry(url, json=None, timeout=15, attempts=4):
+    """POST with the same Akamai-survival kit as _get_with_retry.
+
+    calculateBets POSTs used to be a single bare session.post() — no retry, no
+    fingerprint rotation, no cool-off participation. When Akamai starts 403ing,
+    the GET paths (games/markets) recover by rotating the TLS fingerprint but
+    every pricing POST dies on the first block, which reads as "legs matched,
+    0 SGPs priced" in the +EV tabs. Retry only transient blocks (403/429/5xx);
+    return the response for any other status so callers keep their 422/400
+    semantics. On exhaustion, return the last response (status tallies feed
+    _PRICE_DIAG) or raise if we never got one."""
+    last_exc = None
+    r = None
+    for attempt in range(attempts):
+        _wait_for_cooloff()
+        try:
+            sess = session
+            r = sess.post(url, json=json, timeout=timeout)
+            if r.status_code not in (403, 429, 502, 503, 504):
+                return r
+            if r.status_code in (403, 429):
+                _trigger_cooloff(1.5 + attempt * 1.2)
+                if attempt >= 1:
+                    _rotate_session()
+            _time.sleep(0.6 * (2 ** attempt) + random.uniform(0, 0.4))
+        except Exception as e:
+            last_exc = e
+            _time.sleep(0.6 * (2 ** attempt) + random.uniform(0, 0.4))
+    if r is not None:
+        return r
+    raise last_exc if last_exc else RuntimeError(f"DK POST failed: {url}")
+
+
 def get_games():
     """Return today's MLB games from DraftKings."""
     r = _get_with_retry(f"{DK_NAV}/{DK_MLB_LEAGUE_ID}")
@@ -604,7 +637,7 @@ def _price_combo(selection_ids):
             "selectionsForProgressiveParlay": [],
             "oddsStyle": "american",
         }
-        r = session.post(DK_PRICE, json=payload, timeout=10)
+        r = _post_with_retry(DK_PRICE, json=payload, timeout=10)
         if r.status_code != 200:
             k = str(r.status_code)
             _PRICE_DIAG["http"][k] = _PRICE_DIAG["http"].get(k, 0) + 1
@@ -3603,6 +3636,10 @@ def find_sgps(legs, enum_size=2):
     out = {"pitchers": results}
     if truncated:
         out["truncated"] = True
+    # Same diagnosability the World Cup path got in the 2026-07-04 fix: when
+    # every combo silently fails to price, the tally says WHY (Akamai 403
+    # storm vs incompatible legs vs DK outage) without shell access to prod.
+    out["sgp_price_diag"] = dict(_PRICE_DIAG, http=dict(_PRICE_DIAG["http"]))
     return out
 
 
@@ -3615,7 +3652,7 @@ def get_price(selection_ids):
         "selectionsForProgressiveParlay": [],
         "oddsStyle": "american",
     }
-    r = session.post(DK_PRICE, json=payload, timeout=15)
+    r = _post_with_retry(DK_PRICE, json=payload, timeout=15)
 
     if r.status_code == 422:
         return {"error": "Incompatible leg combination", "incompatible": True}

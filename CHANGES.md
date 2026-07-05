@@ -2,6 +2,15 @@
 
 ## 2026-07-05 session
 
+### MLB SGP pricing fix: calculateBets retries + diagnosable empty state
+The +EV Finder showed "No SGPs could be priced" with legs matched fine — the 2026-07-04 calculateBets outage pattern. Root cause candidate: every DK **GET** goes through `_get_with_retry` (fingerprint rotation, cool-off, backoff), but the pricing **POSTs** in `_price_combo`/`get_price` were single bare `session.post()` calls — first Akamai 403 killed every price call while market fetches recovered by rotating. New `_post_with_retry` gives POSTs the same survival kit (retries only 403/429/5xx; 422/400 pass through so incompatible-leg semantics are unchanged; exhaustion returns the last response so `_PRICE_DIAG` status tallies still work). `find_sgps` (MLB) now returns `sgp_price_diag` like the World Cup path, and the frontend empty state renders the actual failure mode ("calculateBets rejected all 20 attempts (HTTP 403 ×18…)") instead of the generic guess list.
+
+### Claude model bump
+OCR/vision extraction endpoints (`server.js` ×4) moved `claude-opus-4-7` → `claude-opus-4-8` (same API surface, better vision/knowledge-work). The leg-normalization call already uses `claude-haiku-4-5-20251001`, which is the newest Haiku.
+
+### WNBA correlations refreshed + daily auto-refresh workflow
+`public/data/wnba_correlations.json` regenerated via `scripts/wnba_fetch_correlations.py` (was stale since 2026-06-22; now 195 players through 2026-07-04). New `.github/workflows/refresh-data.yml` runs daily at 11:00 UTC (after West Coast games go final) and on manual dispatch: ESPN pitcher fetch → `build_pitcher_data.py` (supplement merge + dedupe) → `build_aggregates.py` → WNBA correlations, then auto-commits `espn-2026-pitcher-supplement.json` + `public/data/*.json` only if something changed. Dedupe lives in the build script, so scheduled re-runs can never double-count a start.
+
 ### 2026 pitcher data refreshed through July 4 via ESPN (no double counting)
 The 2026 xlsx feed ended 2026-05-15. New `scripts/fetch_espn_2026_pitchers.py` pulls every completed regular-season game from ESPN's public site API for a date window (default 2026-05-16 .. today) and writes starting-pitcher lines to `espn-2026-pitcher-supplement.json` in the same schema as `pitchers_YYYY.json`. `build_pitcher_data.py` merges the supplement into `pitchers_2026.json`, deduping by (pitcher name, date) with the xlsx winning on conflict, so re-running either script never double-counts a start. `pitchers_2026.json`: 1,337 → **2,663 starts** (2026-03-25 .. 2026-07-04); all per-year and pooled aggregates rebuilt.
 

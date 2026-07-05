@@ -2035,7 +2035,23 @@ function evRenderResults(){
   html+='</div>';
 
   if(!allCombos.length){
-    html+='<div class="empty">No SGPs could be priced. Possible causes: pitchers not in today\'s DK lineup, all legs are same stat-type (conflict), or DK rejected all combinations. Check the detected legs above.</div>';
+    /* sgp_price_diag (from dk_api) tallies every calculateBets outcome, so
+       the empty state can say WHY pricing failed instead of guessing. */
+    var diag=EV_RESULTS.sgp_price_diag||null;
+    var diagMsg='';
+    if(diag&&diag.calls>0&&diag.ok===0){
+      var httpBits=Object.keys(diag.http||{}).map(function(k){return 'HTTP '+k+' ×'+diag.http[k];});
+      if(httpBits.length||diag.exceptions>0){
+        diagMsg='DK\'s SGP pricing endpoint (calculateBets) rejected all '+diag.calls+' attempts ('+httpBits.concat(diag.exceptions>0?['network errors ×'+diag.exceptions]:[]).join(', ')+'). This is a DraftKings-side block/outage — the legs matched fine. Try again in a few minutes.';
+      }else if(diag.incompatible>0||diag.no_bet>0){
+        diagMsg='DK priced 0 of '+diag.calls+' combos: '+diag.incompatible+' rejected as incompatible leg pairs, '+diag.no_bet+' returned no bet. Try different leg combinations.';
+      }
+    }
+    if(diagMsg){
+      html+='<div class="empty">'+diagMsg+'</div>';
+    }else{
+      html+='<div class="empty">No SGPs could be priced. Possible causes: pitchers not in today\'s DK lineup, all legs are same stat-type (conflict), or DK rejected all combinations. Check the detected legs above.</div>';
+    }
     document.getElementById('evResults').innerHTML=html;return;
   }
 
