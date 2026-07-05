@@ -2,6 +2,9 @@
 
 ## 2026-07-05 session
 
+### calculateBets Akamai hardening (round 2 — prod diag showed HTTP 403 ×57)
+The retry fix alone wasn't enough: prod diagnostics showed all 57 pricing POSTs 403-ing while market GETs (different host) worked. The pricing POST looked exactly like a bot to Akamai: no Origin/Referer, no `.draftkings.com` cookies (market traffic lives on `sportsbook-nash`, cookies are domain-scoped), and every fingerprint rotation discarded whatever cookies existed. Now: (1) calculateBets POSTs send browser headers (`Origin`/`Referer: sportsbook.draftkings.com`, Accept, Accept-Language); (2) a one-time best-effort GET of the sportsbook homepage collects Akamai clearance cookies into the shared jar before the first pricing call; (3) `_rotate_session()` carries the cookie jar into the new session; (4) `DK_PRICE_HOST` env var switches the state pricing host (e.g. `gaming-us-ny.draftkings.com`) from Railway without a code change — the NJ host being blocked doesn't mean the others are.
+
 ### MLB SGP pricing fix: calculateBets retries + diagnosable empty state
 The +EV Finder showed "No SGPs could be priced" with legs matched fine — the 2026-07-04 calculateBets outage pattern. Root cause candidate: every DK **GET** goes through `_get_with_retry` (fingerprint rotation, cool-off, backoff), but the pricing **POSTs** in `_price_combo`/`get_price` were single bare `session.post()` calls — first Akamai 403 killed every price call while market fetches recovered by rotating. New `_post_with_retry` gives POSTs the same survival kit (retries only 403/429/5xx; 422/400 pass through so incompatible-leg semantics are unchanged; exhaustion returns the last response so `_PRICE_DIAG` status tallies still work). `find_sgps` (MLB) now returns `sgp_price_diag` like the World Cup path, and the frontend empty state renders the actual failure mode ("calculateBets rejected all 20 attempts (HTTP 403 ×18…)") instead of the generic guess list.
 
