@@ -1,5 +1,16 @@
 # Changes
 
+## 2026-07-05 session
+
+### 2026 pitcher data refreshed through July 4 via ESPN (no double counting)
+The 2026 xlsx feed ended 2026-05-15. New `scripts/fetch_espn_2026_pitchers.py` pulls every completed regular-season game from ESPN's public site API for a date window (default 2026-05-16 .. today) and writes starting-pitcher lines to `espn-2026-pitcher-supplement.json` in the same schema as `pitchers_YYYY.json`. `build_pitcher_data.py` merges the supplement into `pitchers_2026.json`, deduping by (pitcher name, date) with the xlsx winning on conflict, so re-running either script never double-counts a start. `pitchers_2026.json`: 1,337 → **2,663 starts** (2026-03-25 .. 2026-07-04); all per-year and pooled aggregates rebuilt.
+
+**Validation.** On xlsx-covered dates (5/14–5/15) the ESPN extraction matched the feed 52/52 rows exactly on every shared field (IP, H, ER, BB, K, HR, W/L, QS, hand, venue, team names — ESPN names are accent-stripped to the feed's spelling, e.g. "Jesus Luzardo").
+
+**ESPN traps encoded in the fetcher.** The boxscore `starter` flag marks anyone who *started the game*, including position players who mopped up blowouts (catcher Carson Kelly, SS Miguel Rojas) and sometimes random relievers; and the pitching list can mis-sort a position-player pitcher above the real starter (RF Carlos Cortes listed first in 401815762 — play-by-play shows Jeffrey Springs started). The starter is therefore the first entry in the pitching group whose `position` is an actual pitcher; openers (RP) genuinely start and are kept, matching the xlsx `STARTING PITCHER == YES` semantics.
+
+**Field coverage.** `bf` / `gb` / `fb` aren't in ESPN box scores → null (nothing downstream reads them; correlations use only K/ER/BB/H-allowed/IP→outs). `pid` and throwing hand are reused from existing rows by name; new call-ups get the ESPN athlete id and the core-API `throws` hand. `qs` derived (outs ≥ 18 and ER ≤ 3), W/L from the `pitchingDecision` note, `gid` is `espn-<eventId>`.
+
 ## 2026-07-04 session
 
 ### World Cup combos: prebuilt fallback + knockout-slate fixes ("no match" everywhere)
