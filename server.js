@@ -334,7 +334,7 @@ Return exactly this JSON shape, nothing else:
 {"rows":[{"L":1,"pitcher":"...","market":"...","bet_name":"...","direction":"Over","line":4.5,"avg_odds":"+X / -Y","avg_fv":123,"books_count":7}, ...]}`;
 
     const body = {
-      model: 'claude-opus-4-7',
+      model: 'claude-opus-4-8',
       max_tokens: 8000,
       messages: [{
         role: 'user',
@@ -698,7 +698,7 @@ app.post('/api/extract-batter', async (req, res) => {
     if (!image) return res.status(400).json({ error: 'Missing image (base64) in body' });
 
     const body = {
-      model: 'claude-opus-4-7',
+      model: 'claude-opus-4-8',
       max_tokens: 8000,
       messages: [{
         role: 'user',
@@ -1035,7 +1035,7 @@ app.post('/api/extract-nba', async (req, res) => {
     if (!image) return res.status(400).json({ error: 'Missing image (base64) in body' });
 
     const body = {
-      model: 'claude-opus-4-7',
+      model: 'claude-opus-4-8',
       max_tokens: 8000,
       messages: [{
         role: 'user',
@@ -1243,7 +1243,7 @@ app.post('/api/extract-tennis', async (req, res) => {
     if (!image) return res.status(400).json({ error: 'Missing image (base64) in body' });
 
     const body = {
-      model: 'claude-opus-4-7',
+      model: 'claude-opus-4-8',
       max_tokens: 8000,
       messages: [{
         role: 'user',
