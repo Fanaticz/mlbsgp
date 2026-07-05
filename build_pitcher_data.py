@@ -6,6 +6,12 @@ pitcher rows (STARTING\\nPITCHER == "YES" AND IP > 0), renames columns to
 short keys, and writes compact JSON files to data/pitchers_YYYY.json plus
 a data/manifest.json summary.
 
+The 2026 xlsx feed ends on 2026-05-15. If espn-2026-pitcher-supplement.json
+exists at the repo root (produced by scripts/fetch_espn_2026_pitchers.py),
+its rows are merged into pitchers_2026.json. Supplement rows are deduped
+against the xlsx by (pitcher name, date) — xlsx wins on conflict — so
+overlapping windows never double-count a start.
+
 Idempotent: rerunning overwrites outputs cleanly.
 """
 from __future__ import annotations
@@ -22,6 +28,7 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "public" / "data"
+ESPN_SUPPLEMENT = ROOT / "espn-2026-pitcher-supplement.json"
 
 # year -> (xlsx filename, sheet name)
 SOURCES = {
@@ -140,12 +147,40 @@ def build_year(year: int, filename: str, sheet: str) -> tuple[list[dict], dict]:
             record[key] = _clean(val)
         records.append(record)
 
+    return records, _date_range(records)
+
+
+def _date_range(records: list[dict]) -> dict:
     dates = sorted(r["d"] for r in records if r.get("d"))
-    date_range = {
+    return {
         "first": dates[0] if dates else None,
         "last":  dates[-1] if dates else None,
     }
-    return records, date_range
+
+
+def merge_espn_supplement(records: list[dict]) -> tuple[list[dict], int, int]:
+    """Append ESPN supplement starts not already covered by the xlsx feed.
+
+    Dedupe key is (pitcher name, date): the same starter never starts twice
+    on one date, and names in the supplement are already normalized to the
+    feed's accent-stripped spelling. Returns (merged, n_added, n_skipped).
+    """
+    if not ESPN_SUPPLEMENT.exists():
+        return records, 0, 0
+    with ESPN_SUPPLEMENT.open(encoding="utf-8") as f:
+        supplement = json.load(f)
+    existing = {(r.get("p"), r.get("d")) for r in records}
+    added, skipped = [], 0
+    for r in supplement:
+        key = (r.get("p"), r.get("d"))
+        if key in existing:
+            skipped += 1
+            continue
+        existing.add(key)
+        added.append(r)
+    merged = records + added
+    merged.sort(key=lambda r: (r.get("d") or "", str(r.get("gid")), r.get("p") or ""))
+    return merged, len(added), skipped
 
 
 def main() -> int:
@@ -157,6 +192,14 @@ def main() -> int:
 
     for year, (filename, sheet) in SOURCES.items():
         records, drange = build_year(year, filename, sheet)
+        if year == 2026:
+            records, n_added, n_skipped = merge_espn_supplement(records)
+            if n_added or n_skipped:
+                drange = _date_range(records)
+                print(
+                    f"  2026 ESPN supplement: +{n_added} starts merged, "
+                    f"{n_skipped} already covered by xlsx (skipped)"
+                )
         out_path = DATA_DIR / f"pitchers_{year}.json"
         with out_path.open("w", encoding="utf-8") as f:
             json.dump(records, f, ensure_ascii=False, separators=(",", ":"))
