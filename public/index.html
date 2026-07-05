@@ -2042,7 +2042,16 @@ function evRenderResults(){
     if(diag&&diag.calls>0&&diag.ok===0){
       var httpBits=Object.keys(diag.http||{}).map(function(k){return 'HTTP '+k+' ×'+diag.http[k];});
       if(httpBits.length||diag.exceptions>0){
-        diagMsg='DK\'s SGP pricing endpoint (calculateBets) rejected all '+diag.calls+' attempts ('+httpBits.concat(diag.exceptions>0?['network errors ×'+diag.exceptions]:[]).join(', ')+'). This is a DraftKings-side block/outage — the legs matched fine. Try again in a few minutes.';
+        var blocked=(diag.http&&(diag.http['403']||diag.http['429']));
+        var tail;
+        if(blocked&&diag.abck==='unvalidated'){
+          tail='DraftKings’ Akamai bot protection is blocking the pricing POST: the _abck cookie is unvalidated, which curl alone can’t fix. Supply validated cookies via DK_COOKIES (paste from a logged-out browser) or enable DK_COOKIE_BROWSER.';
+        }else if(blocked){
+          tail='DraftKings is bot-blocking the pricing POST (cookie source: '+(diag.cookie_source||'?')+', _abck: '+(diag.abck||'?')+'). If it persists, refresh the DK_COOKIES value.';
+        }else{
+          tail='This looks like a transient DraftKings-side outage — the legs matched fine. Try again in a few minutes.';
+        }
+        diagMsg='DK\'s SGP pricing endpoint (calculateBets) rejected all '+diag.calls+' attempts ('+httpBits.concat(diag.exceptions>0?['network errors ×'+diag.exceptions]:[]).join(', ')+'). '+tail;
       }else if(diag.incompatible>0||diag.no_bet>0){
         diagMsg='DK priced 0 of '+diag.calls+' combos: '+diag.incompatible+' rejected as incompatible leg pairs, '+diag.no_bet+' returned no bet. Try different leg combinations.';
       }

@@ -1,6 +1,18 @@
 # Changes
 
-## 2026-07-05 session
+## 2026-07-05 session (later)
+
+### calculateBets 403 root cause: unvalidated Akamai `_abck` + validated-cookie provider
+Rounds 1–2 (retries, browser headers, homepage warmup, host override) didn't stop the 403 storm because they targeted the wrong layer. Reproduced end-to-end: market GETs on `sportsbook-nash` return 200 and legs match fine, but every `calculateBets` POST to `gaming-us-*` returns an **Akamai edge 403** ("AkamaiGHost / Access Denied") — instantly, on the first attempt, identically across all six state hosts. Root cause: the homepage warmup collects an **unvalidated** `_abck` cookie (its 2nd `~`-field is `-1`). Akamai Bot Manager only flips `_abck` to *validated* after its in-page sensor JS POSTs telemetry back — which curl_cffi can't run. The market GETs don't enforce validation (so they work); the wager POST does (so it 403s). No header/cookie/host/fingerprint permutation fixes this from a plain HTTP client.
+
+Added a validated-cookie provider for the pricing POST (`dk_api.py`), tried highest-priority first:
+1. `DK_COOKIES` env — a raw `name=value; name=value` string pasted from a logged-out browser (must include a validated `_abck`). Immediate stopgap; refresh when it expires.
+2. `DK_COOKIE_BROWSER=1` — mint cookies with a headless browser that runs the sensor JS, cached with `DK_COOKIE_BROWSER_TTL` (default 600s) and re-minted when stale. Durable, but requires Playwright + a Chromium build in the image (point `DK_CHROMIUM_PATH` at the binary if needed); off by default and lazy-imported, so it's a no-op unless enabled.
+3. homepage warmup (legacy) — unchanged, kept as the last-ditch fallback.
+
+Injected cookies are `.draftkings.com`-scoped so they ride to the gaming-us host and survive `_rotate_session()`. The `_abck` validation state and the cookie source are now recorded on `sgp_price_diag`, and the +EV empty state reads them: on a 403 with an unvalidated `_abck` it now says the block is Akamai bot protection fixable via `DK_COOKIES`/`DK_COOKIE_BROWSER`, instead of the misleading "try again in a few minutes."
+
+> Note: from a datacenter IP, even a validated `_abck` may not be enough if DK is also scoring the egress IP — if `DK_COOKIES` with a fresh validated cookie still 403s in prod, the next lever is a residential/rotating proxy for the pricing POST.
 
 ### calculateBets Akamai hardening (round 2 — prod diag showed HTTP 403 ×57)
 The retry fix alone wasn't enough: prod diagnostics showed all 57 pricing POSTs 403-ing while market GETs (different host) worked. The pricing POST looked exactly like a bot to Akamai: no Origin/Referer, no `.draftkings.com` cookies (market traffic lives on `sportsbook-nash`, cookies are domain-scoped), and every fingerprint rotation discarded whatever cookies existed. Now: (1) calculateBets POSTs send browser headers (`Origin`/`Referer: sportsbook.draftkings.com`, Accept, Accept-Language); (2) a one-time best-effort GET of the sportsbook homepage collects Akamai clearance cookies into the shared jar before the first pricing call; (3) `_rotate_session()` carries the cookie jar into the new session; (4) `DK_PRICE_HOST` env var switches the state pricing host (e.g. `gaming-us-ny.draftkings.com`) from Railway without a code change — the NJ host being blocked doesn't mean the others are.

@@ -94,12 +94,169 @@ def _rotate_session():
 
 _warmup_done = False
 
+# ---------------------------------------------------------------------------
+# Validated-cookie provider for the pricing POST.
+#
+# calculateBets sits behind Akamai Bot Manager, which requires a *validated*
+# _abck cookie. A plain homepage GET only yields an UNVALIDATED _abck (the
+# value's 2nd `~`-delimited field is `-1`); Akamai flips it to validated only
+# after its in-page sensor JS POSTs telemetry back. curl_cffi can't execute
+# that JS, so on its own it can never satisfy the wager endpoint — every POST
+# 403s ("AkamaiGHost / Access Denied") while the market GETs, which don't
+# enforce validation, keep working. That is the "legs matched, 0 SGPs priced"
+# failure. The homepage warmup added earlier collects the cookie but not a
+# *validated* one, which is why it didn't resolve the 403 storm.
+#
+# Cookie sources, highest priority first:
+#   1. DK_COOKIES env — a raw "name=value; name=value" string pasted from a
+#      real logged-out browser (DevTools > Application > Cookies). Immediate
+#      stopgap; refresh it when it expires. Must include a validated _abck.
+#   2. DK_COOKIE_BROWSER=1 — mint cookies with a headless browser that runs
+#      the sensor JS, cached with a TTL and re-minted when stale. Durable, but
+#      needs Playwright + Chromium in the image; off by default.
+#   3. homepage warmup (legacy) — collects an unvalidated _abck. Kept as the
+#      last-ditch fallback so behavior never regresses when neither of the
+#      above is configured.
+_cookie_source = None  # which source last seeded the jar (surfaced in diag)
+_cookie_mint_lock = threading.Lock()
+_BROWSER_COOKIE_CACHE = {"ts": 0.0, "cookies": None}
+_BROWSER_COOKIE_TTL_S = float(_os.environ.get("DK_COOKIE_BROWSER_TTL", "600"))
+
+
+def _abck_validation_state(jar):
+    """Return 'validated' | 'unvalidated' | 'absent' for the _abck cookie.
+    Akamai encodes the state in the 2nd `~`-delimited field: -1 = unvalidated,
+    anything else (0, a positive request count) = validated."""
+    try:
+        for c in jar:
+            if c.name == "_abck":
+                parts = (c.value or "").split("~")
+                if len(parts) > 1 and parts[1] != "-1":
+                    return "validated"
+                return "unvalidated"
+    except Exception:
+        pass
+    return "absent"
+
+
+def _load_cookie_string_into(sess, cookie_str):
+    """Parse a "name=value; name=value" header string and set each pair on the
+    session jar, scoped to .draftkings.com so it rides along to the gaming-us
+    pricing host. Returns how many cookies were loaded."""
+    n = 0
+    for pair in cookie_str.split(";"):
+        pair = pair.strip()
+        if not pair or "=" not in pair:
+            continue
+        name, val = pair.split("=", 1)
+        name, val = name.strip(), val.strip()
+        if not name:
+            continue
+        try:
+            sess.cookies.set(name, val, domain=".draftkings.com", path="/")
+            n += 1
+        except Exception:
+            pass
+    return n
+
+
+def _mint_cookies_with_browser():
+    """Best-effort: launch a headless browser, load the DK sportsbook so the
+    Akamai sensor validates _abck, and return a {name: value} dict. Cached with
+    a TTL. Returns None if Playwright/Chromium is unavailable or the mint fails,
+    so callers transparently fall back to the warmup path.
+
+    Enabling this in production requires Playwright + a Chromium build in the
+    image. Point DK_CHROMIUM_PATH at the browser binary if it isn't on the
+    default Playwright search path."""
+    now = _time.time()
+    cache = _BROWSER_COOKIE_CACHE
+    if cache["cookies"] and now - cache["ts"] < _BROWSER_COOKIE_TTL_S:
+        return cache["cookies"]
+    with _cookie_mint_lock:
+        now = _time.time()
+        if cache["cookies"] and now - cache["ts"] < _BROWSER_COOKIE_TTL_S:
+            return cache["cookies"]
+        try:
+            from playwright.sync_api import sync_playwright
+        except Exception:
+            return None
+        exe = _os.environ.get("DK_CHROMIUM_PATH") or None
+        proxy = _os.environ.get("HTTPS_PROXY") or _os.environ.get("https_proxy")
+        try:
+            with sync_playwright() as p:
+                launch_kw = {"headless": True, "args": ["--no-sandbox"]}
+                if exe:
+                    launch_kw["executable_path"] = exe
+                if proxy:
+                    launch_kw["proxy"] = {"server": proxy}
+                browser = p.chromium.launch(**launch_kw)
+                ctx = browser.new_context(ignore_https_errors=bool(proxy))
+                page = ctx.new_page()
+                page.goto("https://sportsbook.draftkings.com/",
+                          wait_until="domcontentloaded", timeout=45000)
+                cookies = {}
+                # Poll until _abck flips to validated (sensor POST completes).
+                for _ in range(12):
+                    page.wait_for_timeout(1000)
+                    jar = ctx.cookies()
+                    ab = next((c for c in jar if c["name"] == "_abck"), None)
+                    if ab and (ab["value"].split("~")[1:2] or ["-1"])[0] != "-1":
+                        cookies = {c["name"]: c["value"] for c in jar}
+                        break
+                if not cookies:
+                    cookies = {c["name"]: c["value"] for c in ctx.cookies()}
+                browser.close()
+                if cookies:
+                    cache["ts"] = now
+                    cache["cookies"] = cookies
+                return cookies or None
+        except Exception:
+            return None
+
 
 def _warm_dk_cookies():
-    """Best-effort one-time GET of the sportsbook page to collect Akamai
-    cookies (.draftkings.com scope) into the shared jar before the first
-    calculateBets POST. The market API hosts don't set them, so without this
-    the pricing host sees a cookieless POST — the classic bot profile."""
+    """Seed the shared jar with the best DK cookies available before the first
+    calculateBets POST. Tries the explicit/browser sources (which can supply a
+    *validated* _abck) and falls back to a one-time homepage GET otherwise.
+
+    Records which source was used and the resulting _abck state on _PRICE_DIAG
+    so the +EV empty state can say whether the block is an unvalidated-cookie
+    problem (fixable via DK_COOKIES/DK_COOKIE_BROWSER) without shell access."""
+    global _warmup_done, _cookie_source
+
+    env_cookies = _os.environ.get("DK_COOKIES", "").strip()
+    if env_cookies:
+        with _session_lock:
+            _load_cookie_string_into(session, env_cookies)
+        _cookie_source = "env"
+    elif _os.environ.get("DK_COOKIE_BROWSER", "").strip().lower() not in ("", "0", "false", "no"):
+        minted = _mint_cookies_with_browser()
+        if minted:
+            with _session_lock:
+                for name, val in minted.items():
+                    try:
+                        session.cookies.set(name, val, domain=".draftkings.com", path="/")
+                    except Exception:
+                        pass
+            _cookie_source = "browser"
+        else:
+            _cookie_source = _cookie_source or "warmup"
+            _legacy_warmup()
+    else:
+        _cookie_source = "warmup"
+        _legacy_warmup()
+
+    try:
+        _PRICE_DIAG["cookie_source"] = _cookie_source
+        _PRICE_DIAG["abck"] = _abck_validation_state(session.cookies.jar)
+    except Exception:
+        pass
+
+
+def _legacy_warmup():
+    """One-time best-effort GET of the sportsbook page to collect Akamai
+    cookies. Yields an unvalidated _abck — kept only as a fallback."""
     global _warmup_done
     if _warmup_done:
         return
@@ -671,7 +828,7 @@ def _american_from_decimal(dec):
 # API response without shell access to production — find_sgps_worldcup
 # returns a snapshot as `sgp_price_diag`.
 _PRICE_DIAG = {"calls": 0, "ok": 0, "incompatible": 0, "no_bet": 0,
-               "exceptions": 0, "http": {}}
+               "exceptions": 0, "http": {}, "cookie_source": None, "abck": None}
 
 
 def _price_combo(selection_ids):
