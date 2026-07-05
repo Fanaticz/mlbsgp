@@ -1,0 +1,60 @@
+# Daily data refresh: MLB pitcher correlation data + WNBA correlations.
+#
+# Pulls new box scores from ESPN's public APIs, rebuilds the derived JSON in
+# public/data/, and commits the result to the default branch. Dedupe against
+# the xlsx feed lives in build_pitcher_data.py (merge by pitcher+date), so
+# rerunning is always safe — no start is ever double-counted.
+#
+# 11:00 UTC = 6/7am ET, after even the latest West Coast games are final.
+# If nothing changed (off-day, off-season), no commit is made.
+name: Refresh MLB + WNBA data
+
+on:
+  schedule:
+    - cron: "0 11 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install pandas openpyxl numpy requests
+
+      - name: Fetch MLB starting-pitcher box scores from ESPN
+        run: python scripts/fetch_espn_2026_pitchers.py
+
+      - name: Rebuild pitcher JSONs (merges ESPN supplement, dedupes vs xlsx)
+        run: python build_pitcher_data.py
+
+      - name: Rebuild correlation aggregates
+        run: python build_aggregates.py
+
+      - name: Refresh WNBA correlations
+        run: python scripts/wnba_fetch_correlations.py
+
+      - name: Commit and push if data changed
+        run: |
+          git add espn-2026-pitcher-supplement.json public/data/*.json
+          if git diff --cached --quiet; then
+            echo "No data changes — skipping commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Daily data refresh: MLB pitchers + WNBA correlations [skip ci]"
+          git push
