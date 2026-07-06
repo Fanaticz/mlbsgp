@@ -1642,6 +1642,22 @@ function dkCall(args, stdinData) {
   });
 }
 
+// GET /api/combo-spec — DK-legal SGP combo whitelist (repo-root combo_spec.json).
+// Consumed by the frontend's FV-only fallback: when DK pricing is unreachable
+// the client enumerates combos from the OCR'd screenshot legs itself, and it
+// needs the same pair/triple validity rules find-sgps would have applied.
+// require() caches the parsed JSON for the process lifetime — the spec only
+// changes with a deploy.
+app.get('/api/combo-spec', (_req, res) => {
+  try {
+    const spec = require('./combo_spec.json');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    return res.json(spec);
+  } catch (e) {
+    return res.status(500).json({ error: 'combo_spec.json unavailable: ' + e.message });
+  }
+});
+
 // GET /api/dk/games — today's MLB games from DraftKings
 app.get('/api/dk/games', async (_req, res) => {
   try {

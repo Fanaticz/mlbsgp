@@ -236,6 +236,7 @@ h1 em{color:var(--ac);font-style:normal;}
 @media(max-width:768px){.tm-drawer{width:100%;}.tm-kv{grid-template-columns:repeat(3,1fr);}.tm-mh,.tm-mc,.tm-ml{font-size:8px;padding:2px 3px;}.tm-mc .rm{font-size:7px;}}
 </style>
 <script src="/utils/sgpMath.js"></script>
+<script src="/utils/fvFallback.js"></script>
 <script src="/utils/nameNormalize.js"></script>
 <script src="/utils/teammateMath.js"></script>
 <script src="/utils/teammatePairLookup.js"></script>
@@ -1883,14 +1884,30 @@ function evFindSgps(size){
   fetch('/api/dk/find-sgps',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({legs:EV_DETECTED,enumSize:wantSize})})
     .then(function(r){return r.json();})
     .then(function(j){
-      if(j.error&&!j.pitchers){document.getElementById('evResults').innerHTML='<div class="note" style="border-left-color:var(--red)">'+j.error+'</div>';return;}
+      if(j.error&&!j.pitchers){
+        /* DK completely unreachable (games endpoint down, subprocess error).
+           Don't cache in EV_RESULTS_BY_SIZE — a later 2↔3 toggle should
+           retry DK. Route into the FV-only fallback so the screenshot
+           still yields correlated fair values. */
+        EV_RESULTS={pitchers:{},_fv_reason:j.error};
+        EV_PAGE_3=1;
+        status.innerHTML='<span style="color:var(--ac2)">DK pricing unavailable &mdash; computing fair values from the screenshot instead.</span>';
+        evRenderResults();
+        return;
+      }
       EV_RESULTS=j;
       EV_RESULTS_BY_SIZE[wantSize]=j;
       EV_PAGE_3=1;
       status.innerHTML='<span style="color:var(--ac)">Done! Scroll down to see all +EV SGPs ranked.</span>';
       evRenderResults();
     })
-    .catch(function(e){document.getElementById('evResults').innerHTML='<div class="note" style="border-left-color:var(--red)">DK error: '+e.message+'</div>';});
+    .catch(function(e){
+      /* Network-level failure — same FV-only fallback as a DK-side error. */
+      EV_RESULTS={pitchers:{},_fv_reason:'network error: '+e.message};
+      EV_PAGE_3=1;
+      status.innerHTML='<span style="color:var(--ac2)">DK pricing unreachable &mdash; computing fair values from the screenshot instead.</span>';
+      evRenderResults();
+    });
 }
 
 /* ---------- Core: compute FV + EV for each DK-priced combo ---------- */
@@ -1932,8 +1949,13 @@ function evComputeCombo(pitcher,pd,matchedLegs,indices,dkDecimal){
   var pJoint=Math.max(1e-6,Math.min(0.999999,Math.exp(logIndep+corrSum)));
   var fvIndepOdds=probToAmerican(pIndep);
   var fvCorrOdds=probToAmerican(pJoint);
-  var evPct=(pJoint*dkDecimal-1)*100;
-  var kelly=(pJoint*dkDecimal-1)/(dkDecimal-1);
+  /* dkDecimal==null → FV-only fallback mode (DK pricing unreachable). The
+     fair-value pipeline above is fully defined without a DK price; only the
+     price-relative outputs (EV%, Kelly) are undefined, so they come back
+     null and the fallback card simply doesn't render them. */
+  var hasDK=(dkDecimal!=null&&isFinite(dkDecimal)&&dkDecimal>1);
+  var evPct=hasDK?(pJoint*dkDecimal-1)*100:null;
+  var kelly=hasDK?(pJoint*dkDecimal-1)/(dkDecimal-1):null;
 
   /* r_DK attribution (2-leg only — pairwise Fréchet inversion is exactly
      defined here). Uses the pair's resolved binary r as r_ours and the two
@@ -1943,7 +1965,7 @@ function evComputeCombo(pitcher,pd,matchedLegs,indices,dkDecimal){
      and evAttribution is unambiguous. For larger combos we leave attrib
      null rather than pick an arbitrary representative pair. */
   var attrib=null;
-  if(legs.length===2){
+  if(legs.length===2&&hasDK){
     var pairR=pairDetails.length?pairDetails[0].r:null;
     attrib=evAttribution(legs[0].p,legs[1].p,pairR,dkDecimal);
   }
@@ -1955,13 +1977,158 @@ function evComputeCombo(pitcher,pd,matchedLegs,indices,dkDecimal){
     fvIndepOdds:fvIndepOdds,
     fvCorrOdds:fvCorrOdds,
     evPct:evPct,
-    kellyPct:Math.max(0,kelly)*100,
-    qkPct:Math.max(0,kelly*0.25)*100,
+    kellyPct:hasDK?Math.max(0,kelly)*100:null,
+    qkPct:hasDK?Math.max(0,kelly*0.25)*100:null,
     usedPairs:usedPairs,
     missingPairs:missingPairs,
     pairDetails:pairDetails,
     attrib:attrib,
   };
+}
+
+/* ---------- FV-only fallback ("screenshot mode") ----------
+   When DK SGP pricing can't be pulled (Akamai 403 storm on calculateBets,
+   DK outage, network failure) there is no EV% to rank by — but the uploaded
+   FV sheet still carries per-leg fair values, and the correlation
+   aggregates are already loaded. So instead of a dead-end empty state we
+   enumerate the same-pitcher combos ourselves (validated against the
+   combo_spec whitelist find-sgps would have used), run them through the
+   exact same evComputeCombo math with dkDecimal=null, and render FV-only
+   cards sorted by fair-value odds LOW → HIGH (biggest favorites first).
+   Enumeration/sort helpers live in /utils/fvFallback.js (Node-testable). */
+var EV_COMBO_SPEC_SETS=null;   /* built lookup maps {2:{key:1},3:{key:1}} */
+var EV_COMBO_SPEC_STATE='idle';/* idle|loading|ready|failed */
+function evEnsureComboSpec(){
+  if(EV_COMBO_SPEC_SETS||EV_COMBO_SPEC_STATE==='loading')return;
+  EV_COMBO_SPEC_STATE='loading';
+  fetch('/api/combo-spec')
+    .then(function(r){return r.json();})
+    .then(function(j){
+      EV_COMBO_SPEC_SETS=window.fvFallback.buildSpecSets(j);
+      EV_COMBO_SPEC_STATE='ready';
+      evRenderResults();
+    })
+    .catch(function(){
+      /* Whitelist unavailable — evFvFallbackCombos falls back to the
+         conservative distinct-stat-category rule. */
+      EV_COMBO_SPEC_STATE='failed';
+      evRenderResults();
+    });
+}
+
+function evFvFallbackCombos(size){
+  if(!EV_DETECTED||!EV_DETECTED.length)return [];
+  var specSets=EV_COMBO_SPEC_SETS;
+  /* Legality rule (see fvFallback.isLegalCombo): distinct-stat combos are
+     always legal (that's what find-sgps enumerates and DK accepts);
+     same-stat combos only when verbatim in the combo_spec whitelist. With
+     the spec fetch failed, same-stat ladders are conservatively dropped
+     while all cross-stat combos still render. */
+  var validFn=function(legs){return window.fvFallback.isLegalCombo(specSets,size,legs);};
+  var enumd=window.fvFallback.enumerate(EV_DETECTED,size,validFn,statCat);
+  var out=[];
+  enumd.forEach(function(e){
+    var pd=D.pitchers[e.pitcher]||null;
+    var indices=e.rows.map(function(_,i){return i;});
+    var calc=evComputeCombo(e.pitcher,pd,e.rows,indices,null);
+    if(!calc)return;
+    /* Same render gate as the priced path: player mode needs player data,
+       and a missing pair correlation degrades FV to independence — hide
+       rather than show a silently-wrong fair value. */
+    if(CORR_MODE==='player'&&!pd)return;
+    if(calc.missingPairs)return;
+    var item={pitcher:e.pitcher,inDB:!!pd,size:size,calc:calc,rows:e.rows};
+    if(size===3){
+      /* Secondary readout: shrunk empirical 3-way joint (same resolveAll3
+         the priced 3-leg cards use), shown as MODEL alongside the
+         FV-sheet-anchored pairwise-corrected FV CORR. */
+      var all3Res=resolveAll3(pd,e.rows[0].leg,e.rows[1].leg,e.rows[2].leg);
+      if(all3Res&&all3Res.pBlend!=null){item.modelFvOdds=probToAmerican(all3Res.pBlend);item.all3Source=all3Res.source;}
+    }
+    out.push(item);
+  });
+  return window.fvFallback.sortByFvOddsAscending(out,function(c){return c.calc.pJoint;});
+}
+
+/* Builds the fallback section html (banner + cards). Returns '' when there
+   is nothing to fall back onto (no OCR'd legs). While the combo whitelist
+   is loading, renders a placeholder and re-renders when the fetch lands. */
+function evFvFallbackHtml(size,reason){
+  if(!EV_DETECTED||!EV_DETECTED.length)return '';
+  var html='<div class="note" style="border-left-color:var(--ac2);margin-top:12px"><b>FAIR-VALUE FALLBACK</b> &mdash; DK SGP prices unavailable'+(reason?' ('+reason+')':'')+'. Showing the correlated fair value of each combo computed from the screenshot\'s per-leg FVs. No EV% or bet sizing without a DK price &mdash; use these as the price to beat. Sorted by FV odds, low &rarr; high.</div>';
+  if(!EV_COMBO_SPEC_SETS&&EV_COMBO_SPEC_STATE!=='failed'){
+    evEnsureComboSpec();
+    html+='<div style="padding:18px;text-align:center;color:var(--cyan);font-family:Space Mono,monospace;font-size:12px;background:var(--s1);border:1px solid var(--b1);border-radius:10px;margin-top:10px">Loading combo whitelist for fair-value fallback&hellip;</div>';
+    return html;
+  }
+  var combos=evFvFallbackCombos(size);
+  if(!combos.length){
+    html+='<div class="empty">No valid '+size+'-leg combos could be built from the detected legs (need '+size+'+ legs per pitcher forming a DK-legal combination).</div>';
+    return html;
+  }
+  var st=document.getElementById('evStatus');
+  if(st)st.innerHTML='<span style="color:var(--ac2)">DK pricing unavailable &mdash; showing screenshot fair values only.</span>';
+  var pitcherCount=Object.keys(combos.reduce(function(a,c){a[c.pitcher]=1;return a;},{})).length;
+  html+='<div style="margin-top:14px;display:flex;gap:20px;flex-wrap:wrap;align-items:center">';
+  html+='<div><span style="font-size:22px;font-weight:700;font-family:Space Mono,monospace;color:var(--ac)">'+combos.length+'</span> <span style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">FV COMBOS</span></div>';
+  html+='<div><span style="font-size:22px;font-weight:700;font-family:Space Mono,monospace;color:var(--ac3)">'+pitcherCount+'</span> <span style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">PITCHERS</span></div>';
+  html+='</div>';
+  html+='<div style="margin-top:10px;font-size:11px;color:var(--ac);font-family:Space Mono,monospace;font-weight:600">FAIR-VALUE SGPs (no DK price) &middot; sorted by FV odds low &rarr; high</div>';
+  html+='<div class="grid" style="margin-top:8px;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:10px">';
+  combos.forEach(function(c){
+    var pdC=D.pitchers[c.pitcher]||null;
+    var nStarts=pdC?pdC.n_starts:null;
+    html+='<div class="card">';
+    html+='<div style="display:flex;justify-content:space-between;align-items:start;gap:8px;margin-bottom:8px">';
+    html+='<div><div style="font-size:12px;font-weight:700">'+c.pitcher+(c.inDB?' <span style="font-size:8px;color:var(--ac);font-family:Space Mono,monospace">[DB]</span>':' <span style="font-size:8px;color:var(--ac2);font-family:Space Mono,monospace">[NO CORR]</span>')+'</div><div style="font-size:9px;color:var(--mu);font-family:Space Mono,monospace">'+c.size+'-leg &middot; screenshot FV</div></div>';
+    html+='<div style="text-align:right"><div style="font-size:20px;font-weight:800;font-family:Space Mono,monospace;color:var(--ac)">'+fmtAm(c.calc.fvCorrOdds)+'</div><div style="font-size:8px;color:var(--mu);font-family:Space Mono,monospace">FV CORR</div></div>';
+    html+='</div>';
+    /* Leg list — same row shape as the priced cards (leg chip, per-leg FV,
+       historical hit count when the pitcher is in the DB). */
+    html+='<div style="background:var(--s2);border-radius:6px;padding:7px 9px;margin-bottom:8px">';
+    c.calc.legs.forEach(function(l){var lcls=l.leg.startsWith('Over')?'ov':'un';var legPct=_legHitRate(pdC,l.leg);var legHitStr=legPct!=null?(nStarts?Math.round(legPct/100*nStarts)+'/'+nStarts:legPct.toFixed(0)+'%'):null;var fvWarn=l.fvSuspicious?'<span title="OCR may have mis-extracted fair value for this leg — verify against source sheet. FV for this combo is unreliable until confirmed." style="color:var(--ac2);font-size:11px;cursor:help;margin-right:2px">&#9888;</span>':'';html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0"><span class="leg '+lcls+'" style="font-size:10px">'+l.leg+'</span><div style="display:flex;align-items:center;gap:6px">'+fvWarn+'<span style="font-size:10px;font-family:Space Mono,monospace;color:'+(l.fvSuspicious?'var(--ac2)':'var(--mu)')+'">'+fmtAm(l.fv)+'</span>'+(legHitStr?'<span style="font-size:9px;font-family:Space Mono,monospace;color:var(--ac2)">'+legHitStr+'</span>':'')+'</div></div>';});
+    if(c.size===2){
+      var hr=_sgpHitRates(c);
+      if(hr&&hr.both!=null){var bothStr=nStarts?Math.round(hr.both/100*nStarts)+'/'+nStarts+' starts':hr.both.toFixed(0)+'% hit';html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-top:5px;padding-top:5px;border-top:1px solid rgba(255,255,255,0.07)"><span style="font-size:9px;color:var(--mu);font-family:Space Mono,monospace">Combined</span><span style="font-size:9px;font-family:Space Mono,monospace;color:var(--ac)">'+bothStr+'</span></div>';}
+    }
+    html+='</div>';
+    /* Stat row: independence FV, binary-phi r (avg for 3-leg), and for
+       3-leg the shrunk empirical MODEL joint when the triplet exists in
+       the aggregates. */
+    var rPairs=(c.calc.pairDetails||[]).filter(function(p){return p.r!==null&&p.r!==undefined&&!isNaN(p.r);});
+    var rAvg=rPairs.length?rPairs.reduce(function(s,p){return s+p.r;},0)/rPairs.length:null;
+    var rColor=rAvg===null?'var(--mu)':(rAvg>=0.3?'var(--ac)':(rAvg<0?'var(--red)':'var(--mu)'));
+    var rText=rAvg===null?'N/A':((rAvg>=0?'+':'')+rAvg.toFixed(2));
+    var rLabel=rPairs.length>1?'R AVG':'R';
+    var rTitle=rPairs.map(function(p){return p.a+' × '+p.b+': '+(p.r>=0?'+':'')+p.r.toFixed(3);}).join('\n').replace(/"/g,'&quot;');
+    var hasModel=(c.modelFvOdds!=null);
+    var nCols=3+(hasModel?1:0);
+    html+='<div class="hr4" style="grid-template-columns:repeat('+nCols+',1fr)">';
+    html+='<div class="hi"><div class="hv" style="color:var(--ac);font-size:15px">'+fmtAm(c.calc.fvCorrOdds)+'</div><div class="hl">FV CORR</div></div>';
+    html+='<div class="hi" title="Fair value if the legs were independent (no correlation adjustment)"><div class="hv" style="color:var(--mu);font-size:15px">'+fmtAm(c.calc.fvIndepOdds)+'</div><div class="hl">FV INDEP</div></div>';
+    html+='<div class="hi" title="'+rTitle+'"><div class="hv" style="color:'+rColor+';font-size:15px">'+rText+'</div><div class="hl">'+rLabel+'</div></div>';
+    if(hasModel){
+      html+='<div class="hi" title="Shrunk empirical 3-way joint hit rate ('+(c.all3Source||'')+') expressed as fair odds — base-rate model, not anchored to the FV sheet"><div class="hv" style="color:var(--cyan);font-size:15px">'+fmtAm(c.modelFvOdds)+'</div><div class="hl">MODEL</div></div>';
+    }
+    html+='</div>';
+    /* Blend transparency line, mirroring the priced 2-leg card. */
+    if(CORR_MODE==='blended'&&rAvg!==null){
+      var bn=(c.inDB&&pdC&&pdC.n_starts_eff)?pdC.n_starts_eff:0;
+      var bnRaw=(c.inDB&&pdC&&pdC.n_starts)?pdC.n_starts:0;
+      var blendStr;
+      if(!c.inDB||bn<=0){blendStr='no player data, using 100% global';}
+      else if(bn<BLEND_MIN_STARTS){blendStr='n_eff='+bn.toFixed(1)+' (raw '+bnRaw+') · insufficient sample for blending, using 100% global';}
+      else{
+        var _blPairs=rPairs.filter(function(p){return p.wPlayer!=null;});
+        var avgWp=_blPairs.length?_blPairs.reduce(function(s,p){return s+p.wPlayer;},0)/_blPairs.length:0;
+        blendStr='blended: '+Math.round(avgWp*100)+'% player / '+Math.round((1-avgWp)*100)+'% global, n_eff='+bn.toFixed(1)+' (raw '+bnRaw+')';
+      }
+      html+='<div style="margin-top:6px;font-size:10px;color:var(--mu);font-family:Space Mono,monospace">Correlation: '+rText+' ('+blendStr+')</div>';
+    }
+    html+='</div>';
+  });
+  html+='</div>';
+  return html;
 }
 
 function evRenderResults(){
@@ -1978,6 +2145,7 @@ function evRenderResults(){
   /* Collect ALL combos across pitchers into a single flat list so we can rank globally by EV */
   var allCombos=[];
   var pitcherWarnings=[];
+  var dkPricedTotal=0; /* combos DK actually priced, before render filters */
   Object.keys(pitchers).forEach(function(pitcher){
     var pr=pitchers[pitcher];
     if(pr.error){pitcherWarnings.push({pitcher:pitcher,msg:pr.error,type:'error'});return;}
@@ -1986,6 +2154,7 @@ function evRenderResults(){
     var pd=D.pitchers[pitcher]||null;
     var matched=pr.matched_legs||[];
     (pr.combos_2||[]).forEach(function(c){
+      dkPricedTotal++;
       var calc=evComputeCombo(pitcher,pd,matched,c.leg_indices,c.dk_decimal);
       if(!calc)return;
       allCombos.push({
@@ -2058,8 +2227,17 @@ function evRenderResults(){
     }
     if(diagMsg){
       html+='<div class="empty">'+diagMsg+'</div>';
+    }else if(EV_RESULTS._fv_reason){
+      html+='<div class="empty">DK pricing unavailable: '+EV_RESULTS._fv_reason+'</div>';
     }else{
       html+='<div class="empty">No SGPs could be priced. Possible causes: pitchers not in today\'s DK lineup, all legs are same stat-type (conflict), or DK rejected all combinations. Check the detected legs above.</div>';
+    }
+    /* DK priced nothing at all → FV-only fallback: compute each combo's
+       correlated fair value straight from the screenshot legs. (When DK
+       DID price combos but render filters hid them, the fallback stays
+       off — DK prices exist, the filters are the message.) */
+    if(dkPricedTotal===0){
+      html+=evFvFallbackHtml(2,null);
     }
     document.getElementById('evResults').innerHTML=html;return;
   }
@@ -2490,6 +2668,7 @@ function evRenderResults3Leg(){
      pitcher aggregates, null pBlend). Kept distinct from filtering because
      filters are gone; these are hard compute blockers. */
   var skippedNoData=0;
+  var dkPriced3=0; /* combos DK actually priced, before render gates */
   Object.keys(pitchers).forEach(function(pitcher){
     var pr=pitchers[pitcher];
     if(pr.error){pitcherWarnings.push({pitcher:pitcher,msg:pr.error,type:'error'});return;}
@@ -2498,6 +2677,7 @@ function evRenderResults3Leg(){
     var pd=D.pitchers[pitcher]||null;
     var matched=pr.matched_legs||[];
     (pr.combos_3||[]).forEach(function(c){
+      dkPriced3++;
       if(!pd){skippedNoData++;return;}
       var calc=evCompute3Leg(pitcher,pd,matched,c.leg_indices,c.dk_decimal,c.leg_true_odds);
       if(!calc||calc.all3.pBlend==null){skippedNoData++;return;}
@@ -2533,7 +2713,19 @@ function evRenderResults3Leg(){
   pitcherWarnings.forEach(function(w){var color=w.type==='error'?'var(--red)':'var(--ac2)';html+='<div style="font-size:11px;color:'+color+';font-family:Space Mono,monospace">'+w.pitcher+': '+w.msg+'</div>';});
   html+='</div>';
 
-  if(!allCombos.length){html+='<div class="empty">No renderable 3-leg candidates. Check that detected legs span at least 3 stat categories per pitcher and that pitcher aggregates are loaded.</div>';document.getElementById('evResults').innerHTML=html;return;}
+  if(!allCombos.length){
+    if(EV_RESULTS._fv_reason){
+      html+='<div class="empty">DK pricing unavailable: '+EV_RESULTS._fv_reason+'</div>';
+    }else{
+      html+='<div class="empty">No renderable 3-leg candidates. Check that detected legs span at least 3 stat categories per pitcher and that pitcher aggregates are loaded.</div>';
+    }
+    /* DK priced nothing → FV-only fallback from the screenshot legs
+       (same gate as the 2-leg path). */
+    if(dkPriced3===0){
+      html+=evFvFallbackHtml(3,null);
+    }
+    document.getElementById('evResults').innerHTML=html;return;
+  }
 
   /* Populate _SGP_DATA over the full candidate array so loadSGPInsight
      indices stay stable when the user paginates. */

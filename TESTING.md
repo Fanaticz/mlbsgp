@@ -25,6 +25,12 @@ node scripts/nba_ocr_normalize_tests.js
 # Landed with the DK pricing wire-up. Expected final line:
 # "ALL NBA DK MATCH TESTS PASS"
 python3 scripts/nba_dk_match_tests.py
+
+# MLB FV-only fallback (screenshot mode): combo legality (cross-stat
+# always legal, same-stat only via combo_spec whitelist), per-pitcher
+# enumeration, null-dkDecimal FV math, low→high FV odds sort.
+# Expected final line: "All FV-fallback smoke checks passed."
+node scripts/smoke_fv_fallback.js
 ```
 
 Neither needs jsdom or a running server — both eval the NBA module in a
