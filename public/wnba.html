@@ -109,8 +109,8 @@
     <button data-mode="all">All players</button>
   </div>
   <input type="search" id="search" placeholder="Filter by name…" />
-  <label class="muted" title="Optional. 0 = show everyone (incl. low-minute players).">Min mpg
-    <input type="number" id="minmpg" value="0" min="0" step="1" style="width:56px" />
+  <label class="muted" title="Set to 0 to show everyone (incl. low-minute players).">Min mpg
+    <input type="number" id="minmpg" value="20" min="0" step="1" style="width:56px" />
   </label>
   <label class="muted" title="Optional. 0 = show everyone (small samples included).">Min G
     <input type="number" id="ming" value="0" min="0" step="1" style="width:56px" />
@@ -273,11 +273,13 @@ function drawProp(pb, p) {
       `<div class="q-v">${n ? Math.round(pr * 100) : "—"}%</div>` +
       `<div class="q-s">${c}/${n} games · fair ${n ? fairOdds(pr) : "—"}</div></div>`;
   };
+  // Tiles mirror the chart's quadrants: over/over top-right, under/over
+  // top-left, under/under bottom-left, over/under bottom-right.
   const oP = `PTS <b>o${st.ptsLine}</b>`, uP = `PTS <b>u${st.ptsLine}</b>`;
   const oY = `${yLab} <b>o${st.yLine}</b>`, uY = `${yLab} <b>u${st.yLine}</b>`;
   quadEl.innerHTML =
-    tile(`${oP} &amp; ${oY}`, oo) + tile(`${oP} &amp; ${uY}`, ou) +
-    tile(`${uP} &amp; ${oY}`, uo) + tile(`${uP} &amp; ${uY}`, uu) +
+    tile(`${uP} &amp; ${oY}`, uo) + tile(`${oP} &amp; ${oY}`, oo) +
+    tile(`${uP} &amp; ${uY}`, uu) + tile(`${oP} &amp; ${uY}`, ou) +
     (push ? `<div class="pb-note">${push} push${push>1?"es":""} (exactly on a line) excluded.</div>` : "");
 
   // Scales — pad the domain so the red lines and edge dots never clip.
