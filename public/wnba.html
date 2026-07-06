@@ -60,13 +60,41 @@
   tbody tr.prow { cursor:pointer; }
   tbody tr.prow:hover .care { color:var(--accent); }
   tbody tr.drow td { padding:0; background:#10161c; }
-  .detail-wrap { padding:10px 16px 14px; }
+  .detail-wrap { padding:10px 16px 14px; text-align:left; }
   .detail-h { font-size:12px; color:var(--muted); margin-bottom:8px; }
   table.sub { width:auto; min-width:0; border-collapse:collapse; }
   table.sub th { position:static; top:auto; background:transparent; cursor:default;
     border-bottom:1px solid var(--line); font-size:10.5px; padding:4px 12px; }
   table.sub td { padding:4px 12px; border-bottom:1px solid #20272f; white-space:nowrap; }
   table.sub tr.pool td { border-top:1px solid var(--line); }
+
+  /* --- prop builder (this-season scatter) --- */
+  .pb { border:1px solid var(--line); border-radius:10px; background:var(--panel);
+    padding:12px 14px 14px; margin-bottom:14px; }
+  .pb-title { font-size:13px; font-weight:600; margin-bottom:2px; }
+  .pb-sub { color:var(--muted); font-size:11.5px; margin-bottom:10px; }
+  .pb-controls { display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center;
+    margin-bottom:12px; }
+  .pb-controls label { color:var(--muted); font-size:12px; }
+  .pb-controls input[type=number] { width:70px; margin-left:6px; }
+  .pb-controls select { margin-left:6px; }
+  .pb-body { display:flex; flex-wrap:wrap; gap:18px; align-items:flex-start; }
+  .pb-chart { position:relative; }
+  .pb-chart svg { display:block; }
+  .quads { display:grid; grid-template-columns:repeat(2, minmax(150px, 1fr));
+    gap:8px; min-width:310px; flex:1; max-width:420px; }
+  .quad { border:1px solid var(--line); border-radius:8px; padding:9px 11px;
+    background:#10161c; }
+  .quad .q-h { color:var(--muted); font-size:11px; line-height:1.35; }
+  .quad .q-h b { color:var(--txt); }
+  .quad .q-v { font-size:20px; font-weight:600; margin:3px 0 1px; }
+  .quad .q-s { color:var(--muted); font-size:11px; }
+  .pb-note { color:var(--muted); font-size:11px; margin-top:8px; grid-column:1/-1; }
+  .pb-tip { position:absolute; pointer-events:none; display:none; z-index:10;
+    background:#0b0f14; border:1px solid var(--line); border-radius:7px;
+    padding:6px 9px; font-size:11.5px; line-height:1.4; white-space:nowrap;
+    box-shadow:0 4px 14px rgba(0,0,0,.45); }
+  .pb-tip b { color:var(--accent); }
 </style>
 </head>
 <body>
@@ -182,6 +210,201 @@ function rMini(pair) {
          ` <span class="raw">p=${num(pair.p_value,3)}</span>`;
 }
 
+// ---- Prop builder: this-season (latest season) two-stat scatter ------------
+// Per-player builder settings survive re-renders. yStat is the second stat.
+const PROPS = new Map();
+const STAT_LABEL = { reb:"REB", ast:"AST", tpm:"3PM" };
+const STAT_KEY_MEAN = { reb:"_reb", ast:"_ast", tpm:"_tpm" };
+
+// Default line = season average pushed to the nearest half-point below the
+// rounded mean (book-style .5 line, so no pushes out of the box).
+const halfLine = m => Math.max(0.5, Math.round(m || 1) - 0.5);
+
+function propState(p) {
+  if (!PROPS.has(p.athlete_id)) {
+    PROPS.set(p.athlete_id, {
+      ptsLine: halfLine(p._pts),
+      yStat: "reb",
+      yLine: halfLine(p._reb),
+    });
+  }
+  return PROPS.get(p.athlete_id);
+}
+
+// p (probability) -> fair American odds string.
+function fairOdds(pr) {
+  if (pr <= 0 || pr >= 1) return "—";
+  return pr >= 0.5 ? `-${Math.round(100 * pr / (1 - pr))}`
+                   : `+${Math.round(100 * (1 - pr) / pr)}`;
+}
+
+function niceStep(span, target = 7) {
+  const raw = span / target;
+  for (const s of [1, 2, 5, 10, 20]) if (s >= raw) return s;
+  return 50;
+}
+
+// Build the SVG scatter + quadrant tiles inside the given .pb container.
+function drawProp(pb, p) {
+  const st = propState(p);
+  const games = p.latest_games || [];
+  const yKey = st.yStat, yLab = STAT_LABEL[yKey];
+  const chartEl = pb.querySelector(".pb-chart");
+  const quadEl = pb.querySelector(".quads");
+  if (!games.length) {
+    chartEl.innerHTML = `<div class="muted" style="padding:20px 0">No ${p.latest_season||"current"}-season games in the data file — re-run scripts/wnba_fetch_correlations.py.</div>`;
+    quadEl.innerHTML = "";
+    return;
+  }
+
+  // Quadrant hit rates. Over = strictly greater; a game landing exactly on an
+  // integer line is a push and is excluded from all four buckets.
+  let oo = 0, ou = 0, uo = 0, uu = 0, push = 0;
+  for (const g of games) {
+    const x = g.pts, y = g[yKey];
+    if (x === st.ptsLine || y === st.yLine) { push++; continue; }
+    const xo = x > st.ptsLine, yo = y > st.yLine;
+    if (xo && yo) oo++; else if (xo) ou++; else if (yo) uo++; else uu++;
+  }
+  const n = games.length - push;
+  const tile = (label, c) => {
+    const pr = n ? c / n : 0;
+    return `<div class="quad"><div class="q-h">${label}</div>` +
+      `<div class="q-v">${n ? Math.round(pr * 100) : "—"}%</div>` +
+      `<div class="q-s">${c}/${n} games · fair ${n ? fairOdds(pr) : "—"}</div></div>`;
+  };
+  const oP = `PTS <b>o${st.ptsLine}</b>`, uP = `PTS <b>u${st.ptsLine}</b>`;
+  const oY = `${yLab} <b>o${st.yLine}</b>`, uY = `${yLab} <b>u${st.yLine}</b>`;
+  quadEl.innerHTML =
+    tile(`${oP} &amp; ${oY}`, oo) + tile(`${oP} &amp; ${uY}`, ou) +
+    tile(`${uP} &amp; ${oY}`, uo) + tile(`${uP} &amp; ${uY}`, uu) +
+    (push ? `<div class="pb-note">${push} push${push>1?"es":""} (exactly on a line) excluded.</div>` : "");
+
+  // Scales — pad the domain so the red lines and edge dots never clip.
+  const W = 520, H = 400, ML = 46, MR = 16, MT = 14, MB = 42;
+  const xs = games.map(g => g.pts), ys = games.map(g => g[yKey]);
+  const xmax = Math.max(...xs, st.ptsLine) + 2;
+  const xmin = Math.max(0, Math.min(...xs, st.ptsLine) - 2);
+  const ymax = Math.max(...ys, st.yLine) + 1.5;
+  const ymin = Math.max(0, Math.min(...ys, st.yLine) - 1.5);
+  const X = v => ML + (v - xmin) / (xmax - xmin) * (W - ML - MR);
+  const Y = v => H - MB - (v - ymin) / (ymax - ymin) * (H - MT - MB);
+
+  // Duplicate (x,y) games collapse into one bigger dot.
+  const cells = new Map();
+  for (const g of games) {
+    const k = `${g.pts},${g[yKey]}`;
+    if (!cells.has(k)) cells.set(k, []);
+    cells.get(k).push(g);
+  }
+
+  const xStep = niceStep(xmax - xmin), yStep = niceStep(ymax - ymin);
+  let grid = "", labels = "";
+  for (let v = Math.ceil(xmin / xStep) * xStep; v <= xmax; v += xStep) {
+    grid += `<line x1="${X(v)}" y1="${MT}" x2="${X(v)}" y2="${H-MB}"/>`;
+    labels += `<text x="${X(v)}" y="${H-MB+16}" text-anchor="middle">${v}</text>`;
+  }
+  for (let v = Math.ceil(ymin / yStep) * yStep; v <= ymax; v += yStep) {
+    grid += `<line x1="${ML}" y1="${Y(v)}" x2="${W-MR}" y2="${Y(v)}"/>`;
+    labels += `<text x="${ML-8}" y="${Y(v)+3.5}" text-anchor="end">${v}</text>`;
+  }
+
+  let dots = "";
+  for (const [k, gs] of cells) {
+    const [gx, gy] = k.split(",").map(Number);
+    const r = 5 + 2.2 * Math.sqrt(gs.length - 1);
+    dots += `<circle cx="${X(gx)}" cy="${Y(gy)}" r="${r}" data-k="${k}"/>`;
+  }
+
+  chartEl.innerHTML =
+    `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img"
+       aria-label="${p.name}: ${p.latest_season} games, PTS vs ${yLab}">
+      <g stroke="#2a333d" stroke-width="1">${grid}</g>
+      <g fill="#8b98a5" font-size="11">${labels}</g>
+      <g stroke="var(--neg)" stroke-width="1.5">
+        <line x1="${X(st.ptsLine)}" y1="${MT}" x2="${X(st.ptsLine)}" y2="${H-MB}"/>
+        <line x1="${ML}" y1="${Y(st.yLine)}" x2="${W-MR}" y2="${Y(st.yLine)}"/>
+      </g>
+      <g fill="var(--neg)" font-size="10.5">
+        <text x="${Math.min(X(st.ptsLine)+4, W-MR-24)}" y="${MT+11}">${st.ptsLine}</text>
+        <text x="${W-MR-4}" y="${Y(st.yLine)-5}" text-anchor="end">${st.yLine}</text>
+      </g>
+      <g fill="var(--accent)" stroke="#10161c" stroke-width="2">${dots}</g>
+      <text x="${(ML+W-MR)/2}" y="${H-6}" text-anchor="middle" fill="#8b98a5" font-size="12">PTS</text>
+      <text x="12" y="${(MT+H-MB)/2}" text-anchor="middle" fill="#8b98a5" font-size="12"
+        transform="rotate(-90 12 ${(MT+H-MB)/2})">${yLab}</text>
+    </svg><div class="pb-tip"></div>`;
+
+  // Hover tooltip: date · opp · result · stat line for each game on the dot.
+  const tip = chartEl.querySelector(".pb-tip");
+  chartEl.querySelectorAll("circle").forEach(c => {
+    c.style.cursor = "pointer";
+    c.onmouseenter = e => {
+      const gs = cells.get(c.dataset.k);
+      tip.innerHTML = gs.map(g =>
+        `${g.d} ${g.loc} ${g.opp} (${g.res}) — <b>${g.pts} pts, ${g[yKey]} ${yLab.toLowerCase()}</b>`
+      ).join("<br>");
+      tip.style.display = "block";
+      const bb = chartEl.getBoundingClientRect(), cb = c.getBoundingClientRect();
+      let tx = cb.left - bb.left + 14, ty = cb.top - bb.top - 8;
+      tip.style.left = "0px"; tip.style.top = "0px";
+      const tw = tip.offsetWidth;
+      if (tx + tw > W - 4) tx = cb.left - bb.left - tw - 14;
+      tip.style.left = tx + "px"; tip.style.top = ty + "px";
+    };
+    c.onmouseleave = () => { tip.style.display = "none"; };
+  });
+}
+
+// Static shell for the builder; drawProp fills in the chart + tiles.
+function propHTML(p) {
+  const st = propState(p);
+  const g = p.latest_games || [];
+  return `<div class="pb" data-id="${p.athlete_id}">
+    <div class="pb-title">Prop builder — ${p.latest_season || "current"} season only</div>
+    <div class="pb-sub">${g.length} game${g.length===1?"":"s"} this season. Every dot is one game
+      (bigger dot = same score in multiple games). Set your lines; the tiles show how often
+      each over/under combo hit this season, with the fair odds that hit rate implies.</div>
+    <div class="pb-controls">
+      <label>PTS line<input type="number" step="0.5" min="0" value="${st.ptsLine}" data-f="ptsLine"></label>
+      <label>2nd stat<select data-f="yStat">
+        <option value="reb"${st.yStat==="reb"?" selected":""}>Rebounds</option>
+        <option value="ast"${st.yStat==="ast"?" selected":""}>Assists</option>
+        <option value="tpm"${st.yStat==="tpm"?" selected":""}>3PM</option>
+      </select></label>
+      <label>${STAT_LABEL[st.yStat]} line<input type="number" step="0.5" min="0" value="${st.yLine}" data-f="yLine"></label>
+    </div>
+    <div class="pb-body"><div class="pb-chart"></div><div class="quads"></div></div>
+  </div>`;
+}
+
+// Bind builder controls + first draw. Input changes redraw only this builder
+// (no full table re-render, so typing keeps focus).
+function initProp(pb) {
+  const p = DATA.players.find(x => x.athlete_id === pb.dataset.id);
+  if (!p) return;
+  pb.querySelectorAll("[data-f]").forEach(el => {
+    const f = el.dataset.f;
+    const h = () => {
+      const st = propState(p);
+      if (f === "yStat") {
+        st.yStat = el.value;
+        st.yLine = halfLine(p[STAT_KEY_MEAN[el.value]]);
+        const yin = pb.querySelector('[data-f="yLine"]');
+        yin.value = st.yLine;
+        yin.parentElement.firstChild.textContent = STAT_LABEL[el.value] + " line";
+      } else {
+        const v = parseFloat(el.value);
+        if (!Number.isFinite(v) || v < 0) return;
+        st[f] = v;
+      }
+      drawProp(pb, p);
+    };
+    el.tagName === "SELECT" ? el.onchange = h : el.oninput = h;
+  });
+  drawProp(pb, p);
+}
+
 // Expanded per-season history block (rendered in a full-width detail row).
 function detailHTML(p) {
   const yrs = Object.keys(p.by_season||{}).sort();
@@ -196,7 +419,7 @@ function detailHTML(p) {
           `<td>${p.n_games}</td><td>${num(p.min_mean,1)}</td>`+
           `<td>${num(p.pts_mean,1)}</td><td>${num(p.reb_mean,1)}</td><td>${num(p.ast_mean,1)}</td><td>${num(p.tpm_mean,1)}</td>`+
           `<td class="l">${rCell(p.pts_reb)}</td><td class="l">${rCell(p.pts_ast)}</td><td class="l">${rCell(p.pts_3pm)}</td></tr>`;
-  return `<div class="detail-wrap"><div class="detail-h">Per-season history — box stats &amp; within-season correlations`+
+  return `<div class="detail-wrap">${propHTML(p)}<div class="detail-h">Per-season history — box stats &amp; within-season correlations`+
          ` <span class="muted">(left columns above show ${p.latest_season||"latest"} only; r columns are pooled &amp; recency-weighted)</span></div>`+
          `<table class="sub"><thead><tr><th class="l">Season</th><th>G</th><th>Min</th><th>Pts</th><th>Reb</th><th>Ast</th><th>3PM</th>`+
          `<th class="l">PTS·REB</th><th class="l">PTS·AST</th><th class="l">PTS·3PM</th></tr></thead><tbody>${body}</tbody></table></div>`;
@@ -254,6 +477,7 @@ function render() {
     if (EXPANDED.has(id)) EXPANDED.delete(id); else EXPANDED.add(id);
     render();
   });
+  tbody.querySelectorAll(".pb").forEach(initProp);
 
   document.getElementById("count").textContent =
     `${rows.length} player${rows.length===1?"":"s"}` + (MODE==="today" ? " playing today" : "");
@@ -295,7 +519,7 @@ async function init() {
   document.getElementById("meta").innerHTML =
     `Seasons ${DATA.seasons.join("–")} · regular season · recency weights (${wtxt}) · ` +
     `${DATA.players.length} players · box stats = latest season · r = pooled/weighted · ` +
-    `click a row for per-season history · generated ${new Date(DATA.generated_at).toLocaleString()}`;
+    `click a player for the prop builder + per-season history · generated ${new Date(DATA.generated_at).toLocaleString()}`;
 
   // Live schedule for the toggle; fall back to the baked snapshot.
   const live = await liveTodayIds();

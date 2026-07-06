@@ -181,8 +181,9 @@ def _made(v: Any) -> float | None:
 
 def regular_season_games(
     sess: requests.Session, aid: str, season: int
-) -> list[tuple[float, float, float, float, float]]:
-    """Return (pts, reb, ast, tpm, minutes) for each regular-season game.
+) -> list[dict]:
+    """Return one dict per regular-season game: box stats plus game metadata
+    (date, opponent, home/away, result) pulled from the payload's events map.
 
     Categories within a season type are monthly partitions; we dedupe on
     eventId so any overlap can't double-count a game.
@@ -191,7 +192,8 @@ def regular_season_games(
     data = get_json(sess, url)
     if not data:
         return []
-    out: list[tuple[float, float, float, float, float]] = []
+    ev_meta = data.get("events") or {}
+    out: list[dict] = []
     seen: set[str] = set()
     for st in data.get("seasonTypes") or []:
         if "Regular Season" not in (st.get("displayName") or ""):
@@ -213,7 +215,16 @@ def regular_season_games(
                     continue
                 if eid:
                     seen.add(eid)
-                out.append((pts, reb, ast, tpm, 0.0 if mins is None else mins))
+                m = ev_meta.get(eid) or {}
+                out.append({
+                    "pts": pts, "reb": reb, "ast": ast, "tpm": tpm,
+                    "min": 0.0 if mins is None else mins,
+                    "date": (m.get("gameDate") or "")[:10],
+                    "opp": (m.get("opponent") or {}).get("abbreviation") or "",
+                    "loc": m.get("atVs") or "",
+                    "res": m.get("gameResult") or "",
+                })
+    out.sort(key=lambda g: g["date"])
     return out
 
 
@@ -330,13 +341,13 @@ def _pair(r: float | None, n: float | None) -> dict:
     return {"r": round(r, 4), "p_value": None if p is None else round(p, 5)}
 
 
-def _season_stats(games: list[tuple[float, float, float, float, float]]) -> dict:
+def _season_stats(games: list[dict]) -> dict:
     """Box-score means + within-season correlations for one season's games.
     Single-season, so weighting is moot (every game shares one weight)."""
     n = len(games)
-    pts = [g[0] for g in games]; reb = [g[1] for g in games]
-    ast = [g[2] for g in games]; tpm = [g[3] for g in games]
-    mins = [g[4] for g in games]
+    pts = [g["pts"] for g in games]; reb = [g["reb"] for g in games]
+    ast = [g["ast"] for g in games]; tpm = [g["tpm"] for g in games]
+    mins = [g["min"] for g in games]
     return {
         "games": n,
         "min_mean": round(sum(mins) / n, 1),
@@ -354,7 +365,7 @@ def process_player(
     sess: requests.Session, aid: str, seasons: list[int], weights: dict[int, float],
     min_mpg: float, team_map: dict[str, dict]
 ) -> dict | None:
-    by_year: dict[int, list[tuple]] = {}
+    by_year: dict[int, list[dict]] = {}
     pts: list[float] = []
     reb: list[float] = []
     ast: list[float] = []
@@ -369,9 +380,9 @@ def process_player(
         by_year[yr] = g
         per_season[str(yr)] = len(g)
         w = weights.get(yr, 0.0)
-        for p, r, a, t, m in g:
-            pts.append(p); reb.append(r); ast.append(a)
-            tpm.append(t); mins.append(m); ws.append(w)
+        for gm in g:
+            pts.append(gm["pts"]); reb.append(gm["reb"]); ast.append(gm["ast"])
+            tpm.append(gm["tpm"]); mins.append(gm["min"]); ws.append(w)
     n = len(pts)
     if n < 3:
         return None
@@ -399,6 +410,17 @@ def process_player(
     by_season = {str(yr): _season_stats(by_year[yr])
                  for yr in sorted(by_year) if len(by_year[yr]) >= 3}
     latest = max(by_year) if by_year else None
+    # Full game-by-game log for the latest (current) season, date-ordered.
+    # Powers the prop-builder scatter in the viewer, which is deliberately
+    # this-season-only. Ints stored as ints to keep the JSON compact.
+    def _i(v: float) -> int | float:
+        return int(v) if float(v).is_integer() else v
+    latest_games = [] if latest is None else [
+        {"d": gm["date"], "opp": gm["opp"], "loc": gm["loc"], "res": gm["res"],
+         "min": _i(gm["min"]), "pts": _i(gm["pts"]), "reb": _i(gm["reb"]),
+         "ast": _i(gm["ast"]), "tpm": _i(gm["tpm"])}
+        for gm in by_year[latest]
+    ]
     return {
         "athlete_id": aid,
         "name": name,
@@ -429,6 +451,7 @@ def process_player(
             "weighted": _pair(wp3[0] if wp3 else None, n_eff),
         },
         "by_season": by_season,
+        "latest_games": latest_games,
     }
 
 

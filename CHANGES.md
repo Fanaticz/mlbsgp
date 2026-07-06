@@ -1,5 +1,10 @@
 # Changes
 
+## 2026-07-06 session
+
+### WNBA prop builder: this-season two-stat scatter per player
+Clicking a player on the WNBA page now opens a prop builder above the per-season history: set a PTS line and a second-stat line (REB by default; AST/3PM selectable) and get a scatter of **every game this season only** (one dot per game, dots grow when multiple games land on the same score), the two lines drawn in red, and four tiles showing how often each over/under combo hit (count, %, and the fair American odds that hit rate implies — TacoBot-style). Over = strictly greater; games landing exactly on an integer line count as pushes and are excluded (noted when present). Line inputs redraw just the chart, so typing keeps focus; per-player settings survive re-renders. Data side: `scripts/wnba_fetch_correlations.py` now emits `latest_games` per player — the full date-ordered current-season game log (date, opponent, home/away, W/L, min/pts/reb/ast/3pm) taken from the same ESPN gamelog payload — and `public/data/wnba_correlations.json` was regenerated (195 players through 2026-07-05, ~1.1 MB).
+
 ## 2026-07-05 session (later)
 
 ### calculateBets 403 root cause: unvalidated Akamai `_abck` + validated-cookie provider
