@@ -46,6 +46,17 @@ DK_SGP = "https://sportsbook-nash.draftkings.com/sites/US-SB/api/sportscontent/p
 DK_PRICE_HOST = _os.environ.get("DK_PRICE_HOST", "gaming-us-nj.draftkings.com")
 DK_PRICE = f"https://{DK_PRICE_HOST}/api/wager/v1/calculateBets"
 
+# Residential-proxy egress for the pricing POST. DK's Akamai Bot Manager blocks
+# calculateBets from datacenter IP ranges (Railway, GCP, etc.) regardless of
+# cookies — verified: a browser-minted *validated* _abck still 403s when
+# replayed from Railway. The only fix is to make the pricing call leave from a
+# residential IP. Set DK_PROXY to a proxy URL (e.g.
+# http://user:pass@gate.provider.com:port) and the warmup + calculateBets POST
+# route through it; the high-volume market GETs stay on the direct connection so
+# we don't burn metered residential bandwidth on them. Use a STICKY session so
+# the cookie is minted and replayed from the same IP within its validity window.
+DK_PROXY = _os.environ.get("DK_PROXY", "").strip()
+
 # calculateBets is what a logged-out browser POSTs from the bet slip; Akamai
 # expects the request to look like it came from the sportsbook page. Bare
 # JSON POSTs (no Origin/Referer, no .draftkings.com cookies) are exactly the
@@ -90,6 +101,54 @@ def _rotate_session():
         except Exception:
             pass
         session = fresh
+
+
+# Dedicated pricing session. When DK_PROXY is set, the warmup GET and the
+# calculateBets POST run on THIS session (routed through the residential proxy)
+# instead of the shared one. Keeping a separate cookie jar is essential: the
+# shared session's market GETs hit sportsbook-nash on the direct datacenter IP
+# and their Set-Cookie responses would otherwise overwrite the proxy-minted,
+# residential-IP-bound _abck and re-trigger the block. When DK_PROXY is unset,
+# _pricing_session() returns the shared session, so behavior is unchanged.
+_price_session = None
+_price_imp_idx = 0
+
+
+def _price_proxies():
+    """Per-request proxies dict for the pricing path, or None when DK_PROXY is
+    unset (direct connection, current behavior)."""
+    return {"https": DK_PROXY, "http": DK_PROXY} if DK_PROXY else None
+
+
+def _pricing_session():
+    """The session the pricing path should use. Separate proxied session when
+    DK_PROXY is set; otherwise the shared session (unchanged behavior)."""
+    global _price_session
+    if not DK_PROXY:
+        return session
+    if _price_session is None:
+        with _session_lock:
+            if _price_session is None:
+                _price_session = cffi_requests.Session(impersonate=_IMPERSONATES[0])
+    return _price_session
+
+
+def _rotate_pricing_session():
+    """Rotate the fingerprint of whichever session the pricing path uses,
+    carrying the cookie jar so the (possibly validated) _abck survives."""
+    global _price_session, _price_imp_idx
+    if not DK_PROXY:
+        _rotate_session()
+        return
+    with _session_lock:
+        _price_imp_idx = (_price_imp_idx + 1) % len(_IMPERSONATES)
+        fresh = cffi_requests.Session(impersonate=_IMPERSONATES[_price_imp_idx])
+        try:
+            if _price_session is not None:
+                fresh.cookies.update(_price_session.cookies)
+        except Exception:
+            pass
+        _price_session = fresh
 
 
 _warmup_done = False
@@ -182,7 +241,10 @@ def _mint_cookies_with_browser():
         except Exception:
             return None
         exe = _os.environ.get("DK_CHROMIUM_PATH") or None
-        proxy = _os.environ.get("HTTPS_PROXY") or _os.environ.get("https_proxy")
+        # Prefer DK_PROXY so the cookie is minted from the SAME residential IP
+        # the calculateBets POST will use — Akamai binds the validated _abck to
+        # that IP. HTTPS_PROXY is only a fallback (local/dev egress proxy).
+        proxy = DK_PROXY or _os.environ.get("HTTPS_PROXY") or _os.environ.get("https_proxy")
         try:
             with sync_playwright() as p:
                 launch_kw = {"headless": True, "args": ["--no-sandbox"]}
@@ -225,10 +287,11 @@ def _warm_dk_cookies():
     problem (fixable via DK_COOKIES/DK_COOKIE_BROWSER) without shell access."""
     global _warmup_done, _cookie_source
 
+    sess = _pricing_session()
     env_cookies = _os.environ.get("DK_COOKIES", "").strip()
     if env_cookies:
         with _session_lock:
-            _load_cookie_string_into(session, env_cookies)
+            _load_cookie_string_into(sess, env_cookies)
         _cookie_source = "env"
     elif _os.environ.get("DK_COOKIE_BROWSER", "").strip().lower() not in ("", "0", "false", "no"):
         minted = _mint_cookies_with_browser()
@@ -236,7 +299,7 @@ def _warm_dk_cookies():
             with _session_lock:
                 for name, val in minted.items():
                     try:
-                        session.cookies.set(name, val, domain=".draftkings.com", path="/")
+                        sess.cookies.set(name, val, domain=".draftkings.com", path="/")
                     except Exception:
                         pass
             _cookie_source = "browser"
@@ -249,14 +312,17 @@ def _warm_dk_cookies():
 
     try:
         _PRICE_DIAG["cookie_source"] = _cookie_source
-        _PRICE_DIAG["abck"] = _abck_validation_state(session.cookies.jar)
+        _PRICE_DIAG["abck"] = _abck_validation_state(sess.cookies.jar)
+        _PRICE_DIAG["proxy"] = "on" if DK_PROXY else "off"
     except Exception:
         pass
 
 
 def _legacy_warmup():
     """One-time best-effort GET of the sportsbook page to collect Akamai
-    cookies. Yields an unvalidated _abck — kept only as a fallback."""
+    cookies. Yields an unvalidated _abck — kept only as a fallback. Runs on the
+    pricing session and through DK_PROXY when set, so the cookie is collected
+    from the same IP the calculateBets POST will use."""
     global _warmup_done
     if _warmup_done:
         return
@@ -265,8 +331,9 @@ def _legacy_warmup():
             return
         _warmup_done = True
     try:
-        session.get("https://sportsbook.draftkings.com/", timeout=10,
-                    headers={"Accept": "text/html,application/xhtml+xml"})
+        _pricing_session().get("https://sportsbook.draftkings.com/", timeout=15,
+                               headers={"Accept": "text/html,application/xhtml+xml"},
+                               proxies=_price_proxies())
     except Exception:
         pass
 
@@ -335,19 +402,20 @@ def _post_with_retry(url, json=None, timeout=15, attempts=4, headers=None):
     semantics. On exhaustion, return the last response (status tallies feed
     _PRICE_DIAG) or raise if we never got one."""
     _warm_dk_cookies()
+    proxies = _price_proxies()
     last_exc = None
     r = None
     for attempt in range(attempts):
         _wait_for_cooloff()
         try:
-            sess = session
-            r = sess.post(url, json=json, timeout=timeout, headers=headers)
+            sess = _pricing_session()
+            r = sess.post(url, json=json, timeout=timeout, headers=headers, proxies=proxies)
             if r.status_code not in (403, 429, 502, 503, 504):
                 return r
             if r.status_code in (403, 429):
                 _trigger_cooloff(1.5 + attempt * 1.2)
                 if attempt >= 1:
-                    _rotate_session()
+                    _rotate_pricing_session()
             _time.sleep(0.6 * (2 ** attempt) + random.uniform(0, 0.4))
         except Exception as e:
             last_exc = e
@@ -828,7 +896,8 @@ def _american_from_decimal(dec):
 # API response without shell access to production — find_sgps_worldcup
 # returns a snapshot as `sgp_price_diag`.
 _PRICE_DIAG = {"calls": 0, "ok": 0, "incompatible": 0, "no_bet": 0,
-               "exceptions": 0, "http": {}, "cookie_source": None, "abck": None}
+               "exceptions": 0, "http": {}, "cookie_source": None, "abck": None,
+               "proxy": None}
 
 
 def _price_combo(selection_ids):

@@ -2044,10 +2044,12 @@ function evRenderResults(){
       if(httpBits.length||diag.exceptions>0){
         var blocked=(diag.http&&(diag.http['403']||diag.http['429']));
         var tail;
-        if(blocked&&diag.abck==='unvalidated'){
+        if(blocked&&diag.proxy==='on'){
+          tail='DraftKings is still bot-blocking the pricing POST even through the residential proxy (cookie source: '+(diag.cookie_source||'?')+', _abck: '+(diag.abck||'?')+'). Check that DK_PROXY is a sticky residential endpoint and that the cookie was minted through it (DK_COOKIE_BROWSER), so the validated _abck and the POST share one IP.';
+        }else if(blocked&&diag.abck==='unvalidated'){
           tail='DraftKings’ Akamai bot protection is blocking the pricing POST: the _abck cookie is unvalidated, which curl alone can’t fix. Supply validated cookies via DK_COOKIES (paste from a logged-out browser) or enable DK_COOKIE_BROWSER.';
         }else if(blocked){
-          tail='DraftKings is bot-blocking the pricing POST (cookie source: '+(diag.cookie_source||'?')+', _abck: '+(diag.abck||'?')+'). If it persists, refresh the DK_COOKIES value.';
+          tail='DraftKings is blocking the pricing POST from this datacenter IP (cookie source: '+(diag.cookie_source||'?')+', _abck: '+(diag.abck||'?')+'). A validated cookie isn’t enough from a datacenter IP — route the pricing call through a residential proxy by setting DK_PROXY.';
         }else{
           tail='This looks like a transient DraftKings-side outage — the legs matched fine. Try again in a few minutes.';
         }

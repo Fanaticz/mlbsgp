@@ -1,5 +1,16 @@
 # Changes
 
+## 2026-07-07 session
+
+### calculateBets 403 is IP-based: residential-proxy egress for the pricing POST
+Confirmed in production what the datacenter theory predicted: with `DK_COOKIES` set, prod reported `cookie source: env, _abck: validated` — the validated browser-minted cookie was being sent correctly — and DK **still** returned `HTTP 403 ×53`. So it isn't the cookie; Akamai binds the validated `_abck` to the IP that validated it (a residential browser) and rejects it when Railway replays it from a Google-datacenter IP, and it scores datacenter ranges as bots on the wager endpoint regardless.
+
+Added `DK_PROXY`: when set, the cookie warmup/mint and the `calculateBets` POST egress through a residential proxy so the pricing call leaves from a residential IP. Details:
+- A **dedicated pricing session** (`_pricing_session()`) with its own cookie jar carries the pricing path. This is essential: the shared session's market GETs hit `sportsbook-nash` on the direct datacenter IP, and their `Set-Cookie` responses would otherwise overwrite the proxy-minted, residential-IP-bound `_abck` and re-trigger the block. When `DK_PROXY` is unset, `_pricing_session()` returns the shared session, so behavior is byte-for-byte unchanged.
+- Only the warmup + pricing POST go through the proxy; the high-volume market GETs stay on the direct connection so we don't burn metered residential bandwidth.
+- The headless minter (`DK_COOKIE_BROWSER`) now prefers `DK_PROXY` for its egress, so the cookie is minted from the **same** residential IP the POST will use — required, since Akamai pins the validated cookie to that IP. Use a **sticky** proxy session so mint-IP == POST-IP within the cookie's validity window.
+- `sgp_price_diag` now also reports `proxy` (on/off), and the +EV empty state tailors its guidance: datacenter-IP block → "set DK_PROXY"; still blocked through the proxy → "check it's a sticky residential endpoint and mint the cookie through it."
+
 ## 2026-07-05 session (later)
 
 ### calculateBets 403 root cause: unvalidated Akamai `_abck` + validated-cookie provider
