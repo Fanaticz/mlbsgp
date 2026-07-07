@@ -22,6 +22,13 @@ RUN python3 -m venv /opt/venv \
 # Put venv on PATH so `python3` in server.js resolves to the venv Python
 ENV PATH="/opt/venv/bin:${PATH}"
 
+# Chromium for the DK_COOKIE_BROWSER cookie minter. Only exercised when that
+# flag is set; the browser + its apt runtime deps are installed here so the
+# minter can launch it. Playwright finds it automatically via
+# PLAYWRIGHT_BROWSERS_PATH, so DK_CHROMIUM_PATH does not need to be set.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers
+RUN /opt/venv/bin/playwright install --with-deps chromium
+
 # Node deps
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev

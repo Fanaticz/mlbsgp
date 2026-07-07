@@ -15,6 +15,7 @@ import sys
 import json
 import re
 import random
+import shutil
 import threading
 import time as _time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -240,7 +241,16 @@ def _mint_cookies_with_browser():
             from playwright.sync_api import sync_playwright
         except Exception:
             return None
-        exe = _os.environ.get("DK_CHROMIUM_PATH") or None
+        # Browser binary: explicit override, else a system Chromium on PATH
+        # (the Nixpacks `chromium` package lands here — its own Nix-resolved
+        # libs make it launchable, unlike Playwright's generic-Linux download),
+        # else None so Playwright uses its managed build (the Docker path,
+        # installed via `playwright install chromium`).
+        exe = (_os.environ.get("DK_CHROMIUM_PATH")
+               or shutil.which("chromium")
+               or shutil.which("chromium-browser")
+               or shutil.which("google-chrome-stable")
+               or None)
         # Prefer DK_PROXY so the cookie is minted from the SAME residential IP
         # the calculateBets POST will use — Akamai binds the validated _abck to
         # that IP. HTTPS_PROXY is only a fallback (local/dev egress proxy).

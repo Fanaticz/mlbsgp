@@ -1,2 +1,8 @@
 curl_cffi==0.15.0
 openpyxl==3.1.5
+# Headless browser used ONLY when DK_COOKIE_BROWSER is enabled: mints a
+# validated Akamai _abck cookie for calculateBets by running DK's sensor JS.
+# Harmless when the flag is off (lazy-imported in dk_api.py). The Docker build
+# fetches the matching Chromium via `playwright install chromium`; the Nixpacks
+# build provides Chromium via the `chromium` nixPkg instead.
+playwright==1.48.0

@@ -2,6 +2,9 @@
 
 ## 2026-07-07 session
 
+### Chromium in the image so DK_COOKIE_BROWSER works out of the box
+Added Playwright + Chromium to both build paths so the cookie minter can run without extra setup. Docker (Railway's default when a Dockerfile is present): `playwright install --with-deps chromium` into `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`; Playwright auto-discovers it. Nixpacks: the `chromium` nixPkg lands on PATH and `dk_api.py`'s minter finds it via `shutil.which` (the Nix build is launchable where Playwright's generic-Linux download isn't). `playwright==1.48.0` added to requirements. All of it is inert unless `DK_COOKIE_BROWSER` is set, and the minter still degrades to the warmup fallback if the browser can't launch, so the build change can't regress the default path.
+
 ### calculateBets 403 is IP-based: residential-proxy egress for the pricing POST
 Confirmed in production what the datacenter theory predicted: with `DK_COOKIES` set, prod reported `cookie source: env, _abck: validated` — the validated browser-minted cookie was being sent correctly — and DK **still** returned `HTTP 403 ×53`. So it isn't the cookie; Akamai binds the validated `_abck` to the IP that validated it (a residential browser) and rejects it when Railway replays it from a Google-datacenter IP, and it scores datacenter ranges as bots on the wager endpoint regardless.
 
