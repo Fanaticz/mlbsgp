@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-16T12:27:18.030269Z",
+  "generated_at": "2026-07-17T12:13:24.219358Z",
   "source": "ESPN WNBA public API",
   "seasons": [
     2024,
@@ -18,37 +18,59 @@
   "min_games_reportable": 20,
   "min_mpg_included": 0.0,
   "schedule_today": {
-    "date": "20260716",
+    "date": "20260717",
     "team_ids": [
-      "132052",
-      "16",
-      "3",
-      "9"
+      "11",
+      "131935",
+      "14",
+      "18",
+      "19",
+      "20",
+      "5",
+      "6"
     ],
     "games": [
       {
-        "start": "2026-07-16T23:00Z",
+        "start": "2026-07-17T23:30Z",
         "state": "pre",
-        "matchup": "POR @ WSH",
+        "matchup": "SEA @ IND",
         "team_abbrs": [
-          "WSH",
-          "POR"
+          "IND",
+          "SEA"
         ]
       },
       {
-        "start": "2026-07-17T01:00Z",
+        "start": "2026-07-17T23:30Z",
         "state": "pre",
-        "matchup": "NY @ DAL",
+        "matchup": "ATL @ TOR",
         "team_abbrs": [
-          "DAL",
-          "NY"
+          "TOR",
+          "ATL"
+        ]
+      },
+      {
+        "start": "2026-07-17T23:30Z",
+        "state": "pre",
+        "matchup": "LA @ CHI",
+        "team_abbrs": [
+          "CHI",
+          "LA"
+        ]
+      },
+      {
+        "start": "2026-07-18T02:00Z",
+        "state": "pre",
+        "matchup": "CON @ PHX",
+        "team_abbrs": [
+          "PHX",
+          "CON"
         ]
       }
     ]
   },
-  "n_players": 198,
+  "n_players": 197,
   "n_players_reportable": 165,
-  "total_game_rows": 11737,
+  "total_game_rows": 11750,
   "players": [
     {
       "athlete_id": "3149391",
@@ -722,7 +744,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4597509",
@@ -939,7 +961,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4433433",
@@ -1157,7 +1179,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "3913881",
@@ -1494,7 +1516,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "5349415",
@@ -1503,67 +1525,67 @@
       "team_id": "16",
       "team_abbr": "WSH",
       "team_name": "Washington Mystics",
-      "n_games": 13,
-      "effective_n": 13.0,
-      "min_mean": 18.7,
+      "n_games": 14,
+      "effective_n": 14.0,
+      "min_mean": 18.6,
       "games_by_season": {
-        "2026": 13
+        "2026": 14
       },
       "latest_season": "2026",
-      "pts_mean": 4.54,
-      "reb_mean": 2.23,
-      "ast_mean": 3.62,
-      "tpm_mean": 0.38,
-      "pts_mean_weighted": 4.54,
+      "pts_mean": 4.57,
+      "reb_mean": 2.36,
+      "ast_mean": 3.43,
+      "tpm_mean": 0.36,
+      "pts_mean_weighted": 4.57,
       "pts_reb": {
         "unweighted": {
-          "r": 0.5856,
-          "p_value": 0.03548
+          "r": 0.5747,
+          "p_value": 0.03159
         },
         "weighted": {
-          "r": 0.5856,
-          "p_value": 0.03548
+          "r": 0.5747,
+          "p_value": 0.03159
         }
       },
       "pts_ast": {
         "unweighted": {
-          "r": 0.5544,
-          "p_value": 0.04927
+          "r": 0.5198,
+          "p_value": 0.05678
         },
         "weighted": {
-          "r": 0.5544,
-          "p_value": 0.04927
+          "r": 0.5198,
+          "p_value": 0.05678
         }
       },
       "pts_3pm": {
         "unweighted": {
-          "r": 0.6837,
-          "p_value": 0.00998
+          "r": 0.6726,
+          "p_value": 0.0084
         },
         "weighted": {
-          "r": 0.6837,
-          "p_value": 0.00998
+          "r": 0.6726,
+          "p_value": 0.0084
         }
       },
       "by_season": {
         "2026": {
-          "games": 13,
-          "min_mean": 18.7,
-          "pts_mean": 4.54,
-          "reb_mean": 2.23,
-          "ast_mean": 3.62,
-          "tpm_mean": 0.38,
+          "games": 14,
+          "min_mean": 18.6,
+          "pts_mean": 4.57,
+          "reb_mean": 2.36,
+          "ast_mean": 3.43,
+          "tpm_mean": 0.36,
           "pts_reb": {
-            "r": 0.5856,
-            "p_value": 0.03548
+            "r": 0.5747,
+            "p_value": 0.03159
           },
           "pts_ast": {
-            "r": 0.5544,
-            "p_value": 0.04927
+            "r": 0.5198,
+            "p_value": 0.05678
           },
           "pts_3pm": {
-            "r": 0.6837,
-            "p_value": 0.00998
+            "r": 0.6726,
+            "p_value": 0.0084
           }
         }
       },
@@ -1710,9 +1732,20 @@
           "reb": 0,
           "ast": 5,
           "tpm": 0
+        },
+        {
+          "d": "2026-07-16",
+          "opp": "POR",
+          "loc": "vs",
+          "res": "L",
+          "min": 18,
+          "pts": 5,
+          "reb": 4,
+          "ast": 1,
+          "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "5105752",
@@ -1862,7 +1895,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4432831",
@@ -2221,7 +2254,7 @@
           "tpm": 2
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "3058901",
@@ -2602,7 +2635,7 @@
           "tpm": 3
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "924",
@@ -2895,7 +2928,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "2529140",
@@ -3265,7 +3298,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "5278237",
@@ -3908,7 +3941,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4433402",
@@ -4278,7 +4311,7 @@
           "tpm": 1
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4433411",
@@ -4287,67 +4320,67 @@
       "team_id": "16",
       "team_abbr": "WSH",
       "team_name": "Washington Mystics",
-      "n_games": 22,
-      "effective_n": 22.0,
-      "min_mean": 12.5,
+      "n_games": 23,
+      "effective_n": 23.0,
+      "min_mean": 12.3,
       "games_by_season": {
-        "2026": 22
+        "2026": 23
       },
       "latest_season": "2026",
-      "pts_mean": 3.91,
+      "pts_mean": 3.83,
       "reb_mean": 3.09,
-      "ast_mean": 0.77,
-      "tpm_mean": 0.14,
-      "pts_mean_weighted": 3.91,
+      "ast_mean": 0.74,
+      "tpm_mean": 0.13,
+      "pts_mean_weighted": 3.83,
       "pts_reb": {
         "unweighted": {
-          "r": 0.5507,
-          "p_value": 0.00791
+          "r": 0.5479,
+          "p_value": 0.0068
         },
         "weighted": {
-          "r": 0.5507,
-          "p_value": 0.00791
+          "r": 0.5479,
+          "p_value": 0.0068
         }
       },
       "pts_ast": {
         "unweighted": {
-          "r": 0.1931,
-          "p_value": 0.3892
+          "r": 0.211,
+          "p_value": 0.33391
         },
         "weighted": {
-          "r": 0.1931,
-          "p_value": 0.3892
+          "r": 0.211,
+          "p_value": 0.33391
         }
       },
       "pts_3pm": {
         "unweighted": {
-          "r": 0.4362,
-          "p_value": 0.04243
+          "r": 0.4413,
+          "p_value": 0.03503
         },
         "weighted": {
-          "r": 0.4362,
-          "p_value": 0.04243
+          "r": 0.4413,
+          "p_value": 0.03503
         }
       },
       "by_season": {
         "2026": {
-          "games": 22,
-          "min_mean": 12.5,
-          "pts_mean": 3.91,
+          "games": 23,
+          "min_mean": 12.3,
+          "pts_mean": 3.83,
           "reb_mean": 3.09,
-          "ast_mean": 0.77,
-          "tpm_mean": 0.14,
+          "ast_mean": 0.74,
+          "tpm_mean": 0.13,
           "pts_reb": {
-            "r": 0.5507,
-            "p_value": 0.00791
+            "r": 0.5479,
+            "p_value": 0.0068
           },
           "pts_ast": {
-            "r": 0.1931,
-            "p_value": 0.3892
+            "r": 0.211,
+            "p_value": 0.33391
           },
           "pts_3pm": {
-            "r": 0.4362,
-            "p_value": 0.04243
+            "r": 0.4413,
+            "p_value": 0.03503
           }
         }
       },
@@ -4593,9 +4626,20 @@
           "reb": 2,
           "ast": 0,
           "tpm": 0
+        },
+        {
+          "d": "2026-07-16",
+          "opp": "POR",
+          "loc": "vs",
+          "res": "L",
+          "min": 8,
+          "pts": 2,
+          "reb": 3,
+          "ast": 0,
+          "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "4281930",
@@ -4714,7 +4758,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "4873358",
@@ -5412,7 +5456,7 @@
           "tpm": 2
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "3904577",
@@ -5793,7 +5837,7 @@
           "tpm": 2
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "5106232",
@@ -5934,7 +5978,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "5345325",
@@ -6229,7 +6273,7 @@
           "tpm": 2
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4790266",
@@ -6535,7 +6579,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "4433807",
@@ -6895,7 +6939,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "3142010",
@@ -7221,7 +7265,7 @@
           "tpm": 3
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4433790",
@@ -7549,7 +7593,7 @@
           "tpm": 3
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "2593770",
@@ -7832,7 +7876,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "2998928",
@@ -8213,7 +8257,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "4898383",
@@ -8311,7 +8355,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "3142086",
@@ -8679,47 +8723,47 @@
       "team_id": "132052",
       "team_abbr": "POR",
       "team_name": "Portland Fire",
-      "n_games": 108,
-      "effective_n": 90.9,
+      "n_games": 109,
+      "effective_n": 91.8,
       "min_mean": 29.2,
       "games_by_season": {
         "2024": 40,
         "2025": 45,
-        "2026": 23
+        "2026": 24
       },
       "latest_season": "2026",
-      "pts_mean": 9.18,
-      "reb_mean": 3.68,
-      "ast_mean": 2.11,
+      "pts_mean": 9.15,
+      "reb_mean": 3.67,
+      "ast_mean": 2.12,
       "tpm_mean": 2.01,
-      "pts_mean_weighted": 9.45,
+      "pts_mean_weighted": 9.4,
       "pts_reb": {
         "unweighted": {
-          "r": 0.0684,
-          "p_value": 0.48204
+          "r": 0.0701,
+          "p_value": 0.46883
         },
         "weighted": {
-          "r": 0.0069,
-          "p_value": 0.9484
+          "r": 0.0099,
+          "p_value": 0.9253
         }
       },
       "pts_ast": {
         "unweighted": {
-          "r": 0.0689,
-          "p_value": 0.47881
+          "r": 0.0653,
+          "p_value": 0.5002
         },
         "weighted": {
-          "r": -0.0612,
-          "p_value": 0.56435
+          "r": -0.0671,
+          "p_value": 0.52563
         }
       },
       "pts_3pm": {
         "unweighted": {
-          "r": 0.8539,
+          "r": 0.8528,
           "p_value": 0.0
         },
         "weighted": {
-          "r": 0.8272,
+          "r": 0.8249,
           "p_value": 0.0
         }
       },
@@ -8765,22 +8809,22 @@
           }
         },
         "2026": {
-          "games": 23,
-          "min_mean": 30.5,
-          "pts_mean": 13.48,
-          "reb_mean": 3.65,
-          "ast_mean": 2.0,
-          "tpm_mean": 2.48,
+          "games": 24,
+          "min_mean": 30.3,
+          "pts_mean": 13.17,
+          "reb_mean": 3.62,
+          "ast_mean": 2.04,
+          "tpm_mean": 2.46,
           "pts_reb": {
-            "r": -0.1531,
-            "p_value": 0.48566
+            "r": -0.1281,
+            "p_value": 0.55097
           },
           "pts_ast": {
-            "r": -0.3759,
-            "p_value": 0.07707
+            "r": -0.4038,
+            "p_value": 0.05039
           },
           "pts_3pm": {
-            "r": 0.7732,
+            "r": 0.7584,
             "p_value": 2e-05
           }
         }
@@ -9038,9 +9082,20 @@
           "reb": 3,
           "ast": 3,
           "tpm": 2
+        },
+        {
+          "d": "2026-07-16",
+          "opp": "WSH",
+          "loc": "@",
+          "res": "W",
+          "min": 26,
+          "pts": 6,
+          "reb": 3,
+          "ast": 3,
+          "tpm": 2
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "3058895",
@@ -9631,7 +9686,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "2490553",
@@ -9902,7 +9957,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "2988756",
@@ -10184,7 +10239,7 @@
           "tpm": 1
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4433403",
@@ -10521,7 +10576,7 @@
           "tpm": 1
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4433404",
@@ -10803,7 +10858,7 @@
           "tpm": 1
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "5208982",
@@ -10812,47 +10867,47 @@
       "team_id": "132052",
       "team_abbr": "POR",
       "team_name": "Portland Fire",
-      "n_games": 59,
-      "effective_n": 57.2,
-      "min_mean": 20.3,
+      "n_games": 60,
+      "effective_n": 58.1,
+      "min_mean": 20.4,
       "games_by_season": {
         "2025": 37,
-        "2026": 22
+        "2026": 23
       },
       "latest_season": "2026",
-      "pts_mean": 10.24,
-      "reb_mean": 1.69,
-      "ast_mean": 3.44,
-      "tpm_mean": 0.51,
-      "pts_mean_weighted": 10.93,
+      "pts_mean": 10.3,
+      "reb_mean": 1.68,
+      "ast_mean": 3.47,
+      "tpm_mean": 0.5,
+      "pts_mean_weighted": 10.99,
       "pts_reb": {
         "unweighted": {
-          "r": 0.4819,
-          "p_value": 0.00011
+          "r": 0.4758,
+          "p_value": 0.00012
         },
         "weighted": {
-          "r": 0.4803,
-          "p_value": 0.00015
+          "r": 0.4735,
+          "p_value": 0.00017
         }
       },
       "pts_ast": {
         "unweighted": {
-          "r": 0.6515,
+          "r": 0.6533,
           "p_value": 0.0
         },
         "weighted": {
-          "r": 0.6358,
+          "r": 0.6372,
           "p_value": 0.0
         }
       },
       "pts_3pm": {
         "unweighted": {
-          "r": 0.504,
-          "p_value": 5e-05
+          "r": 0.4942,
+          "p_value": 6e-05
         },
         "weighted": {
-          "r": 0.4987,
-          "p_value": 8e-05
+          "r": 0.4883,
+          "p_value": 0.0001
         }
       },
       "by_season": {
@@ -10877,23 +10932,23 @@
           }
         },
         "2026": {
-          "games": 22,
-          "min_mean": 25.6,
-          "pts_mean": 15.27,
-          "reb_mean": 2.36,
-          "ast_mean": 5.82,
-          "tpm_mean": 0.77,
+          "games": 23,
+          "min_mean": 25.5,
+          "pts_mean": 15.22,
+          "reb_mean": 2.3,
+          "ast_mean": 5.78,
+          "tpm_mean": 0.74,
           "pts_reb": {
-            "r": 0.3344,
-            "p_value": 0.12817
+            "r": 0.3369,
+            "p_value": 0.11597
           },
           "pts_ast": {
-            "r": 0.3166,
-            "p_value": 0.15115
+            "r": 0.3184,
+            "p_value": 0.13869
           },
           "pts_3pm": {
-            "r": 0.387,
-            "p_value": 0.07521
+            "r": 0.3879,
+            "p_value": 0.06741
           }
         }
       },
@@ -11139,9 +11194,20 @@
           "reb": 1,
           "ast": 6,
           "tpm": 0
+        },
+        {
+          "d": "2026-07-16",
+          "opp": "WSH",
+          "loc": "@",
+          "res": "W",
+          "min": 23,
+          "pts": 14,
+          "reb": 1,
+          "ast": 5,
+          "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "5122345",
@@ -11150,67 +11216,67 @@
       "team_id": "16",
       "team_abbr": "WSH",
       "team_name": "Washington Mystics",
-      "n_games": 18,
-      "effective_n": 18.0,
-      "min_mean": 13.3,
+      "n_games": 19,
+      "effective_n": 19.0,
+      "min_mean": 13.5,
       "games_by_season": {
-        "2026": 18
+        "2026": 19
       },
       "latest_season": "2026",
-      "pts_mean": 2.72,
-      "reb_mean": 1.28,
-      "ast_mean": 0.56,
-      "tpm_mean": 0.28,
-      "pts_mean_weighted": 2.72,
+      "pts_mean": 2.74,
+      "reb_mean": 1.32,
+      "ast_mean": 0.53,
+      "tpm_mean": 0.32,
+      "pts_mean_weighted": 2.74,
       "pts_reb": {
         "unweighted": {
-          "r": 0.3168,
-          "p_value": 0.20029
+          "r": 0.3177,
+          "p_value": 0.18505
         },
         "weighted": {
-          "r": 0.3168,
-          "p_value": 0.20029
+          "r": 0.3177,
+          "p_value": 0.18505
         }
       },
       "pts_ast": {
         "unweighted": {
-          "r": 0.205,
-          "p_value": 0.41438
+          "r": 0.1991,
+          "p_value": 0.4138
         },
         "weighted": {
-          "r": 0.205,
-          "p_value": 0.41438
+          "r": 0.1991,
+          "p_value": 0.4138
         }
       },
       "pts_3pm": {
         "unweighted": {
-          "r": 0.5478,
-          "p_value": 0.01861
+          "r": 0.5229,
+          "p_value": 0.0216
         },
         "weighted": {
-          "r": 0.5478,
-          "p_value": 0.01861
+          "r": 0.5229,
+          "p_value": 0.0216
         }
       },
       "by_season": {
         "2026": {
-          "games": 18,
-          "min_mean": 13.3,
-          "pts_mean": 2.72,
-          "reb_mean": 1.28,
-          "ast_mean": 0.56,
-          "tpm_mean": 0.28,
+          "games": 19,
+          "min_mean": 13.5,
+          "pts_mean": 2.74,
+          "reb_mean": 1.32,
+          "ast_mean": 0.53,
+          "tpm_mean": 0.32,
           "pts_reb": {
-            "r": 0.3168,
-            "p_value": 0.20029
+            "r": 0.3177,
+            "p_value": 0.18505
           },
           "pts_ast": {
-            "r": 0.205,
-            "p_value": 0.41438
+            "r": 0.1991,
+            "p_value": 0.4138
           },
           "pts_3pm": {
-            "r": 0.5478,
-            "p_value": 0.01861
+            "r": 0.5229,
+            "p_value": 0.0216
           }
         }
       },
@@ -11412,9 +11478,20 @@
           "reb": 2,
           "ast": 0,
           "tpm": 0
+        },
+        {
+          "d": "2026-07-16",
+          "opp": "POR",
+          "loc": "vs",
+          "res": "L",
+          "min": 17,
+          "pts": 3,
+          "reb": 2,
+          "ast": 0,
+          "tpm": 1
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "4257500",
@@ -12057,7 +12134,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4703609",
@@ -12396,7 +12473,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "2529122",
@@ -13214,7 +13291,7 @@
           "tpm": 2
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4583144",
@@ -13223,67 +13300,67 @@
       "team_id": "16",
       "team_abbr": "WSH",
       "team_name": "Washington Mystics",
-      "n_games": 20,
-      "effective_n": 20.0,
-      "min_mean": 20.6,
+      "n_games": 21,
+      "effective_n": 21.0,
+      "min_mean": 20.2,
       "games_by_season": {
-        "2026": 20
+        "2026": 21
       },
       "latest_season": "2026",
-      "pts_mean": 6.35,
-      "reb_mean": 2.7,
-      "ast_mean": 2.05,
-      "tpm_mean": 0.75,
-      "pts_mean_weighted": 6.35,
+      "pts_mean": 6.1,
+      "reb_mean": 2.76,
+      "ast_mean": 1.95,
+      "tpm_mean": 0.71,
+      "pts_mean_weighted": 6.1,
       "pts_reb": {
         "unweighted": {
-          "r": 0.1996,
-          "p_value": 0.39895
+          "r": 0.1416,
+          "p_value": 0.54035
         },
         "weighted": {
-          "r": 0.1996,
-          "p_value": 0.39895
+          "r": 0.1416,
+          "p_value": 0.54035
         }
       },
       "pts_ast": {
         "unweighted": {
-          "r": 0.2259,
-          "p_value": 0.3382
+          "r": 0.302,
+          "p_value": 0.18336
         },
         "weighted": {
-          "r": 0.2259,
-          "p_value": 0.3382
+          "r": 0.302,
+          "p_value": 0.18336
         }
       },
       "pts_3pm": {
         "unweighted": {
-          "r": 0.7174,
-          "p_value": 0.00037
+          "r": 0.7216,
+          "p_value": 0.00022
         },
         "weighted": {
-          "r": 0.7174,
-          "p_value": 0.00037
+          "r": 0.7216,
+          "p_value": 0.00022
         }
       },
       "by_season": {
         "2026": {
-          "games": 20,
-          "min_mean": 20.6,
-          "pts_mean": 6.35,
-          "reb_mean": 2.7,
-          "ast_mean": 2.05,
-          "tpm_mean": 0.75,
+          "games": 21,
+          "min_mean": 20.2,
+          "pts_mean": 6.1,
+          "reb_mean": 2.76,
+          "ast_mean": 1.95,
+          "tpm_mean": 0.71,
           "pts_reb": {
-            "r": 0.1996,
-            "p_value": 0.39895
+            "r": 0.1416,
+            "p_value": 0.54035
           },
           "pts_ast": {
-            "r": 0.2259,
-            "p_value": 0.3382
+            "r": 0.302,
+            "p_value": 0.18336
           },
           "pts_3pm": {
-            "r": 0.7174,
-            "p_value": 0.00037
+            "r": 0.7216,
+            "p_value": 0.00022
           }
         }
       },
@@ -13507,9 +13584,20 @@
           "reb": 5,
           "ast": 3,
           "tpm": 0
+        },
+        {
+          "d": "2026-07-16",
+          "opp": "POR",
+          "loc": "vs",
+          "res": "L",
+          "min": 12,
+          "pts": 1,
+          "reb": 4,
+          "ast": 0,
+          "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "981",
@@ -13703,7 +13791,7 @@
           "tpm": 1
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "2987891",
@@ -14333,7 +14421,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4281190",
@@ -14811,7 +14899,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "869",
@@ -15203,7 +15291,7 @@
           "tpm": 2
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4433635",
@@ -15584,7 +15672,7 @@
           "tpm": 2
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4066548",
@@ -16021,7 +16109,7 @@
           "tpm": 1
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "5220150",
@@ -16315,7 +16403,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4398938",
@@ -17010,7 +17098,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4398729",
@@ -17019,47 +17107,47 @@
       "team_id": "132052",
       "team_abbr": "POR",
       "team_name": "Portland Fire",
-      "n_games": 96,
-      "effective_n": 81.6,
+      "n_games": 97,
+      "effective_n": 82.5,
       "min_mean": 16.2,
       "games_by_season": {
         "2024": 32,
         "2025": 40,
-        "2026": 24
+        "2026": 25
       },
       "latest_season": "2026",
-      "pts_mean": 5.9,
-      "reb_mean": 4.06,
-      "ast_mean": 1.56,
-      "tpm_mean": 0.71,
-      "pts_mean_weighted": 6.24,
+      "pts_mean": 5.92,
+      "reb_mean": 4.05,
+      "ast_mean": 1.6,
+      "tpm_mean": 0.7,
+      "pts_mean_weighted": 6.27,
       "pts_reb": {
         "unweighted": {
-          "r": 0.5791,
+          "r": 0.5762,
           "p_value": 0.0
         },
         "weighted": {
-          "r": 0.5669,
+          "r": 0.5626,
           "p_value": 0.0
         }
       },
       "pts_ast": {
         "unweighted": {
-          "r": 0.3649,
-          "p_value": 0.00026
+          "r": 0.3642,
+          "p_value": 0.00025
         },
         "weighted": {
-          "r": 0.3254,
-          "p_value": 0.00292
+          "r": 0.3253,
+          "p_value": 0.00277
         }
       },
       "pts_3pm": {
         "unweighted": {
-          "r": 0.8054,
+          "r": 0.7988,
           "p_value": 0.0
         },
         "weighted": {
-          "r": 0.7489,
+          "r": 0.7392,
           "p_value": 0.0
         }
       },
@@ -17105,23 +17193,23 @@
           }
         },
         "2026": {
-          "games": 24,
-          "min_mean": 24.0,
-          "pts_mean": 9.29,
-          "reb_mean": 5.5,
-          "ast_mean": 1.88,
-          "tpm_mean": 1.04,
+          "games": 25,
+          "min_mean": 23.9,
+          "pts_mean": 9.24,
+          "reb_mean": 5.4,
+          "ast_mean": 2.0,
+          "tpm_mean": 1.0,
           "pts_reb": {
-            "r": 0.4283,
-            "p_value": 0.03679
+            "r": 0.4325,
+            "p_value": 0.03082
           },
           "pts_ast": {
-            "r": 0.2519,
-            "p_value": 0.23514
+            "r": 0.2144,
+            "p_value": 0.30342
           },
           "pts_3pm": {
-            "r": 0.5779,
-            "p_value": 0.0031
+            "r": 0.5758,
+            "p_value": 0.0026
           }
         }
       },
@@ -17389,9 +17477,20 @@
           "reb": 6,
           "ast": 7,
           "tpm": 1
+        },
+        {
+          "d": "2026-07-16",
+          "opp": "WSH",
+          "loc": "@",
+          "res": "W",
+          "min": 22,
+          "pts": 8,
+          "reb": 3,
+          "ast": 5,
+          "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "2284331",
@@ -17607,7 +17706,7 @@
           "tpm": 1
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "5345322",
@@ -18085,7 +18184,7 @@
           "tpm": 2
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4420318",
@@ -18246,7 +18345,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4698736",
@@ -18607,7 +18706,7 @@
           "tpm": 1
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "5105406",
@@ -18616,67 +18715,67 @@
       "team_id": "132052",
       "team_abbr": "POR",
       "team_name": "Portland Fire",
-      "n_games": 21,
-      "effective_n": 21.0,
-      "min_mean": 14.5,
+      "n_games": 22,
+      "effective_n": 22.0,
+      "min_mean": 14.6,
       "games_by_season": {
-        "2026": 21
+        "2026": 22
       },
       "latest_season": "2026",
-      "pts_mean": 5.86,
-      "reb_mean": 1.86,
-      "ast_mean": 0.62,
-      "tpm_mean": 0.57,
-      "pts_mean_weighted": 5.86,
+      "pts_mean": 6.0,
+      "reb_mean": 2.0,
+      "ast_mean": 0.64,
+      "tpm_mean": 0.68,
+      "pts_mean_weighted": 6.0,
       "pts_reb": {
         "unweighted": {
-          "r": 0.3188,
-          "p_value": 0.15894
+          "r": 0.3617,
+          "p_value": 0.09811
         },
         "weighted": {
-          "r": 0.3188,
-          "p_value": 0.15894
+          "r": 0.3617,
+          "p_value": 0.09811
         }
       },
       "pts_ast": {
         "unweighted": {
-          "r": 0.1341,
-          "p_value": 0.5621
+          "r": 0.1525,
+          "p_value": 0.49797
         },
         "weighted": {
-          "r": 0.1341,
-          "p_value": 0.5621
+          "r": 0.1525,
+          "p_value": 0.49797
         }
       },
       "pts_3pm": {
         "unweighted": {
-          "r": 0.5128,
-          "p_value": 0.01745
+          "r": 0.5276,
+          "p_value": 0.01162
         },
         "weighted": {
-          "r": 0.5128,
-          "p_value": 0.01745
+          "r": 0.5276,
+          "p_value": 0.01162
         }
       },
       "by_season": {
         "2026": {
-          "games": 21,
-          "min_mean": 14.5,
-          "pts_mean": 5.86,
-          "reb_mean": 1.86,
-          "ast_mean": 0.62,
-          "tpm_mean": 0.57,
+          "games": 22,
+          "min_mean": 14.6,
+          "pts_mean": 6.0,
+          "reb_mean": 2.0,
+          "ast_mean": 0.64,
+          "tpm_mean": 0.68,
           "pts_reb": {
-            "r": 0.3188,
-            "p_value": 0.15894
+            "r": 0.3617,
+            "p_value": 0.09811
           },
           "pts_ast": {
-            "r": 0.1341,
-            "p_value": 0.5621
+            "r": 0.1525,
+            "p_value": 0.49797
           },
           "pts_3pm": {
-            "r": 0.5128,
-            "p_value": 0.01745
+            "r": 0.5276,
+            "p_value": 0.01162
           }
         }
       },
@@ -18911,9 +19010,20 @@
           "reb": 1,
           "ast": 1,
           "tpm": 2
+        },
+        {
+          "d": "2026-07-16",
+          "opp": "WSH",
+          "loc": "@",
+          "res": "W",
+          "min": 18,
+          "pts": 9,
+          "reb": 5,
+          "ast": 1,
+          "tpm": 3
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "3142328",
@@ -19589,7 +19699,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4704180",
@@ -19598,67 +19708,67 @@
       "team_id": "16",
       "team_abbr": "WSH",
       "team_name": "Washington Mystics",
-      "n_games": 22,
-      "effective_n": 22.0,
-      "min_mean": 23.1,
+      "n_games": 23,
+      "effective_n": 23.0,
+      "min_mean": 22.8,
       "games_by_season": {
-        "2026": 22
+        "2026": 23
       },
       "latest_season": "2026",
-      "pts_mean": 6.14,
-      "reb_mean": 1.18,
-      "ast_mean": 3.55,
-      "tpm_mean": 1.05,
-      "pts_mean_weighted": 6.14,
+      "pts_mean": 6.0,
+      "reb_mean": 1.17,
+      "ast_mean": 3.48,
+      "tpm_mean": 1.0,
+      "pts_mean_weighted": 6.0,
       "pts_reb": {
         "unweighted": {
-          "r": -0.0413,
-          "p_value": 0.85524
+          "r": -0.0345,
+          "p_value": 0.87586
         },
         "weighted": {
-          "r": -0.0413,
-          "p_value": 0.85524
+          "r": -0.0345,
+          "p_value": 0.87586
         }
       },
       "pts_ast": {
         "unweighted": {
-          "r": 0.2999,
-          "p_value": 0.17515
+          "r": 0.3154,
+          "p_value": 0.14272
         },
         "weighted": {
-          "r": 0.2999,
-          "p_value": 0.17515
+          "r": 0.3154,
+          "p_value": 0.14272
         }
       },
       "pts_3pm": {
         "unweighted": {
-          "r": 0.7077,
-          "p_value": 0.00023
+          "r": 0.7159,
+          "p_value": 0.00012
         },
         "weighted": {
-          "r": 0.7077,
-          "p_value": 0.00023
+          "r": 0.7159,
+          "p_value": 0.00012
         }
       },
       "by_season": {
         "2026": {
-          "games": 22,
-          "min_mean": 23.1,
-          "pts_mean": 6.14,
-          "reb_mean": 1.18,
-          "ast_mean": 3.55,
-          "tpm_mean": 1.05,
+          "games": 23,
+          "min_mean": 22.8,
+          "pts_mean": 6.0,
+          "reb_mean": 1.17,
+          "ast_mean": 3.48,
+          "tpm_mean": 1.0,
           "pts_reb": {
-            "r": -0.0413,
-            "p_value": 0.85524
+            "r": -0.0345,
+            "p_value": 0.87586
           },
           "pts_ast": {
-            "r": 0.2999,
-            "p_value": 0.17515
+            "r": 0.3154,
+            "p_value": 0.14272
           },
           "pts_3pm": {
-            "r": 0.7077,
-            "p_value": 0.00023
+            "r": 0.7159,
+            "p_value": 0.00012
           }
         }
       },
@@ -19904,9 +20014,20 @@
           "reb": 1,
           "ast": 2,
           "tpm": 1
+        },
+        {
+          "d": "2026-07-16",
+          "opp": "POR",
+          "loc": "vs",
+          "res": "L",
+          "min": 16,
+          "pts": 3,
+          "reb": 1,
+          "ast": 2,
+          "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "4898898",
@@ -20190,7 +20311,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "5105731",
@@ -20408,7 +20529,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4433412",
@@ -20625,7 +20746,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4595910",
@@ -20797,7 +20918,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "4337216",
@@ -21136,7 +21257,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "4433690",
@@ -21145,67 +21266,67 @@
       "team_id": "132052",
       "team_abbr": "POR",
       "team_name": "Portland Fire",
-      "n_games": 12,
-      "effective_n": 12.0,
-      "min_mean": 8.2,
+      "n_games": 13,
+      "effective_n": 13.0,
+      "min_mean": 7.8,
       "games_by_season": {
-        "2026": 12
+        "2026": 13
       },
       "latest_season": "2026",
-      "pts_mean": 2.17,
-      "reb_mean": 0.67,
-      "ast_mean": 1.67,
-      "tpm_mean": 0.08,
-      "pts_mean_weighted": 2.17,
+      "pts_mean": 2.23,
+      "reb_mean": 0.62,
+      "ast_mean": 1.54,
+      "tpm_mean": 0.15,
+      "pts_mean_weighted": 2.23,
       "pts_reb": {
         "unweighted": {
-          "r": 0.7317,
-          "p_value": 0.00683
+          "r": 0.6871,
+          "p_value": 0.00947
         },
         "weighted": {
-          "r": 0.7317,
-          "p_value": 0.00683
+          "r": 0.6871,
+          "p_value": 0.00947
         }
       },
       "pts_ast": {
         "unweighted": {
-          "r": 0.6257,
-          "p_value": 0.02952
+          "r": 0.5733,
+          "p_value": 0.04054
         },
         "weighted": {
-          "r": 0.6257,
-          "p_value": 0.02952
+          "r": 0.5733,
+          "p_value": 0.04054
         }
       },
       "pts_3pm": {
         "unweighted": {
-          "r": 0.1418,
-          "p_value": 0.66018
+          "r": 0.1911,
+          "p_value": 0.53176
         },
         "weighted": {
-          "r": 0.1418,
-          "p_value": 0.66018
+          "r": 0.1911,
+          "p_value": 0.53176
         }
       },
       "by_season": {
         "2026": {
-          "games": 12,
-          "min_mean": 8.2,
-          "pts_mean": 2.17,
-          "reb_mean": 0.67,
-          "ast_mean": 1.67,
-          "tpm_mean": 0.08,
+          "games": 13,
+          "min_mean": 7.8,
+          "pts_mean": 2.23,
+          "reb_mean": 0.62,
+          "ast_mean": 1.54,
+          "tpm_mean": 0.15,
           "pts_reb": {
-            "r": 0.7317,
-            "p_value": 0.00683
+            "r": 0.6871,
+            "p_value": 0.00947
           },
           "pts_ast": {
-            "r": 0.6257,
-            "p_value": 0.02952
+            "r": 0.5733,
+            "p_value": 0.04054
           },
           "pts_3pm": {
-            "r": 0.1418,
-            "p_value": 0.66018
+            "r": 0.1911,
+            "p_value": 0.53176
           }
         }
       },
@@ -21341,9 +21462,20 @@
           "reb": 0,
           "ast": 1,
           "tpm": 0
+        },
+        {
+          "d": "2026-07-16",
+          "opp": "WSH",
+          "loc": "@",
+          "res": "W",
+          "min": 3,
+          "pts": 3,
+          "reb": 0,
+          "ast": 0,
+          "tpm": 1
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "4790263",
@@ -21933,7 +22065,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "2566453",
@@ -22204,7 +22336,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "5208983",
@@ -22543,7 +22675,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4065870",
@@ -23316,7 +23448,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "5017726",
@@ -23708,7 +23840,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4790264",
@@ -24450,7 +24582,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "3906949",
@@ -24810,7 +24942,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "2987869",
@@ -25453,7 +25585,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "2999101",
@@ -25834,7 +25966,7 @@
           "tpm": 1
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "5108051",
@@ -25942,7 +26074,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "4432830",
@@ -26269,7 +26401,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "3142250",
@@ -26650,7 +26782,7 @@
           "tpm": 1
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "3906769",
@@ -26901,7 +27033,7 @@
           "tpm": 4
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4001679",
@@ -27195,7 +27327,7 @@
           "tpm": 3
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "5277552",
@@ -27750,7 +27882,7 @@
           "tpm": 3
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4065780",
@@ -28862,7 +28994,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "3056730",
@@ -28871,47 +29003,47 @@
       "team_id": "132052",
       "team_abbr": "POR",
       "team_name": "Portland Fire",
-      "n_games": 58,
-      "effective_n": 46.2,
-      "min_mean": 19.2,
+      "n_games": 59,
+      "effective_n": 47.0,
+      "min_mean": 19.1,
       "games_by_season": {
         "2024": 29,
         "2025": 16,
-        "2026": 13
+        "2026": 14
       },
       "latest_season": "2026",
-      "pts_mean": 5.93,
-      "reb_mean": 1.86,
+      "pts_mean": 5.88,
+      "reb_mean": 1.85,
       "ast_mean": 1.53,
       "tpm_mean": 1.22,
-      "pts_mean_weighted": 4.8,
+      "pts_mean_weighted": 4.75,
       "pts_reb": {
         "unweighted": {
-          "r": 0.3953,
-          "p_value": 0.00214
+          "r": 0.3985,
+          "p_value": 0.00177
         },
         "weighted": {
-          "r": 0.42,
-          "p_value": 0.0036
+          "r": 0.4223,
+          "p_value": 0.00311
         }
       },
       "pts_ast": {
         "unweighted": {
-          "r": 0.3527,
-          "p_value": 0.00663
+          "r": 0.3548,
+          "p_value": 0.00583
         },
         "weighted": {
-          "r": 0.232,
-          "p_value": 0.12015
+          "r": 0.2333,
+          "p_value": 0.11448
         }
       },
       "pts_3pm": {
         "unweighted": {
-          "r": 0.872,
+          "r": 0.8711,
           "p_value": 0.0
         },
         "weighted": {
-          "r": 0.8872,
+          "r": 0.8853,
           "p_value": 0.0
         }
       },
@@ -28957,23 +29089,23 @@
           }
         },
         "2026": {
-          "games": 13,
-          "min_mean": 13.8,
-          "pts_mean": 3.69,
-          "reb_mean": 1.08,
-          "ast_mean": 0.77,
-          "tpm_mean": 0.77,
+          "games": 14,
+          "min_mean": 13.7,
+          "pts_mean": 3.64,
+          "reb_mean": 1.07,
+          "ast_mean": 0.79,
+          "tpm_mean": 0.79,
           "pts_reb": {
-            "r": 0.308,
-            "p_value": 0.30595
+            "r": 0.3085,
+            "p_value": 0.28324
           },
           "pts_ast": {
-            "r": -0.3628,
-            "p_value": 0.22309
+            "r": -0.3646,
+            "p_value": 0.19997
           },
           "pts_3pm": {
-            "r": 0.9097,
-            "p_value": 2e-05
+            "r": 0.9056,
+            "p_value": 1e-05
           }
         }
       },
@@ -29120,9 +29252,20 @@
           "reb": 0,
           "ast": 0,
           "tpm": 2
+        },
+        {
+          "d": "2026-07-16",
+          "opp": "WSH",
+          "loc": "@",
+          "res": "W",
+          "min": 13,
+          "pts": 3,
+          "reb": 1,
+          "ast": 1,
+          "tpm": 1
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "4398907",
@@ -29382,7 +29525,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "3917453",
@@ -29698,7 +29841,7 @@
           "tpm": 1
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "2529205",
@@ -30863,7 +31006,7 @@
           "tpm": 3
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "3065570",
@@ -31112,7 +31255,7 @@
           "tpm": 1
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "3922628",
@@ -31482,7 +31625,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "3142327",
@@ -31863,7 +32006,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "2590093",
@@ -32548,7 +32691,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4433633",
@@ -32894,47 +33037,47 @@
       "team_id": "16",
       "team_abbr": "WSH",
       "team_name": "Washington Mystics",
-      "n_games": 64,
-      "effective_n": 62.1,
-      "min_mean": 27.3,
+      "n_games": 65,
+      "effective_n": 63.1,
+      "min_mean": 27.2,
       "games_by_season": {
         "2025": 45,
-        "2026": 19
+        "2026": 20
       },
       "latest_season": "2026",
-      "pts_mean": 14.03,
-      "reb_mean": 8.91,
-      "ast_mean": 1.59,
-      "tpm_mean": 0.19,
-      "pts_mean_weighted": 14.21,
+      "pts_mean": 13.85,
+      "reb_mean": 8.83,
+      "ast_mean": 1.57,
+      "tpm_mean": 0.18,
+      "pts_mean_weighted": 13.97,
       "pts_reb": {
         "unweighted": {
-          "r": 0.2802,
-          "p_value": 0.02491
+          "r": 0.3082,
+          "p_value": 0.01249
         },
         "weighted": {
-          "r": 0.2725,
-          "p_value": 0.03197
+          "r": 0.308,
+          "p_value": 0.01401
         }
       },
       "pts_ast": {
         "unweighted": {
-          "r": 0.3097,
-          "p_value": 0.01277
+          "r": 0.3329,
+          "p_value": 0.00673
         },
         "weighted": {
-          "r": 0.3225,
-          "p_value": 0.01049
+          "r": 0.3507,
+          "p_value": 0.00481
         }
       },
       "pts_3pm": {
         "unweighted": {
-          "r": 0.299,
-          "p_value": 0.0164
+          "r": 0.3022,
+          "p_value": 0.0144
         },
         "weighted": {
-          "r": 0.3003,
-          "p_value": 0.0176
+          "r": 0.3062,
+          "p_value": 0.01462
         }
       },
       "by_season": {
@@ -32959,23 +33102,23 @@
           }
         },
         "2026": {
-          "games": 19,
-          "min_mean": 28.3,
-          "pts_mean": 15.63,
-          "reb_mean": 9.68,
-          "ast_mean": 1.68,
-          "tpm_mean": 0.42,
+          "games": 20,
+          "min_mean": 28.1,
+          "pts_mean": 14.95,
+          "reb_mean": 9.4,
+          "ast_mean": 1.6,
+          "tpm_mean": 0.4,
           "pts_reb": {
-            "r": 0.1908,
-            "p_value": 0.4339
+            "r": 0.2921,
+            "p_value": 0.21149
           },
           "pts_ast": {
-            "r": 0.402,
-            "p_value": 0.08797
+            "r": 0.4579,
+            "p_value": 0.04234
           },
           "pts_3pm": {
-            "r": 0.2388,
-            "p_value": 0.32479
+            "r": 0.2931,
+            "p_value": 0.20985
           }
         }
       },
@@ -33174,7 +33317,7 @@
           "res": "W",
           "min": 29,
           "pts": 12,
-          "reb": 13,
+          "reb": 12,
           "ast": 3,
           "tpm": 1
         },
@@ -33188,9 +33331,20 @@
           "reb": 14,
           "ast": 1,
           "tpm": 0
+        },
+        {
+          "d": "2026-07-16",
+          "opp": "POR",
+          "loc": "vs",
+          "res": "L",
+          "min": 24,
+          "pts": 2,
+          "reb": 5,
+          "ast": 0,
+          "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "4565505",
@@ -33375,7 +33529,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4873359",
@@ -33647,7 +33801,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4432834",
@@ -34334,7 +34488,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "5105737",
@@ -34343,36 +34497,36 @@
       "team_id": "16",
       "team_abbr": "WSH",
       "team_name": "Washington Mystics",
-      "n_games": 22,
-      "effective_n": 22.0,
-      "min_mean": 16.3,
+      "n_games": 23,
+      "effective_n": 23.0,
+      "min_mean": 16.1,
       "games_by_season": {
-        "2026": 22
+        "2026": 23
       },
       "latest_season": "2026",
-      "pts_mean": 6.55,
-      "reb_mean": 3.64,
-      "ast_mean": 0.91,
+      "pts_mean": 6.52,
+      "reb_mean": 3.65,
+      "ast_mean": 0.87,
       "tpm_mean": 0.0,
-      "pts_mean_weighted": 6.55,
+      "pts_mean_weighted": 6.52,
       "pts_reb": {
         "unweighted": {
-          "r": 0.1733,
-          "p_value": 0.44051
+          "r": 0.1718,
+          "p_value": 0.43321
         },
         "weighted": {
-          "r": 0.1733,
-          "p_value": 0.44051
+          "r": 0.1718,
+          "p_value": 0.43321
         }
       },
       "pts_ast": {
         "unweighted": {
-          "r": 0.3148,
-          "p_value": 0.15361
+          "r": 0.3145,
+          "p_value": 0.14383
         },
         "weighted": {
-          "r": 0.3148,
-          "p_value": 0.15361
+          "r": 0.3145,
+          "p_value": 0.14383
         }
       },
       "pts_3pm": {
@@ -34387,19 +34541,19 @@
       },
       "by_season": {
         "2026": {
-          "games": 22,
-          "min_mean": 16.3,
-          "pts_mean": 6.55,
-          "reb_mean": 3.64,
-          "ast_mean": 0.91,
+          "games": 23,
+          "min_mean": 16.1,
+          "pts_mean": 6.52,
+          "reb_mean": 3.65,
+          "ast_mean": 0.87,
           "tpm_mean": 0.0,
           "pts_reb": {
-            "r": 0.1733,
-            "p_value": 0.44051
+            "r": 0.1718,
+            "p_value": 0.43321
           },
           "pts_ast": {
-            "r": 0.3148,
-            "p_value": 0.15361
+            "r": 0.3145,
+            "p_value": 0.14383
           },
           "pts_3pm": {
             "r": null,
@@ -34649,9 +34803,20 @@
           "reb": 6,
           "ast": 0,
           "tpm": 0
+        },
+        {
+          "d": "2026-07-16",
+          "opp": "POR",
+          "loc": "vs",
+          "res": "L",
+          "min": 12,
+          "pts": 6,
+          "reb": 4,
+          "ast": 0,
+          "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "5208981",
@@ -34912,7 +35077,7 @@
           "tpm": 1
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4683006",
@@ -35194,7 +35359,7 @@
           "tpm": 3
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "4399342",
@@ -35554,7 +35719,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4398829",
@@ -35935,7 +36100,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4336633",
@@ -36228,7 +36393,7 @@
           "tpm": 1
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "4596309",
@@ -36421,46 +36586,46 @@
       "team_id": "16",
       "team_abbr": "WSH",
       "team_name": "Washington Mystics",
-      "n_games": 56,
-      "effective_n": 54.4,
-      "min_mean": 11.4,
+      "n_games": 57,
+      "effective_n": 55.4,
+      "min_mean": 11.2,
       "games_by_season": {
         "2025": 41,
-        "2026": 15
+        "2026": 16
       },
       "latest_season": "2026",
-      "pts_mean": 3.77,
+      "pts_mean": 3.7,
       "reb_mean": 1.04,
-      "ast_mean": 1.2,
-      "tpm_mean": 0.45,
-      "pts_mean_weighted": 3.7,
+      "ast_mean": 1.18,
+      "tpm_mean": 0.44,
+      "pts_mean_weighted": 3.61,
       "pts_reb": {
         "unweighted": {
-          "r": 0.2728,
-          "p_value": 0.04195
+          "r": 0.2708,
+          "p_value": 0.04163
         },
         "weighted": {
-          "r": 0.2545,
-          "p_value": 0.06227
+          "r": 0.2514,
+          "p_value": 0.06323
         }
       },
       "pts_ast": {
         "unweighted": {
-          "r": 0.4874,
-          "p_value": 0.00014
+          "r": 0.4978,
+          "p_value": 8e-05
         },
         "weighted": {
-          "r": 0.4758,
-          "p_value": 0.00026
+          "r": 0.4896,
+          "p_value": 0.00014
         }
       },
       "pts_3pm": {
         "unweighted": {
-          "r": 0.5691,
+          "r": 0.5735,
           "p_value": 0.0
         },
         "weighted": {
-          "r": 0.5564,
+          "r": 0.5623,
           "p_value": 1e-05
         }
       },
@@ -36486,23 +36651,23 @@
           }
         },
         "2026": {
-          "games": 15,
-          "min_mean": 8.6,
-          "pts_mean": 3.07,
-          "reb_mean": 0.67,
-          "ast_mean": 1.2,
-          "tpm_mean": 0.4,
+          "games": 16,
+          "min_mean": 8.2,
+          "pts_mean": 2.88,
+          "reb_mean": 0.69,
+          "ast_mean": 1.12,
+          "tpm_mean": 0.38,
           "pts_reb": {
-            "r": -0.1826,
-            "p_value": 0.5147
+            "r": -0.2023,
+            "p_value": 0.45238
           },
           "pts_ast": {
-            "r": 0.3328,
-            "p_value": 0.22551
+            "r": 0.3969,
+            "p_value": 0.12798
           },
           "pts_3pm": {
-            "r": 0.3203,
-            "p_value": 0.24454
+            "r": 0.36,
+            "p_value": 0.1708
           }
         }
       },
@@ -36671,9 +36836,20 @@
           "reb": 0,
           "ast": 0,
           "tpm": 1
+        },
+        {
+          "d": "2026-07-16",
+          "opp": "POR",
+          "loc": "vs",
+          "res": "L",
+          "min": 3,
+          "pts": 0,
+          "reb": 1,
+          "ast": 0,
+          "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "4682797",
@@ -36682,46 +36858,46 @@
       "team_id": "132052",
       "team_abbr": "POR",
       "team_name": "Portland Fire",
-      "n_games": 46,
-      "effective_n": 44.6,
-      "min_mean": 20.5,
+      "n_games": 47,
+      "effective_n": 45.5,
+      "min_mean": 20.4,
       "games_by_season": {
         "2025": 28,
-        "2026": 18
+        "2026": 19
       },
       "latest_season": "2026",
-      "pts_mean": 6.2,
-      "reb_mean": 3.98,
-      "ast_mean": 1.52,
-      "tpm_mean": 1.02,
-      "pts_mean_weighted": 6.05,
+      "pts_mean": 6.09,
+      "reb_mean": 3.94,
+      "ast_mean": 1.49,
+      "tpm_mean": 1.0,
+      "pts_mean_weighted": 5.92,
       "pts_reb": {
         "unweighted": {
-          "r": 0.2892,
-          "p_value": 0.05128
+          "r": 0.3037,
+          "p_value": 0.03794
         },
         "weighted": {
-          "r": 0.3247,
-          "p_value": 0.03036
+          "r": 0.3396,
+          "p_value": 0.02163
         }
       },
       "pts_ast": {
         "unweighted": {
-          "r": 0.2265,
-          "p_value": 0.13004
+          "r": 0.251,
+          "p_value": 0.08876
         },
         "weighted": {
-          "r": 0.2087,
-          "p_value": 0.1711
+          "r": 0.2389,
+          "p_value": 0.11168
         }
       },
       "pts_3pm": {
         "unweighted": {
-          "r": 0.6844,
+          "r": 0.6925,
           "p_value": 0.0
         },
         "weighted": {
-          "r": 0.686,
+          "r": 0.6955,
           "p_value": 0.0
         }
       },
@@ -36747,23 +36923,23 @@
           }
         },
         "2026": {
-          "games": 18,
-          "min_mean": 17.7,
-          "pts_mean": 5.17,
-          "reb_mean": 2.78,
-          "ast_mean": 1.44,
-          "tpm_mean": 0.89,
+          "games": 19,
+          "min_mean": 17.6,
+          "pts_mean": 4.95,
+          "reb_mean": 2.74,
+          "ast_mean": 1.37,
+          "tpm_mean": 0.84,
           "pts_reb": {
-            "r": 0.5614,
-            "p_value": 0.01534
+            "r": 0.559,
+            "p_value": 0.01284
           },
           "pts_ast": {
-            "r": 0.0553,
-            "p_value": 0.82744
+            "r": 0.1299,
+            "p_value": 0.59605
           },
           "pts_3pm": {
-            "r": 0.7124,
-            "p_value": 0.00091
+            "r": 0.7257,
+            "p_value": 0.00044
           }
         }
       },
@@ -36965,9 +37141,20 @@
           "reb": 1,
           "ast": 0,
           "tpm": 1
+        },
+        {
+          "d": "2026-07-16",
+          "opp": "WSH",
+          "loc": "@",
+          "res": "W",
+          "min": 15,
+          "pts": 1,
+          "reb": 2,
+          "ast": 0,
+          "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "4433643",
@@ -37294,7 +37481,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4399415",
@@ -37664,7 +37851,7 @@
           "tpm": 1
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "4433424",
@@ -37793,7 +37980,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "5108587",
@@ -38132,7 +38319,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4433546",
@@ -38481,7 +38668,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "3910470",
@@ -38820,7 +39007,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "3904576",
@@ -39190,7 +39377,7 @@
           "tpm": 2
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4790260",
@@ -39298,7 +39485,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "4038379",
@@ -39667,191 +39854,6 @@
           "reb": 3,
           "ast": 2,
           "tpm": 1
-        }
-      ],
-      "playing_today": true
-    },
-    {
-      "athlete_id": "4704594",
-      "name": "Marta Suarez",
-      "position": "F",
-      "team_id": "11",
-      "team_abbr": "PHX",
-      "team_name": "Phoenix Mercury",
-      "n_games": 10,
-      "effective_n": 10.0,
-      "min_mean": 9.7,
-      "games_by_season": {
-        "2026": 10
-      },
-      "latest_season": "2026",
-      "pts_mean": 3.9,
-      "reb_mean": 1.3,
-      "ast_mean": 0.3,
-      "tpm_mean": 0.4,
-      "pts_mean_weighted": 3.9,
-      "pts_reb": {
-        "unweighted": {
-          "r": 0.2089,
-          "p_value": 0.56241
-        },
-        "weighted": {
-          "r": 0.2089,
-          "p_value": 0.56241
-        }
-      },
-      "pts_ast": {
-        "unweighted": {
-          "r": -0.0836,
-          "p_value": 0.81844
-        },
-        "weighted": {
-          "r": -0.0836,
-          "p_value": 0.81844
-        }
-      },
-      "pts_3pm": {
-        "unweighted": {
-          "r": 0.6454,
-          "p_value": 0.04388
-        },
-        "weighted": {
-          "r": 0.6454,
-          "p_value": 0.04388
-        }
-      },
-      "by_season": {
-        "2026": {
-          "games": 10,
-          "min_mean": 9.7,
-          "pts_mean": 3.9,
-          "reb_mean": 1.3,
-          "ast_mean": 0.3,
-          "tpm_mean": 0.4,
-          "pts_reb": {
-            "r": 0.2089,
-            "p_value": 0.56241
-          },
-          "pts_ast": {
-            "r": -0.0836,
-            "p_value": 0.81844
-          },
-          "pts_3pm": {
-            "r": 0.6454,
-            "p_value": 0.04388
-          }
-        }
-      },
-      "latest_games": [
-        {
-          "d": "2026-05-22",
-          "opp": "LA",
-          "loc": "vs",
-          "res": "L",
-          "min": 9,
-          "pts": 6,
-          "reb": 1,
-          "ast": 0,
-          "tpm": 2
-        },
-        {
-          "d": "2026-05-24",
-          "opp": "ATL",
-          "loc": "@",
-          "res": "L",
-          "min": 10,
-          "pts": 0,
-          "reb": 3,
-          "ast": 0,
-          "tpm": 0
-        },
-        {
-          "d": "2026-06-06",
-          "opp": "POR",
-          "loc": "@",
-          "res": "W",
-          "min": 11,
-          "pts": 0,
-          "reb": 0,
-          "ast": 1,
-          "tpm": 0
-        },
-        {
-          "d": "2026-06-24",
-          "opp": "IND",
-          "loc": "@",
-          "res": "W",
-          "min": 10,
-          "pts": 6,
-          "reb": 2,
-          "ast": 0,
-          "tpm": 0
-        },
-        {
-          "d": "2026-06-27",
-          "opp": "TOR",
-          "loc": "@",
-          "res": "W",
-          "min": 15,
-          "pts": 4,
-          "reb": 0,
-          "ast": 0,
-          "tpm": 0
-        },
-        {
-          "d": "2026-07-03",
-          "opp": "SEA",
-          "loc": "vs",
-          "res": "W",
-          "min": 8,
-          "pts": 6,
-          "reb": 3,
-          "ast": 0,
-          "tpm": 0
-        },
-        {
-          "d": "2026-07-08",
-          "opp": "CHI",
-          "loc": "vs",
-          "res": "L",
-          "min": 6,
-          "pts": 0,
-          "reb": 1,
-          "ast": 0,
-          "tpm": 0
-        },
-        {
-          "d": "2026-07-10",
-          "opp": "IND",
-          "loc": "vs",
-          "res": "L",
-          "min": 11,
-          "pts": 10,
-          "reb": 2,
-          "ast": 0,
-          "tpm": 2
-        },
-        {
-          "d": "2026-07-11",
-          "opp": "LV",
-          "loc": "@",
-          "res": "L",
-          "min": 12,
-          "pts": 5,
-          "reb": 0,
-          "ast": 2,
-          "tpm": 0
-        },
-        {
-          "d": "2026-07-14",
-          "opp": "MIN",
-          "loc": "@",
-          "res": "L",
-          "min": 5,
-          "pts": 2,
-          "reb": 1,
-          "ast": 0,
-          "tpm": 0
         }
       ],
       "playing_today": false
@@ -40627,7 +40629,7 @@
           "tpm": 2
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "4282173",
@@ -40636,47 +40638,47 @@
       "team_id": "16",
       "team_abbr": "WSH",
       "team_name": "Washington Mystics",
-      "n_games": 94,
-      "effective_n": 79.7,
-      "min_mean": 19.2,
+      "n_games": 95,
+      "effective_n": 80.5,
+      "min_mean": 19.3,
       "games_by_season": {
         "2024": 34,
         "2025": 42,
-        "2026": 18
+        "2026": 19
       },
       "latest_season": "2026",
-      "pts_mean": 7.0,
-      "reb_mean": 1.98,
+      "pts_mean": 6.98,
+      "reb_mean": 2.02,
       "ast_mean": 1.15,
       "tpm_mean": 0.77,
-      "pts_mean_weighted": 7.4,
+      "pts_mean_weighted": 7.36,
       "pts_reb": {
         "unweighted": {
-          "r": 0.5188,
+          "r": 0.5018,
           "p_value": 0.0
         },
         "weighted": {
-          "r": 0.5081,
-          "p_value": 0.0
+          "r": 0.4816,
+          "p_value": 1e-05
         }
       },
       "pts_ast": {
         "unweighted": {
-          "r": 0.2129,
-          "p_value": 0.03936
+          "r": 0.2133,
+          "p_value": 0.03797
         },
         "weighted": {
-          "r": 0.2106,
-          "p_value": 0.06126
+          "r": 0.2116,
+          "p_value": 0.05862
         }
       },
       "pts_3pm": {
         "unweighted": {
-          "r": 0.7668,
+          "r": 0.7655,
           "p_value": 0.0
         },
         "weighted": {
-          "r": 0.7971,
+          "r": 0.795,
           "p_value": 0.0
         }
       },
@@ -40722,22 +40724,22 @@
           }
         },
         "2026": {
-          "games": 18,
+          "games": 19,
           "min_mean": 25.7,
-          "pts_mean": 10.39,
-          "reb_mean": 3.06,
-          "ast_mean": 1.5,
-          "tpm_mean": 1.28,
+          "pts_mean": 10.11,
+          "reb_mean": 3.21,
+          "ast_mean": 1.47,
+          "tpm_mean": 1.26,
           "pts_reb": {
-            "r": 0.5159,
-            "p_value": 0.02841
+            "r": 0.4372,
+            "p_value": 0.06123
           },
           "pts_ast": {
-            "r": 0.3014,
-            "p_value": 0.22422
+            "r": 0.3101,
+            "p_value": 0.19633
           },
           "pts_3pm": {
-            "r": 0.9024,
+            "r": 0.8969,
             "p_value": 0.0
           }
         }
@@ -40940,9 +40942,20 @@
           "reb": 5,
           "ast": 3,
           "tpm": 2
+        },
+        {
+          "d": "2026-07-16",
+          "opp": "POR",
+          "loc": "vs",
+          "res": "L",
+          "min": 26,
+          "pts": 5,
+          "reb": 6,
+          "ast": 1,
+          "tpm": 1
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "5274110",
@@ -41192,7 +41205,7 @@
           "tpm": 3
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "3142255",
@@ -41562,7 +41575,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "5220167",
@@ -42128,7 +42141,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4066546",
@@ -43490,7 +43503,7 @@
           "tpm": 2
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "2529130",
@@ -44197,7 +44210,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "3906753",
@@ -44600,7 +44613,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4398915",
@@ -44970,7 +44983,7 @@
           "tpm": 1
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "5345319",
@@ -45254,7 +45267,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "3054590",
@@ -46005,7 +46018,7 @@
           "tpm": 2
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "5345524",
@@ -46344,7 +46357,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "5209202",
@@ -46353,67 +46366,67 @@
       "team_id": "132052",
       "team_abbr": "POR",
       "team_name": "Portland Fire",
-      "n_games": 23,
-      "effective_n": 23.0,
-      "min_mean": 17.0,
+      "n_games": 24,
+      "effective_n": 24.0,
+      "min_mean": 16.9,
       "games_by_season": {
-        "2026": 23
+        "2026": 24
       },
       "latest_season": "2026",
-      "pts_mean": 3.43,
-      "reb_mean": 1.57,
-      "ast_mean": 0.78,
-      "tpm_mean": 0.35,
-      "pts_mean_weighted": 3.43,
+      "pts_mean": 3.29,
+      "reb_mean": 1.58,
+      "ast_mean": 0.75,
+      "tpm_mean": 0.33,
+      "pts_mean_weighted": 3.29,
       "pts_reb": {
         "unweighted": {
-          "r": 0.3334,
-          "p_value": 0.12004
+          "r": 0.3108,
+          "p_value": 0.13932
         },
         "weighted": {
-          "r": 0.3334,
-          "p_value": 0.12004
+          "r": 0.3108,
+          "p_value": 0.13932
         }
       },
       "pts_ast": {
         "unweighted": {
-          "r": 0.2505,
-          "p_value": 0.24898
+          "r": 0.2792,
+          "p_value": 0.18637
         },
         "weighted": {
-          "r": 0.2505,
-          "p_value": 0.24898
+          "r": 0.2792,
+          "p_value": 0.18637
         }
       },
       "pts_3pm": {
         "unweighted": {
-          "r": 0.733,
-          "p_value": 7e-05
+          "r": 0.7363,
+          "p_value": 4e-05
         },
         "weighted": {
-          "r": 0.733,
-          "p_value": 7e-05
+          "r": 0.7363,
+          "p_value": 4e-05
         }
       },
       "by_season": {
         "2026": {
-          "games": 23,
-          "min_mean": 17.0,
-          "pts_mean": 3.43,
-          "reb_mean": 1.57,
-          "ast_mean": 0.78,
-          "tpm_mean": 0.35,
+          "games": 24,
+          "min_mean": 16.9,
+          "pts_mean": 3.29,
+          "reb_mean": 1.58,
+          "ast_mean": 0.75,
+          "tpm_mean": 0.33,
           "pts_reb": {
-            "r": 0.3334,
-            "p_value": 0.12004
+            "r": 0.3108,
+            "p_value": 0.13932
           },
           "pts_ast": {
-            "r": 0.2505,
-            "p_value": 0.24898
+            "r": 0.2792,
+            "p_value": 0.18637
           },
           "pts_3pm": {
-            "r": 0.733,
-            "p_value": 7e-05
+            "r": 0.7363,
+            "p_value": 4e-05
           }
         }
       },
@@ -46670,9 +46683,20 @@
           "reb": 1,
           "ast": 0,
           "tpm": 0
+        },
+        {
+          "d": "2026-07-16",
+          "opp": "WSH",
+          "loc": "@",
+          "res": "W",
+          "min": 14,
+          "pts": 0,
+          "reb": 2,
+          "ast": 0,
+          "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "4398768",
@@ -46976,7 +47000,7 @@
           "tpm": 1
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "2529047",
@@ -47258,7 +47282,7 @@
           "tpm": 1
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "4433791",
@@ -47923,7 +47947,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4433730",
@@ -48272,7 +48296,7 @@
           "tpm": 1
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "5345320",
@@ -48622,7 +48646,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "5107404",
@@ -48829,7 +48853,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "2566186",
@@ -49177,7 +49201,7 @@
           "tpm": 2
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4398764",
@@ -49547,7 +49571,7 @@
           "tpm": 2
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "5105732",
@@ -49831,7 +49855,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4790258",
@@ -50049,7 +50073,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "4433797",
@@ -50388,7 +50412,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "3102133",
@@ -50604,7 +50628,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "2327695",
@@ -50964,7 +50988,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "4398674",
@@ -51334,7 +51358,7 @@
           "tpm": 3
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4433630",
@@ -51495,7 +51519,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4433523",
@@ -51504,67 +51528,67 @@
       "team_id": "16",
       "team_abbr": "WSH",
       "team_name": "Washington Mystics",
-      "n_games": 9,
-      "effective_n": 9.0,
-      "min_mean": 7.2,
+      "n_games": 10,
+      "effective_n": 10.0,
+      "min_mean": 6.8,
       "games_by_season": {
-        "2026": 9
+        "2026": 10
       },
       "latest_season": "2026",
-      "pts_mean": 0.89,
-      "reb_mean": 0.89,
-      "ast_mean": 1.22,
-      "tpm_mean": 0.11,
-      "pts_mean_weighted": 0.89,
+      "pts_mean": 1.0,
+      "reb_mean": 0.8,
+      "ast_mean": 1.1,
+      "tpm_mean": 0.1,
+      "pts_mean_weighted": 1.0,
       "pts_reb": {
         "unweighted": {
-          "r": 0.7002,
-          "p_value": 0.03569
+          "r": 0.559,
+          "p_value": 0.09297
         },
         "weighted": {
-          "r": 0.7002,
-          "p_value": 0.03569
+          "r": 0.559,
+          "p_value": 0.09297
         }
       },
       "pts_ast": {
         "unweighted": {
-          "r": 0.5945,
-          "p_value": 0.09137
+          "r": 0.4487,
+          "p_value": 0.19334
         },
         "weighted": {
-          "r": 0.5945,
-          "p_value": 0.09137
+          "r": 0.4487,
+          "p_value": 0.19334
         }
       },
       "pts_3pm": {
         "unweighted": {
-          "r": 0.6786,
-          "p_value": 0.04449
+          "r": 0.6086,
+          "p_value": 0.06189
         },
         "weighted": {
-          "r": 0.6786,
-          "p_value": 0.04449
+          "r": 0.6086,
+          "p_value": 0.06189
         }
       },
       "by_season": {
         "2026": {
-          "games": 9,
-          "min_mean": 7.2,
-          "pts_mean": 0.89,
-          "reb_mean": 0.89,
-          "ast_mean": 1.22,
-          "tpm_mean": 0.11,
+          "games": 10,
+          "min_mean": 6.8,
+          "pts_mean": 1.0,
+          "reb_mean": 0.8,
+          "ast_mean": 1.1,
+          "tpm_mean": 0.1,
           "pts_reb": {
-            "r": 0.7002,
-            "p_value": 0.03569
+            "r": 0.559,
+            "p_value": 0.09297
           },
           "pts_ast": {
-            "r": 0.5945,
-            "p_value": 0.09137
+            "r": 0.4487,
+            "p_value": 0.19334
           },
           "pts_3pm": {
-            "r": 0.6786,
-            "p_value": 0.04449
+            "r": 0.6086,
+            "p_value": 0.06189
           }
         }
       },
@@ -51667,9 +51691,20 @@
           "reb": 0,
           "ast": 0,
           "tpm": 0
+        },
+        {
+          "d": "2026-07-16",
+          "opp": "POR",
+          "loc": "vs",
+          "res": "L",
+          "min": 3,
+          "pts": 2,
+          "reb": 0,
+          "ast": 0,
+          "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "4066533",
@@ -51929,7 +51964,7 @@
           "tpm": 3
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "887",
@@ -52079,7 +52114,7 @@
           "tpm": 3
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4433795",
@@ -52208,7 +52243,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "4433514",
@@ -52535,7 +52570,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4703794",
@@ -52544,46 +52579,46 @@
       "team_id": "132052",
       "team_abbr": "POR",
       "team_name": "Portland Fire",
-      "n_games": 57,
-      "effective_n": 55.2,
-      "min_mean": 18.7,
+      "n_games": 58,
+      "effective_n": 56.2,
+      "min_mean": 18.8,
       "games_by_season": {
         "2025": 34,
-        "2026": 23
+        "2026": 24
       },
       "latest_season": "2026",
-      "pts_mean": 6.14,
-      "reb_mean": 2.96,
-      "ast_mean": 1.49,
-      "tpm_mean": 0.86,
-      "pts_mean_weighted": 6.81,
+      "pts_mean": 6.21,
+      "reb_mean": 3.03,
+      "ast_mean": 1.5,
+      "tpm_mean": 0.88,
+      "pts_mean_weighted": 6.87,
       "pts_reb": {
         "unweighted": {
-          "r": 0.4838,
-          "p_value": 0.00014
+          "r": 0.4899,
+          "p_value": 9e-05
         },
         "weighted": {
-          "r": 0.4567,
-          "p_value": 0.00044
+          "r": 0.4617,
+          "p_value": 0.00033
         }
       },
       "pts_ast": {
         "unweighted": {
-          "r": 0.3849,
-          "p_value": 0.00312
+          "r": 0.387,
+          "p_value": 0.00269
         },
         "weighted": {
-          "r": 0.3602,
-          "p_value": 0.00678
+          "r": 0.3618,
+          "p_value": 0.00606
         }
       },
       "pts_3pm": {
         "unweighted": {
-          "r": 0.687,
+          "r": 0.6899,
           "p_value": 0.0
         },
         "weighted": {
-          "r": 0.6703,
+          "r": 0.6723,
           "p_value": 0.0
         }
       },
@@ -52609,23 +52644,23 @@
           }
         },
         "2026": {
-          "games": 23,
+          "games": 24,
           "min_mean": 25.4,
-          "pts_mean": 10.65,
-          "reb_mean": 4.48,
-          "ast_mean": 2.35,
-          "tpm_mean": 1.35,
+          "pts_mean": 10.62,
+          "reb_mean": 4.58,
+          "ast_mean": 2.33,
+          "tpm_mean": 1.38,
           "pts_reb": {
-            "r": -0.0253,
-            "p_value": 0.90882
+            "r": -0.0309,
+            "p_value": 0.88609
           },
           "pts_ast": {
-            "r": -0.059,
-            "p_value": 0.78917
+            "r": -0.0577,
+            "p_value": 0.789
           },
           "pts_3pm": {
-            "r": 0.4156,
-            "p_value": 0.0486
+            "r": 0.4055,
+            "p_value": 0.0493
           }
         }
       },
@@ -52882,9 +52917,20 @@
           "reb": 5,
           "ast": 2,
           "tpm": 0
+        },
+        {
+          "d": "2026-07-16",
+          "opp": "WSH",
+          "loc": "@",
+          "res": "W",
+          "min": 24,
+          "pts": 10,
+          "reb": 7,
+          "ast": 2,
+          "tpm": 2
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "4281929",
@@ -53144,7 +53190,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "5108550",
@@ -53153,67 +53199,67 @@
       "team_id": "132052",
       "team_abbr": "POR",
       "team_name": "Portland Fire",
-      "n_games": 20,
-      "effective_n": 20.0,
-      "min_mean": 10.8,
+      "n_games": 21,
+      "effective_n": 21.0,
+      "min_mean": 11.4,
       "games_by_season": {
-        "2026": 20
+        "2026": 21
       },
       "latest_season": "2026",
-      "pts_mean": 3.6,
-      "reb_mean": 2.45,
-      "ast_mean": 0.45,
+      "pts_mean": 4.0,
+      "reb_mean": 2.57,
+      "ast_mean": 0.48,
       "tpm_mean": 0.05,
-      "pts_mean_weighted": 3.6,
+      "pts_mean_weighted": 4.0,
       "pts_reb": {
         "unweighted": {
-          "r": -0.0893,
-          "p_value": 0.70804
+          "r": 0.0598,
+          "p_value": 0.79668
         },
         "weighted": {
-          "r": -0.0893,
-          "p_value": 0.70804
+          "r": 0.0598,
+          "p_value": 0.79668
         }
       },
       "pts_ast": {
         "unweighted": {
-          "r": -0.1054,
-          "p_value": 0.65834
+          "r": 0.0,
+          "p_value": 1.0
         },
         "weighted": {
-          "r": -0.1054,
-          "p_value": 0.65834
+          "r": 0.0,
+          "p_value": 1.0
         }
       },
       "pts_3pm": {
         "unweighted": {
-          "r": 0.2203,
-          "p_value": 0.35073
+          "r": 0.1724,
+          "p_value": 0.45493
         },
         "weighted": {
-          "r": 0.2203,
-          "p_value": 0.35073
+          "r": 0.1724,
+          "p_value": 0.45493
         }
       },
       "by_season": {
         "2026": {
-          "games": 20,
-          "min_mean": 10.8,
-          "pts_mean": 3.6,
-          "reb_mean": 2.45,
-          "ast_mean": 0.45,
+          "games": 21,
+          "min_mean": 11.4,
+          "pts_mean": 4.0,
+          "reb_mean": 2.57,
+          "ast_mean": 0.48,
           "tpm_mean": 0.05,
           "pts_reb": {
-            "r": -0.0893,
-            "p_value": 0.70804
+            "r": 0.0598,
+            "p_value": 0.79668
           },
           "pts_ast": {
-            "r": -0.1054,
-            "p_value": 0.65834
+            "r": 0.0,
+            "p_value": 1.0
           },
           "pts_3pm": {
-            "r": 0.2203,
-            "p_value": 0.35073
+            "r": 0.1724,
+            "p_value": 0.45493
           }
         }
       },
@@ -53437,9 +53483,20 @@
           "reb": 2,
           "ast": 0,
           "tpm": 0
+        },
+        {
+          "d": "2026-07-16",
+          "opp": "WSH",
+          "loc": "@",
+          "res": "W",
+          "min": 25,
+          "pts": 12,
+          "reb": 5,
+          "ast": 1,
+          "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "4398911",
@@ -53448,48 +53505,48 @@
       "team_id": "16",
       "team_abbr": "WSH",
       "team_name": "Washington Mystics",
-      "n_games": 71,
-      "effective_n": 64.4,
-      "min_mean": 24.3,
+      "n_games": 72,
+      "effective_n": 65.3,
+      "min_mean": 24.4,
       "games_by_season": {
         "2024": 12,
         "2025": 38,
-        "2026": 21
+        "2026": 22
       },
       "latest_season": "2026",
-      "pts_mean": 12.94,
-      "reb_mean": 7.25,
-      "ast_mean": 1.89,
-      "tpm_mean": 0.2,
-      "pts_mean_weighted": 13.2,
+      "pts_mean": 13.03,
+      "reb_mean": 7.29,
+      "ast_mean": 1.92,
+      "tpm_mean": 0.19,
+      "pts_mean_weighted": 13.31,
       "pts_reb": {
         "unweighted": {
-          "r": 0.2295,
-          "p_value": 0.05424
+          "r": 0.247,
+          "p_value": 0.0365
         },
         "weighted": {
-          "r": 0.1843,
-          "p_value": 0.14347
+          "r": 0.2061,
+          "p_value": 0.09857
         }
       },
       "pts_ast": {
         "unweighted": {
-          "r": 0.1918,
-          "p_value": 0.10908
+          "r": 0.207,
+          "p_value": 0.08099
         },
         "weighted": {
-          "r": 0.1764,
-          "p_value": 0.16172
+          "r": 0.1945,
+          "p_value": 0.11942
         }
       },
       "pts_3pm": {
         "unweighted": {
-          "r": 0.1425,
-          "p_value": 0.23568
+          "r": 0.1354,
+          "p_value": 0.25694
         },
         "weighted": {
-          "r": 0.1725,
-          "p_value": 0.1715
+          "r": 0.1617,
+          "p_value": 0.19694
         }
       },
       "by_season": {
@@ -53534,23 +53591,23 @@
           }
         },
         "2026": {
-          "games": 21,
-          "min_mean": 29.0,
-          "pts_mean": 14.14,
-          "reb_mean": 9.1,
-          "ast_mean": 2.62,
-          "tpm_mean": 0.52,
+          "games": 22,
+          "min_mean": 29.1,
+          "pts_mean": 14.36,
+          "reb_mean": 9.14,
+          "ast_mean": 2.68,
+          "tpm_mean": 0.5,
           "pts_reb": {
-            "r": -0.0464,
-            "p_value": 0.84157
+            "r": -0.0137,
+            "p_value": 0.95173
           },
           "pts_ast": {
-            "r": 0.0584,
-            "p_value": 0.80144
+            "r": 0.0865,
+            "p_value": 0.70179
           },
           "pts_3pm": {
-            "r": 0.2942,
-            "p_value": 0.19552
+            "r": 0.2559,
+            "p_value": 0.25043
           }
         }
       },
@@ -53771,7 +53828,7 @@
           "res": "W",
           "min": 33,
           "pts": 27,
-          "reb": 5,
+          "reb": 6,
           "ast": 3,
           "tpm": 2
         },
@@ -53785,9 +53842,20 @@
           "reb": 10,
           "ast": 0,
           "tpm": 0
+        },
+        {
+          "d": "2026-07-16",
+          "opp": "POR",
+          "loc": "vs",
+          "res": "L",
+          "min": 33,
+          "pts": 19,
+          "reb": 9,
+          "ast": 4,
+          "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "3058893",
@@ -53906,7 +53974,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "5017721",
@@ -54276,7 +54344,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "2491205",
@@ -54602,7 +54670,7 @@
           "tpm": 2
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4433524",
@@ -54611,47 +54679,47 @@
       "team_id": "16",
       "team_abbr": "WSH",
       "team_name": "Washington Mystics",
-      "n_games": 64,
-      "effective_n": 62.1,
+      "n_games": 65,
+      "effective_n": 63.1,
       "min_mean": 32.6,
       "games_by_season": {
         "2025": 45,
-        "2026": 19
+        "2026": 20
       },
       "latest_season": "2026",
-      "pts_mean": 15.72,
-      "reb_mean": 3.92,
-      "ast_mean": 2.67,
-      "tpm_mean": 1.67,
-      "pts_mean_weighted": 15.95,
+      "pts_mean": 15.6,
+      "reb_mean": 3.95,
+      "ast_mean": 2.68,
+      "tpm_mean": 1.65,
+      "pts_mean_weighted": 15.8,
       "pts_reb": {
         "unweighted": {
-          "r": 0.0759,
-          "p_value": 0.55092
+          "r": 0.0601,
+          "p_value": 0.63452
         },
         "weighted": {
-          "r": 0.1151,
-          "p_value": 0.37255
+          "r": 0.0945,
+          "p_value": 0.46126
         }
       },
       "pts_ast": {
         "unweighted": {
-          "r": 0.1125,
-          "p_value": 0.37604
+          "r": 0.1078,
+          "p_value": 0.39272
         },
         "weighted": {
-          "r": 0.1133,
-          "p_value": 0.38
+          "r": 0.1086,
+          "p_value": 0.39639
         }
       },
       "pts_3pm": {
         "unweighted": {
-          "r": 0.4711,
-          "p_value": 9e-05
+          "r": 0.4832,
+          "p_value": 5e-05
         },
         "weighted": {
-          "r": 0.4422,
-          "p_value": 0.00032
+          "r": 0.4578,
+          "p_value": 0.00016
         }
       },
       "by_season": {
@@ -54676,23 +54744,23 @@
           }
         },
         "2026": {
-          "games": 19,
-          "min_mean": 34.4,
-          "pts_mean": 17.79,
-          "reb_mean": 3.95,
-          "ast_mean": 3.42,
-          "tpm_mean": 1.21,
+          "games": 20,
+          "min_mean": 34.1,
+          "pts_mean": 17.3,
+          "reb_mean": 4.05,
+          "ast_mean": 3.4,
+          "tpm_mean": 1.15,
           "pts_reb": {
-            "r": 0.3788,
-            "p_value": 0.10977
+            "r": 0.3112,
+            "p_value": 0.18167
           },
           "pts_ast": {
-            "r": 0.0458,
-            "p_value": 0.85234
+            "r": 0.0559,
+            "p_value": 0.81497
           },
           "pts_3pm": {
-            "r": 0.4044,
-            "p_value": 0.08593
+            "r": 0.4434,
+            "p_value": 0.0502
           }
         }
       },
@@ -54905,9 +54973,20 @@
           "reb": 2,
           "ast": 4,
           "tpm": 0
+        },
+        {
+          "d": "2026-07-16",
+          "opp": "POR",
+          "loc": "vs",
+          "res": "L",
+          "min": 29,
+          "pts": 8,
+          "reb": 6,
+          "ast": 3,
+          "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "3907781",
@@ -55277,7 +55356,7 @@
           "tpm": 2
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "2529183",
@@ -55680,7 +55759,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "3099736",
@@ -56321,7 +56400,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "4594786",
@@ -56638,7 +56717,7 @@
           "tpm": 1
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4609797",
@@ -56931,7 +57010,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4898400",
@@ -57126,7 +57205,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4433431",
@@ -57486,7 +57565,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "5346554",
@@ -57495,67 +57574,67 @@
       "team_id": "132052",
       "team_abbr": "POR",
       "team_name": "Portland Fire",
-      "n_games": 18,
-      "effective_n": 18.0,
-      "min_mean": 13.4,
+      "n_games": 19,
+      "effective_n": 19.0,
+      "min_mean": 13.6,
       "games_by_season": {
-        "2026": 18
+        "2026": 19
       },
       "latest_season": "2026",
-      "pts_mean": 6.06,
-      "reb_mean": 1.61,
-      "ast_mean": 3.0,
+      "pts_mean": 6.21,
+      "reb_mean": 1.58,
+      "ast_mean": 2.95,
       "tpm_mean": 0.89,
-      "pts_mean_weighted": 6.06,
+      "pts_mean_weighted": 6.21,
       "pts_reb": {
         "unweighted": {
-          "r": 0.232,
-          "p_value": 0.35432
+          "r": 0.2076,
+          "p_value": 0.39379
         },
         "weighted": {
-          "r": 0.232,
-          "p_value": 0.35432
+          "r": 0.2076,
+          "p_value": 0.39379
         }
       },
       "pts_ast": {
         "unweighted": {
-          "r": 0.28,
-          "p_value": 0.26052
+          "r": 0.2562,
+          "p_value": 0.28963
         },
         "weighted": {
-          "r": 0.28,
-          "p_value": 0.26052
+          "r": 0.2562,
+          "p_value": 0.28963
         }
       },
       "pts_3pm": {
         "unweighted": {
-          "r": 0.5284,
-          "p_value": 0.02418
+          "r": 0.5248,
+          "p_value": 0.02104
         },
         "weighted": {
-          "r": 0.5284,
-          "p_value": 0.02418
+          "r": 0.5248,
+          "p_value": 0.02104
         }
       },
       "by_season": {
         "2026": {
-          "games": 18,
-          "min_mean": 13.4,
-          "pts_mean": 6.06,
-          "reb_mean": 1.61,
-          "ast_mean": 3.0,
+          "games": 19,
+          "min_mean": 13.6,
+          "pts_mean": 6.21,
+          "reb_mean": 1.58,
+          "ast_mean": 2.95,
           "tpm_mean": 0.89,
           "pts_reb": {
-            "r": 0.232,
-            "p_value": 0.35432
+            "r": 0.2076,
+            "p_value": 0.39379
           },
           "pts_ast": {
-            "r": 0.28,
-            "p_value": 0.26052
+            "r": 0.2562,
+            "p_value": 0.28963
           },
           "pts_3pm": {
-            "r": 0.5284,
-            "p_value": 0.02418
+            "r": 0.5248,
+            "p_value": 0.02104
           }
         }
       },
@@ -57757,9 +57836,20 @@
           "reb": 0,
           "ast": 0,
           "tpm": 0
+        },
+        {
+          "d": "2026-07-16",
+          "opp": "WSH",
+          "loc": "@",
+          "res": "W",
+          "min": 17,
+          "pts": 9,
+          "reb": 1,
+          "ast": 2,
+          "tpm": 1
         }
       ],
-      "playing_today": true
+      "playing_today": false
     },
     {
       "athlete_id": "2569044",
@@ -57964,7 +58054,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4434020",
@@ -58281,7 +58371,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "1054",
@@ -58902,7 +58992,7 @@
           "tpm": 1
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4065760",
@@ -59228,7 +59318,7 @@
           "tpm": 1
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "3919496",
@@ -59512,7 +59602,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4398935",
@@ -60307,7 +60397,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     }
   ]
 }
