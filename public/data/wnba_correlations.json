@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-24T12:25:51.705259Z",
+  "generated_at": "2026-07-25T12:09:58.777120Z",
   "source": "ESPN WNBA public API",
   "seasons": [
     2024,
@@ -18,13 +18,26 @@
   "min_games_reportable": 20,
   "min_mpg_included": 0.0,
   "schedule_today": {
-    "date": "20260724",
-    "team_ids": [],
-    "games": []
+    "date": "20260725",
+    "team_ids": [
+      "133383",
+      "133384"
+    ],
+    "games": [
+      {
+        "start": "2026-07-26T00:30Z",
+        "state": "pre",
+        "matchup": "SPO @ COOP",
+        "team_abbrs": [
+          "COOP",
+          "SPO"
+        ]
+      }
+    ]
   },
-  "n_players": 198,
+  "n_players": 196,
   "n_players_reportable": 172,
-  "total_game_rows": 12143,
+  "total_game_rows": 12079,
   "players": [
     {
       "athlete_id": "3149391",
@@ -1230,71 +1243,50 @@
       "team_id": "3",
       "team_abbr": "DAL",
       "team_name": "Dallas Wings",
-      "n_games": 103,
-      "effective_n": 86.3,
-      "min_mean": 24.1,
+      "n_games": 63,
+      "effective_n": 61.1,
+      "min_mean": 22.7,
       "games_by_season": {
-        "2024": 40,
         "2025": 43,
         "2026": 20
       },
       "latest_season": "2026",
-      "pts_mean": 8.7,
-      "reb_mean": 4.86,
-      "ast_mean": 2.64,
-      "tpm_mean": 1.07,
-      "pts_mean_weighted": 7.88,
+      "pts_mean": 7.86,
+      "reb_mean": 4.38,
+      "ast_mean": 2.29,
+      "tpm_mean": 1.0,
+      "pts_mean_weighted": 7.37,
       "pts_reb": {
         "unweighted": {
-          "r": 0.2228,
-          "p_value": 0.02372
+          "r": 0.2265,
+          "p_value": 0.07429
         },
         "weighted": {
-          "r": 0.2726,
-          "p_value": 0.01094
+          "r": 0.2686,
+          "p_value": 0.03613
         }
       },
       "pts_ast": {
         "unweighted": {
-          "r": 0.0948,
-          "p_value": 0.34106
+          "r": 0.0972,
+          "p_value": 0.44843
         },
         "weighted": {
-          "r": 0.1476,
-          "p_value": 0.17416
+          "r": 0.1386,
+          "p_value": 0.28633
         }
       },
       "pts_3pm": {
         "unweighted": {
-          "r": 0.7282,
+          "r": 0.7679,
           "p_value": 0.0
         },
         "weighted": {
-          "r": 0.7521,
+          "r": 0.7743,
           "p_value": 0.0
         }
       },
       "by_season": {
-        "2024": {
-          "games": 40,
-          "min_mean": 26.4,
-          "pts_mean": 10.03,
-          "reb_mean": 5.62,
-          "ast_mean": 3.2,
-          "tpm_mean": 1.18,
-          "pts_reb": {
-            "r": 0.1137,
-            "p_value": 0.48485
-          },
-          "pts_ast": {
-            "r": -0.048,
-            "p_value": 0.76848
-          },
-          "pts_3pm": {
-            "r": 0.6874,
-            "p_value": 0.0
-          }
-        },
         "2025": {
           "games": 43,
           "min_mean": 26.6,
@@ -17295,224 +17287,6 @@
           "reb": 2,
           "ast": 0,
           "tpm": 1
-        }
-      ],
-      "playing_today": false
-    },
-    {
-      "athlete_id": "5345478",
-      "name": "Eliska Hamzova",
-      "position": "G",
-      "team_id": "8",
-      "team_abbr": "MIN",
-      "team_name": "Minnesota Lynx",
-      "n_games": 13,
-      "effective_n": 13.0,
-      "min_mean": 5.9,
-      "games_by_season": {
-        "2026": 13
-      },
-      "latest_season": "2026",
-      "pts_mean": 1.92,
-      "reb_mean": 1.0,
-      "ast_mean": 1.15,
-      "tpm_mean": 0.0,
-      "pts_mean_weighted": 1.92,
-      "pts_reb": {
-        "unweighted": {
-          "r": 0.4385,
-          "p_value": 0.13392
-        },
-        "weighted": {
-          "r": 0.4385,
-          "p_value": 0.13392
-        }
-      },
-      "pts_ast": {
-        "unweighted": {
-          "r": 0.1041,
-          "p_value": 0.73514
-        },
-        "weighted": {
-          "r": 0.1041,
-          "p_value": 0.73514
-        }
-      },
-      "pts_3pm": {
-        "unweighted": {
-          "r": null,
-          "p_value": null
-        },
-        "weighted": {
-          "r": null,
-          "p_value": null
-        }
-      },
-      "by_season": {
-        "2026": {
-          "games": 13,
-          "min_mean": 5.9,
-          "pts_mean": 1.92,
-          "reb_mean": 1.0,
-          "ast_mean": 1.15,
-          "tpm_mean": 0.0,
-          "pts_reb": {
-            "r": 0.4385,
-            "p_value": 0.13392
-          },
-          "pts_ast": {
-            "r": 0.1041,
-            "p_value": 0.73514
-          },
-          "pts_3pm": {
-            "r": null,
-            "p_value": null
-          }
-        }
-      },
-      "latest_games": [
-        {
-          "d": "2026-05-13",
-          "opp": "PHX",
-          "loc": "@",
-          "res": "W",
-          "min": 5,
-          "pts": 2,
-          "reb": 1,
-          "ast": 0,
-          "tpm": 0
-        },
-        {
-          "d": "2026-05-17",
-          "opp": "CHI",
-          "loc": "vs",
-          "res": "L",
-          "min": 2,
-          "pts": 0,
-          "reb": 0,
-          "ast": 0,
-          "tpm": 0
-        },
-        {
-          "d": "2026-05-22",
-          "opp": "TOR",
-          "loc": "vs",
-          "res": "W",
-          "min": 5,
-          "pts": 4,
-          "reb": 6,
-          "ast": 2,
-          "tpm": 0
-        },
-        {
-          "d": "2026-06-16",
-          "opp": "POR",
-          "loc": "vs",
-          "res": "W",
-          "min": 10,
-          "pts": 4,
-          "reb": 0,
-          "ast": 1,
-          "tpm": 0
-        },
-        {
-          "d": "2026-06-18",
-          "opp": "LA",
-          "loc": "@",
-          "res": "W",
-          "min": 11,
-          "pts": 0,
-          "reb": 0,
-          "ast": 3,
-          "tpm": 0
-        },
-        {
-          "d": "2026-07-07",
-          "opp": "CON",
-          "loc": "vs",
-          "res": "L",
-          "min": 8,
-          "pts": 2,
-          "reb": 2,
-          "ast": 3,
-          "tpm": 0
-        },
-        {
-          "d": "2026-07-08",
-          "opp": "CON",
-          "loc": "@",
-          "res": "W",
-          "min": 11,
-          "pts": 5,
-          "reb": 2,
-          "ast": 3,
-          "tpm": 0
-        },
-        {
-          "d": "2026-07-11",
-          "opp": "NY",
-          "loc": "vs",
-          "res": "W",
-          "min": 4,
-          "pts": 0,
-          "reb": 0,
-          "ast": 2,
-          "tpm": 0
-        },
-        {
-          "d": "2026-07-14",
-          "opp": "PHX",
-          "loc": "vs",
-          "res": "W",
-          "min": 9,
-          "pts": 8,
-          "reb": 1,
-          "ast": 0,
-          "tpm": 0
-        },
-        {
-          "d": "2026-07-15",
-          "opp": "LA",
-          "loc": "vs",
-          "res": "W",
-          "min": 7,
-          "pts": 0,
-          "reb": 0,
-          "ast": 1,
-          "tpm": 0
-        },
-        {
-          "d": "2026-07-19",
-          "opp": "POR",
-          "loc": "vs",
-          "res": "W",
-          "min": 3,
-          "pts": 0,
-          "reb": 1,
-          "ast": 0,
-          "tpm": 0
-        },
-        {
-          "d": "2026-07-21",
-          "opp": "SEA",
-          "loc": "@",
-          "res": "W",
-          "min": 0,
-          "pts": 0,
-          "reb": 0,
-          "ast": 0,
-          "tpm": 0
-        },
-        {
-          "d": "2026-07-22",
-          "opp": "SEA",
-          "loc": "@",
-          "res": "W",
-          "min": 2,
-          "pts": 0,
-          "reb": 0,
-          "ast": 0,
-          "tpm": 0
         }
       ],
       "playing_today": false
@@ -42004,202 +41778,6 @@
           "reb": 2,
           "ast": 1,
           "tpm": 4
-        }
-      ],
-      "playing_today": false
-    },
-    {
-      "athlete_id": "4704594",
-      "name": "Marta Suarez",
-      "position": "F",
-      "team_id": "11",
-      "team_abbr": "PHX",
-      "team_name": "Phoenix Mercury",
-      "n_games": 11,
-      "effective_n": 11.0,
-      "min_mean": 9.5,
-      "games_by_season": {
-        "2026": 11
-      },
-      "latest_season": "2026",
-      "pts_mean": 4.0,
-      "reb_mean": 1.36,
-      "ast_mean": 0.27,
-      "tpm_mean": 0.36,
-      "pts_mean_weighted": 4.0,
-      "pts_reb": {
-        "unweighted": {
-          "r": 0.2236,
-          "p_value": 0.50858
-        },
-        "weighted": {
-          "r": 0.2236,
-          "p_value": 0.50858
-        }
-      },
-      "pts_ast": {
-        "unweighted": {
-          "r": -0.0968,
-          "p_value": 0.77699
-        },
-        "weighted": {
-          "r": -0.0968,
-          "p_value": 0.77699
-        }
-      },
-      "pts_3pm": {
-        "unweighted": {
-          "r": 0.6192,
-          "p_value": 0.0422
-        },
-        "weighted": {
-          "r": 0.6192,
-          "p_value": 0.0422
-        }
-      },
-      "by_season": {
-        "2026": {
-          "games": 11,
-          "min_mean": 9.5,
-          "pts_mean": 4.0,
-          "reb_mean": 1.36,
-          "ast_mean": 0.27,
-          "tpm_mean": 0.36,
-          "pts_reb": {
-            "r": 0.2236,
-            "p_value": 0.50858
-          },
-          "pts_ast": {
-            "r": -0.0968,
-            "p_value": 0.77699
-          },
-          "pts_3pm": {
-            "r": 0.6192,
-            "p_value": 0.0422
-          }
-        }
-      },
-      "latest_games": [
-        {
-          "d": "2026-05-22",
-          "opp": "LA",
-          "loc": "vs",
-          "res": "L",
-          "min": 9,
-          "pts": 6,
-          "reb": 1,
-          "ast": 0,
-          "tpm": 2
-        },
-        {
-          "d": "2026-05-24",
-          "opp": "ATL",
-          "loc": "@",
-          "res": "L",
-          "min": 10,
-          "pts": 0,
-          "reb": 3,
-          "ast": 0,
-          "tpm": 0
-        },
-        {
-          "d": "2026-06-06",
-          "opp": "POR",
-          "loc": "@",
-          "res": "W",
-          "min": 11,
-          "pts": 0,
-          "reb": 0,
-          "ast": 1,
-          "tpm": 0
-        },
-        {
-          "d": "2026-06-24",
-          "opp": "IND",
-          "loc": "@",
-          "res": "W",
-          "min": 10,
-          "pts": 6,
-          "reb": 2,
-          "ast": 0,
-          "tpm": 0
-        },
-        {
-          "d": "2026-06-27",
-          "opp": "TOR",
-          "loc": "@",
-          "res": "W",
-          "min": 15,
-          "pts": 4,
-          "reb": 0,
-          "ast": 0,
-          "tpm": 0
-        },
-        {
-          "d": "2026-07-03",
-          "opp": "SEA",
-          "loc": "vs",
-          "res": "W",
-          "min": 8,
-          "pts": 6,
-          "reb": 3,
-          "ast": 0,
-          "tpm": 0
-        },
-        {
-          "d": "2026-07-08",
-          "opp": "CHI",
-          "loc": "vs",
-          "res": "L",
-          "min": 6,
-          "pts": 0,
-          "reb": 1,
-          "ast": 0,
-          "tpm": 0
-        },
-        {
-          "d": "2026-07-10",
-          "opp": "IND",
-          "loc": "vs",
-          "res": "L",
-          "min": 11,
-          "pts": 10,
-          "reb": 2,
-          "ast": 0,
-          "tpm": 2
-        },
-        {
-          "d": "2026-07-11",
-          "opp": "LV",
-          "loc": "@",
-          "res": "L",
-          "min": 12,
-          "pts": 5,
-          "reb": 0,
-          "ast": 2,
-          "tpm": 0
-        },
-        {
-          "d": "2026-07-14",
-          "opp": "MIN",
-          "loc": "@",
-          "res": "L",
-          "min": 5,
-          "pts": 2,
-          "reb": 1,
-          "ast": 0,
-          "tpm": 0
-        },
-        {
-          "d": "2026-07-18",
-          "opp": "CON",
-          "loc": "vs",
-          "res": "L",
-          "min": 7,
-          "pts": 5,
-          "reb": 2,
-          "ast": 0,
-          "tpm": 0
         }
       ],
       "playing_today": false
