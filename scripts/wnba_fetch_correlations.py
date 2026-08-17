@@ -48,7 +48,10 @@ import requests
 
 CORE = "https://sports.core.api.espn.com/v2/sports/basketball/leagues/wnba"
 SITE = "https://site.web.api.espn.com/apis/common/v3/sports/basketball/wnba"
-SITE_API = "https://site.api.espn.com/apis/site/v2/sports/basketball/wnba"
+# site.web.api serves the same /apis/site/v2 paths as site.api.espn.com, which
+# started returning 403 to datacenter IPs (get_json swallows that as None, so
+# rosters and the slate came back empty instead of erroring).
+SITE_API = "https://site.web.api.espn.com/apis/site/v2/sports/basketball/wnba"
 
 # Column positions inside each gamelog event's `stats` array. The order is
 # fixed by the league-level `names` array returned alongside the events:

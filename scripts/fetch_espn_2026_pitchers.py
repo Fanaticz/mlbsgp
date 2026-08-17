@@ -33,6 +33,7 @@ import math
 import sys
 import time
 import unicodedata
+import urllib.error
 import urllib.request
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -41,12 +42,20 @@ ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "public" / "data"
 OUT_PATH = ROOT / "espn-2026-pitcher-supplement.json"
 
-SCOREBOARD_URL = (
-    "https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard"
-    "?dates={ymd}&limit=100"
+# ESPN serves the same site-API payloads from several hosts and blocks them
+# independently: site.api.espn.com started returning 403 to datacenter IPs
+# (which killed this job on GitHub Actions), while site.web.api.espn.com and
+# cdn.espn.com kept serving. So each endpoint lists its mirrors in preference
+# order and fetch_mirrored() falls through on failure. The cdn.espn.com
+# variants wrap the identical payload one level down — see unwrap().
+SCOREBOARD_URLS = (
+    "https://site.web.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard"
+    "?dates={ymd}&limit=100",
+    "https://cdn.espn.com/core/mlb/scoreboard?xhr=1&date={ymd}",
 )
-SUMMARY_URL = (
-    "https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/summary?event={eid}"
+SUMMARY_URLS = (
+    "https://site.web.api.espn.com/apis/site/v2/sports/baseball/mlb/summary?event={eid}",
+    "https://cdn.espn.com/core/mlb/boxscore?xhr=1&gameId={eid}",
 )
 ATHLETE_URL = (
     "https://sports.core.api.espn.com/v2/sports/baseball/leagues/mlb/athletes/{aid}"
@@ -74,10 +83,45 @@ def fetch_json(url: str, retries: int = 4) -> dict:
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
             with urllib.request.urlopen(req, timeout=30) as resp:
                 return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as err:
+            # A blocked host or a missing event answers the same way every
+            # time, so don't burn the backoff on it — let the caller fall
+            # through to the next mirror immediately.
+            if err.code in (403, 404, 451):
+                raise RuntimeError(f"GET {url} refused: HTTP {err.code}") from err
+            last_err = err
+            time.sleep(2 ** attempt)
         except Exception as err:  # noqa: BLE001 - retry any transient failure
             last_err = err
             time.sleep(2 ** attempt)
     raise RuntimeError(f"GET {url} failed after {retries} tries: {last_err}")
+
+
+def unwrap(payload: dict) -> dict:
+    """Normalize a cdn.espn.com response to the site-API shape.
+
+    cdn.espn.com returns the same objects the site API does, nested under a
+    page-data wrapper: the scoreboard under content.sbData and the box score
+    under gamepackageJSON. Site-API responses pass through untouched.
+    """
+    if "gamepackageJSON" in payload:
+        return payload["gamepackageJSON"]
+    sb_data = (payload.get("content") or {}).get("sbData")
+    if sb_data is not None:
+        return sb_data
+    return payload
+
+
+def fetch_mirrored(templates: tuple[str, ...], retries: int = 3, **fmt) -> dict:
+    """Fetch the first mirror that answers, normalized to the site-API shape."""
+    errors: list[str] = []
+    for template in templates:
+        url = template.format(**fmt)
+        try:
+            return unwrap(fetch_json(url, retries=retries))
+        except Exception as err:  # noqa: BLE001 - try the next mirror
+            errors.append(f"{url}: {err}")
+    raise RuntimeError("all mirrors failed:\n  " + "\n  ".join(errors))
 
 
 def load_known_pitchers() -> dict[str, dict]:
@@ -132,7 +176,7 @@ def fetch_hand(athlete_id: str) -> str | None:
 
 
 def extract_starters(event_id: str, game_date: str, known: dict[str, dict]) -> list[dict]:
-    summary = fetch_json(SUMMARY_URL.format(eid=event_id))
+    summary = fetch_mirrored(SUMMARY_URLS, eid=event_id)
     comp = (summary.get("header", {}).get("competitions") or [{}])[0]
     side_by_team: dict[str, str] = {}
     name_by_team: dict[str, str] = {}
@@ -238,7 +282,7 @@ def main() -> int:
     n_games = 0
     while day <= end:
         ymd = day.strftime("%Y%m%d")
-        sb = fetch_json(SCOREBOARD_URL.format(ymd=ymd))
+        sb = fetch_mirrored(SCOREBOARD_URLS, ymd=ymd)
         for ev in sb.get("events", []):
             eid = str(ev.get("id"))
             status = ev.get("status", {}).get("type", {}).get("name")
