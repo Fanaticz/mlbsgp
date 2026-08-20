@@ -21,6 +21,12 @@ requested seasons, pool the games, and compute the Pearson correlation for the
 two prop pairs. A two-sided p-value is computed from the t-distribution via the
 regularized incomplete beta function (no scipy dependency).
 
+ESPN's gamelog files the All-Star Game and the Commissioner's Cup Championship
+under "Regular Season" even though neither counts toward season stats, so both
+are dropped (Commissioner's Cup group-play games do count and are kept). Every
+player-season is then reconciled against ESPN's own season totals; disagreements
+are reported at the end of the run and in the JSON's `espn_totals_check`.
+
 Outputs:
   - JSON: public/data/wnba_correlations.json  (or --out)
   - A human-readable summary table to stdout.
@@ -60,6 +66,32 @@ SITE_API = "https://site.web.api.espn.com/apis/site/v2/sports/basketball/wnba"
 MIN_IDX, PTS_IDX, REB_IDX, AST_IDX, TPM_IDX = 0, 1, 2, 3, 9
 
 ID_RE = re.compile(r"/athletes/(\d+)")
+
+# ESPN files a few exhibitions inside the gamelog's "Regular Season" bucket even
+# though the league does not count them toward season stats, so a naive read of
+# the log runs ahead of the GP on ESPN's own stats page (Chelsea Gray's 2026 log
+# has 37 events against ESPN's 36 GP). Two kinds show up, both tagged in the
+# event metadata by `eventNote`:
+#   - "AT&T WNBA All-Star Game"              (also flagged via team.isAllStar)
+#   - "WNBA Commissioner's Cup Championship"
+# Commissioner's Cup *group-play* games carry the note "WNBA Commissioner's Cup"
+# and ARE ordinary regular-season games — they must not be filtered. Verified by
+# reconciling every kept game against ESPN's own Regular Season totals for all
+# 447 player-seasons in 2024-2026 (see espn_season_totals below).
+ALLSTAR_NOTE_RE = re.compile(r"all[-\s]?star", re.I)
+CUP_FINAL_NOTE_RE = re.compile(r"commissioner.*(championship|final)", re.I)
+
+
+def is_exhibition(meta: dict) -> bool:
+    """True for gamelog events the league excludes from regular-season stats."""
+    note = meta.get("eventNote") or ""
+    if ALLSTAR_NOTE_RE.search(note) or CUP_FINAL_NOTE_RE.search(note):
+        return True
+    # All-Star entries also set an explicit flag on both team blocks.
+    for side in ("team", "opponent"):
+        if (meta.get(side) or {}).get("isAllStar"):
+            return True
+    return False
 
 
 def make_session() -> requests.Session:
@@ -182,19 +214,46 @@ def _made(v: Any) -> float | None:
     return _num(str(v).split("-")[0])
 
 
+def espn_season_totals(data: dict) -> dict | None:
+    """ESPN's own Regular Season totals row from a gamelog payload.
+
+    This is the number the stats page is built from, so it is the ground truth
+    for 'which games count'. Only PTS/REB/AST/3PM are read: ESPN's totals row
+    drifts a unit or two from the sum of its own gamelog on MIN and on the
+    attempt columns for a handful of players, but the counting stats reconcile
+    exactly once the exhibitions are dropped.
+    """
+    for st in data.get("seasonTypes") or []:
+        if "Regular Season" not in (st.get("displayName") or ""):
+            continue
+        for block in ((st.get("summary") or {}).get("stats") or []):
+            if block.get("type") != "total":
+                continue
+            s = block.get("stats") or []
+            if len(s) <= TPM_IDX:
+                return None
+            vals = {"pts": _num(s[PTS_IDX]), "reb": _num(s[REB_IDX]),
+                    "ast": _num(s[AST_IDX]), "tpm": _made(s[TPM_IDX])}
+            return None if any(v is None for v in vals.values()) else vals
+    return None
+
+
 def regular_season_games(
     sess: requests.Session, aid: str, season: int
-) -> list[dict]:
-    """Return one dict per regular-season game: box stats plus game metadata
-    (date, opponent, home/away, result) pulled from the payload's events map.
+) -> tuple[list[dict], dict | None]:
+    """Return one dict per regular-season game -- box stats plus game metadata
+    (date, opponent, home/away, result) pulled from the payload's events map --
+    alongside ESPN's own season totals for cross-checking.
 
     Categories within a season type are monthly partitions; we dedupe on
-    eventId so any overlap can't double-count a game.
+    eventId so any overlap can't double-count a game. Exhibitions ESPN files
+    under Regular Season but leaves out of its season stats (All-Star Game,
+    Commissioner's Cup Championship) are dropped -- see is_exhibition.
     """
     url = f"{SITE}/athletes/{aid}/gamelog?season={season}"
     data = get_json(sess, url)
     if not data:
-        return []
+        return [], None
     ev_meta = data.get("events") or {}
     out: list[dict] = []
     seen: set[str] = set()
@@ -205,6 +264,9 @@ def regular_season_games(
             for ev in cat.get("events") or []:
                 eid = str(ev.get("eventId") or "")
                 if eid and eid in seen:
+                    continue
+                m = ev_meta.get(eid) or {}
+                if is_exhibition(m):
                     continue
                 stats = ev.get("stats") or []
                 if len(stats) <= TPM_IDX:
@@ -218,7 +280,6 @@ def regular_season_games(
                     continue
                 if eid:
                     seen.add(eid)
-                m = ev_meta.get(eid) or {}
                 out.append({
                     "pts": pts, "reb": reb, "ast": ast, "tpm": tpm,
                     "min": 0.0 if mins is None else mins,
@@ -228,7 +289,7 @@ def regular_season_games(
                     "res": m.get("gameResult") or "",
                 })
     out.sort(key=lambda g: g["date"])
-    return out
+    return out, espn_season_totals(data)
 
 
 # --- statistics (pure python, no numpy/scipy) ---------------------------------
@@ -364,6 +425,21 @@ def _season_stats(games: list[dict]) -> dict:
     }
 
 
+def _totals_mismatch(games: list[dict], espn: dict | None) -> dict | None:
+    """Our kept games vs ESPN's official season totals; None when they agree.
+
+    A disagreement means ESPN counts a different set of games than we do -- a
+    new kind of exhibition slipping through is_exhibition, most likely -- so it
+    is surfaced in the run summary rather than silently shifting every stat.
+    """
+    if not espn:
+        return None
+    ours = {k: sum(g[k] for g in games) for k in ("pts", "reb", "ast", "tpm")}
+    off = {k: round(ours[k] - espn[k], 3) for k in ours if abs(ours[k] - espn[k]) > 1e-9}
+    return None if not off else {"games": len(games), "ours": ours,
+                                 "espn": espn, "diff": off}
+
+
 def process_player(
     sess: requests.Session, aid: str, seasons: list[int], weights: dict[int, float],
     min_mpg: float, team_map: dict[str, dict]
@@ -376,10 +452,14 @@ def process_player(
     mins: list[float] = []
     ws: list[float] = []
     per_season: dict[str, int] = {}
+    checks: dict[str, dict] = {}
     for yr in seasons:
-        g = regular_season_games(sess, aid, yr)
+        g, espn_totals = regular_season_games(sess, aid, yr)
         if not g:
             continue
+        bad = _totals_mismatch(g, espn_totals)
+        if bad:
+            checks[str(yr)] = bad
         by_year[yr] = g
         per_season[str(yr)] = len(g)
         w = weights.get(yr, 0.0)
@@ -455,6 +535,7 @@ def process_player(
         },
         "by_season": by_season,
         "latest_games": latest_games,
+        "_totals_check": checks,
     }
 
 
@@ -537,6 +618,14 @@ def main() -> None:
 
     players.sort(key=lambda p: p["name"].lower())
 
+    # Cross-check against ESPN's own season totals. Every kept game should be a
+    # game ESPN counts, so a non-empty list here means the exhibition filter has
+    # fallen behind ESPN's data (a new note wording, a new non-counting event).
+    totals_mismatches = [
+        {"athlete_id": p["athlete_id"], "name": p["name"], "season": yr, **info}
+        for p in players for yr, info in sorted(p.pop("_totals_check", {}).items())
+    ]
+
     reportable = [p for p in players if p["n_games"] >= args.min_games]
     total_games = sum(p["n_games"] for p in players)
 
@@ -545,7 +634,9 @@ def main() -> None:
             .isoformat().replace("+00:00", "Z"),
         "source": "ESPN WNBA public API",
         "seasons": args.seasons,
-        "scope": "regular-season games, pooled across seasons; correlations per player",
+        "scope": "regular-season games (All-Star Game and Commissioner's Cup "
+                 "Championship excluded, as ESPN's season stats do), pooled "
+                 "across seasons; correlations per player",
         "weighting": {
             "scheme": "per-game season weights (recency tilt); weighted Pearson, "
                       "Kish effective-N used for significance",
@@ -553,6 +644,13 @@ def main() -> None:
         },
         "min_games_reportable": args.min_games,
         "min_mpg_included": args.min_mpg,
+        "espn_totals_check": {
+            "note": "Kept games reconciled against ESPN's own Regular Season "
+                    "totals (PTS/REB/AST/3PM). Non-empty 'mismatches' means our "
+                    "game set has drifted from ESPN's.",
+            "n_mismatched_player_seasons": len(totals_mismatches),
+            "mismatches": totals_mismatches[:25],
+        },
         "schedule_today": sched,
         "n_players": len(players),
         "n_players_reportable": len(reportable),
@@ -598,6 +696,15 @@ def main() -> None:
               f"{cell(p3['unweighted']['r'], 7, 3)}")
 
     print()
+    if totals_mismatches:
+        print(f"WARNING: {len(totals_mismatches)} player-season(s) disagree with "
+              f"ESPN's own regular-season totals — the exhibition filter may be "
+              f"out of date. First few:")
+        for mm in totals_mismatches[:5]:
+            print(f"  {mm['name']} {mm['season']}: {mm['games']} games kept, "
+                  f"diff {mm['diff']}")
+    else:
+        print("ESPN totals cross-check: all player-seasons reconcile.")
     print(f"Wrote {args.out}")
 
 

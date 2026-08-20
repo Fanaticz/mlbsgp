@@ -1,5 +1,19 @@
 # Changes
 
+## 2026-08-20 session
+
+### WNBA game counts: drop the All-Star Game and the Commissioner's Cup Championship
+The WNBA page ran one game ahead of ESPN for a lot of players — the prop builder said "37 games this season" for Chelsea Gray where ESPN's stats page shows **GP 36**. Root cause: ESPN's gamelog files two kinds of exhibition **inside its "Regular Season" bucket** even though the league excludes them from season stats, and `scripts/wnba_fetch_correlations.py` took that bucket at face value. Both are tagged in the event metadata by `eventNote`:
+
+- `AT&T WNBA All-Star Game` (also flagged `team.isAllStar`) — Gray's 2024 extra game, 2024-07-21.
+- `WNBA Commissioner's Cup Championship` — Gray's 2026 extra game, 2026-06-30 @ NY (`eventId` 401857321, competition type `commissioners-cup`).
+
+Commissioner's Cup **group-play** games carry the note `WNBA Commissioner's Cup` and *are* ordinary regular-season games — they stay. That distinction is why 2025 (44 games, six group-play Cup games, no final for LV) already matched ESPN while 2024 and 2026 did not.
+
+`regular_season_games` now drops exhibitions via `is_exhibition()` (note regex + the `isAllStar` flag), and every player-season is reconciled against **ESPN's own Regular Season totals row** from the same gamelog payload (PTS/REB/AST/3PM; MIN and the attempt columns are skipped because ESPN's totals row drifts a unit or two from the sum of its own log on a few players). Mismatches print a warning at the end of the run and land in the JSON under `espn_totals_check`, so a future rename or a new non-counting event surfaces instead of silently shifting every mean.
+
+`public/data/wnba_correlations.json` regenerated: 201 players, **13,459 → 13,343 game rows** (116 exhibitions removed — 39 in 2024, 39 in 2025, 38 in 2026), 61 players' pooled counts changed. Chelsea Gray now reads 27/44/36 with 2026 averages 12.3 PTS / 3.2 REB / 6.9 AST — ESPN's line exactly. Verified against ESPN's independent `gamesPlayed` stat for all 447 player-seasons: **329/447 exact before → 428/447 after, and the 100 player-seasons that were counting too many games are now 0.** The 19 still short are an ESPN gamelog gap, not ours: their logs omit some scoreless cameo appearances that `gamesPlayed` counts, and our PTS/REB/AST/3PM totals match ESPN's official season totals exactly in all 19, so the missing games are 0/0/0/0 and change no correlation. No viewer change needed — `public/wnba.html` derives its counts from `latest_games`.
+
 ## 2026-07-06 session
 
 ### MLB +EV finder: FV-only fallback when DK prices can't be pulled ("screenshot mode")
