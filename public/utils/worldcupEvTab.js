@@ -18,6 +18,8 @@
     enabledCats: { combos: true, gamelines: true, team: true, corners: true, cards: true, players: true },
     leagues: [],         // [{ key, label, dk_id, dk_slug, pin_id }]
     leagueKey: 'worldcup',
+    sgpOnly: true,       // only count real 2-leg SGPs (DK calculateBets), not
+                         // DK's prebuilt straight combos — required for SGP promos
   };
 
   function currentLeague() {
@@ -226,6 +228,7 @@
       }),
     };
     if (state.leagueKey) body.league = state.leagueKey;
+    if (state.sgpOnly) body.sgp_only = true;
     var lid = ($('wcLeagueId') && $('wcLeagueId').value || '').trim();
     if (/^\d+$/.test(lid)) body.league_id = lid;  // manual DK id wins over key
     fetch('/api/dk/find-sgps-worldcup', {
@@ -438,6 +441,21 @@
     render();
   }
 
+  /* SGP-only changes what the server returns (prebuilt combos are suppressed),
+     so it re-scans DK for every loaded match rather than just re-filtering. */
+  function onSgpOnlyChange() {
+    var el = $('wcSgpOnly');
+    if (el) state.sgpOnly = !!el.checked;
+    var loaded = state.games.filter(function (g) { return g.parsed; });
+    loaded.forEach(function (g) { g.dkById = {}; g.dkMeta = null; });
+    render();
+    if (loaded.length) {
+      setStatus('SGP-only ' + (state.sgpOnly ? 'on — re-scanning DK for real SGP prices…'
+        : 'off — including DK prebuilt combos…'));
+      loaded.forEach(scanGame);
+    }
+  }
+
   /* Click selects ONLY that category. Clicking the lone active category
      again restores all categories. */
   function onMarketBtn(btn) {
@@ -476,6 +494,7 @@
     removeGame: removeGame,
     runScan: runScan,
     onFilter: onFilter,
+    onSgpOnlyChange: onSgpOnlyChange,
     onMarketBtn: onMarketBtn,
     onLeagueIdChange: onLeagueIdChange,
   };

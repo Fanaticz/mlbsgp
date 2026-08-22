@@ -104,20 +104,46 @@ mt = dk_api._match_soccer_selection({"market_key": "total_goals", "total_side": 
 check(bool(mb and mb.get("selectionId")), "BTTS Yes leg resolves to a DK selection id")
 check(bool(mt and mt.get("selectionId")), "Over 2.5 leg resolves to a DK selection id")
 
-print("\nfind_sgps_worldcup(league='epl') HT/FT prebuilt match (cookie-free):")
 htft_cands = [
     {"id": "ht_ft:0", "market_key": "ht_ft", "ht": "home", "ft": "home"},
     {"id": "ht_ft:1", "market_key": "ht_ft", "ht": "away", "ft": "home"},
     {"id": "ht_ft:2", "market_key": "ht_ft", "ht": "draw", "ft": "draw"},
 ]
-res = dk_api.find_sgps_worldcup({"league": "epl", "home": home, "away": away, "candidates": htft_cands})
+btts_cand = [{"id": "btts_total:0", "market_key": "btts_total",
+              "btts": "Yes", "total_side": "Over", "total_line": 2.5}]
+
+
+def scan(cands, **extra):
+    p = {"league": "epl", "home": home, "away": away, "candidates": cands}
+    p.update(extra)
+    res = dk_api.find_sgps_worldcup(p)
+    return {r["id"]: r for r in res.get("results", [])}, res
+
+
+print("\nfind_sgps_worldcup(league='epl'), default (prebuilt fallback allowed):")
+by_id, res = scan(htft_cands)
 check("error" not in res, "scan ran without error (%s)" % res.get("error", "ok"))
-by_id = {r["id"]: r for r in res.get("results", [])}
 matched = [i for i in ("ht_ft:0", "ht_ft:1", "ht_ft:2")
            if by_id.get(i, {}).get("matched") and by_id[i].get("via") == "prebuilt"]
 check(len(matched) == 3, "all 3 HT/FT cells matched via DK prebuilt (%d/3)" % len(matched))
-sample = by_id.get("ht_ft:1", {})
-check(sample.get("dk_american") not in (None, ""), "HT/FT cell carries a DK price (%s)" % sample.get("dk_american"))
+
+print("\nsgp_only=True, calculateBets DOWN — prebuilt combos are NOT counted:")
+dk_api._price_combo = lambda ids: None
+by_id, _ = scan(htft_cands, sgp_only=True)
+n_pre = sum(1 for i in by_id if by_id[i].get("matched") and by_id[i].get("via") == "prebuilt")
+check(n_pre == 0, "no HT/FT cell reported as a (prebuilt) match under sgp_only")
+check(all(not by_id[i].get("matched") for i in by_id),
+      "HT/FT cells are no-match when only a prebuilt combo exists")
+
+print("\nsgp_only=True, calculateBets UP — combos price as real SGPs:")
+dk_api._price_combo = lambda ids: {"sgpOdds": "+330", "sgpDecimal": 4.3, "legInfo": []}
+by_id, _ = scan(btts_cand, sgp_only=True)
+r0 = by_id.get("btts_total:0", {})
+check(r0.get("matched") and r0.get("via") == "sgp",
+      "BTTS+Over2.5 matches as a real SGP (via=%s)" % r0.get("via"))
+by_id, _ = scan(htft_cands, sgp_only=True)
+n_sgp = sum(1 for i in by_id if by_id[i].get("matched") and by_id[i].get("via") == "sgp")
+check(n_sgp == 3, "HT/FT cells price via real SGP legs when calculateBets is up (%d/3)" % n_sgp)
 
 print("\n%s" % ("ALL SMOKE CHECKS PASSED" if not failures else "%d FAILURE(S)" % len(failures)))
 sys.exit(1 if failures else 0)

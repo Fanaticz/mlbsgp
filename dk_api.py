@@ -3139,13 +3139,21 @@ def find_sgps_worldcup(payload):
       { "league": "epl",             # optional registry key (worldcup|epl|...)
         "league_id": "...",          # optional explicit DK id (wins over key)
         "league_slug": "...",        # optional slug override
+        "sgp_only": true,            # optional; drop the prebuilt-combo fallback
         "home": "Mexico", "away": "South Africa",
         "candidates": [ { "id", "market_key", ...key-specific fields } ] }
+
+    sgp_only: DK also lists some of these joint outcomes as *prebuilt straight
+    markets* (BTTS & Total, HT/FT, ...). Those are NOT Same Game Parlays and do
+    not satisfy DK's SGP promos, so when sgp_only is set a combo counts as
+    matched only if it priced as a real 2-leg SGP via calculateBets — the
+    prebuilt fallback is suppressed.
     """
     payload = payload or {}
     candidates = payload.get("candidates", []) or []
     if not isinstance(candidates, list) or not candidates:
         return {"error": "candidates array required"}
+    sgp_only = bool(payload.get("sgp_only"))
     home, away = payload.get("home", ""), payload.get("away", "")
     if not home or not away:
         return {"error": "home and away team names required"}
@@ -3294,7 +3302,7 @@ def find_sgps_worldcup(payload):
                     l.get("marketName", "") for l in e["legs"])
                 out["dk_label"] = " + ".join(
                     (l.get("label") or l.get("outcomeType") or "") for l in e["legs"])
-            elif e["prebuilt"]:
+            elif e["prebuilt"] and not sgp_only:
                 m = e["prebuilt"]
                 out["matched"] = True
                 out["via"] = "prebuilt"
@@ -3308,7 +3316,14 @@ def find_sgps_worldcup(payload):
                 sgp_why = ("sgp leg unresolved: " + str(e.get("leg_fail"))
                            if not e["legs"] else
                            "dk:sgp_price_unavailable (combination refused or timed out)")
-                out["missing"] = sgp_why + "; no prebuilt combo market either"
+                # In sgp_only mode a prebuilt straight combo is deliberately not
+                # a match — it isn't an SGP and won't satisfy DK's SGP promo.
+                if sgp_only and e["prebuilt"]:
+                    out["missing"] = (sgp_why +
+                                      "; a prebuilt combo exists but sgp_only is set "
+                                      "(prebuilt straight markets aren't SGPs)")
+                else:
+                    out["missing"] = sgp_why + "; no prebuilt combo market either"
             results.append(out)
             continue
         m = e["prebuilt"]

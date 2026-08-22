@@ -15,6 +15,11 @@ Verified offline via `scripts/smoke_soccer_epl.py` (+ trimmed fixture): registry
 
 **Caveat — the combined DK price for BTTS + Over 2.5:** unlike the World Cup, DK does **not** prebuild "BTTS & Total" / "Result & Total" combos for EPL (only HT/FT). Those combos' legs resolve fine, but the correlated combined DK price comes from `calculateBets`, which is behind the same Akamai validated-cookie gate as MLB pricing — so from a datacenter IP it needs `DK_COOKIES`. Without it, EPL shows Pinnacle fair lines + DK's prebuilt HT/FT combos + individual leg prices; with it, the full BTTS+O2.5 SGP is priced and compared.
 
+### Soccer: SGP-only mode (default on) — real SGPs only, no prebuilt combos
+For a DK SGP promo, only an *actual Same Game Parlay* qualifies — DK's prebuilt straight combo markets (BTTS & Total, HT/FT listed as one market) don't count even though they represent the same joint outcome. Added an **`sgp_only`** flag to `find_sgps_worldcup` (and an **SGP ONLY** toggle in the soccer tab, default on): when set, a combo counts as matched only if it priced as a real 2-leg SGP via `calculateBets`; the prebuilt-combo fallback is suppressed and such rows report why. Toggling it re-scans DK (it changes the server response, not just a client filter).
+
+Consequence: in SGP-only mode the soccer tab needs DK's SGP pricing reachable — i.e. `DK_COOKIES` set (the same no-VPN path as MLB) — or it returns no priced combos. Turn SGP ONLY off to fall back to DK's prebuilt combos (useful for reference / World Cup knockout slates), but those won't satisfy an SGP promo.
+
 
 ### DK API migration: games + markets restored after DK retired the nav/controldata endpoints
 DK prices stopped resolving because DraftKings retired two of the three endpoints the tool depended on. The old games feed (`.../sportscontent/navigation/dkusnj/v1/nav/leagues/{id}`) and the per-subcategory market feed (`.../sportscontent/controldata/event/eventSubcategory/v1/markets`) now return **404**. The per-event SGP feed (`.../sportscontent/parlays/v1/sgp/events/{id}`) still serves **200**.

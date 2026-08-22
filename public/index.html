@@ -680,6 +680,7 @@ h1 em{color:var(--ac);font-style:normal;}
         <button class="fb active" data-wc-cat="cards"     type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.onMarketBtn(this)">CARDS</button>
         <button class="fb active" data-wc-cat="players"   type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.onMarketBtn(this)">PLAYERS</button>
       </div>
+      <label class="tm-toggle" title="If on, only count real 2-leg Same Game Parlays priced by DK (calculateBets) — the kind that satisfy DK SGP promos. DK's prebuilt straight combos (BTTS &amp; Total, HT/FT) are excluded because they aren't SGPs. Needs DK SGP pricing to be reachable (DK_COOKIES set)."><input type="checkbox" id="wcSgpOnly" checked onchange="window.worldcupTab&amp;&amp;window.worldcupTab.onSgpOnlyChange()"><span>SGP ONLY</span></label>
       <label class="tm-toggle" title="If on, hide selections with no DK price."><input type="checkbox" id="wcMatchedOnly" checked onchange="window.worldcupTab&amp;&amp;window.worldcupTab.onFilter()"><span>MATCHED ONLY</span></label>
       <label class="tm-toggle" title="If on, hide longshots priced above +1000."><input type="checkbox" id="wcMaxOdds" checked onchange="window.worldcupTab&amp;&amp;window.worldcupTab.onFilter()"><span>&le; +1000</span></label>
       <span id="wcCount" style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace;margin-left:auto"></span>
