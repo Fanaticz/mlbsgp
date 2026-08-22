@@ -265,7 +265,7 @@ h1 em{color:var(--ac);font-style:normal;}
   <button class="sport-btn" id="sportBtnTennis" type="button" onclick="setSport('tennis')" aria-pressed="false"><span class="sport-dot"></span>TENNIS</button>
   -->
   <button class="sport-btn" id="sportBtnWnba" type="button" onclick="setSport('wnba')" aria-pressed="false"><span class="sport-dot"></span>WNBA</button>
-  <button class="sport-btn" id="sportBtnWorldcup" type="button" onclick="setSport('worldcup')" aria-pressed="false"><span class="sport-dot"></span>WORLD CUP</button>
+  <button class="sport-btn" id="sportBtnWorldcup" type="button" onclick="setSport('worldcup')" aria-pressed="false"><span class="sport-dot"></span>SOCCER</button>
 </div>
 <div class="nav" id="navMlb">
   <button class="nav-tab active" onclick="showPage('global')">Global</button>
@@ -281,7 +281,7 @@ h1 em{color:var(--ac);font-style:normal;}
   <button class="nav-tab active" data-tennis-tab="evfinder" onclick="showTennisPage('evfinder')">Tennis +EV (French Open M)</button>
 </div>
 <div class="nav" id="navWorldcup" style="display:none">
-  <button class="nav-tab active" data-wc-tab="evfinder" onclick="showWorldcupPage('evfinder')">World Cup SGP +EV</button>
+  <button class="nav-tab active" data-wc-tab="evfinder" onclick="showWorldcupPage('evfinder')">Soccer SGP +EV</button>
 </div>
 <div class="header" id="headerMlb">
   <div class="badge"><span class="dot"></span> <span id="hdrBadge">Loading historical data...</span></div>
@@ -322,7 +322,7 @@ h1 em{color:var(--ac);font-style:normal;}
      fair joint probability. -->
 <div class="header" id="headerWorldcup" style="display:none">
   <div class="badge"><span class="dot"></span> <span id="wcHdrBadge">Load the Pinnacle slate and pick matches</span></div>
-  <h1>World Cup SGP <em>Fair Value</em></h1>
+  <h1>Soccer SGP <em>Fair Value</em></h1>
   <div class="stats-row">
     <div class="stat"><span class="n">BTTS&times;TOTAL / BTTS&times;WINNER / WINNER&times;TOTAL</span><span class="l">MAIN COMBOS</span></div>
     <div class="stat"><span class="n">HT/FT &middot; ODD-EVEN&times;TOTAL</span><span class="l">BONUS COMBOS</span></div>
@@ -647,14 +647,18 @@ h1 em{color:var(--ac);font-style:normal;}
 <div id="page-worldcup-evfinder" class="page worldcup-page">
   <div class="ctrl" style="flex-direction:column;align-items:stretch;gap:10px">
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <span style="font-size:13px;color:var(--cyan);font-family:Syne,sans-serif;font-weight:700">WORLD CUP SGP +EV</span>
+      <span style="font-size:13px;color:var(--cyan);font-family:Syne,sans-serif;font-weight:700">SOCCER SGP +EV</span>
       <span style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace">live pinny &rarr; devig &rarr; DK combo markets &rarr; EV%</span>
     </div>
     <!-- Primary path: pull odds live from Pinnacle's guest API. -->
     <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:14px 16px;background:var(--s2);border:1px solid var(--b1);border-radius:9px">
-      <div style="flex:1;min-width:200px">
+      <div style="display:flex;flex-direction:column;gap:2px;justify-content:center;font-family:Space Mono,monospace">
+        <label for="wcLeague" style="font-size:9px;color:var(--mu);letter-spacing:.6px" title="Which soccer league to compare. Sets both the Pinnacle slate and the DK league.">LEAGUE</label>
+        <select id="wcLeague" onchange="window.worldcupTab&amp;&amp;window.worldcupTab.onLeagueChange()" style="min-width:150px;padding:7px 8px;font-size:11px;font-weight:600;border:1px solid var(--b1);border-radius:5px;background:var(--s1);color:var(--tx);font-family:Space Mono,monospace"><option value="worldcup">FIFA World Cup</option><option value="epl">English Premier League</option></select>
+      </div>
+      <div style="flex:1;min-width:180px">
         <div style="font-size:12px;color:var(--tx);font-weight:600;margin-bottom:4px">Pull live from Pinnacle</div>
-        <div style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">loads the World Cup slate &middot; pick one or more matches &middot; fetches SGP combos + auto-scans DK</div>
+        <div style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">loads the league slate &middot; pick one or more matches &middot; fetches SGP combos + auto-scans DK</div>
       </div>
       <button id="wcPinLoad" type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.loadPinnySlate()" style="padding:10px 18px;font-size:12px;font-weight:700;border:1px solid var(--cyan);border-radius:6px;background:rgba(34,211,238,.12);color:var(--cyan);cursor:pointer;letter-spacing:.6px;font-family:Space Mono,monospace">&#8635; LOAD SLATE</button>
       <select id="wcPinMatch" style="display:none;max-width:320px;padding:8px;font-size:11px;border:1px solid var(--b1);border-radius:5px;background:var(--s1);color:var(--tx);font-family:Space Mono,monospace" onchange="window.worldcupTab&amp;&amp;window.worldcupTab.onPinMatchPick()"></select>
@@ -662,7 +666,7 @@ h1 em{color:var(--ac);font-style:normal;}
     <div id="wcGames" style="display:none;gap:6px;flex-wrap:wrap"></div>
     <div style="display:flex;gap:12px;align-items:stretch;flex-wrap:wrap">
       <div style="display:flex;flex-direction:column;gap:2px;justify-content:center;font-family:Space Mono,monospace">
-        <label for="wcLeagueId" style="font-size:9px;color:var(--mu);letter-spacing:.6px" title="Optional. Blank = auto-resolve the FIFA World Cup league from DK's public page. Find it manually in the DK URL: sportsbook.draftkings.com/leagues/soccer/<slug>.">DK LEAGUE ID (optional)</label>
+        <label for="wcLeagueId" style="font-size:9px;color:var(--mu);letter-spacing:.6px" title="Optional override. Blank = use the DK league for the LEAGUE selected above. Set a numeric id to force a specific DK league; find it in the DK URL: sportsbook.draftkings.com/leagues/soccer/<slug>.">DK LEAGUE ID (override)</label>
         <input id="wcLeagueId" type="text" inputmode="numeric" placeholder="auto" oninput="window.worldcupTab&amp;&amp;window.worldcupTab.onLeagueIdChange()" style="width:120px;padding:6px 8px;font-size:11px;font-weight:600;border:1px solid var(--b1);border-radius:5px;background:var(--s1);color:var(--tx);font-family:Space Mono,monospace">
       </div>
       <button id="wcScanBtn" type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.runScan()" style="align-self:center;padding:10px 22px;font-size:12px;font-weight:700;border:1px solid var(--ac);border-radius:6px;background:rgba(34,197,94,.16);color:var(--ac);cursor:pointer;letter-spacing:.6px;font-family:Space Mono,monospace">&#10024; SCAN DK</button>

@@ -16,7 +16,19 @@
     matchedOnly: true,
     maxOddsCap: true,    // hide longshots priced above +1000
     enabledCats: { combos: true, gamelines: true, team: true, corners: true, cards: true, players: true },
+    leagues: [],         // [{ key, label, dk_id, dk_slug, pin_id }]
+    leagueKey: 'worldcup',
   };
+
+  function currentLeague() {
+    for (var i = 0; i < state.leagues.length; i++)
+      if (state.leagues[i].key === state.leagueKey) return state.leagues[i];
+    return null;
+  }
+  function leagueLabel() {
+    var l = currentLeague();
+    return l ? l.label : 'soccer';
+  }
 
   var MARKET_LABELS = {
     btts_total: 'BTTS / Total Goals',
@@ -78,11 +90,60 @@
 
   /* ---- live pull from Pinnacle ---- */
 
+  /* Populate the league picker from the server registry (World Cup, EPL, …).
+     Falls back to a built-in list if the endpoint is unavailable so the tab
+     still works. */
+  function loadLeagues() {
+    var pick = $('wcLeague');
+    function apply(j) {
+      state.leagues = (j && j.leagues) || [];
+      if (!state.leagues.length) {
+        state.leagues = [
+          { key: 'worldcup', label: 'FIFA World Cup' },
+          { key: 'epl', label: 'English Premier League' },
+        ];
+      }
+      var stored = '';
+      try { stored = localStorage.getItem('wcLeagueKey') || ''; } catch (_) {}
+      var def = stored || (j && j.default) || state.leagues[0].key;
+      if (!currentLeagueIn(def)) def = state.leagues[0].key;
+      state.leagueKey = def;
+      if (pick) {
+        pick.innerHTML = state.leagues.map(function (l) {
+          return '<option value="' + esc(l.key) + '"' + (l.key === def ? ' selected' : '') + '>' + esc(l.label) + '</option>';
+        }).join('');
+      }
+    }
+    function currentLeagueIn(key) {
+      for (var i = 0; i < state.leagues.length; i++) if (state.leagues[i].key === key) return true;
+      return false;
+    }
+    fetch('/api/soccer/leagues')
+      .then(function (r) { return r.json(); })
+      .then(apply)
+      .catch(function () { apply(null); });
+  }
+
+  /* Switching league invalidates the loaded slate + any added matches. */
+  function onLeagueChange() {
+    var pick = $('wcLeague');
+    if (!pick) return;
+    state.leagueKey = pick.value;
+    try { localStorage.setItem('wcLeagueKey', state.leagueKey); } catch (_) {}
+    state.games = [];
+    var sel = $('wcPinMatch');
+    if (sel) { sel.innerHTML = ''; sel.style.display = 'none'; }
+    renderGames();
+    render();
+    setStatus('League set to ' + leagueLabel() + '. Load the slate to begin.');
+  }
+
   function loadPinnySlate() {
     var sel = $('wcPinMatch');
     var btn = $('wcPinLoad');
     if (btn) { btn.disabled = true; btn.textContent = 'LOADING…'; }
-    fetch('/api/pinnacle/worldcup-games')
+    var q = state.leagueKey ? ('?league=' + encodeURIComponent(state.leagueKey)) : '';
+    fetch('/api/pinnacle/worldcup-games' + q)
       .then(function (r) { return r.json(); })
       .then(function (j) {
         if (btn) { btn.disabled = false; btn.textContent = '↻ LOAD SLATE'; }
@@ -95,7 +156,7 @@
             return '<option value="' + m.id + '">' + esc(m.home + ' vs ' + m.away) + (d ? ' · ' + d : '') + '</option>';
           }).join('');
         sel.style.display = '';
-        setStatus('Pinnacle slate loaded — ' + matches.length + ' World Cup matches. Pick one or more.');
+        setStatus('Pinnacle slate loaded — ' + matches.length + ' ' + leagueLabel() + ' matches. Pick one or more.');
       })
       .catch(function (e) {
         if (btn) { btn.disabled = false; btn.textContent = '↻ LOAD SLATE'; }
@@ -164,8 +225,9 @@
         return Object.assign({ id: c.id, market_key: c.market_key }, c.fields);
       }),
     };
+    if (state.leagueKey) body.league = state.leagueKey;
     var lid = ($('wcLeagueId') && $('wcLeagueId').value || '').trim();
-    if (/^\d+$/.test(lid)) body.league_id = lid;
+    if (/^\d+$/.test(lid)) body.league_id = lid;  // manual DK id wins over key
     fetch('/api/dk/find-sgps-worldcup', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -401,11 +463,14 @@
     activated = true;
     var el = $('wcLeagueId');
     if (el) try { el.value = localStorage.getItem('wcLeagueId') || ''; } catch (_) {}
+    loadLeagues();
     render();
   }
 
   window.worldcupTab = {
     onActivate: onActivate,
+    loadLeagues: loadLeagues,
+    onLeagueChange: onLeagueChange,
     loadPinnySlate: loadPinnySlate,
     onPinMatchPick: onPinMatchPick,
     removeGame: removeGame,

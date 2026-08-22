@@ -1468,18 +1468,48 @@ app.post('/api/extract-worldcup-pdf', (req, res) => {
   });
 });
 
+// Soccer league registry (World Cup, EPL, …). Lets the client populate a
+// league picker without hardcoding ids. Cached — the registry is static.
+const SOCCER_LEAGUES_CACHE = { ts: 0, body: null };
+const SOCCER_LEAGUES_TTL_MS = 60 * 60 * 1000;
+
+app.get('/api/soccer/leagues', async (_req, res) => {
+  try {
+    if (SOCCER_LEAGUES_CACHE.body && Date.now() - SOCCER_LEAGUES_CACHE.ts < SOCCER_LEAGUES_TTL_MS) {
+      return res.json(Object.assign({}, SOCCER_LEAGUES_CACHE.body, { cached: true }));
+    }
+    const result = await dkCall(['soccer-leagues']);
+    if (!result.error) { SOCCER_LEAGUES_CACHE.ts = Date.now(); SOCCER_LEAGUES_CACHE.body = result; }
+    return res.json(result);
+  } catch (e) {
+    return res.status(500).json({ error: 'soccer leagues failed: ' + e.message });
+  }
+});
+
 // Live pull from Pinnacle's guest API — no PDF required. Same output shape
-// as /api/extract-worldcup-pdf so the client reuses one code path.
-const PIN_WC_GAMES_CACHE = { ts: 0, body: null };
+// as /api/extract-worldcup-pdf so the client reuses one code path. Accepts an
+// optional ?league=<key> (worldcup|epl|…) or ?leagueId=<pinnacle numeric id>;
+// blank = the server default (World Cup). Cache is keyed per league so
+// switching leagues doesn't serve a stale slate.
+const PIN_WC_GAMES_CACHE = new Map();
 const PIN_WC_GAMES_TTL_MS = 5 * 60 * 1000;
 
-app.get('/api/pinnacle/worldcup-games', async (_req, res) => {
+app.get('/api/pinnacle/worldcup-games', async (req, res) => {
   try {
-    if (PIN_WC_GAMES_CACHE.body && Date.now() - PIN_WC_GAMES_CACHE.ts < PIN_WC_GAMES_TTL_MS) {
-      return res.json(Object.assign({}, PIN_WC_GAMES_CACHE.body, { cached: true }));
+    const league = String(req.query.league || '').trim().toLowerCase();
+    const leagueId = String(req.query.leagueId || '').trim();
+    // Prefer an explicit numeric Pinnacle id; else a registry key; else default.
+    const arg = /^\d+$/.test(leagueId) ? leagueId
+      : (/^[a-z0-9_-]+$/.test(league) ? league : '');
+    const cacheKey = arg || '__default__';
+    const hit = PIN_WC_GAMES_CACHE.get(cacheKey);
+    if (hit && Date.now() - hit.ts < PIN_WC_GAMES_TTL_MS) {
+      return res.json(Object.assign({}, hit.body, { cached: true }));
     }
-    const result = await dkCall(['pinnacle-wc-games']);
-    if (!result.error) { PIN_WC_GAMES_CACHE.ts = Date.now(); PIN_WC_GAMES_CACHE.body = result; }
+    const args = ['pinnacle-wc-games'];
+    if (arg) args.push(arg);
+    const result = await dkCall(args);
+    if (!result.error) PIN_WC_GAMES_CACHE.set(cacheKey, { ts: Date.now(), body: result });
     return res.json(result);
   } catch (e) {
     return res.status(500).json({ error: 'Pinnacle games failed: ' + e.message });
@@ -1560,8 +1590,8 @@ app.post('/api/dk/find-sgps-worldcup', async (req, res) => {
     if (!home || !away) {
       return res.status(400).json({ error: 'home and away required' });
     }
-    const key = JSON.stringify([home, away, body.league_id || '', body.league_slug || '',
-      candidates.map(c => c.id).sort()]);
+    const key = JSON.stringify([home, away, body.league || '', body.league_id || '',
+      body.league_slug || '', candidates.map(c => c.id).sort()]);
     const hit = WC_DK_CACHE.get(key);
     if (hit && Date.now() - hit.ts < WC_DK_CACHE_TTL_MS) {
       return res.json(Object.assign({}, hit.body, { cached: true, cache_age_s: Math.round((Date.now() - hit.ts) / 1000) }));

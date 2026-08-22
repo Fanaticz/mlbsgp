@@ -2,6 +2,20 @@
 
 ## 2026-08-22 session
 
+### Soccer SGP +EV: multi-league support (EPL added), DK vs Pinnacle
+The soccer tab (previously World Cup–only) now works for any soccer league via a **league picker**. Added **English Premier League** — DK eventGroup **40253**, Pinnacle league **1980** — verified live against today's slate.
+
+The whole soccer engine (DK combo grammar + Pinnacle devig) was already league-agnostic; only the league IDs and club naming differed. Changes:
+- **`dk_api.py`** — new `SOCCER_LEAGUES` registry (`worldcup`, `epl`; env-overridable ids) + `_soccer_league()` resolver. `get_games_soccer` / `pinnacle_wc_games` / `find_sgps_worldcup` accept a `league` key. New `soccer-leagues` CLI command returns the registry. Added `_SOCCER_CLUB_ALIASES` so DK short forms match Pinnacle long forms (Man City↔Manchester City, Wolves↔Wolverhampton, Spurs↔Tottenham, …) — without it, e.g. Bournemouth @ Manchester City failed to match between books.
+- **HT/FT prebuilt fix** — DK's EPL "Half Time / Full Time" selections leave `label` null and put the paired result ("Nottingham Forest/Leeds") only in the bet-slip line; the World Cup format put it in the label. `get_markets` now carries `betslipLine` on each prop and the `ht_ft` matcher falls back to it, so EPL HT/FT combos match DK's posted price **with no `calculateBets` call** (cookie-free).
+- **`server.js`** — `/api/pinnacle/worldcup-games` takes `?league=<key>`/`?leagueId=<id>` and league-keys its cache; new `/api/soccer/leagues` serves the registry; `find-sgps-worldcup` cache key includes the league.
+- **Frontend** — league `<select>` in the soccer tab (populated from `/api/soccer/leagues`), passed to both the Pinnacle slate pull and the DK scan. Tab relabeled World Cup → Soccer.
+
+Verified offline via `scripts/smoke_soccer_epl.py` (+ trimmed fixture): registry resolution, club aliases, BTTS/Total leg resolution, and cookie-free HT/FT prebuilt matching against Pinnacle candidates.
+
+**Caveat — the combined DK price for BTTS + Over 2.5:** unlike the World Cup, DK does **not** prebuild "BTTS & Total" / "Result & Total" combos for EPL (only HT/FT). Those combos' legs resolve fine, but the correlated combined DK price comes from `calculateBets`, which is behind the same Akamai validated-cookie gate as MLB pricing — so from a datacenter IP it needs `DK_COOKIES`. Without it, EPL shows Pinnacle fair lines + DK's prebuilt HT/FT combos + individual leg prices; with it, the full BTTS+O2.5 SGP is priced and compared.
+
+
 ### DK API migration: games + markets restored after DK retired the nav/controldata endpoints
 DK prices stopped resolving because DraftKings retired two of the three endpoints the tool depended on. The old games feed (`.../sportscontent/navigation/dkusnj/v1/nav/leagues/{id}`) and the per-subcategory market feed (`.../sportscontent/controldata/event/eventSubcategory/v1/markets`) now return **404**. The per-event SGP feed (`.../sportscontent/parlays/v1/sgp/events/{id}`) still serves **200**.
 

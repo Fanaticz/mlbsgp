@@ -35,6 +35,41 @@ DK_TENNIS_LEAGUE_ID = _os.environ.get("DK_TENNIS_LEAGUE_ID", "40841")
 # DK_WORLDCUP_LEAGUE_ID to pin it and skip the extra request.
 DK_WORLDCUP_LEAGUE_ID = _os.environ.get("DK_WORLDCUP_LEAGUE_ID", "")
 DK_WORLDCUP_SLUG = _os.environ.get("DK_WORLDCUP_SLUG", "world-cup-2026")
+
+# ---------------------------------------------------------------------------
+# Soccer league registry. The soccer SGP engine (DK combo grammar + Pinnacle
+# devig) is entirely league-agnostic — only the league IDs differ — so adding a
+# league is just adding an entry here plus (if its clubs abbreviate words) a
+# name-alias set below. Each entry pins:
+#   dk_id:   DraftKings sportscontent/eventGroup league id (games + markets)
+#   dk_slug: DK public-page slug, used to auto-resolve dk_id when it's blank
+#   pin_id:  Pinnacle guest-API league id (fair no-vig lines)
+# All values are env-overridable so IDs can be corrected without a redeploy if
+# DK/Pinnacle ever renumber. Verified live 2026-08-22: DK EPL eventGroup 40253
+# (SGP-tagged), Pinnacle EPL league 1980.
+SOCCER_LEAGUES = {
+    "worldcup": {
+        "label": "FIFA World Cup",
+        "dk_id": _os.environ.get("DK_WORLDCUP_LEAGUE_ID", ""),
+        "dk_slug": _os.environ.get("DK_WORLDCUP_SLUG", "world-cup-2026"),
+        "pin_id": _os.environ.get("PINNACLE_WC_LEAGUE_ID", "2686"),
+    },
+    "epl": {
+        "label": "English Premier League",
+        "dk_id": _os.environ.get("DK_EPL_LEAGUE_ID", "40253"),
+        "dk_slug": _os.environ.get("DK_EPL_SLUG", "england-premier-league"),
+        "pin_id": _os.environ.get("PINNACLE_EPL_LEAGUE_ID", "1980"),
+    },
+}
+DEFAULT_SOCCER_LEAGUE = _os.environ.get("DEFAULT_SOCCER_LEAGUE", "worldcup")
+
+
+def _soccer_league(key):
+    """Resolve a league key (e.g. 'epl') to its registry entry. Unknown/blank
+    keys fall back to the configured default so old callers keep working."""
+    if key and str(key).lower() in SOCCER_LEAGUES:
+        return SOCCER_LEAGUES[str(key).lower()]
+    return SOCCER_LEAGUES.get(DEFAULT_SOCCER_LEAGUE, SOCCER_LEAGUES["worldcup"])
 # State site prefix for the sportscontent API (dkusnj = NJ, dkusil = IL, ...).
 # Both return identical event/market data for national leagues, but keep it
 # env-overridable to mirror DK_PRICE_HOST's state scoping.
@@ -819,6 +854,12 @@ def get_markets(event_id, pitcher_only=False, batter_only=False, nba_only=False,
                                     if sel_players else ""),
                 "outcomeType": outcome_type,
                 "label": s.get("label", ""),
+                # Full DK selection name / bet-slip line. For most markets this
+                # duplicates the label, but some combos (e.g. EPL Half Time /
+                # Full Time) put the only copy of the paired result here —
+                # label is null and outcomeType is a single token — so the
+                # soccer HT/FT matcher falls back to it.
+                "betslipLine": s.get("betslipLine") or s.get("name") or "",
                 "displayPoints": display,
                 "points": points,
                 "oddsAmerican": s.get("displayOdds", {}).get("american", ""),
@@ -2571,12 +2612,16 @@ def resolve_soccer_league_by_slug(slug=None):
             "html_len": len(html)}
 
 
-def get_games_soccer(league_id=None, slug=None):
+def get_games_soccer(league_id=None, slug=None, league=None):
     """Return soccer events for a league (default: FIFA World Cup).
 
-    Caller league_id wins over the env default; if neither is set, the
-    public slug page is scraped once to find it (so the tab works with
-    zero config the day the tournament shows up on DK)."""
+    Resolution order: explicit league_id > `league` registry key (e.g. 'epl')
+    > env default > slug page-scrape. The last lets a league work with zero
+    config the day it shows up on DK."""
+    if not league_id and league:
+        entry = _soccer_league(league)
+        league_id = entry.get("dk_id") or None
+        slug = slug or entry.get("dk_slug")
     lid = str(league_id) if league_id else DK_WORLDCUP_LEAGUE_ID
     resolved_from = None
     if not lid:
@@ -2638,13 +2683,41 @@ _SOCCER_COUNTRY_ALIASES = [
     {"dr congo", "congo dr", "democratic republic of congo"},
 ]
 
+# Club names that differ between Pinnacle (fuller form) and DK (short form).
+# Substring matching already handles truncations ("Newcastle" ⊂ "Newcastle
+# United", "Tottenham" ⊂ "Tottenham Hotspur"); these sets cover the cases where
+# a WORD is abbreviated, which substring can't catch — "Man City" vs
+# "Manchester City", "Wolves" vs "Wolverhampton", "Spurs" vs "Tottenham", etc.
+# EPL-focused; extend as leagues are added.
+_SOCCER_CLUB_ALIASES = [
+    {"manchester city", "man city"},
+    {"manchester united", "man utd", "man united"},
+    {"tottenham hotspur", "tottenham", "spurs"},
+    {"wolverhampton wanderers", "wolverhampton", "wolves"},
+    {"nottingham forest", "nott'm forest", "nottm forest", "notts forest"},
+    {"brighton & hove albion", "brighton and hove albion",
+     "brighton hove albion", "brighton"},
+    {"west ham united", "west ham"},
+    {"newcastle united", "newcastle"},
+    {"leeds united", "leeds"},
+    {"ipswich town", "ipswich"},
+    {"queens park rangers", "qpr"},
+    {"west bromwich albion", "west bromwich", "west brom", "wba"},
+    {"sheffield united", "sheffield utd", "sheff united", "sheff utd"},
+    {"sheffield wednesday", "sheff wednesday", "sheff wed"},
+    {"leicester city", "leicester"},
+    {"norwich city", "norwich"},
+    {"afc bournemouth", "bournemouth"},
+]
+
 def _team_matches_soccer(want, have):
     w, h = _norm_soccer(want), _norm_soccer(have)
     if not w or not h:
         return False
     if w == h or w in h or h in w:
         return True
-    return any(w in al and h in al for al in _SOCCER_COUNTRY_ALIASES)
+    return any(w in al and h in al
+               for al in _SOCCER_COUNTRY_ALIASES + _SOCCER_CLUB_ALIASES)
 
 
 def _event_for_soccer_match(home, away, events):
@@ -2800,7 +2873,10 @@ def _match_soccer_selection(cand, props_for_kind, home, away):
         "Mexico Win and Both to Score" (= home & Yes)
         "Mexico Win to Zero"           (= home & No)
         "Tie with Goals" / "Tie without Goals" (= draw & Yes / draw & No)
-      ht_ft ("Half Time / Full Time"): "Mexico/Tie", "Tie/South Africa", ...
+      ht_ft ("Half Time / Full Time"): the paired result is in the DK
+        selection's bet-slip line — "Mexico/Tie" (World Cup) or
+        "Nottingham Forest/Leeds" (EPL, where label is null and outcomeType is
+        only the FT side). Falls back to label for older/other formats.
       btts_total ("Both Teams to Score / Over 2.5 Goals"):
         labels are just "Yes"/"No", the total lives in the MARKET name —
         and DK's "No" is the complement of (Yes & Over), NOT Pinnacle's
@@ -2820,9 +2896,12 @@ def _match_soccer_selection(cand, props_for_kind, home, away):
             continue
 
         if key == "ht_ft":
-            parts = re.split(r"\s*/\s*", label)
+            # The HT/FT pairing lives in the bet-slip line ("Home/Away" style);
+            # DK's EPL feed leaves `label` null and `outcomeType` = FT side only.
+            pair = p.get("betslipLine") or label
+            parts = re.split(r"\s*/\s*", pair)
             if len(parts) != 2:
-                parts = re.split(r"\s+-\s+", label)
+                parts = re.split(r"\s+-\s+", pair)
             if len(parts) != 2:
                 continue
             ht = _label_result_token(parts[0], home, away)
@@ -3057,7 +3136,8 @@ def find_sgps_worldcup(payload):
     markets, so the posted selection odds ARE the SGP price.
 
     Input (stdin JSON):
-      { "league_id": "...",          # optional, else env/slug resolve
+      { "league": "epl",             # optional registry key (worldcup|epl|...)
+        "league_id": "...",          # optional explicit DK id (wins over key)
         "league_slug": "...",        # optional slug override
         "home": "Mexico", "away": "South Africa",
         "candidates": [ { "id", "market_key", ...key-specific fields } ] }
@@ -3072,10 +3152,11 @@ def find_sgps_worldcup(payload):
 
     try:
         games_data = get_games_soccer(league_id=payload.get("league_id"),
-                                      slug=payload.get("league_slug"))
+                                      slug=payload.get("league_slug"),
+                                      league=payload.get("league"))
     except Exception as e:
         return {"error": f"DK soccer games unavailable: {e}. Set "
-                         f"DK_WORLDCUP_LEAGUE_ID or pass league_id from the UI "
+                         f"the league id/slug or pass league_id from the UI "
                          f"(grab it from sportsbook.draftkings.com/leagues/soccer/...)."}
     events = games_data["events"]
     event = _event_for_soccer_match(home, away, events)
@@ -3305,9 +3386,17 @@ def _pin_get(path, attempts=4):
     raise RuntimeError(f"pinnacle GET {path} failed: {last_err}")
 
 
-def pinnacle_wc_games(league_id=None):
-    """List World Cup matches straight from Pinnacle's guest API."""
-    lid = str(league_id) if league_id else PIN_WC_LEAGUE_ID
+def pinnacle_wc_games(league_id=None, league=None):
+    """List a soccer league's matches straight from Pinnacle's guest API.
+
+    Resolution: explicit league_id > `league` registry key (e.g. 'epl') > the
+    World Cup env default. Name kept for back-compat; serves any league."""
+    if league_id:
+        lid = str(league_id)
+    elif league:
+        lid = _soccer_league(league).get("pin_id") or PIN_WC_LEAGUE_ID
+    else:
+        lid = PIN_WC_LEAGUE_ID
     data = _pin_get(f"/leagues/{lid}/matchups")
     out = []
     for m in data:
@@ -3965,16 +4054,33 @@ if __name__ == "__main__":
             stdin_data = sys.stdin.read().strip()
             payload = json.loads(stdin_data) if stdin_data else {}
             result = enumerate_sgps_tennis(payload)
+        elif cmd == "soccer-leagues":
+            result = {
+                "leagues": [
+                    {"key": k, "label": v["label"], "dk_id": v["dk_id"],
+                     "dk_slug": v["dk_slug"], "pin_id": v["pin_id"]}
+                    for k, v in SOCCER_LEAGUES.items()
+                ],
+                "default": DEFAULT_SOCCER_LEAGUE,
+            }
         elif cmd == "games-worldcup":
-            lid = sys.argv[2] if len(sys.argv) >= 3 else None
-            result = get_games_soccer(league_id=lid)
+            # arg may be a numeric DK league id or a registry key (e.g. 'epl').
+            arg = sys.argv[2] if len(sys.argv) >= 3 else None
+            if arg and not arg.isdigit():
+                result = get_games_soccer(league=arg)
+            else:
+                result = get_games_soccer(league_id=arg)
         elif cmd == "find-sgps-worldcup":
             stdin_data = sys.stdin.read().strip()
             payload = json.loads(stdin_data) if stdin_data else {}
             result = find_sgps_worldcup(payload)
         elif cmd == "pinnacle-wc-games":
-            lid = sys.argv[2] if len(sys.argv) >= 3 else None
-            result = pinnacle_wc_games(league_id=lid)
+            # arg may be a numeric Pinnacle league id or a registry key.
+            arg = sys.argv[2] if len(sys.argv) >= 3 else None
+            if arg and not arg.isdigit():
+                result = pinnacle_wc_games(league=arg)
+            else:
+                result = pinnacle_wc_games(league_id=arg)
         elif cmd == "pinnacle-wc-specials" and len(sys.argv) >= 3:
             result = pinnacle_wc_specials(sys.argv[2])
         elif cmd == "resolve-worldcup-league":
