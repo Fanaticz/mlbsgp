@@ -1,5 +1,17 @@
 # Changes
 
+## 2026-08-22 session
+
+### DK API migration: games + markets restored after DK retired the nav/controldata endpoints
+DK prices stopped resolving because DraftKings retired two of the three endpoints the tool depended on. The old games feed (`.../sportscontent/navigation/dkusnj/v1/nav/leagues/{id}`) and the per-subcategory market feed (`.../sportscontent/controldata/event/eventSubcategory/v1/markets`) now return **404**. The per-event SGP feed (`.../sportscontent/parlays/v1/sgp/events/{id}`) still serves **200**.
+
+Fix (`dk_api.py`):
+- **Games** now come from the sportscontent leagues route `.../sportscontent/<site>/v1/leagues/{id}` (`DK_LEAGUES`; `DK_SITE` env, default `dkusnj`). Event ids/start times moved fields (`eventId`→`id`, `startDate`→`startEventDate`); parsing accepts both via `_ev_id`/`_ev_start`. Bonus: MLB games now expose each starter's name (`homeStarter`/`awayStarter`) from participant metadata. All five game functions (MLB, NBA, tennis, World Cup) were on the dead endpoint and are repointed.
+- **Markets** now come entirely from the still-live SGP feed, which embeds every SGP-eligible market's selections + odds inline. `get_markets()` filters that single response by subcategory in memory instead of fanning out ~100 parallel per-subcategory GETs to the retired controldata endpoint. One request per event is also far friendlier to Akamai's rate limiter. The `props` output shape is byte-for-byte unchanged, so leg-matching (`_match_leg_to_dk`), `find_sgps`, and the frontend are untouched. Dead `_fetch_subcategory` + `DK_MARKETS` removed.
+- Verified offline against a live-captured feed fixture: `get_markets(pitcher_only=True)` returns both starters' complete Over/Under legs (K, ER, Hits Allowed, Outs, Walks) with valid `calculateBets` selection ids and decimal odds; milestone (X-or-Fewer) legs parse their thresholds; `_match_leg_to_dk` resolves all sample OCR legs to selection ids.
+
+**Still pending, unchanged by this fix:** the combined correlated SGP price comes from `calculateBets`, which sits behind Akamai Bot Manager and requires a *validated* `_abck` cookie. From a datacenter IP that POST still 403s (documented at length in the 2026-07 entries below). The no-VPN path is the existing `DK_COOKIES` env — paste a fresh validated cookie string from a logged-out browser in a legal state — after which pricing resumes on top of the now-working market data. Per-leg DK prices themselves need no cookie and work again immediately.
+
 ## 2026-07-06 session
 
 ### MLB +EV finder: FV-only fallback when DK prices can't be pulled ("screenshot mode")

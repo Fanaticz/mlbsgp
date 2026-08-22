@@ -35,8 +35,22 @@ DK_TENNIS_LEAGUE_ID = _os.environ.get("DK_TENNIS_LEAGUE_ID", "40841")
 # DK_WORLDCUP_LEAGUE_ID to pin it and skip the extra request.
 DK_WORLDCUP_LEAGUE_ID = _os.environ.get("DK_WORLDCUP_LEAGUE_ID", "")
 DK_WORLDCUP_SLUG = _os.environ.get("DK_WORLDCUP_SLUG", "world-cup-2026")
-DK_NAV = "https://sportsbook-nash.draftkings.com/api/sportscontent/navigation/dkusnj/v1/nav/leagues"
-DK_MARKETS = "https://sportsbook-nash.draftkings.com/sites/US-SB/api/sportscontent/controldata/event/eventSubcategory/v1/markets"
+# State site prefix for the sportscontent API (dkusnj = NJ, dkusil = IL, ...).
+# Both return identical event/market data for national leagues, but keep it
+# env-overridable to mirror DK_PRICE_HOST's state scoping.
+DK_SITE = _os.environ.get("DK_SITE", "dkusnj")
+# League/games feed. DK retired the old navigation endpoint
+# (.../sportscontent/navigation/dkusnj/v1/nav/leagues/{id} → 404, mid-2026)
+# and moved the same payload to the sportscontent leagues route. Response now
+# carries events with `id`/`startEventDate` (was `eventId`/`startDate`) plus,
+# for MLB, each team's `startingPitcherPlayerName` in participant metadata.
+DK_LEAGUES = f"https://sportsbook-nash.draftkings.com/api/sportscontent/{DK_SITE}/v1/leagues"
+# Backwards-compat alias: older call sites / env docs referred to DK_NAV.
+DK_NAV = DK_LEAGUES
+# Per-event SGP feed. Still live, and now embeds every market's selections
+# (odds included) alongside clientMetadata.subCategories in a single response —
+# so get_markets() reads it directly instead of fanning out one request per
+# subcategory to the (also-retired) controldata endpoint.
 DK_SGP = "https://sportsbook-nash.draftkings.com/sites/US-SB/api/sportscontent/parlays/v1/sgp/events"
 # Pricing host is state-scoped and Akamai-guarded separately from the
 # sportsbook-nash market hosts. When one state host starts 403-ing every
@@ -357,9 +371,21 @@ def _post_with_retry(url, json=None, timeout=15, attempts=4, headers=None):
     raise last_exc if last_exc else RuntimeError(f"DK POST failed: {url}")
 
 
+def _ev_id(e):
+    """Event id across API generations. The retired nav endpoint used
+    `eventId`; the sportscontent leagues feed uses `id`."""
+    return e.get("id") or e.get("eventId") or ""
+
+
+def _ev_start(e):
+    """Event start time across API generations (`startEventDate` new,
+    `startDate` old)."""
+    return e.get("startEventDate") or e.get("startDate") or ""
+
+
 def get_games():
     """Return today's MLB games from DraftKings."""
-    r = _get_with_retry(f"{DK_NAV}/{DK_MLB_LEAGUE_ID}")
+    r = _get_with_retry(f"{DK_LEAGUES}/{DK_MLB_LEAGUE_ID}")
     events = r.json().get("events", [])
     out = []
     for e in events:
@@ -368,15 +394,17 @@ def get_games():
         home = next((p for p in participants if p.get("venueRole") == "Home"), {})
         away = next((p for p in participants if p.get("venueRole") == "Away"), {})
         out.append({
-            "id": e.get("eventId"),
+            "id": _ev_id(e),
             "name": e.get("name", ""),
-            "startDate": e.get("startDate", ""),
+            "startDate": _ev_start(e),
             "homeTeam": home.get("name", e.get("teamName2", "")),
             "awayTeam": away.get("name", e.get("teamName1", "")),
             "homeShort": home.get("metadata", {}).get("shortName", e.get("teamShortName2", "")),
             "awayShort": away.get("metadata", {}).get("shortName", e.get("teamShortName1", "")),
             "homeStarterId": home.get("metadata", {}).get("startingPitcherPlayerId", ""),
             "awayStarterId": away.get("metadata", {}).get("startingPitcherPlayerId", ""),
+            "homeStarter": home.get("metadata", {}).get("startingPitcherPlayerName", ""),
+            "awayStarter": away.get("metadata", {}).get("startingPitcherPlayerName", ""),
             "hasSGP": "SGP" in tags,
             "isLive": e.get("isLive", False),
             "status": e.get("status", ""),
@@ -389,7 +417,7 @@ def get_games_nba():
     """Return today's NBA games from DraftKings. Mirrors get_games() but
     scoped to the NBA league ID. Response shape is identical so any
     downstream code that iterates `events` works unchanged."""
-    r = _get_with_retry(f"{DK_NAV}/{DK_NBA_LEAGUE_ID}")
+    r = _get_with_retry(f"{DK_LEAGUES}/{DK_NBA_LEAGUE_ID}")
     events = r.json().get("events", [])
     out = []
     for e in events:
@@ -398,9 +426,9 @@ def get_games_nba():
         home = next((p for p in participants if p.get("venueRole") == "Home"), {})
         away = next((p for p in participants if p.get("venueRole") == "Away"), {})
         out.append({
-            "id": e.get("eventId"),
+            "id": _ev_id(e),
             "name": e.get("name", ""),
-            "startDate": e.get("startDate", ""),
+            "startDate": _ev_start(e),
             "homeTeam": home.get("name", e.get("teamName2", "")),
             "awayTeam": away.get("name", e.get("teamName1", "")),
             "homeShort": home.get("metadata", {}).get("shortName", e.get("teamShortName2", "")),
@@ -463,7 +491,7 @@ def get_games_tennis(league_id=None):
     the right ID, open the DK page (sportsbook.draftkings.com/leagues/
     tennis/<id>) in a browser and grab the trailing number."""
     lid = str(league_id) if league_id else DK_TENNIS_LEAGUE_ID
-    r = _get_with_retry(f"{DK_NAV}/{lid}")
+    r = _get_with_retry(f"{DK_LEAGUES}/{lid}")
     events = r.json().get("events", [])
     out = []
     for e in events:
@@ -479,9 +507,9 @@ def get_games_tennis(league_id=None):
         home = home or {}
         away = away or {}
         out.append({
-            "id": e.get("eventId"),
+            "id": _ev_id(e),
             "name": e.get("name", ""),
-            "startDate": e.get("startDate", ""),
+            "startDate": _ev_start(e),
             "homePlayer": home.get("name", e.get("teamName2", "")),
             "awayPlayer": away.get("name", e.get("teamName1", "")),
             "homeShort": home.get("metadata", {}).get("shortName", e.get("teamShortName2", "")),
@@ -522,35 +550,6 @@ def _extract_player_name(market_name, market_type, subcat_name):
     return name
 
 
-def _fetch_subcategory(event_id, sc):
-    """Fetch one subcategory worth of markets, scoped to this event.
-
-    DK's Akamai layer rate-limits aggressively when we fan out across all ~100
-    subcategories in parallel. A single 503 here used to silently drop every
-    market in that subcategory — e.g. "Hits Allowed O/U" missing meant every
-    Over/Under X.5 Hits Allowed leg ended up in unmatched_legs."""
-    try:
-        r = _get_with_retry(DK_MARKETS, params={
-            "isBatchable": "false",
-            "templateVars": event_id,
-            "marketsQuery": f"$filter=clientMetadata/subCategoryId eq '{sc['id']}'",
-            "entity": "markets",
-        }, timeout=10)
-    except Exception as e:
-        sys.stderr.write(f"dk_api: subcat {sc.get('id')} ({sc.get('name')}) failed: {e}\n")
-        return [], []
-    d = r.json()
-    # Client-side filter by eventId — the DK API doesn't filter server-side even
-    # though it's called "eventSubcategory". Returns markets from other games too.
-    mkts = [m for m in d.get("markets", []) if m.get("eventId") == event_id]
-    for m in mkts:
-        m["_subCategoryName"] = sc.get("name", "")
-        m["_subCategoryId"] = sc.get("id", "")
-    kept_mids = {m.get("id", "") for m in mkts}
-    sels = [s for s in d.get("selections", []) if s.get("marketId", "") in kept_mids]
-    return mkts, sels
-
-
 def get_markets(event_id, pitcher_only=False, batter_only=False, nba_only=False, tennis_only=False, soccer_only=False):
     """Return all markets and selections for an event, scoped properly to that event.
 
@@ -570,11 +569,26 @@ def get_markets(event_id, pitcher_only=False, batter_only=False, nba_only=False,
     find_sgps_nba to scope per-event fetches to the 4 props we actually
     have correlation data for in v1 — Steals/Blocks/Turnovers/PRA/etc.
     scans would burn Akamai quota with no downstream benefit."""
-    # Step 1: Get event metadata (subcategories + market groups)
+    # Step 1: Fetch the per-event SGP feed. It carries event metadata
+    # (subcategories + market groups) AND every SGP-eligible market with its
+    # selections + odds embedded. One request replaces the old per-subcategory
+    # fan-out to the retired controldata endpoint, and touching a single URL is
+    # far less likely to trip Akamai's rate limiter than ~100 parallel GETs.
     r0 = _get_with_retry(f"{DK_SGP}/{event_id}")
-    evt = r0.json()["data"]["events"][0]
+    payload = r0.json()
+    data = payload.get("data", {})
+    events_in = data.get("events", []) or []
+    if not events_in:
+        # No SGP feed for this event (e.g. event isn't SGP-eligible).
+        return {"eventId": event_id, "totalMarkets": 0, "totalSelections": 0,
+                "marketGroups": [], "props": []}
+    evt = events_in[0]
     subcats = evt.get("clientMetadata", {}).get("subCategories", [])
     market_groups = evt.get("marketGroups", [])
+    # Name lookup over the *unfiltered* subcategory list, so kept markets can
+    # be labelled even after the per-mode subcat filters below narrow `subcats`.
+    subcat_name_by_id = {str(sc.get("id")): sc.get("name", "") for sc in subcats}
+    feed_markets = data.get("markets", []) or []
 
     if pitcher_only:
         _SC_BATTER_HINTS = ("batter", "hitter", "home run", "rbi", "total bases",
@@ -694,27 +708,36 @@ def get_markets(event_id, pitcher_only=False, batter_only=False, nba_only=False,
             return any(k in n for k in _SC_SOCCER_HINTS)
         subcats = [sc for sc in subcats if _keep_soccer(sc)]
 
-    # Step 2: Fetch markets for each subcategory in parallel
+    # Step 2: Select markets from the embedded SGP feed, keeping only those in
+    # the subcategories retained above (no extra HTTP — the feed already carries
+    # every market's selections inline). Each selection maps to a DK
+    # calculateBets `id`, so pricing is unaffected by this change.
+    kept_subcat_ids = {str(sc.get("id")) for sc in subcats}
+    event_id_s = str(event_id)
     all_markets = []
     all_selections = []
     sel_by_mkt = {}
 
-    # max_workers=2 (was 4, originally 8): Akamai 403's once it detects a burst
-    # against the subcategory endpoint, and a single 403 cascades — every
-    # in-flight request trips the same block. Keeping concurrency low here is
-    # measurably faster end-to-end than retrying through a block.
-    with ThreadPoolExecutor(max_workers=2) as ex:
-        futures = [ex.submit(_fetch_subcategory, event_id, sc) for sc in subcats]
-        for fut in as_completed(futures):
-            try:
-                mkts, sels = fut.result()
-            except Exception:
-                continue
-            all_markets.extend(mkts)
-            all_selections.extend(sels)
-            for s in sels:
-                mid = s.get("marketId", "")
-                sel_by_mkt.setdefault(mid, []).append(s)
+    for m in feed_markets:
+        # The feed is single-event, but guard anyway.
+        if str(m.get("eventId", event_id_s)) != event_id_s:
+            continue
+        cm = m.get("clientMetadata") or {}
+        sub_id = cm.get("subCategoryId")
+        sub_id = str(sub_id) if sub_id is not None else ""
+        if sub_id not in kept_subcat_ids:
+            continue
+        m["_subCategoryName"] = subcat_name_by_id.get(sub_id, "")
+        m["_subCategoryId"] = sub_id
+        sels = m.get("selections", []) or []
+        all_markets.append(m)
+        mid = m.get("id", "")
+        # Normalize each selection's marketId so downstream sel_by_mkt keys line
+        # up (feed selections carry their own marketId, but be defensive).
+        for s in sels:
+            s.setdefault("marketId", mid)
+        sel_by_mkt[mid] = sels
+        all_selections.extend(sels)
 
     # Step 3: Build structured output
     # Pitcher prop detector: match against name AND subcategory AND market type.
@@ -2562,7 +2585,7 @@ def get_games_soccer(league_id=None, slug=None):
             raise RuntimeError(f"league id unset and slug resolve failed: {res['error']}")
         lid = res["league_id"]
         resolved_from = res.get("slug")
-    r = _get_with_retry(f"{DK_NAV}/{lid}")
+    r = _get_with_retry(f"{DK_LEAGUES}/{lid}")
     events = r.json().get("events", [])
     out = []
     for e in events:
@@ -2575,9 +2598,9 @@ def get_games_soccer(league_id=None, slug=None):
         home = home or {}
         away = away or {}
         out.append({
-            "id": e.get("eventId"),
+            "id": _ev_id(e),
             "name": e.get("name", ""),
-            "startDate": e.get("startDate", ""),
+            "startDate": _ev_start(e),
             "homeTeam": home.get("name", e.get("teamName2", "")),
             "awayTeam": away.get("name", e.get("teamName1", "")),
             "hasSGP": "SGP" in tags,
