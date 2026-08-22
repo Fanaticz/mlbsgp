@@ -171,6 +171,61 @@
     return null;
   }
 
+  /* Translate the server's sgp_price_diag (DK calculateBets outcome tallies +
+     cookie state) into a plain-English DK SGP pricing status. This is how you
+     tell at a glance whether DK_COOKIES is set/valid or needs refreshing. */
+  function pricingStatus(diag) {
+    if (!diag || !diag.calls) return null;
+    var http = diag.http || {};
+    var n403 = (http['403'] || 0) + (http['429'] || 0);
+    var abck = diag.abck || 'absent';         // validated | unvalidated | absent
+    var src = diag.cookie_source || 'warmup'; // env | browser | warmup
+    if (diag.ok > 0) {
+      return { level: 'ok',
+        msg: '✅ DK SGP pricing live — ' + diag.ok + ' combo(s) priced (cookie: ' + src + ', _abck ' + abck + ').' };
+    }
+    if (n403 > 0) {
+      if (abck === 'validated') {
+        return { level: 'warn',
+          msg: '⚠ DK returned Akamai 403 on all ' + n403 + ' pricing calls despite a validated cookie — ' +
+               'the server IP is likely flagged by DK. A residential proxy for the pricing call is the remaining option.' };
+      }
+      return { level: 'err',
+        msg: '⛔ DK SGP pricing blocked — Akamai 403 on ' + n403 + ' calls, _abck is ' + abck +
+             (src === 'warmup' ? ' and DK_COOKIES is not set.' : ' (cookie source: ' + src + ').') +
+             ' Set/refresh DK_COOKIES on Railway: on draftkings.com run copy(document.cookie), paste into DK_COOKIES.' };
+    }
+    if (diag.incompatible > 0 && diag.ok === 0) {
+      return { level: 'warn',
+        msg: 'ℹ DK accepted the calls but returned no SGP price for these combos (DK marked the legs incompatible for an SGP).' };
+    }
+    return null;
+  }
+
+  function renderDiag() {
+    var el = $('wcDiag');
+    if (!el) return;
+    // Surface the worst status across loaded games (err > warn > ok).
+    var rank = { err: 3, warn: 2, ok: 1 };
+    var best = null;
+    state.games.forEach(function (g) {
+      var d = g.dkMeta && g.dkMeta.sgp_price_diag;
+      var s = pricingStatus(d);
+      if (s && (!best || rank[s.level] > rank[best.level])) best = s;
+    });
+    if (!best) { el.style.display = 'none'; el.textContent = ''; return; }
+    var colors = {
+      ok: { bg: 'rgba(34,197,94,.10)', bd: 'var(--ac)', fg: 'var(--ac)' },
+      warn: { bg: 'rgba(234,179,8,.10)', bd: '#eab308', fg: '#eab308' },
+      err: { bg: 'rgba(248,113,113,.10)', bd: 'var(--red, #f87171)', fg: 'var(--red, #f87171)' },
+    }[best.level];
+    el.style.display = '';
+    el.style.background = colors.bg;
+    el.style.border = '1px solid ' + colors.bd;
+    el.style.color = colors.fg;
+    el.textContent = best.msg;
+  }
+
   function onPinMatchPick() {
     var sel = $('wcPinMatch');
     var mid = sel && sel.value;
@@ -335,6 +390,7 @@
   }
 
   function render() {
+    renderDiag();
     var bodyEl = $('wcBody');
     if (!bodyEl) return;
     var loaded = state.games.filter(function (g) { return g.parsed; });
