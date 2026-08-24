@@ -1468,18 +1468,48 @@ app.post('/api/extract-worldcup-pdf', (req, res) => {
   });
 });
 
+// Soccer league registry (World Cup, EPL, …). Lets the client populate a
+// league picker without hardcoding ids. Cached — the registry is static.
+const SOCCER_LEAGUES_CACHE = { ts: 0, body: null };
+const SOCCER_LEAGUES_TTL_MS = 60 * 60 * 1000;
+
+app.get('/api/soccer/leagues', async (_req, res) => {
+  try {
+    if (SOCCER_LEAGUES_CACHE.body && Date.now() - SOCCER_LEAGUES_CACHE.ts < SOCCER_LEAGUES_TTL_MS) {
+      return res.json(Object.assign({}, SOCCER_LEAGUES_CACHE.body, { cached: true }));
+    }
+    const result = await dkCall(['soccer-leagues']);
+    if (!result.error) { SOCCER_LEAGUES_CACHE.ts = Date.now(); SOCCER_LEAGUES_CACHE.body = result; }
+    return res.json(result);
+  } catch (e) {
+    return res.status(500).json({ error: 'soccer leagues failed: ' + e.message });
+  }
+});
+
 // Live pull from Pinnacle's guest API — no PDF required. Same output shape
-// as /api/extract-worldcup-pdf so the client reuses one code path.
-const PIN_WC_GAMES_CACHE = { ts: 0, body: null };
+// as /api/extract-worldcup-pdf so the client reuses one code path. Accepts an
+// optional ?league=<key> (worldcup|epl|…) or ?leagueId=<pinnacle numeric id>;
+// blank = the server default (World Cup). Cache is keyed per league so
+// switching leagues doesn't serve a stale slate.
+const PIN_WC_GAMES_CACHE = new Map();
 const PIN_WC_GAMES_TTL_MS = 5 * 60 * 1000;
 
-app.get('/api/pinnacle/worldcup-games', async (_req, res) => {
+app.get('/api/pinnacle/worldcup-games', async (req, res) => {
   try {
-    if (PIN_WC_GAMES_CACHE.body && Date.now() - PIN_WC_GAMES_CACHE.ts < PIN_WC_GAMES_TTL_MS) {
-      return res.json(Object.assign({}, PIN_WC_GAMES_CACHE.body, { cached: true }));
+    const league = String(req.query.league || '').trim().toLowerCase();
+    const leagueId = String(req.query.leagueId || '').trim();
+    // Prefer an explicit numeric Pinnacle id; else a registry key; else default.
+    const arg = /^\d+$/.test(leagueId) ? leagueId
+      : (/^[a-z0-9_-]+$/.test(league) ? league : '');
+    const cacheKey = arg || '__default__';
+    const hit = PIN_WC_GAMES_CACHE.get(cacheKey);
+    if (hit && Date.now() - hit.ts < PIN_WC_GAMES_TTL_MS) {
+      return res.json(Object.assign({}, hit.body, { cached: true }));
     }
-    const result = await dkCall(['pinnacle-wc-games']);
-    if (!result.error) { PIN_WC_GAMES_CACHE.ts = Date.now(); PIN_WC_GAMES_CACHE.body = result; }
+    const args = ['pinnacle-wc-games'];
+    if (arg) args.push(arg);
+    const result = await dkCall(args);
+    if (!result.error) PIN_WC_GAMES_CACHE.set(cacheKey, { ts: Date.now(), body: result });
     return res.json(result);
   } catch (e) {
     return res.status(500).json({ error: 'Pinnacle games failed: ' + e.message });
@@ -1560,8 +1590,8 @@ app.post('/api/dk/find-sgps-worldcup', async (req, res) => {
     if (!home || !away) {
       return res.status(400).json({ error: 'home and away required' });
     }
-    const key = JSON.stringify([home, away, body.league_id || '', body.league_slug || '',
-      candidates.map(c => c.id).sort()]);
+    const key = JSON.stringify([home, away, body.league || '', body.league_id || '',
+      body.league_slug || '', candidates.map(c => c.id).sort()]);
     const hit = WC_DK_CACHE.get(key);
     if (hit && Date.now() - hit.ts < WC_DK_CACHE_TTL_MS) {
       return res.json(Object.assign({}, hit.body, { cached: true, cache_age_s: Math.round((Date.now() - hit.ts) / 1000) }));
@@ -1613,12 +1643,34 @@ app.post('/api/sgp-insight', async (req, res) => {
 const { execFile } = require('child_process');
 const DK_PY = path.join(__dirname, 'dk_api.py');
 
+// Runtime DK cookie set from the website (POST /api/dk/cookies) instead of the
+// DK_COOKIES env var — lets you paste a fresh cookie from your phone without a
+// Railway redeploy. Held in memory only (never logged, never written to disk,
+// never echoed back); re-paste after a container restart or when it expires.
+// When set, it is injected into the dk_api.py subprocess env and OVERRIDES the
+// DK_COOKIES env var for that call.
+let DK_RUNTIME_COOKIES = '';
+let DK_RUNTIME_COOKIES_TS = 0;
+
+// _abck carries its Akamai validation state in the 2nd '~'-delimited field:
+// -1 = unvalidated (won't clear the wager endpoint), anything else = validated.
+function abckState(cookieStr) {
+  const m = /(?:^|;\s*)_abck=([^;]+)/.exec(cookieStr || '');
+  if (!m) return 'absent';
+  const parts = decodeURIComponent(m[1]).split('~');
+  return (parts.length > 1 && parts[1] !== '-1') ? 'validated' : 'unvalidated';
+}
+
 function dkCall(args, stdinData) {
   return new Promise((resolve, reject) => {
+    const childEnv = DK_RUNTIME_COOKIES
+      ? Object.assign({}, process.env, { DK_COOKIES: DK_RUNTIME_COOKIES })
+      : process.env;
     const proc = require('child_process').spawn('python3', [DK_PY, ...args], {
       maxBuffer: 50 * 1024 * 1024,
       timeout: 130000,
       stdio: ['pipe', 'pipe', 'pipe'],
+      env: childEnv,
     });
     let stdout = '', stderr = '';
     proc.stdout.on('data', d => stdout += d);
@@ -1641,6 +1693,64 @@ function dkCall(args, stdinData) {
     proc.stdin.end();
   });
 }
+
+// ===== DK cookie, set from the website (no Railway redeploy needed) =====
+// POST a cookie string here instead of editing the DK_COOKIES env var. It's
+// held in server memory only — never logged, never written to disk, never
+// returned in a response — and injected into the dk_api.py pricing subprocess,
+// overriding DK_COOKIES for the call. Re-paste after a restart or when the
+// cookie expires. The app has no auth (same as every other route here), so
+// only expose the deployment to people you'd trust with your DK session.
+app.post('/api/dk/cookies', (req, res) => {
+  try {
+    const raw = String((req.body && req.body.cookies) || '').trim();
+    if (!raw || raw.indexOf('=') === -1) {
+      return res.status(400).json({ error: 'Paste the DK cookie string (name=value; name=value; …).' });
+    }
+    DK_RUNTIME_COOKIES = raw;
+    DK_RUNTIME_COOKIES_TS = Date.now();
+    // A fresh cookie should re-price everything — drop cached DK scan results
+    // so the next scan actually re-calls calculateBets with the new session.
+    try { WC_DK_CACHE.clear(); } catch (_) {}
+    const state = abckState(raw);
+    let warning = null;
+    if (state === 'absent') {
+      warning = 'No _abck cookie found — copy the full document.cookie from draftkings.com.';
+    } else if (state === 'unvalidated') {
+      warning = 'The _abck cookie is not validated yet (its 2nd "~" field is -1). ' +
+        'On draftkings.com, click into a game / add legs to a bet slip, then copy again.';
+    }
+    return res.json({
+      ok: true,
+      abck: state,                 // validated | unvalidated | absent
+      warning: warning,
+      cookieCount: raw.split(';').filter(s => s.indexOf('=') > -1).length,
+    });
+  } catch (e) {
+    return res.status(500).json({ error: 'Set DK cookies failed: ' + e.message });
+  }
+});
+
+// GET current cookie status (never returns the value itself).
+app.get('/api/dk/cookies', (_req, res) => {
+  if (!DK_RUNTIME_COOKIES) {
+    return res.json({ set: false, envFallback: !!process.env.DK_COOKIES });
+  }
+  return res.json({
+    set: true,
+    abck: abckState(DK_RUNTIME_COOKIES),
+    ageSec: Math.round((Date.now() - DK_RUNTIME_COOKIES_TS) / 1000),
+    cookieCount: DK_RUNTIME_COOKIES.split(';').filter(s => s.indexOf('=') > -1).length,
+  });
+});
+
+// Clear the runtime cookie (falls back to the DK_COOKIES env var, if any).
+app.delete('/api/dk/cookies', (_req, res) => {
+  DK_RUNTIME_COOKIES = '';
+  DK_RUNTIME_COOKIES_TS = 0;
+  try { WC_DK_CACHE.clear(); } catch (_) {}
+  return res.json({ ok: true, set: false });
+});
 
 // GET /api/combo-spec — DK-legal SGP combo whitelist (repo-root combo_spec.json).
 // Consumed by the frontend's FV-only fallback: when DK pricing is unreachable

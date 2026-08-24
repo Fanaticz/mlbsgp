@@ -1,5 +1,43 @@
 # Changes
 
+## 2026-08-22 session
+
+### Soccer SGP +EV: multi-league support (EPL added), DK vs Pinnacle
+The soccer tab (previously World Cup–only) now works for any soccer league via a **league picker**. Added **English Premier League** — DK eventGroup **40253**, Pinnacle league **1980** — verified live against today's slate.
+
+The whole soccer engine (DK combo grammar + Pinnacle devig) was already league-agnostic; only the league IDs and club naming differed. Changes:
+- **`dk_api.py`** — new `SOCCER_LEAGUES` registry (`worldcup`, `epl`; env-overridable ids) + `_soccer_league()` resolver. `get_games_soccer` / `pinnacle_wc_games` / `find_sgps_worldcup` accept a `league` key. New `soccer-leagues` CLI command returns the registry. Added `_SOCCER_CLUB_ALIASES` so DK short forms match Pinnacle long forms (Man City↔Manchester City, Wolves↔Wolverhampton, Spurs↔Tottenham, …) — without it, e.g. Bournemouth @ Manchester City failed to match between books.
+- **HT/FT prebuilt fix** — DK's EPL "Half Time / Full Time" selections leave `label` null and put the paired result ("Nottingham Forest/Leeds") only in the bet-slip line; the World Cup format put it in the label. `get_markets` now carries `betslipLine` on each prop and the `ht_ft` matcher falls back to it, so EPL HT/FT combos match DK's posted price **with no `calculateBets` call** (cookie-free).
+- **`server.js`** — `/api/pinnacle/worldcup-games` takes `?league=<key>`/`?leagueId=<id>` and league-keys its cache; new `/api/soccer/leagues` serves the registry; `find-sgps-worldcup` cache key includes the league.
+- **Frontend** — league `<select>` in the soccer tab (populated from `/api/soccer/leagues`), passed to both the Pinnacle slate pull and the DK scan. Tab relabeled World Cup → Soccer.
+
+Verified offline via `scripts/smoke_soccer_epl.py` (+ trimmed fixture): registry resolution, club aliases, BTTS/Total leg resolution, and cookie-free HT/FT prebuilt matching against Pinnacle candidates.
+
+**Caveat — the combined DK price for BTTS + Over 2.5:** unlike the World Cup, DK does **not** prebuild "BTTS & Total" / "Result & Total" combos for EPL (only HT/FT). Those combos' legs resolve fine, but the correlated combined DK price comes from `calculateBets`, which is behind the same Akamai validated-cookie gate as MLB pricing — so from a datacenter IP it needs `DK_COOKIES`. Without it, EPL shows Pinnacle fair lines + DK's prebuilt HT/FT combos + individual leg prices; with it, the full BTTS+O2.5 SGP is priced and compared.
+
+### Soccer: SGP-only mode (default on) — real SGPs only, no prebuilt combos
+For a DK SGP promo, only an *actual Same Game Parlay* qualifies — DK's prebuilt straight combo markets (BTTS & Total, HT/FT listed as one market) don't count even though they represent the same joint outcome. Added an **`sgp_only`** flag to `find_sgps_worldcup` (and an **SGP ONLY** toggle in the soccer tab, default on): when set, a combo counts as matched only if it priced as a real 2-leg SGP via `calculateBets`; the prebuilt-combo fallback is suppressed and such rows report why. Toggling it re-scans DK (it changes the server response, not just a client filter).
+
+Consequence: in SGP-only mode the soccer tab needs DK's SGP pricing reachable — i.e. `DK_COOKIES` set (the same no-VPN path as MLB) — or it returns no priced combos. Turn SGP ONLY off to fall back to DK's prebuilt combos (useful for reference / World Cup knockout slates), but those won't satisfy an SGP promo.
+
+### DK cookie set from the website + SGP pricing status line
+Two additions so the DK SGP cookie can be managed without a Railway redeploy:
+- **Status line** (soccer tab): reads the `sgp_price_diag` the scan already returns and shows, in plain English, whether DK SGP pricing is live (green: N combos priced), blocked (red: Akamai 403 + `_abck` missing/unvalidated → set/refresh the cookie), IP-flagged (amber: 403 despite a validated cookie → residential proxy needed), or leg-incompatible (info).
+- **Paste-in cookie** (soccer tab): a collapsible "DK cookie" box. Paste `document.cookie` from draftkings.com, Save → `POST /api/dk/cookies`. The server holds it **in memory only** (never logged, never written to disk, never echoed back) and injects it into the `dk_api.py` pricing subprocess env, overriding the `DK_COOKIES` env var for that call. Saving busts the DK scan cache and re-prices loaded games; the box summary shows current cookie health (`validated` / `unvalidated` / not set) via `GET /api/dk/cookies`, and CLEAR (`DELETE /api/dk/cookies`) reverts to the env var. Re-paste after a container restart or when the cookie expires (a few hours). Verified end-to-end locally: POST/GET/DELETE behavior, `_abck` state parsing, and that an injected cookie reaches dk_api as `cookie_source=env, _abck=validated`.
+
+Note: the app has no auth (same as all its routes), so only expose the deployment to people you'd trust with your DK session.
+
+
+### DK API migration: games + markets restored after DK retired the nav/controldata endpoints
+DK prices stopped resolving because DraftKings retired two of the three endpoints the tool depended on. The old games feed (`.../sportscontent/navigation/dkusnj/v1/nav/leagues/{id}`) and the per-subcategory market feed (`.../sportscontent/controldata/event/eventSubcategory/v1/markets`) now return **404**. The per-event SGP feed (`.../sportscontent/parlays/v1/sgp/events/{id}`) still serves **200**.
+
+Fix (`dk_api.py`):
+- **Games** now come from the sportscontent leagues route `.../sportscontent/<site>/v1/leagues/{id}` (`DK_LEAGUES`; `DK_SITE` env, default `dkusnj`). Event ids/start times moved fields (`eventId`→`id`, `startDate`→`startEventDate`); parsing accepts both via `_ev_id`/`_ev_start`. Bonus: MLB games now expose each starter's name (`homeStarter`/`awayStarter`) from participant metadata. All five game functions (MLB, NBA, tennis, World Cup) were on the dead endpoint and are repointed.
+- **Markets** now come entirely from the still-live SGP feed, which embeds every SGP-eligible market's selections + odds inline. `get_markets()` filters that single response by subcategory in memory instead of fanning out ~100 parallel per-subcategory GETs to the retired controldata endpoint. One request per event is also far friendlier to Akamai's rate limiter. The `props` output shape is byte-for-byte unchanged, so leg-matching (`_match_leg_to_dk`), `find_sgps`, and the frontend are untouched. Dead `_fetch_subcategory` + `DK_MARKETS` removed.
+- Verified offline against a live-captured feed fixture: `get_markets(pitcher_only=True)` returns both starters' complete Over/Under legs (K, ER, Hits Allowed, Outs, Walks) with valid `calculateBets` selection ids and decimal odds; milestone (X-or-Fewer) legs parse their thresholds; `_match_leg_to_dk` resolves all sample OCR legs to selection ids.
+
+**Still pending, unchanged by this fix:** the combined correlated SGP price comes from `calculateBets`, which sits behind Akamai Bot Manager and requires a *validated* `_abck` cookie. From a datacenter IP that POST still 403s (documented at length in the 2026-07 entries below). The no-VPN path is the existing `DK_COOKIES` env — paste a fresh validated cookie string from a logged-out browser in a legal state — after which pricing resumes on top of the now-working market data. Per-leg DK prices themselves need no cookie and work again immediately.
+
 ## 2026-07-06 session
 
 ### MLB +EV finder: FV-only fallback when DK prices can't be pulled ("screenshot mode")

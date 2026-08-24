@@ -35,8 +35,57 @@ DK_TENNIS_LEAGUE_ID = _os.environ.get("DK_TENNIS_LEAGUE_ID", "40841")
 # DK_WORLDCUP_LEAGUE_ID to pin it and skip the extra request.
 DK_WORLDCUP_LEAGUE_ID = _os.environ.get("DK_WORLDCUP_LEAGUE_ID", "")
 DK_WORLDCUP_SLUG = _os.environ.get("DK_WORLDCUP_SLUG", "world-cup-2026")
-DK_NAV = "https://sportsbook-nash.draftkings.com/api/sportscontent/navigation/dkusnj/v1/nav/leagues"
-DK_MARKETS = "https://sportsbook-nash.draftkings.com/sites/US-SB/api/sportscontent/controldata/event/eventSubcategory/v1/markets"
+
+# ---------------------------------------------------------------------------
+# Soccer league registry. The soccer SGP engine (DK combo grammar + Pinnacle
+# devig) is entirely league-agnostic — only the league IDs differ — so adding a
+# league is just adding an entry here plus (if its clubs abbreviate words) a
+# name-alias set below. Each entry pins:
+#   dk_id:   DraftKings sportscontent/eventGroup league id (games + markets)
+#   dk_slug: DK public-page slug, used to auto-resolve dk_id when it's blank
+#   pin_id:  Pinnacle guest-API league id (fair no-vig lines)
+# All values are env-overridable so IDs can be corrected without a redeploy if
+# DK/Pinnacle ever renumber. Verified live 2026-08-22: DK EPL eventGroup 40253
+# (SGP-tagged), Pinnacle EPL league 1980.
+SOCCER_LEAGUES = {
+    "worldcup": {
+        "label": "FIFA World Cup",
+        "dk_id": _os.environ.get("DK_WORLDCUP_LEAGUE_ID", ""),
+        "dk_slug": _os.environ.get("DK_WORLDCUP_SLUG", "world-cup-2026"),
+        "pin_id": _os.environ.get("PINNACLE_WC_LEAGUE_ID", "2686"),
+    },
+    "epl": {
+        "label": "English Premier League",
+        "dk_id": _os.environ.get("DK_EPL_LEAGUE_ID", "40253"),
+        "dk_slug": _os.environ.get("DK_EPL_SLUG", "england-premier-league"),
+        "pin_id": _os.environ.get("PINNACLE_EPL_LEAGUE_ID", "1980"),
+    },
+}
+DEFAULT_SOCCER_LEAGUE = _os.environ.get("DEFAULT_SOCCER_LEAGUE", "worldcup")
+
+
+def _soccer_league(key):
+    """Resolve a league key (e.g. 'epl') to its registry entry. Unknown/blank
+    keys fall back to the configured default so old callers keep working."""
+    if key and str(key).lower() in SOCCER_LEAGUES:
+        return SOCCER_LEAGUES[str(key).lower()]
+    return SOCCER_LEAGUES.get(DEFAULT_SOCCER_LEAGUE, SOCCER_LEAGUES["worldcup"])
+# State site prefix for the sportscontent API (dkusnj = NJ, dkusil = IL, ...).
+# Both return identical event/market data for national leagues, but keep it
+# env-overridable to mirror DK_PRICE_HOST's state scoping.
+DK_SITE = _os.environ.get("DK_SITE", "dkusnj")
+# League/games feed. DK retired the old navigation endpoint
+# (.../sportscontent/navigation/dkusnj/v1/nav/leagues/{id} → 404, mid-2026)
+# and moved the same payload to the sportscontent leagues route. Response now
+# carries events with `id`/`startEventDate` (was `eventId`/`startDate`) plus,
+# for MLB, each team's `startingPitcherPlayerName` in participant metadata.
+DK_LEAGUES = f"https://sportsbook-nash.draftkings.com/api/sportscontent/{DK_SITE}/v1/leagues"
+# Backwards-compat alias: older call sites / env docs referred to DK_NAV.
+DK_NAV = DK_LEAGUES
+# Per-event SGP feed. Still live, and now embeds every market's selections
+# (odds included) alongside clientMetadata.subCategories in a single response —
+# so get_markets() reads it directly instead of fanning out one request per
+# subcategory to the (also-retired) controldata endpoint.
 DK_SGP = "https://sportsbook-nash.draftkings.com/sites/US-SB/api/sportscontent/parlays/v1/sgp/events"
 # Pricing host is state-scoped and Akamai-guarded separately from the
 # sportsbook-nash market hosts. When one state host starts 403-ing every
@@ -357,9 +406,21 @@ def _post_with_retry(url, json=None, timeout=15, attempts=4, headers=None):
     raise last_exc if last_exc else RuntimeError(f"DK POST failed: {url}")
 
 
+def _ev_id(e):
+    """Event id across API generations. The retired nav endpoint used
+    `eventId`; the sportscontent leagues feed uses `id`."""
+    return e.get("id") or e.get("eventId") or ""
+
+
+def _ev_start(e):
+    """Event start time across API generations (`startEventDate` new,
+    `startDate` old)."""
+    return e.get("startEventDate") or e.get("startDate") or ""
+
+
 def get_games():
     """Return today's MLB games from DraftKings."""
-    r = _get_with_retry(f"{DK_NAV}/{DK_MLB_LEAGUE_ID}")
+    r = _get_with_retry(f"{DK_LEAGUES}/{DK_MLB_LEAGUE_ID}")
     events = r.json().get("events", [])
     out = []
     for e in events:
@@ -368,15 +429,17 @@ def get_games():
         home = next((p for p in participants if p.get("venueRole") == "Home"), {})
         away = next((p for p in participants if p.get("venueRole") == "Away"), {})
         out.append({
-            "id": e.get("eventId"),
+            "id": _ev_id(e),
             "name": e.get("name", ""),
-            "startDate": e.get("startDate", ""),
+            "startDate": _ev_start(e),
             "homeTeam": home.get("name", e.get("teamName2", "")),
             "awayTeam": away.get("name", e.get("teamName1", "")),
             "homeShort": home.get("metadata", {}).get("shortName", e.get("teamShortName2", "")),
             "awayShort": away.get("metadata", {}).get("shortName", e.get("teamShortName1", "")),
             "homeStarterId": home.get("metadata", {}).get("startingPitcherPlayerId", ""),
             "awayStarterId": away.get("metadata", {}).get("startingPitcherPlayerId", ""),
+            "homeStarter": home.get("metadata", {}).get("startingPitcherPlayerName", ""),
+            "awayStarter": away.get("metadata", {}).get("startingPitcherPlayerName", ""),
             "hasSGP": "SGP" in tags,
             "isLive": e.get("isLive", False),
             "status": e.get("status", ""),
@@ -389,7 +452,7 @@ def get_games_nba():
     """Return today's NBA games from DraftKings. Mirrors get_games() but
     scoped to the NBA league ID. Response shape is identical so any
     downstream code that iterates `events` works unchanged."""
-    r = _get_with_retry(f"{DK_NAV}/{DK_NBA_LEAGUE_ID}")
+    r = _get_with_retry(f"{DK_LEAGUES}/{DK_NBA_LEAGUE_ID}")
     events = r.json().get("events", [])
     out = []
     for e in events:
@@ -398,9 +461,9 @@ def get_games_nba():
         home = next((p for p in participants if p.get("venueRole") == "Home"), {})
         away = next((p for p in participants if p.get("venueRole") == "Away"), {})
         out.append({
-            "id": e.get("eventId"),
+            "id": _ev_id(e),
             "name": e.get("name", ""),
-            "startDate": e.get("startDate", ""),
+            "startDate": _ev_start(e),
             "homeTeam": home.get("name", e.get("teamName2", "")),
             "awayTeam": away.get("name", e.get("teamName1", "")),
             "homeShort": home.get("metadata", {}).get("shortName", e.get("teamShortName2", "")),
@@ -463,7 +526,7 @@ def get_games_tennis(league_id=None):
     the right ID, open the DK page (sportsbook.draftkings.com/leagues/
     tennis/<id>) in a browser and grab the trailing number."""
     lid = str(league_id) if league_id else DK_TENNIS_LEAGUE_ID
-    r = _get_with_retry(f"{DK_NAV}/{lid}")
+    r = _get_with_retry(f"{DK_LEAGUES}/{lid}")
     events = r.json().get("events", [])
     out = []
     for e in events:
@@ -479,9 +542,9 @@ def get_games_tennis(league_id=None):
         home = home or {}
         away = away or {}
         out.append({
-            "id": e.get("eventId"),
+            "id": _ev_id(e),
             "name": e.get("name", ""),
-            "startDate": e.get("startDate", ""),
+            "startDate": _ev_start(e),
             "homePlayer": home.get("name", e.get("teamName2", "")),
             "awayPlayer": away.get("name", e.get("teamName1", "")),
             "homeShort": home.get("metadata", {}).get("shortName", e.get("teamShortName2", "")),
@@ -522,35 +585,6 @@ def _extract_player_name(market_name, market_type, subcat_name):
     return name
 
 
-def _fetch_subcategory(event_id, sc):
-    """Fetch one subcategory worth of markets, scoped to this event.
-
-    DK's Akamai layer rate-limits aggressively when we fan out across all ~100
-    subcategories in parallel. A single 503 here used to silently drop every
-    market in that subcategory — e.g. "Hits Allowed O/U" missing meant every
-    Over/Under X.5 Hits Allowed leg ended up in unmatched_legs."""
-    try:
-        r = _get_with_retry(DK_MARKETS, params={
-            "isBatchable": "false",
-            "templateVars": event_id,
-            "marketsQuery": f"$filter=clientMetadata/subCategoryId eq '{sc['id']}'",
-            "entity": "markets",
-        }, timeout=10)
-    except Exception as e:
-        sys.stderr.write(f"dk_api: subcat {sc.get('id')} ({sc.get('name')}) failed: {e}\n")
-        return [], []
-    d = r.json()
-    # Client-side filter by eventId — the DK API doesn't filter server-side even
-    # though it's called "eventSubcategory". Returns markets from other games too.
-    mkts = [m for m in d.get("markets", []) if m.get("eventId") == event_id]
-    for m in mkts:
-        m["_subCategoryName"] = sc.get("name", "")
-        m["_subCategoryId"] = sc.get("id", "")
-    kept_mids = {m.get("id", "") for m in mkts}
-    sels = [s for s in d.get("selections", []) if s.get("marketId", "") in kept_mids]
-    return mkts, sels
-
-
 def get_markets(event_id, pitcher_only=False, batter_only=False, nba_only=False, tennis_only=False, soccer_only=False):
     """Return all markets and selections for an event, scoped properly to that event.
 
@@ -570,11 +604,26 @@ def get_markets(event_id, pitcher_only=False, batter_only=False, nba_only=False,
     find_sgps_nba to scope per-event fetches to the 4 props we actually
     have correlation data for in v1 — Steals/Blocks/Turnovers/PRA/etc.
     scans would burn Akamai quota with no downstream benefit."""
-    # Step 1: Get event metadata (subcategories + market groups)
+    # Step 1: Fetch the per-event SGP feed. It carries event metadata
+    # (subcategories + market groups) AND every SGP-eligible market with its
+    # selections + odds embedded. One request replaces the old per-subcategory
+    # fan-out to the retired controldata endpoint, and touching a single URL is
+    # far less likely to trip Akamai's rate limiter than ~100 parallel GETs.
     r0 = _get_with_retry(f"{DK_SGP}/{event_id}")
-    evt = r0.json()["data"]["events"][0]
+    payload = r0.json()
+    data = payload.get("data", {})
+    events_in = data.get("events", []) or []
+    if not events_in:
+        # No SGP feed for this event (e.g. event isn't SGP-eligible).
+        return {"eventId": event_id, "totalMarkets": 0, "totalSelections": 0,
+                "marketGroups": [], "props": []}
+    evt = events_in[0]
     subcats = evt.get("clientMetadata", {}).get("subCategories", [])
     market_groups = evt.get("marketGroups", [])
+    # Name lookup over the *unfiltered* subcategory list, so kept markets can
+    # be labelled even after the per-mode subcat filters below narrow `subcats`.
+    subcat_name_by_id = {str(sc.get("id")): sc.get("name", "") for sc in subcats}
+    feed_markets = data.get("markets", []) or []
 
     if pitcher_only:
         _SC_BATTER_HINTS = ("batter", "hitter", "home run", "rbi", "total bases",
@@ -694,27 +743,36 @@ def get_markets(event_id, pitcher_only=False, batter_only=False, nba_only=False,
             return any(k in n for k in _SC_SOCCER_HINTS)
         subcats = [sc for sc in subcats if _keep_soccer(sc)]
 
-    # Step 2: Fetch markets for each subcategory in parallel
+    # Step 2: Select markets from the embedded SGP feed, keeping only those in
+    # the subcategories retained above (no extra HTTP — the feed already carries
+    # every market's selections inline). Each selection maps to a DK
+    # calculateBets `id`, so pricing is unaffected by this change.
+    kept_subcat_ids = {str(sc.get("id")) for sc in subcats}
+    event_id_s = str(event_id)
     all_markets = []
     all_selections = []
     sel_by_mkt = {}
 
-    # max_workers=2 (was 4, originally 8): Akamai 403's once it detects a burst
-    # against the subcategory endpoint, and a single 403 cascades — every
-    # in-flight request trips the same block. Keeping concurrency low here is
-    # measurably faster end-to-end than retrying through a block.
-    with ThreadPoolExecutor(max_workers=2) as ex:
-        futures = [ex.submit(_fetch_subcategory, event_id, sc) for sc in subcats]
-        for fut in as_completed(futures):
-            try:
-                mkts, sels = fut.result()
-            except Exception:
-                continue
-            all_markets.extend(mkts)
-            all_selections.extend(sels)
-            for s in sels:
-                mid = s.get("marketId", "")
-                sel_by_mkt.setdefault(mid, []).append(s)
+    for m in feed_markets:
+        # The feed is single-event, but guard anyway.
+        if str(m.get("eventId", event_id_s)) != event_id_s:
+            continue
+        cm = m.get("clientMetadata") or {}
+        sub_id = cm.get("subCategoryId")
+        sub_id = str(sub_id) if sub_id is not None else ""
+        if sub_id not in kept_subcat_ids:
+            continue
+        m["_subCategoryName"] = subcat_name_by_id.get(sub_id, "")
+        m["_subCategoryId"] = sub_id
+        sels = m.get("selections", []) or []
+        all_markets.append(m)
+        mid = m.get("id", "")
+        # Normalize each selection's marketId so downstream sel_by_mkt keys line
+        # up (feed selections carry their own marketId, but be defensive).
+        for s in sels:
+            s.setdefault("marketId", mid)
+        sel_by_mkt[mid] = sels
+        all_selections.extend(sels)
 
     # Step 3: Build structured output
     # Pitcher prop detector: match against name AND subcategory AND market type.
@@ -796,6 +854,12 @@ def get_markets(event_id, pitcher_only=False, batter_only=False, nba_only=False,
                                     if sel_players else ""),
                 "outcomeType": outcome_type,
                 "label": s.get("label", ""),
+                # Full DK selection name / bet-slip line. For most markets this
+                # duplicates the label, but some combos (e.g. EPL Half Time /
+                # Full Time) put the only copy of the paired result here —
+                # label is null and outcomeType is a single token — so the
+                # soccer HT/FT matcher falls back to it.
+                "betslipLine": s.get("betslipLine") or s.get("name") or "",
                 "displayPoints": display,
                 "points": points,
                 "oddsAmerican": s.get("displayOdds", {}).get("american", ""),
@@ -2548,12 +2612,16 @@ def resolve_soccer_league_by_slug(slug=None):
             "html_len": len(html)}
 
 
-def get_games_soccer(league_id=None, slug=None):
+def get_games_soccer(league_id=None, slug=None, league=None):
     """Return soccer events for a league (default: FIFA World Cup).
 
-    Caller league_id wins over the env default; if neither is set, the
-    public slug page is scraped once to find it (so the tab works with
-    zero config the day the tournament shows up on DK)."""
+    Resolution order: explicit league_id > `league` registry key (e.g. 'epl')
+    > env default > slug page-scrape. The last lets a league work with zero
+    config the day it shows up on DK."""
+    if not league_id and league:
+        entry = _soccer_league(league)
+        league_id = entry.get("dk_id") or None
+        slug = slug or entry.get("dk_slug")
     lid = str(league_id) if league_id else DK_WORLDCUP_LEAGUE_ID
     resolved_from = None
     if not lid:
@@ -2562,7 +2630,7 @@ def get_games_soccer(league_id=None, slug=None):
             raise RuntimeError(f"league id unset and slug resolve failed: {res['error']}")
         lid = res["league_id"]
         resolved_from = res.get("slug")
-    r = _get_with_retry(f"{DK_NAV}/{lid}")
+    r = _get_with_retry(f"{DK_LEAGUES}/{lid}")
     events = r.json().get("events", [])
     out = []
     for e in events:
@@ -2575,9 +2643,9 @@ def get_games_soccer(league_id=None, slug=None):
         home = home or {}
         away = away or {}
         out.append({
-            "id": e.get("eventId"),
+            "id": _ev_id(e),
             "name": e.get("name", ""),
-            "startDate": e.get("startDate", ""),
+            "startDate": _ev_start(e),
             "homeTeam": home.get("name", e.get("teamName2", "")),
             "awayTeam": away.get("name", e.get("teamName1", "")),
             "hasSGP": "SGP" in tags,
@@ -2615,13 +2683,41 @@ _SOCCER_COUNTRY_ALIASES = [
     {"dr congo", "congo dr", "democratic republic of congo"},
 ]
 
+# Club names that differ between Pinnacle (fuller form) and DK (short form).
+# Substring matching already handles truncations ("Newcastle" ⊂ "Newcastle
+# United", "Tottenham" ⊂ "Tottenham Hotspur"); these sets cover the cases where
+# a WORD is abbreviated, which substring can't catch — "Man City" vs
+# "Manchester City", "Wolves" vs "Wolverhampton", "Spurs" vs "Tottenham", etc.
+# EPL-focused; extend as leagues are added.
+_SOCCER_CLUB_ALIASES = [
+    {"manchester city", "man city"},
+    {"manchester united", "man utd", "man united"},
+    {"tottenham hotspur", "tottenham", "spurs"},
+    {"wolverhampton wanderers", "wolverhampton", "wolves"},
+    {"nottingham forest", "nott'm forest", "nottm forest", "notts forest"},
+    {"brighton & hove albion", "brighton and hove albion",
+     "brighton hove albion", "brighton"},
+    {"west ham united", "west ham"},
+    {"newcastle united", "newcastle"},
+    {"leeds united", "leeds"},
+    {"ipswich town", "ipswich"},
+    {"queens park rangers", "qpr"},
+    {"west bromwich albion", "west bromwich", "west brom", "wba"},
+    {"sheffield united", "sheffield utd", "sheff united", "sheff utd"},
+    {"sheffield wednesday", "sheff wednesday", "sheff wed"},
+    {"leicester city", "leicester"},
+    {"norwich city", "norwich"},
+    {"afc bournemouth", "bournemouth"},
+]
+
 def _team_matches_soccer(want, have):
     w, h = _norm_soccer(want), _norm_soccer(have)
     if not w or not h:
         return False
     if w == h or w in h or h in w:
         return True
-    return any(w in al and h in al for al in _SOCCER_COUNTRY_ALIASES)
+    return any(w in al and h in al
+               for al in _SOCCER_COUNTRY_ALIASES + _SOCCER_CLUB_ALIASES)
 
 
 def _event_for_soccer_match(home, away, events):
@@ -2777,7 +2873,10 @@ def _match_soccer_selection(cand, props_for_kind, home, away):
         "Mexico Win and Both to Score" (= home & Yes)
         "Mexico Win to Zero"           (= home & No)
         "Tie with Goals" / "Tie without Goals" (= draw & Yes / draw & No)
-      ht_ft ("Half Time / Full Time"): "Mexico/Tie", "Tie/South Africa", ...
+      ht_ft ("Half Time / Full Time"): the paired result is in the DK
+        selection's bet-slip line — "Mexico/Tie" (World Cup) or
+        "Nottingham Forest/Leeds" (EPL, where label is null and outcomeType is
+        only the FT side). Falls back to label for older/other formats.
       btts_total ("Both Teams to Score / Over 2.5 Goals"):
         labels are just "Yes"/"No", the total lives in the MARKET name —
         and DK's "No" is the complement of (Yes & Over), NOT Pinnacle's
@@ -2797,9 +2896,12 @@ def _match_soccer_selection(cand, props_for_kind, home, away):
             continue
 
         if key == "ht_ft":
-            parts = re.split(r"\s*/\s*", label)
+            # The HT/FT pairing lives in the bet-slip line ("Home/Away" style);
+            # DK's EPL feed leaves `label` null and `outcomeType` = FT side only.
+            pair = p.get("betslipLine") or label
+            parts = re.split(r"\s*/\s*", pair)
             if len(parts) != 2:
-                parts = re.split(r"\s+-\s+", label)
+                parts = re.split(r"\s+-\s+", pair)
             if len(parts) != 2:
                 continue
             ht = _label_result_token(parts[0], home, away)
@@ -3034,25 +3136,35 @@ def find_sgps_worldcup(payload):
     markets, so the posted selection odds ARE the SGP price.
 
     Input (stdin JSON):
-      { "league_id": "...",          # optional, else env/slug resolve
+      { "league": "epl",             # optional registry key (worldcup|epl|...)
+        "league_id": "...",          # optional explicit DK id (wins over key)
         "league_slug": "...",        # optional slug override
+        "sgp_only": true,            # optional; drop the prebuilt-combo fallback
         "home": "Mexico", "away": "South Africa",
         "candidates": [ { "id", "market_key", ...key-specific fields } ] }
+
+    sgp_only: DK also lists some of these joint outcomes as *prebuilt straight
+    markets* (BTTS & Total, HT/FT, ...). Those are NOT Same Game Parlays and do
+    not satisfy DK's SGP promos, so when sgp_only is set a combo counts as
+    matched only if it priced as a real 2-leg SGP via calculateBets — the
+    prebuilt fallback is suppressed.
     """
     payload = payload or {}
     candidates = payload.get("candidates", []) or []
     if not isinstance(candidates, list) or not candidates:
         return {"error": "candidates array required"}
+    sgp_only = bool(payload.get("sgp_only"))
     home, away = payload.get("home", ""), payload.get("away", "")
     if not home or not away:
         return {"error": "home and away team names required"}
 
     try:
         games_data = get_games_soccer(league_id=payload.get("league_id"),
-                                      slug=payload.get("league_slug"))
+                                      slug=payload.get("league_slug"),
+                                      league=payload.get("league"))
     except Exception as e:
         return {"error": f"DK soccer games unavailable: {e}. Set "
-                         f"DK_WORLDCUP_LEAGUE_ID or pass league_id from the UI "
+                         f"the league id/slug or pass league_id from the UI "
                          f"(grab it from sportsbook.draftkings.com/leagues/soccer/...)."}
     events = games_data["events"]
     event = _event_for_soccer_match(home, away, events)
@@ -3190,7 +3302,7 @@ def find_sgps_worldcup(payload):
                     l.get("marketName", "") for l in e["legs"])
                 out["dk_label"] = " + ".join(
                     (l.get("label") or l.get("outcomeType") or "") for l in e["legs"])
-            elif e["prebuilt"]:
+            elif e["prebuilt"] and not sgp_only:
                 m = e["prebuilt"]
                 out["matched"] = True
                 out["via"] = "prebuilt"
@@ -3204,7 +3316,14 @@ def find_sgps_worldcup(payload):
                 sgp_why = ("sgp leg unresolved: " + str(e.get("leg_fail"))
                            if not e["legs"] else
                            "dk:sgp_price_unavailable (combination refused or timed out)")
-                out["missing"] = sgp_why + "; no prebuilt combo market either"
+                # In sgp_only mode a prebuilt straight combo is deliberately not
+                # a match — it isn't an SGP and won't satisfy DK's SGP promo.
+                if sgp_only and e["prebuilt"]:
+                    out["missing"] = (sgp_why +
+                                      "; a prebuilt combo exists but sgp_only is set "
+                                      "(prebuilt straight markets aren't SGPs)")
+                else:
+                    out["missing"] = sgp_why + "; no prebuilt combo market either"
             results.append(out)
             continue
         m = e["prebuilt"]
@@ -3282,9 +3401,17 @@ def _pin_get(path, attempts=4):
     raise RuntimeError(f"pinnacle GET {path} failed: {last_err}")
 
 
-def pinnacle_wc_games(league_id=None):
-    """List World Cup matches straight from Pinnacle's guest API."""
-    lid = str(league_id) if league_id else PIN_WC_LEAGUE_ID
+def pinnacle_wc_games(league_id=None, league=None):
+    """List a soccer league's matches straight from Pinnacle's guest API.
+
+    Resolution: explicit league_id > `league` registry key (e.g. 'epl') > the
+    World Cup env default. Name kept for back-compat; serves any league."""
+    if league_id:
+        lid = str(league_id)
+    elif league:
+        lid = _soccer_league(league).get("pin_id") or PIN_WC_LEAGUE_ID
+    else:
+        lid = PIN_WC_LEAGUE_ID
     data = _pin_get(f"/leagues/{lid}/matchups")
     out = []
     for m in data:
@@ -3942,16 +4069,33 @@ if __name__ == "__main__":
             stdin_data = sys.stdin.read().strip()
             payload = json.loads(stdin_data) if stdin_data else {}
             result = enumerate_sgps_tennis(payload)
+        elif cmd == "soccer-leagues":
+            result = {
+                "leagues": [
+                    {"key": k, "label": v["label"], "dk_id": v["dk_id"],
+                     "dk_slug": v["dk_slug"], "pin_id": v["pin_id"]}
+                    for k, v in SOCCER_LEAGUES.items()
+                ],
+                "default": DEFAULT_SOCCER_LEAGUE,
+            }
         elif cmd == "games-worldcup":
-            lid = sys.argv[2] if len(sys.argv) >= 3 else None
-            result = get_games_soccer(league_id=lid)
+            # arg may be a numeric DK league id or a registry key (e.g. 'epl').
+            arg = sys.argv[2] if len(sys.argv) >= 3 else None
+            if arg and not arg.isdigit():
+                result = get_games_soccer(league=arg)
+            else:
+                result = get_games_soccer(league_id=arg)
         elif cmd == "find-sgps-worldcup":
             stdin_data = sys.stdin.read().strip()
             payload = json.loads(stdin_data) if stdin_data else {}
             result = find_sgps_worldcup(payload)
         elif cmd == "pinnacle-wc-games":
-            lid = sys.argv[2] if len(sys.argv) >= 3 else None
-            result = pinnacle_wc_games(league_id=lid)
+            # arg may be a numeric Pinnacle league id or a registry key.
+            arg = sys.argv[2] if len(sys.argv) >= 3 else None
+            if arg and not arg.isdigit():
+                result = pinnacle_wc_games(league=arg)
+            else:
+                result = pinnacle_wc_games(league_id=arg)
         elif cmd == "pinnacle-wc-specials" and len(sys.argv) >= 3:
             result = pinnacle_wc_specials(sys.argv[2])
         elif cmd == "resolve-worldcup-league":
