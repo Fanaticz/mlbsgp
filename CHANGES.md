@@ -1,5 +1,17 @@
 # Changes
 
+## 2026-08-24 session
+
+### Soccer: one-button "Scrape SGPs" sweep across all major leagues
+Replaced the pick-a-league / load-slate / pick-a-game flow with a single **SCRAPE SGPS** button that sweeps every major soccer league at once and lists all combo SGPs (BTTS×Total, BTTS×Winner, Winner×Total, Odd/Even×Total, HT/FT) DK-vs-Pinnacle in one EV-ranked table. No league or game picking; World Cup / league selector / match dropdown / DK-league-id box all removed.
+
+- **`dk_api.py`** — league registry expanded to the major leagues (EPL, La Liga, Serie A, Bundesliga, Ligue 1, UCL, Eredivisie, Primeira, Championship, MLS, Liga MX, Brasileirão, Saudi PL) with DK + Pinnacle ids (per-league env overrides `DK_LEAGUE_ID_<KEY>` / `PIN_LEAGUE_ID_<KEY>`; sweep set via `SOCCER_LEAGUES_SWEEP`). New `find_sgps_soccer_all()`: Phase 1 pull Pinnacle games per league (concurrent, upcoming within `window_hours`, capped at `max_games`), Phase 2 devig each game's combo specials into fair lines, Phase 3 best-effort DK match + real 2-leg SGP pricing under a shared deadline. The per-event match+price body was factored into `_price_event_combos()` shared with `find_sgps_worldcup`.
+- **DK-block resilience** — DK games are fetched per league with a short retry budget; the first Akamai 403 with no prior success sets `dk_blocked` and skips DK for the rest, so a flagged IP fails fast and the **Pinnacle fair board still renders for every game** (DK column just stays empty). DK-bound GETs now also carry the `DK_COOKIES` jar (some IPs 403 the market GETs too, not just pricing). New `DK_IMPERSONATE` env pins the curl_cffi TLS profile list when an egress path rejects the newest "chrome" fingerprint.
+- **`server.js`** — `POST /api/soccer/scrape-all` (cached 2 min; busted when the DK cookie changes).
+- **Frontend** — the soccer tab is now one SCRAPE SGPS button + a flat table (Game/Market/Selection/PIN/FAIR/DK SGP/EV%/Kelly), combo-family filter chips, SGP-ONLY, DK-PRICED-ONLY (off by default), ≤+1000, plus the existing DK-cookie box and pricing status line.
+
+Verified: `scripts/smoke_soccer_sweep.py` (aggregation, EV ranking, DK-up/down, dk_blocked degradation) and a live 3-league sweep (58 combos across 5 families, full Pinnacle fair board, graceful DK statuses). Existing MLB + EPL smokes still pass.
+
 ## 2026-08-22 session
 
 ### Soccer SGP +EV: multi-league support (EPL added), DK vs Pinnacle

@@ -650,26 +650,14 @@ h1 em{color:var(--ac);font-style:normal;}
       <span style="font-size:13px;color:var(--cyan);font-family:Syne,sans-serif;font-weight:700">SOCCER SGP +EV</span>
       <span style="font-size:11px;color:var(--mu);font-family:Space Mono,monospace">live pinny &rarr; devig &rarr; DK combo markets &rarr; EV%</span>
     </div>
-    <!-- Primary path: pull odds live from Pinnacle's guest API. -->
-    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:14px 16px;background:var(--s2);border:1px solid var(--b1);border-radius:9px">
-      <div style="display:flex;flex-direction:column;gap:2px;justify-content:center;font-family:Space Mono,monospace">
-        <label for="wcLeague" style="font-size:9px;color:var(--mu);letter-spacing:.6px" title="Which soccer league to compare. Sets both the Pinnacle slate and the DK league.">LEAGUE</label>
-        <select id="wcLeague" onchange="window.worldcupTab&amp;&amp;window.worldcupTab.onLeagueChange()" style="min-width:150px;padding:7px 8px;font-size:11px;font-weight:600;border:1px solid var(--b1);border-radius:5px;background:var(--s1);color:var(--tx);font-family:Space Mono,monospace"><option value="worldcup">FIFA World Cup</option><option value="epl">English Premier League</option></select>
-      </div>
+    <!-- One button: sweep every major-league game's Pinnacle combo fair lines
+         vs DK's real 2-leg SGP price. No league/game picking. -->
+    <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:14px 16px;background:var(--s2);border:1px solid var(--b1);border-radius:9px">
+      <button id="wcScrapeBtn" type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.scrapeAll()" style="padding:12px 26px;font-size:13px;font-weight:700;border:1px solid var(--ac);border-radius:7px;background:rgba(34,197,94,.16);color:var(--ac);cursor:pointer;letter-spacing:.6px;font-family:Space Mono,monospace">&#10024; SCRAPE SGPS</button>
       <div style="flex:1;min-width:180px">
-        <div style="font-size:12px;color:var(--tx);font-weight:600;margin-bottom:4px">Pull live from Pinnacle</div>
-        <div style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">loads the league slate &middot; pick one or more matches &middot; fetches SGP combos + auto-scans DK</div>
+        <div style="font-size:12px;color:var(--tx);font-weight:600;margin-bottom:4px">All major soccer leagues &middot; DK vs Pinnacle</div>
+        <div style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace">EPL &middot; La Liga &middot; Serie A &middot; Bundesliga &middot; Ligue 1 &middot; UCL &middot; MLS &middot; &hellip; &mdash; every upcoming game's BTTS/Winner/Total/Odd-Even SGP combos, ranked by EV%</div>
       </div>
-      <button id="wcPinLoad" type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.loadPinnySlate()" style="padding:10px 18px;font-size:12px;font-weight:700;border:1px solid var(--cyan);border-radius:6px;background:rgba(34,211,238,.12);color:var(--cyan);cursor:pointer;letter-spacing:.6px;font-family:Space Mono,monospace">&#8635; LOAD SLATE</button>
-      <select id="wcPinMatch" style="display:none;max-width:320px;padding:8px;font-size:11px;border:1px solid var(--b1);border-radius:5px;background:var(--s1);color:var(--tx);font-family:Space Mono,monospace" onchange="window.worldcupTab&amp;&amp;window.worldcupTab.onPinMatchPick()"></select>
-    </div>
-    <div id="wcGames" style="display:none;gap:6px;flex-wrap:wrap"></div>
-    <div style="display:flex;gap:12px;align-items:stretch;flex-wrap:wrap">
-      <div style="display:flex;flex-direction:column;gap:2px;justify-content:center;font-family:Space Mono,monospace">
-        <label for="wcLeagueId" style="font-size:9px;color:var(--mu);letter-spacing:.6px" title="Optional override. Blank = use the DK league for the LEAGUE selected above. Set a numeric id to force a specific DK league; find it in the DK URL: sportsbook.draftkings.com/leagues/soccer/<slug>.">DK LEAGUE ID (override)</label>
-        <input id="wcLeagueId" type="text" inputmode="numeric" placeholder="auto" oninput="window.worldcupTab&amp;&amp;window.worldcupTab.onLeagueIdChange()" style="width:120px;padding:6px 8px;font-size:11px;font-weight:600;border:1px solid var(--b1);border-radius:5px;background:var(--s1);color:var(--tx);font-family:Space Mono,monospace">
-      </div>
-      <button id="wcScanBtn" type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.runScan()" style="align-self:center;padding:10px 22px;font-size:12px;font-weight:700;border:1px solid var(--ac);border-radius:6px;background:rgba(34,197,94,.16);color:var(--ac);cursor:pointer;letter-spacing:.6px;font-family:Space Mono,monospace">&#10024; SCAN DK</button>
     </div>
     <!-- DK cookie: paste here instead of editing Railway. Held in server memory
          only; needed for real SGP pricing (calculateBets). -->
@@ -688,16 +676,15 @@ h1 em{color:var(--ac);font-style:normal;}
       </div>
     </details>
     <div class="ctrl" id="wcFilterBar" style="flex-wrap:wrap;gap:10px;align-items:center;padding:0;border:none;background:transparent">
-      <div style="display:inline-flex;gap:4px;flex-wrap:wrap" title="Which market families to include. Table always shows the top 20 by EV% of whatever passes the filters.">
-        <button class="fb active" data-wc-cat="combos"    type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.onMarketBtn(this)">SGP COMBOS</button>
-        <button class="fb active" data-wc-cat="gamelines" type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.onMarketBtn(this)">GAME LINES</button>
-        <button class="fb active" data-wc-cat="team"      type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.onMarketBtn(this)">TEAM</button>
-        <button class="fb active" data-wc-cat="corners"   type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.onMarketBtn(this)">CORNERS</button>
-        <button class="fb active" data-wc-cat="cards"     type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.onMarketBtn(this)">CARDS</button>
-        <button class="fb active" data-wc-cat="players"   type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.onMarketBtn(this)">PLAYERS</button>
+      <div style="display:inline-flex;gap:4px;flex-wrap:wrap" title="Which SGP combo families to include. Click one to isolate it; click it again to restore all.">
+        <button class="fb active" data-wc-fam="btts_total"    type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.onMarketBtn(this)">BTTS&times;TOTAL</button>
+        <button class="fb active" data-wc-fam="btts_winner"   type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.onMarketBtn(this)">BTTS&times;WINNER</button>
+        <button class="fb active" data-wc-fam="winner_total"  type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.onMarketBtn(this)">WINNER&times;TOTAL</button>
+        <button class="fb active" data-wc-fam="oddeven_total" type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.onMarketBtn(this)">ODD/EVEN&times;TOTAL</button>
+        <button class="fb active" data-wc-fam="ht_ft"         type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.onMarketBtn(this)">HT/FT</button>
       </div>
       <label class="tm-toggle" title="If on, only count real 2-leg Same Game Parlays priced by DK (calculateBets) — the kind that satisfy DK SGP promos. DK's prebuilt straight combos (BTTS &amp; Total, HT/FT) are excluded because they aren't SGPs. Needs DK SGP pricing to be reachable (DK_COOKIES set)."><input type="checkbox" id="wcSgpOnly" checked onchange="window.worldcupTab&amp;&amp;window.worldcupTab.onSgpOnlyChange()"><span>SGP ONLY</span></label>
-      <label class="tm-toggle" title="If on, hide selections with no DK price."><input type="checkbox" id="wcMatchedOnly" checked onchange="window.worldcupTab&amp;&amp;window.worldcupTab.onFilter()"><span>MATCHED ONLY</span></label>
+      <label class="tm-toggle" title="If on, hide combos with no DK SGP price (leaves only rows where DK priced the SGP). Off by default so the Pinnacle fair board shows even when DK is unreachable."><input type="checkbox" id="wcMatchedOnly" onchange="window.worldcupTab&amp;&amp;window.worldcupTab.onFilter()"><span>DK PRICED ONLY</span></label>
       <label class="tm-toggle" title="If on, hide longshots priced above +1000."><input type="checkbox" id="wcMaxOdds" checked onchange="window.worldcupTab&amp;&amp;window.worldcupTab.onFilter()"><span>&le; +1000</span></label>
       <span id="wcCount" style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace;margin-left:auto"></span>
     </div>

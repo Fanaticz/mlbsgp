@@ -1694,6 +1694,30 @@ function dkCall(args, stdinData) {
   });
 }
 
+// POST /api/soccer/scrape-all — one-button sweep of the major soccer leagues:
+// every upcoming game's Pinnacle combo fair lines vs DK's real 2-leg SGP price,
+// one flat EV-ranked list. Body (all optional): { sgp_only, max_games,
+// window_hours, leagues, deadline_s }. Cached briefly since it's expensive.
+const SOCCER_SWEEP_CACHE = new Map();
+const SOCCER_SWEEP_TTL_MS = 2 * 60 * 1000;
+
+app.post('/api/soccer/scrape-all', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const key = JSON.stringify([!!body.sgp_only, body.max_games || '', body.window_hours || '',
+      (body.leagues || []).join(',')]);
+    const hit = SOCCER_SWEEP_CACHE.get(key);
+    if (hit && Date.now() - hit.ts < SOCCER_SWEEP_TTL_MS) {
+      return res.json(Object.assign({}, hit.body, { cached: true, cache_age_s: Math.round((Date.now() - hit.ts) / 1000) }));
+    }
+    const result = await dkCall(['find-sgps-soccer-all'], JSON.stringify(body));
+    if (!result.error) SOCCER_SWEEP_CACHE.set(key, { ts: Date.now(), body: result });
+    return res.json(result);
+  } catch (e) {
+    return res.status(500).json({ error: 'soccer scrape failed: ' + e.message });
+  }
+});
+
 // ===== DK cookie, set from the website (no Railway redeploy needed) =====
 // POST a cookie string here instead of editing the DK_COOKIES env var. It's
 // held in server memory only — never logged, never written to disk, never
@@ -1712,6 +1736,7 @@ app.post('/api/dk/cookies', (req, res) => {
     // A fresh cookie should re-price everything — drop cached DK scan results
     // so the next scan actually re-calls calculateBets with the new session.
     try { WC_DK_CACHE.clear(); } catch (_) {}
+    try { SOCCER_SWEEP_CACHE.clear(); } catch (_) {}
     const state = abckState(raw);
     let warning = null;
     if (state === 'absent') {
@@ -1749,6 +1774,7 @@ app.delete('/api/dk/cookies', (_req, res) => {
   DK_RUNTIME_COOKIES = '';
   DK_RUNTIME_COOKIES_TS = 0;
   try { WC_DK_CACHE.clear(); } catch (_) {}
+  try { SOCCER_SWEEP_CACHE.clear(); } catch (_) {}
   return res.json({ ok: true, set: false });
 });
 
