@@ -148,7 +148,24 @@ if _imp_env:
 
 _session_lock = threading.Lock()
 _imp_idx = 0
-session = cffi_requests.Session(impersonate=_IMPERSONATES[0])
+
+# Optional outbound proxy for all DK/Pinnacle curl_cffi traffic. Set DK_PROXY to
+# a residential/rotating proxy URL (http://user:pass@host:port) when DK's Akamai
+# edge scores this deployment's datacenter IP and 403s even with a valid cookie
+# — the last lever short of moving hosts. Empty = go direct (default). Pinnacle
+# rides the same session, which is harmless (it works over any egress).
+_DK_PROXY = (_os.environ.get("DK_PROXY", "") or "").strip()
+_PROXIES = {"https": _DK_PROXY, "http": _DK_PROXY} if _DK_PROXY else None
+
+
+def _new_session(imp):
+    kw = {"impersonate": imp}
+    if _PROXIES:
+        kw["proxies"] = _PROXIES
+    return cffi_requests.Session(**kw)
+
+
+session = _new_session(_IMPERSONATES[0])
 
 # Throttle gate: once DK returns a 403 we pause all threads for a cool-off.
 # Without this, every in-flight request races into the Akamai block and the
@@ -160,7 +177,7 @@ def _rotate_session():
     global session, _imp_idx
     with _session_lock:
         _imp_idx = (_imp_idx + 1) % len(_IMPERSONATES)
-        fresh = cffi_requests.Session(impersonate=_IMPERSONATES[_imp_idx])
+        fresh = _new_session(_IMPERSONATES[_imp_idx])
         # Carry the cookie jar over: Akamai clearance cookies (_abck/bm_sz on
         # .draftkings.com) are what let the pricing POSTs through, and losing
         # them on every rotation put each new fingerprint back at square one.

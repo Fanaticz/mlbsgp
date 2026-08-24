@@ -12,6 +12,9 @@ Replaced the pick-a-league / load-slate / pick-a-game flow with a single **SCRAP
 
 Verified: `scripts/smoke_soccer_sweep.py` (aggregation, EV ranking, DK-up/down, dk_blocked degradation) and a live 3-league sweep (58 combos across 5 families, full Pinnacle fair board, graceful DK statuses). Existing MLB + EPL smokes still pass.
 
+### Optional DK proxy (`DK_PROXY`) for IP-blocked deployments
+When DK's Akamai edge scores a deployment's datacenter IP and 403s even with a valid cookie (observed on Railway — the market GETs 403 too, not just pricing), set `DK_PROXY` to a residential/rotating proxy URL (`http://user:pass@host:port`) and all DK/Pinnacle curl_cffi traffic routes through it. Empty (default) = direct, no behavior change. Plumbed through initial session creation and `_rotate_session` via a `_new_session()` helper; verified routing end-to-end.
+
 ## 2026-08-22 session
 
 ### Soccer SGP +EV: multi-league support (EPL added), DK vs Pinnacle
