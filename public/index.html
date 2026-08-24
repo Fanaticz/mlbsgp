@@ -671,6 +671,22 @@ h1 em{color:var(--ac);font-style:normal;}
       </div>
       <button id="wcScanBtn" type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.runScan()" style="align-self:center;padding:10px 22px;font-size:12px;font-weight:700;border:1px solid var(--ac);border-radius:6px;background:rgba(34,197,94,.16);color:var(--ac);cursor:pointer;letter-spacing:.6px;font-family:Space Mono,monospace">&#10024; SCAN DK</button>
     </div>
+    <!-- DK cookie: paste here instead of editing Railway. Held in server memory
+         only; needed for real SGP pricing (calculateBets). -->
+    <details id="wcCookieBox" style="border:1px solid var(--b1);border-radius:8px;background:var(--s1)">
+      <summary style="cursor:pointer;padding:10px 12px;font-size:11px;font-family:Space Mono,monospace;color:var(--tx);list-style:none">&#128273; DK cookie (real SGP pricing) — <span id="wcCookieState" style="color:var(--mu)">checking…</span></summary>
+      <div style="padding:0 12px 12px;display:flex;flex-direction:column;gap:8px">
+        <div style="font-size:10px;color:var(--mu);font-family:Space Mono,monospace;line-height:1.6">
+          On <b>draftkings.com</b> (logged-out is fine): click into a game &amp; add 2 legs to the bet slip, open the browser console, run <code style="color:var(--cyan)">copy(document.cookie)</code>, paste below, Save. Needed only for the DK SGP price; expires in a few hours — re-paste when the status line says it's blocked. Stored in server memory only.
+        </div>
+        <textarea id="wcCookieInput" rows="3" placeholder="_abck=...; bm_sz=...; ak_bmsc=...; ..." style="width:100%;box-sizing:border-box;padding:8px;font-size:10px;border:1px solid var(--b1);border-radius:5px;background:var(--s2);color:var(--tx);font-family:Space Mono,monospace;resize:vertical"></textarea>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.saveCookie()" style="padding:8px 16px;font-size:11px;font-weight:700;border:1px solid var(--cyan);border-radius:6px;background:rgba(34,211,238,.12);color:var(--cyan);cursor:pointer;font-family:Space Mono,monospace">SAVE COOKIE</button>
+          <button type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.clearCookie()" style="padding:8px 14px;font-size:11px;border:1px solid var(--b1);border-radius:6px;background:var(--s2);color:var(--mu);cursor:pointer;font-family:Space Mono,monospace">CLEAR</button>
+          <span id="wcCookieMsg" style="font-size:10px;font-family:Space Mono,monospace;color:var(--mu)"></span>
+        </div>
+      </div>
+    </details>
     <div class="ctrl" id="wcFilterBar" style="flex-wrap:wrap;gap:10px;align-items:center;padding:0;border:none;background:transparent">
       <div style="display:inline-flex;gap:4px;flex-wrap:wrap" title="Which market families to include. Table always shows the top 20 by EV% of whatever passes the filters.">
         <button class="fb active" data-wc-cat="combos"    type="button" onclick="window.worldcupTab&amp;&amp;window.worldcupTab.onMarketBtn(this)">SGP COMBOS</button>

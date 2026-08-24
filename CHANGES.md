@@ -20,6 +20,13 @@ For a DK SGP promo, only an *actual Same Game Parlay* qualifies — DK's prebuil
 
 Consequence: in SGP-only mode the soccer tab needs DK's SGP pricing reachable — i.e. `DK_COOKIES` set (the same no-VPN path as MLB) — or it returns no priced combos. Turn SGP ONLY off to fall back to DK's prebuilt combos (useful for reference / World Cup knockout slates), but those won't satisfy an SGP promo.
 
+### DK cookie set from the website + SGP pricing status line
+Two additions so the DK SGP cookie can be managed without a Railway redeploy:
+- **Status line** (soccer tab): reads the `sgp_price_diag` the scan already returns and shows, in plain English, whether DK SGP pricing is live (green: N combos priced), blocked (red: Akamai 403 + `_abck` missing/unvalidated → set/refresh the cookie), IP-flagged (amber: 403 despite a validated cookie → residential proxy needed), or leg-incompatible (info).
+- **Paste-in cookie** (soccer tab): a collapsible "DK cookie" box. Paste `document.cookie` from draftkings.com, Save → `POST /api/dk/cookies`. The server holds it **in memory only** (never logged, never written to disk, never echoed back) and injects it into the `dk_api.py` pricing subprocess env, overriding the `DK_COOKIES` env var for that call. Saving busts the DK scan cache and re-prices loaded games; the box summary shows current cookie health (`validated` / `unvalidated` / not set) via `GET /api/dk/cookies`, and CLEAR (`DELETE /api/dk/cookies`) reverts to the env var. Re-paste after a container restart or when the cookie expires (a few hours). Verified end-to-end locally: POST/GET/DELETE behavior, `_abck` state parsing, and that an injected cookie reaches dk_api as `cookie_source=env, _abck=validated`.
+
+Note: the app has no auth (same as all its routes), so only expose the deployment to people you'd trust with your DK session.
+
 
 ### DK API migration: games + markets restored after DK retired the nav/controldata endpoints
 DK prices stopped resolving because DraftKings retired two of the three endpoints the tool depended on. The old games feed (`.../sportscontent/navigation/dkusnj/v1/nav/leagues/{id}`) and the per-subcategory market feed (`.../sportscontent/controldata/event/eventSubcategory/v1/markets`) now return **404**. The per-event SGP feed (`.../sportscontent/parlays/v1/sgp/events/{id}`) still serves **200**.

@@ -531,6 +531,69 @@
     if (el) try { localStorage.setItem('wcLeagueId', el.value.trim()); } catch (_) {}
   }
 
+  /* ---- DK cookie (set from the site, held in server memory) ---- */
+
+  function setCookieState(txt, color) {
+    var el = $('wcCookieState');
+    if (el) { el.textContent = txt; el.style.color = color || 'var(--mu)'; }
+  }
+
+  function refreshCookieState() {
+    fetch('/api/dk/cookies')
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j.set) {
+          if (j.envFallback) setCookieState('using env cookie', 'var(--mu)');
+          else setCookieState('not set — SGP pricing will 403', 'var(--red, #f87171)');
+          return;
+        }
+        var age = j.ageSec != null ? Math.round(j.ageSec / 60) + 'm ago' : '';
+        if (j.abck === 'validated') setCookieState('set ✓ validated · ' + age, 'var(--ac)');
+        else setCookieState('set but _abck ' + j.abck + ' · ' + age, '#eab308');
+      })
+      .catch(function () { setCookieState('', 'var(--mu)'); });
+  }
+
+  function saveCookie() {
+    var ta = $('wcCookieInput');
+    var msg = $('wcCookieMsg');
+    var val = (ta && ta.value || '').trim();
+    if (!val) { if (msg) { msg.textContent = 'paste the cookie string first'; msg.style.color = 'var(--red, #f87171)'; } return; }
+    if (msg) { msg.textContent = 'saving…'; msg.style.color = 'var(--mu)'; }
+    fetch('/api/dk/cookies', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ cookies: val }),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j.error) { if (msg) { msg.textContent = j.error; msg.style.color = 'var(--red, #f87171)'; } return; }
+        if (ta) ta.value = '';  // don't leave the DK session cookie in the DOM
+        if (msg) {
+          if (j.warning) { msg.textContent = '⚠ ' + j.warning; msg.style.color = '#eab308'; }
+          else { msg.textContent = '✓ saved (' + j.cookieCount + ' cookies, _abck ' + j.abck + ') — re-scanning'; msg.style.color = 'var(--ac)'; }
+        }
+        refreshCookieState();
+        // Re-price loaded games with the new session.
+        var loaded = state.games.filter(function (g) { return g.parsed; });
+        loaded.forEach(function (g) { g.dkById = {}; g.dkMeta = null; });
+        render();
+        loaded.forEach(scanGame);
+      })
+      .catch(function (e) { if (msg) { msg.textContent = 'save failed: ' + e.message; msg.style.color = 'var(--red, #f87171)'; } });
+  }
+
+  function clearCookie() {
+    fetch('/api/dk/cookies', { method: 'DELETE' })
+      .then(function (r) { return r.json(); })
+      .then(function () {
+        var msg = $('wcCookieMsg');
+        if (msg) { msg.textContent = 'cleared'; msg.style.color = 'var(--mu)'; }
+        refreshCookieState();
+      })
+      .catch(function () {});
+  }
+
   var activated = false;
   function onActivate() {
     if (activated) return;
@@ -538,6 +601,7 @@
     var el = $('wcLeagueId');
     if (el) try { el.value = localStorage.getItem('wcLeagueId') || ''; } catch (_) {}
     loadLeagues();
+    refreshCookieState();
     render();
   }
 
@@ -553,5 +617,7 @@
     onSgpOnlyChange: onSgpOnlyChange,
     onMarketBtn: onMarketBtn,
     onLeagueIdChange: onLeagueIdChange,
+    saveCookie: saveCookie,
+    clearCookie: clearCookie,
   };
 })();
