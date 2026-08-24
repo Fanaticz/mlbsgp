@@ -1,57 +1,23 @@
-/* worldcupEvTab.js — World Cup (soccer) SGP +EV tab.
-   Flow: pull live Pinnacle odds for one or more matches → server devigs each
-   combo market group (straight multiplicative no-vig: the groups are
-   mutually exclusive + exhaustive partitions, so normalizing the implied
-   probabilities removes the hold) → scan DK for each match's posted combo
-   markets → EV% = fairProb × dkDecimal − 1, ranked descending across games.
-   No correlation model needed: Pinnacle prices the joint outcome directly. */
+/* worldcupEvTab.js — Soccer SGP +EV, one-button "scrape all" model.
+   Flow: POST /api/soccer/scrape-all → server sweeps every major-league game's
+   Pinnacle combo fair lines (devigged) vs DK's real 2-leg SGP price → one flat
+   EV-ranked list. No league/game picking. */
 (function () {
   'use strict';
-  var M = window.sgpMath;
 
-  var CATS = ['combos', 'gamelines', 'team', 'corners', 'cards', 'players'];
+  var FAMS = ['btts_total', 'btts_winner', 'winner_total', 'oddeven_total', 'ht_ft'];
+  var FAM_LABEL = {
+    btts_total: 'BTTS×Total', btts_winner: 'BTTS×Winner',
+    winner_total: 'Winner×Total', oddeven_total: 'Odd/Even×Total', ht_ft: 'HT/FT',
+  };
+  var MAX_ROWS = 100;
 
   var state = {
-    games: [],           // [{ id, label, parsed, candidates, dkById, dkMeta, loading, scanning, error }]
-    matchedOnly: true,
-    maxOddsCap: true,    // hide longshots priced above +1000
-    enabledCats: { combos: true, gamelines: true, team: true, corners: true, cards: true, players: true },
-    leagues: [],         // [{ key, label, dk_id, dk_slug, pin_id }]
-    leagueKey: 'worldcup',
-    sgpOnly: true,       // only count real 2-leg SGPs (DK calculateBets), not
-                         // DK's prebuilt straight combos — required for SGP promos
-  };
-
-  function currentLeague() {
-    for (var i = 0; i < state.leagues.length; i++)
-      if (state.leagues[i].key === state.leagueKey) return state.leagues[i];
-    return null;
-  }
-  function leagueLabel() {
-    var l = currentLeague();
-    return l ? l.label : 'soccer';
-  }
-
-  var MARKET_LABELS = {
-    btts_total: 'BTTS / Total Goals',
-    btts_winner: 'BTTS / Winner',
-    winner_total: 'Winner / Total Goals',
-    ht_ft: 'HT / FT',
-    oddeven_total: 'Odd-Even / Total',
-  };
-
-  /* Filter category per market kind. Combos = the joint SGP markets; the
-     rest are straight Pinnacle partitions paired with DK's listed markets. */
-  var KIND_CATS = {
-    btts_total: 'combos', btts_winner: 'combos', winner_total: 'combos',
-    ht_ft: 'combos', oddeven_total: 'combos',
-    moneyline: 'gamelines', total_goals: 'gamelines', spread: 'gamelines',
-    double_chance: 'gamelines', draw_no_bet: 'gamelines', btts: 'gamelines',
-    team_goals: 'team', team_to_score: 'team', winning_margin: 'team',
-    total_goals_range: 'team', first_team_to_score: 'team',
-    corners_total: 'corners', team_corners: 'corners',
-    cards_total: 'cards', team_cards: 'cards',
-    player_to_score: 'players',
+    rows: [], summary: null, scanning: false,
+    enabledFams: { btts_total: true, btts_winner: true, winner_total: true, oddeven_total: true, ht_ft: true },
+    matchedOnly: false,   // DK is often blocked; default to showing the Pinnacle board
+    maxOddsCap: true,
+    sgpOnly: true,
   };
 
   function $(id) { return document.getElementById(id); }
@@ -59,476 +25,181 @@
     var el = $('wcStatus');
     if (el) { el.textContent = msg || ''; el.style.color = isErr ? 'var(--red, #f87171)' : 'var(--mu)'; }
   }
-  function fmtAm(o) {
-    if (o == null || isNaN(o)) return '—';
-    return (o > 0 ? '+' : '') + Math.round(o);
-  }
   function esc(s) {
     return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
       .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
-
-  /* Live Pinnacle pulls arrive with server-computed groups (fair_prob +
-     structured fields included). */
-  function buildCandidates(parsed) {
-    var out = [];
-    (parsed.groups || []).forEach(function (g) {
-      g.sels.forEach(function (s, i) {
-        if (s.fair_prob == null) return;
-        out.push({
-          id: g.key + ':' + i,
-          market_key: g.kind,
-          group_label: g.label,
-          name: s.name,
-          pin_odds: s.odds,
-          fair_prob: s.fair_prob,
-          fair_american: s.fair_american != null ? s.fair_american : M.probToAmerican(s.fair_prob),
-          fields: s.fields || null,
-        });
-      });
-    });
-    return out;
+  function fmtAm(o) {
+    if (o == null || o === '') return '—';
+    var n = (typeof o === 'number') ? o : parseInt(String(o).replace(/−/g, '-').replace(/[^0-9+-]/g, ''), 10);
+    if (isNaN(n)) return esc(String(o));
+    return (n > 0 ? '+' : '') + n;
+  }
+  function amNum(o) {
+    if (o == null || o === '') return null;
+    var n = (typeof o === 'number') ? o : parseInt(String(o).replace(/−/g, '-').replace(/[^0-9+-]/g, ''), 10);
+    return isNaN(n) ? null : n;
   }
 
-  /* ---- live pull from Pinnacle ---- */
+  /* ---- the one button ---- */
 
-  /* Populate the league picker from the server registry (World Cup, EPL, …).
-     Falls back to a built-in list if the endpoint is unavailable so the tab
-     still works. */
-  function loadLeagues() {
-    var pick = $('wcLeague');
-    function apply(j) {
-      state.leagues = (j && j.leagues) || [];
-      if (!state.leagues.length) {
-        state.leagues = [
-          { key: 'worldcup', label: 'FIFA World Cup' },
-          { key: 'epl', label: 'English Premier League' },
-        ];
-      }
-      var stored = '';
-      try { stored = localStorage.getItem('wcLeagueKey') || ''; } catch (_) {}
-      var def = stored || (j && j.default) || state.leagues[0].key;
-      if (!currentLeagueIn(def)) def = state.leagues[0].key;
-      state.leagueKey = def;
-      if (pick) {
-        pick.innerHTML = state.leagues.map(function (l) {
-          return '<option value="' + esc(l.key) + '"' + (l.key === def ? ' selected' : '') + '>' + esc(l.label) + '</option>';
-        }).join('');
-      }
-    }
-    function currentLeagueIn(key) {
-      for (var i = 0; i < state.leagues.length; i++) if (state.leagues[i].key === key) return true;
-      return false;
-    }
-    fetch('/api/soccer/leagues')
-      .then(function (r) { return r.json(); })
-      .then(apply)
-      .catch(function () { apply(null); });
-  }
-
-  /* Switching league invalidates the loaded slate + any added matches. */
-  function onLeagueChange() {
-    var pick = $('wcLeague');
-    if (!pick) return;
-    state.leagueKey = pick.value;
-    try { localStorage.setItem('wcLeagueKey', state.leagueKey); } catch (_) {}
-    state.games = [];
-    var sel = $('wcPinMatch');
-    if (sel) { sel.innerHTML = ''; sel.style.display = 'none'; }
-    renderGames();
-    render();
-    setStatus('League set to ' + leagueLabel() + '. Load the slate to begin.');
-  }
-
-  function loadPinnySlate() {
-    var sel = $('wcPinMatch');
-    var btn = $('wcPinLoad');
-    if (btn) { btn.disabled = true; btn.textContent = 'LOADING…'; }
-    var q = state.leagueKey ? ('?league=' + encodeURIComponent(state.leagueKey)) : '';
-    fetch('/api/pinnacle/worldcup-games' + q)
+  function scrapeAll() {
+    if (state.scanning) return;
+    state.scanning = true;
+    var btn = $('wcScrapeBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'SCRAPING…'; }
+    setStatus('Scraping all major-league soccer SGPs (Pinnacle fair lines + DK) — this can take up to ~2 min…');
+    fetch('/api/soccer/scrape-all', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sgp_only: state.sgpOnly }),
+    })
       .then(function (r) { return r.json(); })
       .then(function (j) {
-        if (btn) { btn.disabled = false; btn.textContent = '↻ LOAD SLATE'; }
-        if (j.error) { setStatus('Pinnacle slate: ' + j.error, true); return; }
-        var matches = j.matches || [];
-        if (!sel) return;
-        sel.innerHTML = '<option value="">— add a match (' + matches.length + ') —</option>' +
-          matches.map(function (m) {
-            var d = m.startTime ? m.startTime.replace('T', ' ').replace(':00Z', 'Z') : '';
-            return '<option value="' + m.id + '">' + esc(m.home + ' vs ' + m.away) + (d ? ' · ' + d : '') + '</option>';
-          }).join('');
-        sel.style.display = '';
-        setStatus('Pinnacle slate loaded — ' + matches.length + ' ' + leagueLabel() + ' matches. Pick one or more.');
+        state.scanning = false;
+        if (btn) { btn.disabled = false; btn.textContent = '↻ SCRAPE SGPS'; }
+        if (j.error) { setStatus('Scrape failed: ' + j.error, true); return; }
+        state.rows = j.rows || [];
+        state.summary = j.summary || null;
+        var s = state.summary || {};
+        setStatus('Swept ' + (s.leagues_swept || 0) + ' leagues · ' + (s.games_with_candidates || 0) +
+          ' games · ' + (s.rows || 0) + ' combos' + (j.cached ? ' (cached ' + j.cache_age_s + 's)' : '') + '.');
+        render();
       })
       .catch(function (e) {
-        if (btn) { btn.disabled = false; btn.textContent = '↻ LOAD SLATE'; }
-        setStatus('Pinnacle slate failed: ' + e.message, true);
+        state.scanning = false;
+        if (btn) { btn.disabled = false; btn.textContent = '↻ SCRAPE SGPS'; }
+        setStatus('Scrape failed: ' + e.message, true);
       });
   }
 
-  function findGame(mid) {
-    for (var i = 0; i < state.games.length; i++) if (state.games[i].id === mid) return state.games[i];
-    return null;
-  }
-
-  /* Translate the server's sgp_price_diag (DK calculateBets outcome tallies +
-     cookie state) into a plain-English DK SGP pricing status. This is how you
-     tell at a glance whether DK_COOKIES is set/valid or needs refreshing. */
-  function pricingStatus(diag) {
-    if (!diag || !diag.calls) return null;
-    var http = diag.http || {};
-    var n403 = (http['403'] || 0) + (http['429'] || 0);
-    var abck = diag.abck || 'absent';         // validated | unvalidated | absent
-    var src = diag.cookie_source || 'warmup'; // env | browser | warmup
-    if (diag.ok > 0) {
-      return { level: 'ok',
-        msg: '✅ DK SGP pricing live — ' + diag.ok + ' combo(s) priced (cookie: ' + src + ', _abck ' + abck + ').' };
-    }
-    if (n403 > 0) {
-      if (abck === 'validated') {
-        return { level: 'warn',
-          msg: '⚠ DK returned Akamai 403 on all ' + n403 + ' pricing calls despite a validated cookie — ' +
-               'the server IP is likely flagged by DK. A residential proxy for the pricing call is the remaining option.' };
-      }
-      return { level: 'err',
-        msg: '⛔ DK SGP pricing blocked — Akamai 403 on ' + n403 + ' calls, _abck is ' + abck +
-             (src === 'warmup' ? ' and DK_COOKIES is not set.' : ' (cookie source: ' + src + ').') +
-             ' Set/refresh DK_COOKIES on Railway: on draftkings.com run copy(document.cookie), paste into DK_COOKIES.' };
-    }
-    if (diag.incompatible > 0 && diag.ok === 0) {
-      return { level: 'warn',
-        msg: 'ℹ DK accepted the calls but returned no SGP price for these combos (DK marked the legs incompatible for an SGP).' };
-    }
-    return null;
-  }
+  /* ---- DK pricing status (from the sweep summary) ---- */
 
   function renderDiag() {
     var el = $('wcDiag');
     if (!el) return;
-    // Surface the worst status across loaded games (err > warn > ok).
-    var rank = { err: 3, warn: 2, ok: 1 };
-    var best = null;
-    state.games.forEach(function (g) {
-      var d = g.dkMeta && g.dkMeta.sgp_price_diag;
-      var s = pricingStatus(d);
-      if (s && (!best || rank[s.level] > rank[best.level])) best = s;
-    });
-    if (!best) { el.style.display = 'none'; el.textContent = ''; return; }
+    var s = state.summary;
+    if (!s) { el.style.display = 'none'; el.textContent = ''; return; }
+    var diag = s.sgp_price_diag || {};
+    var http = diag.http || {};
+    var n403 = (http['403'] || 0) + (http['429'] || 0);
+    var level, msg;
+    if (s.dk_priced_any) {
+      level = 'ok';
+      msg = '✅ DK SGP pricing live — priced ' + (diag.ok || 0) + ' combo(s). EV% is DK vs Pinnacle fair.';
+    } else if (s.dk_blocked || n403 > 0) {
+      var abck = diag.abck || 'absent';
+      if (abck === 'validated') {
+        level = 'warn';
+        msg = '⚠ DK blocked this server\'s IP (Akamai 403) despite a validated cookie — showing Pinnacle fair lines only. ' +
+          'A residential proxy for DK is the remaining lever.';
+      } else {
+        level = 'err';
+        msg = '⛔ DK unreachable (Akamai 403, _abck ' + abck + ') — showing Pinnacle fair lines only. ' +
+          'Set/refresh the DK cookie below (copy(document.cookie) on draftkings.com), then Scrape again.';
+      }
+    } else {
+      level = 'ok';
+      msg = 'ℹ Pinnacle fair board loaded. Turn off SGP-ONLY or set a DK cookie to fill the DK column.';
+    }
     var colors = {
       ok: { bg: 'rgba(34,197,94,.10)', bd: 'var(--ac)', fg: 'var(--ac)' },
       warn: { bg: 'rgba(234,179,8,.10)', bd: '#eab308', fg: '#eab308' },
       err: { bg: 'rgba(248,113,113,.10)', bd: 'var(--red, #f87171)', fg: 'var(--red, #f87171)' },
-    }[best.level];
+    }[level];
     el.style.display = '';
     el.style.background = colors.bg;
     el.style.border = '1px solid ' + colors.bd;
     el.style.color = colors.fg;
-    el.textContent = best.msg;
+    el.textContent = msg;
   }
 
-  function onPinMatchPick() {
-    var sel = $('wcPinMatch');
-    var mid = sel && sel.value;
-    if (!mid) return;
-    var label = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : mid;
-    sel.value = '';                     // reset so another match can be added
-    if (findGame(mid)) { setStatus(label + ' is already loaded.'); return; }
-    var game = { id: mid, label: label, parsed: null, candidates: [], dkById: {}, dkMeta: null, loading: true, scanning: false, error: null };
-    state.games.push(game);
-    renderGames();
-    setStatus('Pulling live Pinnacle odds for ' + label + '…');
-    fetch('/api/pinnacle/worldcup-match/' + mid)
-      .then(function (r) { return r.json(); })
-      .then(function (j) {
-        game.loading = false;
-        if (j.error) { game.error = j.error; setStatus('Pinnacle pull: ' + j.error, true); renderGames(); render(); return; }
-        game.parsed = j;
-        game.candidates = buildCandidates(j);
-        game.label = j.home + ' vs ' + j.away;
-        setStatus(j.home + ' vs ' + j.away + ' — ' + game.candidates.length +
-          ' selections across ' + (j.sgp_markets_found || []).length + ' combo markets. Scanning DK…');
-        renderGames();
-        render();
-        scanGame(game);
-      })
-      .catch(function (e) {
-        game.loading = false;
-        game.error = e.message;
-        setStatus('Pinnacle pull failed: ' + e.message, true);
-        renderGames();
-      });
-  }
-
-  function removeGame(mid) {
-    state.games = state.games.filter(function (g) { return g.id !== mid; });
-    renderGames();
-    render();
-  }
-
-  /* ---- DK scan ---- */
-
-  function scanGame(game) {
-    if (!game.parsed || game.scanning) return;
-    var cands = game.candidates.filter(function (c) { return c.fields; });
-    if (!cands.length) { game.error = 'no parseable SGP candidates'; renderGames(); return; }
-    game.scanning = true;
-    game.error = null;
-    renderGames();
-    syncScanBtn();
-    var body = {
-      home: game.parsed.home,
-      away: game.parsed.away,
-      candidates: cands.map(function (c) {
-        return Object.assign({ id: c.id, market_key: c.market_key }, c.fields);
-      }),
-    };
-    if (state.leagueKey) body.league = state.leagueKey;
-    if (state.sgpOnly) body.sgp_only = true;
-    var lid = ($('wcLeagueId') && $('wcLeagueId').value || '').trim();
-    if (/^\d+$/.test(lid)) body.league_id = lid;  // manual DK id wins over key
-    fetch('/api/dk/find-sgps-worldcup', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (j) {
-        game.scanning = false;
-        syncScanBtn();
-        if (j.error) {
-          game.error = 'DK: ' + j.error;
-          setStatus('DK scan (' + game.label + '): ' + j.error + (j.dk_events ? ' · slate: ' + j.dk_events : ''), true);
-          renderGames();
-          render();
-          return;
-        }
-        game.dkById = {};
-        (j.results || []).forEach(function (r) { game.dkById[r.id] = r; });
-        game.dkMeta = j;
-        var matched = (j.results || []).filter(function (r) { return r.matched; }).length;
-        setStatus('DK event: ' + (j.event_name || (j.away + ' @ ' + j.home)) +
-          ' — matched ' + matched + '/' + (j.results || []).length + ' selections' +
-          (j.cached ? ' (cached ' + j.cache_age_s + 's)' : ''));
-        renderGames();
-        render();
-      })
-      .catch(function (e) {
-        game.scanning = false;
-        syncScanBtn();
-        game.error = 'DK scan failed: ' + e.message;
-        setStatus('DK scan failed (' + game.label + '): ' + e.message, true);
-        renderGames();
-      });
-  }
-
-  function runScan() {
-    var loaded = state.games.filter(function (g) { return g.parsed; });
-    if (!loaded.length) { setStatus('Load the slate and pick a match first.', true); return; }
-    loaded.forEach(scanGame);
-  }
-
-  function syncScanBtn() {
-    var btn = $('wcScanBtn');
-    if (!btn) return;
-    var busy = state.games.some(function (g) { return g.scanning; });
-    btn.disabled = busy;
-    btn.textContent = busy ? 'SCANNING…' : '✨ SCAN DK';
-  }
-
-  /* ---- EV + render ---- */
-
-  /* Numeric American price of the DK side (DK strings use unicode minus). */
-  function dkAmericanNum(dk, ev) {
-    if (!dk) return null;
-    var s = String(dk.dk_american || '').replace(/−/g, '-').replace(/[^0-9+-]/g, '');
-    var n = parseInt(s, 10);
-    if (!isNaN(n) && n !== 0) return n;
-    return ev ? M.decimalToAmerican(ev.dec) : null;
-  }
-
-  function evFor(game, cand) {
-    var dk = game.dkById[cand.id];
-    if (!dk || !dk.matched) return null;
-    var dec = dk.dk_decimal != null ? parseFloat(dk.dk_decimal) : null;
-    if (!dec || isNaN(dec) || dec <= 1) dec = M.americanToDecimal(dk.dk_american);
-    if (!dec) return null;
-    return {
-      dec: dec,
-      american: dk.dk_american,
-      evPct: (cand.fair_prob * dec - 1) * 100,
-      kellyPct: (cand.fair_prob * dec - 1) / (dec - 1) * 100,
-    };
-  }
-
-  function renderGames() {
-    var el = $('wcGames');
-    if (!el) return;
-    if (!state.games.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
-    el.style.display = 'flex';
-    el.innerHTML = state.games.map(function (g) {
-      var stat;
-      if (g.loading) stat = 'pulling…';
-      else if (g.scanning) stat = 'scanning DK…';
-      else if (g.error) stat = '⚠ ' + g.error;
-      else if (g.dkMeta) {
-        var matched = (g.dkMeta.results || []).filter(function (r) { return r.matched; }).length;
-        stat = matched + '/' + (g.dkMeta.results || []).length + ' matched';
-      } else stat = g.candidates.length + ' sels';
-      return '<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid ' +
-        (g.error ? 'var(--red, #f87171)' : 'var(--b1)') + ';border-radius:5px;background:var(--s1);font-size:10px;font-family:Space Mono,monospace">' +
-        '<span style="color:var(--tx)">' + esc(g.label) + '</span>' +
-        '<span style="color:' + (g.error ? 'var(--red, #f87171)' : 'var(--mu)') + '" title="' + esc(g.error || '') + '">' + esc(stat) + '</span>' +
-        '<button type="button" onclick="window.worldcupTab.removeGame(\'' + esc(g.id) + '\')" style="border:none;background:none;color:var(--mu);cursor:pointer;font-size:11px;padding:0" title="Remove this match">✕</button>' +
-        '</span>';
-    }).join('');
-    var badge = $('wcHdrBadge');
-    if (badge) {
-      var loaded = state.games.filter(function (g) { return g.parsed; });
-      badge.textContent = loaded.length ? loaded.map(function (g) { return g.label; }).join(' · ')
-        : 'Load the Pinnacle slate and pick matches';
-    }
-  }
+  /* ---- render the flat table ---- */
 
   function render() {
     renderDiag();
     var bodyEl = $('wcBody');
     if (!bodyEl) return;
-    var loaded = state.games.filter(function (g) { return g.parsed; });
-    if (!loaded.length) {
-      bodyEl.innerHTML = '<div class="empty">Load the Pinnacle slate and pick one or more matches to begin.</div>';
-      var cnt0 = $('wcCount');
-      if (cnt0) cnt0.textContent = '';
+    if (!state.rows.length) {
+      bodyEl.innerHTML = '<div class="empty">Hit <b>SCRAPE SGPS</b> to pull every major-league soccer SGP — Pinnacle fair lines vs DK.</div>';
+      var c0 = $('wcCount'); if (c0) c0.textContent = '';
       return;
     }
-    var multi = loaded.length > 1;
-    var rows = [];
-    loaded.forEach(function (g) {
-      g.candidates
-        .filter(function (c) { return state.enabledCats[KIND_CATS[c.market_key] || 'team'] !== false; })
-        .forEach(function (c) {
-          rows.push({ g: g, c: c, dk: g.dkById[c.id], ev: evFor(g, c) });
-        });
+    var rows = state.rows.filter(function (r) {
+      if (!state.enabledFams[r.market_key]) return false;
+      if (state.matchedOnly && r.ev_pct == null) return false;
+      if (state.maxOddsCap) {
+        var am = r.dk_american != null ? amNum(r.dk_american) : amNum(r.fair_american);
+        if (am != null && am > 1000) return false;
+      }
+      return true;
     });
-    rows = rows
-      .filter(function (r) {
-        if (state.matchedOnly && !r.ev) return false;
-        if (state.maxOddsCap) {
-          var am = r.ev ? dkAmericanNum(r.dk, r.ev) : r.c.pin_odds;
-          if (am != null && am > 1000) return false;
-        }
-        return true;
-      })
-      .sort(function (a, b) {
-        var ea = a.ev ? a.ev.evPct : -1e9, eb = b.ev ? b.ev.evPct : -1e9;
-        return eb - ea;
-      });
-
-    // Always the top 20 of whatever passes the filters — changing a filter
-    // recomputes a fresh top 20.
     var total = rows.length;
-    rows = rows.slice(0, 20);
-
+    rows = rows.slice(0, MAX_ROWS);
     var cnt = $('wcCount');
-    if (cnt) cnt.textContent = total > rows.length ?
-      ('top ' + rows.length + ' of ' + total) : (rows.length + ' rows');
+    if (cnt) cnt.textContent = total > rows.length ? ('top ' + rows.length + ' of ' + total) : (rows.length + ' rows');
+    if (!rows.length) { bodyEl.innerHTML = '<div class="empty">No combos pass the current filters.</div>'; return; }
 
-    if (!rows.length) {
-      bodyEl.innerHTML = '<div class="empty">No selections pass the current filters.</div>';
-      return;
-    }
-
-    var html = '<table style="width:100%;border-collapse:collapse;font-family:Space Mono,monospace;font-size:12px">' +
+    var html = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-family:Space Mono,monospace;font-size:12px">' +
       '<thead><tr style="color:var(--mu);font-size:10px;letter-spacing:.5px;text-align:left">' +
-      (multi ? '<th style="padding:8px 10px">GAME</th>' : '') +
-      '<th style="padding:8px 10px">MARKET</th><th style="padding:8px 10px">SELECTION</th>' +
+      '<th style="padding:8px 10px">GAME</th><th style="padding:8px 10px">MARKET</th>' +
+      '<th style="padding:8px 10px">SELECTION</th>' +
       '<th style="padding:8px 10px;text-align:right">PIN</th>' +
-      '<th style="padding:8px 10px;text-align:right" title="No-vig fair price from the devigged Pinnacle group">FV</th>' +
-      '<th style="padding:8px 10px;text-align:right">FAIR %</th>' +
-      '<th style="padding:8px 10px;text-align:right">DK</th>' +
+      '<th style="padding:8px 10px;text-align:right" title="No-vig fair price from the devigged Pinnacle group">FAIR</th>' +
+      '<th style="padding:8px 10px;text-align:right">DK SGP</th>' +
       '<th style="padding:8px 10px;text-align:right">EV %</th>' +
       '<th style="padding:8px 10px;text-align:right" title="Full Kelly stake as % of bankroll">KELLY %</th>' +
       '</tr></thead><tbody>';
-
     rows.forEach(function (r) {
-      var c = r.c, ev = r.ev, dk = r.dk;
-      var evTxt, evCol, dkTxt;
-      if (ev) {
-        evTxt = (ev.evPct >= 0 ? '+' : '') + ev.evPct.toFixed(1) + '%';
-        evCol = ev.evPct >= 3 ? 'var(--ac)' : (ev.evPct >= 0 ? 'var(--tx)' : 'var(--red, #f87171)');
-        dkTxt = String(dk.dk_american || fmtAm(M.decimalToAmerican(ev.dec)));
-      } else {
-        evTxt = '—';
-        evCol = 'var(--mu)';
-        dkTxt = dk && dk.missing ? 'no match' : (c.fields ? '—' : 'unparsed');
+      var evTxt = '—', evCol = 'var(--mu)';
+      if (r.ev_pct != null) {
+        evTxt = (r.ev_pct >= 0 ? '+' : '') + r.ev_pct.toFixed(1) + '%';
+        evCol = r.ev_pct >= 3 ? 'var(--ac)' : (r.ev_pct >= 0 ? 'var(--tx)' : 'var(--red, #f87171)');
       }
-      var missTitle = dk && dk.missing ? String(dk.missing) : '';
+      var dkTxt = r.dk_american != null ? fmtAm(r.dk_american)
+        : (r.dk_status && r.dk_status !== 'priced' ? '—' : '—');
       html += '<tr style="border-top:1px solid var(--b1)">' +
-        (multi ? '<td style="padding:7px 10px;color:var(--mu);white-space:nowrap">' + esc(r.g.parsed.home + ' v ' + r.g.parsed.away) + '</td>' : '') +
-        '<td style="padding:7px 10px;color:var(--cyan);white-space:nowrap">' + (c.group_label || MARKET_LABELS[c.market_key] || c.market_key) +
-          (dk && dk.via === 'sgp' ? ' <span style="font-size:9px;color:var(--ac);border:1px solid var(--ac);border-radius:3px;padding:0 3px" title="Priced as a real 2-leg SGP via DK calculateBets — boost-eligible. Legs: ' + String(dk.dk_market || '').replace(/"/g, '&quot;') + '">SGP</span>' : '') + '</td>' +
-        '<td style="padding:7px 10px;color:var(--tx)">' + c.name + '</td>' +
-        '<td style="padding:7px 10px;text-align:right;color:var(--mu)">' + fmtAm(c.pin_odds) + '</td>' +
-        '<td style="padding:7px 10px;text-align:right;color:var(--tx)">' + fmtAm(c.fair_american) + '</td>' +
-        '<td style="padding:7px 10px;text-align:right;color:var(--mu)">' + (c.fair_prob * 100).toFixed(1) + '%</td>' +
-        '<td style="padding:7px 10px;text-align:right;color:var(--tx)" title="' + missTitle.replace(/"/g, '&quot;') + '">' + dkTxt + '</td>' +
+        '<td style="padding:7px 10px;color:var(--mu);white-space:nowrap">' + esc(r.game) +
+          '<div style="font-size:9px;color:var(--b2,#64748b)">' + esc(r.league) + '</div></td>' +
+        '<td style="padding:7px 10px;color:var(--cyan);white-space:nowrap">' + esc(FAM_LABEL[r.market_key] || r.market_key) +
+          (r.via === 'sgp' ? ' <span style="font-size:9px;color:var(--ac);border:1px solid var(--ac);border-radius:3px;padding:0 3px">SGP</span>' : '') + '</td>' +
+        '<td style="padding:7px 10px;color:var(--tx)">' + esc(r.selection) + '</td>' +
+        '<td style="padding:7px 10px;text-align:right;color:var(--mu)">' + fmtAm(r.pin_american) + '</td>' +
+        '<td style="padding:7px 10px;text-align:right;color:var(--tx)">' + fmtAm(r.fair_american) + '</td>' +
+        '<td style="padding:7px 10px;text-align:right;color:var(--tx)">' + dkTxt + '</td>' +
         '<td style="padding:7px 10px;text-align:right;font-weight:700;color:' + evCol + '">' + evTxt + '</td>' +
-        '<td style="padding:7px 10px;text-align:right;color:var(--mu)">' + (ev && ev.evPct > 0 ? ev.kellyPct.toFixed(1) + '%' : '—') + '</td>' +
+        '<td style="padding:7px 10px;text-align:right;color:var(--mu)">' + (r.kelly_pct != null && r.ev_pct > 0 ? r.kelly_pct.toFixed(1) + '%' : '—') + '</td>' +
         '</tr>';
     });
-    html += '</tbody></table>';
-
-    loaded.forEach(function (g) {
-      if (g.dkMeta && g.dkMeta.available_markets && g.dkMeta.available_markets.length) {
-        html += '<details style="margin-top:6px;font-size:10px;color:var(--mu);font-family:Space Mono,monospace">' +
-          '<summary style="cursor:pointer">DK markets seen on ' + esc(g.label) + ' (' + g.dkMeta.available_markets.length + ')</summary>' +
-          '<div style="margin-top:4px;line-height:1.7">' + g.dkMeta.available_markets.join(' · ') + '</div></details>';
-      }
-    });
+    html += '</tbody></table></div>';
     bodyEl.innerHTML = html;
   }
 
-  /* ---- controls ---- */
+  /* ---- filters ---- */
 
   function onFilter() {
-    var mo = $('wcMatchedOnly');
-    if (mo) state.matchedOnly = !!mo.checked;
-    var cap = $('wcMaxOdds');
-    if (cap) state.maxOddsCap = !!cap.checked;
+    var mo = $('wcMatchedOnly'); if (mo) state.matchedOnly = !!mo.checked;
+    var cap = $('wcMaxOdds'); if (cap) state.maxOddsCap = !!cap.checked;
     render();
   }
 
-  /* SGP-only changes what the server returns (prebuilt combos are suppressed),
-     so it re-scans DK for every loaded match rather than just re-filtering. */
   function onSgpOnlyChange() {
-    var el = $('wcSgpOnly');
-    if (el) state.sgpOnly = !!el.checked;
-    var loaded = state.games.filter(function (g) { return g.parsed; });
-    loaded.forEach(function (g) { g.dkById = {}; g.dkMeta = null; });
-    render();
-    if (loaded.length) {
-      setStatus('SGP-only ' + (state.sgpOnly ? 'on — re-scanning DK for real SGP prices…'
-        : 'off — including DK prebuilt combos…'));
-      loaded.forEach(scanGame);
-    }
+    var el = $('wcSgpOnly'); if (el) state.sgpOnly = !!el.checked;
+    // sgp_only changes what the server returns — re-scrape if we already have data.
+    if (state.rows.length) scrapeAll();
   }
 
-  /* Click selects ONLY that category. Clicking the lone active category
-     again restores all categories. */
+  /* Click a family to isolate it; click the lone active one to restore all. */
   function onMarketBtn(btn) {
-    var key = btn.getAttribute('data-wc-cat');
+    var key = btn.getAttribute('data-wc-fam');
     if (!key) return;
-    var active = CATS.filter(function (k) { return state.enabledCats[k]; });
-    var soloAlready = active.length === 1 && active[0] === key;
-    CATS.forEach(function (k) { state.enabledCats[k] = soloAlready ? true : (k === key); });
-    document.querySelectorAll('[data-wc-cat]').forEach(function (b) {
-      b.classList.toggle('active', !!state.enabledCats[b.getAttribute('data-wc-cat')]);
+    var active = FAMS.filter(function (k) { return state.enabledFams[k]; });
+    var solo = active.length === 1 && active[0] === key;
+    FAMS.forEach(function (k) { state.enabledFams[k] = solo ? true : (k === key); });
+    document.querySelectorAll('[data-wc-fam]').forEach(function (b) {
+      b.classList.toggle('active', !!state.enabledFams[b.getAttribute('data-wc-fam')]);
     });
     render();
-  }
-
-  function onLeagueIdChange() {
-    var el = $('wcLeagueId');
-    if (el) try { localStorage.setItem('wcLeagueId', el.value.trim()); } catch (_) {}
   }
 
   /* ---- DK cookie (set from the site, held in server memory) ---- */
@@ -537,60 +208,35 @@
     var el = $('wcCookieState');
     if (el) { el.textContent = txt; el.style.color = color || 'var(--mu)'; }
   }
-
   function refreshCookieState() {
-    fetch('/api/dk/cookies')
-      .then(function (r) { return r.json(); })
-      .then(function (j) {
-        if (!j.set) {
-          if (j.envFallback) setCookieState('using env cookie', 'var(--mu)');
-          else setCookieState('not set — SGP pricing will 403', 'var(--red, #f87171)');
-          return;
-        }
-        var age = j.ageSec != null ? Math.round(j.ageSec / 60) + 'm ago' : '';
-        if (j.abck === 'validated') setCookieState('set ✓ validated · ' + age, 'var(--ac)');
-        else setCookieState('set but _abck ' + j.abck + ' · ' + age, '#eab308');
-      })
-      .catch(function () { setCookieState('', 'var(--mu)'); });
+    fetch('/api/dk/cookies').then(function (r) { return r.json(); }).then(function (j) {
+      if (!j.set) { setCookieState(j.envFallback ? 'using env cookie' : 'not set — DK SGP pricing will 403', j.envFallback ? 'var(--mu)' : 'var(--red, #f87171)'); return; }
+      var age = j.ageSec != null ? Math.round(j.ageSec / 60) + 'm ago' : '';
+      if (j.abck === 'validated') setCookieState('set ✓ validated · ' + age, 'var(--ac)');
+      else setCookieState('set but _abck ' + j.abck + ' · ' + age, '#eab308');
+    }).catch(function () { setCookieState('', 'var(--mu)'); });
   }
-
   function saveCookie() {
-    var ta = $('wcCookieInput');
-    var msg = $('wcCookieMsg');
+    var ta = $('wcCookieInput'), msg = $('wcCookieMsg');
     var val = (ta && ta.value || '').trim();
     if (!val) { if (msg) { msg.textContent = 'paste the cookie string first'; msg.style.color = 'var(--red, #f87171)'; } return; }
     if (msg) { msg.textContent = 'saving…'; msg.style.color = 'var(--mu)'; }
-    fetch('/api/dk/cookies', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ cookies: val }),
-    })
+    fetch('/api/dk/cookies', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cookies: val }) })
       .then(function (r) { return r.json(); })
       .then(function (j) {
         if (j.error) { if (msg) { msg.textContent = j.error; msg.style.color = 'var(--red, #f87171)'; } return; }
-        if (ta) ta.value = '';  // don't leave the DK session cookie in the DOM
+        if (ta) ta.value = '';
         if (msg) {
           if (j.warning) { msg.textContent = '⚠ ' + j.warning; msg.style.color = '#eab308'; }
-          else { msg.textContent = '✓ saved (' + j.cookieCount + ' cookies, _abck ' + j.abck + ') — re-scanning'; msg.style.color = 'var(--ac)'; }
+          else { msg.textContent = '✓ saved (' + j.cookieCount + ' cookies, _abck ' + j.abck + ') — Scrape again to price DK'; msg.style.color = 'var(--ac)'; }
         }
         refreshCookieState();
-        // Re-price loaded games with the new session.
-        var loaded = state.games.filter(function (g) { return g.parsed; });
-        loaded.forEach(function (g) { g.dkById = {}; g.dkMeta = null; });
-        render();
-        loaded.forEach(scanGame);
       })
       .catch(function (e) { if (msg) { msg.textContent = 'save failed: ' + e.message; msg.style.color = 'var(--red, #f87171)'; } });
   }
-
   function clearCookie() {
-    fetch('/api/dk/cookies', { method: 'DELETE' })
-      .then(function (r) { return r.json(); })
-      .then(function () {
-        var msg = $('wcCookieMsg');
-        if (msg) { msg.textContent = 'cleared'; msg.style.color = 'var(--mu)'; }
-        refreshCookieState();
-      })
+    fetch('/api/dk/cookies', { method: 'DELETE' }).then(function (r) { return r.json(); })
+      .then(function () { var msg = $('wcCookieMsg'); if (msg) { msg.textContent = 'cleared'; msg.style.color = 'var(--mu)'; } refreshCookieState(); })
       .catch(function () {});
   }
 
@@ -598,25 +244,16 @@
   function onActivate() {
     if (activated) return;
     activated = true;
-    var el = $('wcLeagueId');
-    if (el) try { el.value = localStorage.getItem('wcLeagueId') || ''; } catch (_) {}
-    loadLeagues();
     refreshCookieState();
     render();
   }
 
   window.worldcupTab = {
     onActivate: onActivate,
-    loadLeagues: loadLeagues,
-    onLeagueChange: onLeagueChange,
-    loadPinnySlate: loadPinnySlate,
-    onPinMatchPick: onPinMatchPick,
-    removeGame: removeGame,
-    runScan: runScan,
+    scrapeAll: scrapeAll,
     onFilter: onFilter,
     onSgpOnlyChange: onSgpOnlyChange,
     onMarketBtn: onMarketBtn,
-    onLeagueIdChange: onLeagueIdChange,
     saveCookie: saveCookie,
     clearCookie: clearCookie,
   };

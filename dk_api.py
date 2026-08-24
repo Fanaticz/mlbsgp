@@ -47,21 +47,42 @@ DK_WORLDCUP_SLUG = _os.environ.get("DK_WORLDCUP_SLUG", "world-cup-2026")
 # All values are env-overridable so IDs can be corrected without a redeploy if
 # DK/Pinnacle ever renumber. Verified live 2026-08-22: DK EPL eventGroup 40253
 # (SGP-tagged), Pinnacle EPL league 1980.
-SOCCER_LEAGUES = {
-    "worldcup": {
-        "label": "FIFA World Cup",
-        "dk_id": _os.environ.get("DK_WORLDCUP_LEAGUE_ID", ""),
-        "dk_slug": _os.environ.get("DK_WORLDCUP_SLUG", "world-cup-2026"),
-        "pin_id": _os.environ.get("PINNACLE_WC_LEAGUE_ID", "2686"),
-    },
-    "epl": {
-        "label": "English Premier League",
-        "dk_id": _os.environ.get("DK_EPL_LEAGUE_ID", "40253"),
-        "dk_slug": _os.environ.get("DK_EPL_SLUG", "england-premier-league"),
-        "pin_id": _os.environ.get("PINNACLE_EPL_LEAGUE_ID", "1980"),
-    },
-}
-DEFAULT_SOCCER_LEAGUE = _os.environ.get("DEFAULT_SOCCER_LEAGUE", "worldcup")
+# (key, label, dk_id, dk_slug, pin_id). Verified live 2026-08-22 from DK's
+# soccer landing page (eventGroupInfos) + Pinnacle /sports/29/leagues. The
+# "scrape all" sweep walks these in order; add a row to cover another league.
+_SOCCER_LEAGUE_ROWS = [
+    ("epl",        "English Premier League", "40253", "england---premier-league", "1980"),
+    ("laliga",     "La Liga",                "40031", "spain---la-liga",           "2196"),
+    ("seriea",     "Serie A",                "40030", "italy---serie-a",           "2436"),
+    ("bundesliga", "Bundesliga",             "40481", "germany---1.bundesliga",    "1842"),
+    ("ligue1",     "Ligue 1",                "40032", "france---ligue-1",          "2036"),
+    ("ucl",        "Champions League",       "40685", "champions-league",          "2627"),
+    ("eredivisie", "Eredivisie",             "41372", "netherlands---eredivisie",  "1928"),
+    ("primeira",   "Primeira Liga",          "44069", "portugal---primeira-liga",  "2386"),
+    ("championship","EFL Championship",       "40817", "england---championship",    "1977"),
+    ("mls",        "MLS",                    "89345", "usa---mls",                 "2663"),
+    ("ligamx",     "Liga MX",                "44525", "mexico---liga-mx",          "2242"),
+    ("brasileirao","Brazil Serie A",         "38529", "brazil---serie-a",          "1834"),
+    ("saudi",      "Saudi Pro League",       "72057", "saudi-arabia---premier",    "10419"),
+]
+
+# Per-league env overrides: DK_LEAGUE_ID_<KEY> / PIN_LEAGUE_ID_<KEY> (uppercased
+# key) correct an id without a redeploy if DK/Pinnacle renumber.
+SOCCER_LEAGUES = {}
+for _k, _label, _dk, _slug, _pin in _SOCCER_LEAGUE_ROWS:
+    SOCCER_LEAGUES[_k] = {
+        "label": _label,
+        "dk_id": _os.environ.get("DK_LEAGUE_ID_" + _k.upper(), _dk),
+        "dk_slug": _slug,
+        "pin_id": _os.environ.get("PIN_LEAGUE_ID_" + _k.upper(), _pin),
+    }
+
+# Ordered keys the "scrape all major soccer" sweep covers. Override with the
+# SOCCER_LEAGUES_SWEEP env (comma-separated keys) to narrow/reorder.
+_sweep_env = (_os.environ.get("SOCCER_LEAGUES_SWEEP", "") or "").strip()
+MAJOR_SOCCER_LEAGUES = ([k.strip() for k in _sweep_env.split(",") if k.strip()]
+                        if _sweep_env else [r[0] for r in _SOCCER_LEAGUE_ROWS])
+DEFAULT_SOCCER_LEAGUE = _os.environ.get("DEFAULT_SOCCER_LEAGUE", "epl")
 
 
 def _soccer_league(key):
@@ -69,7 +90,7 @@ def _soccer_league(key):
     keys fall back to the configured default so old callers keep working."""
     if key and str(key).lower() in SOCCER_LEAGUES:
         return SOCCER_LEAGUES[str(key).lower()]
-    return SOCCER_LEAGUES.get(DEFAULT_SOCCER_LEAGUE, SOCCER_LEAGUES["worldcup"])
+    return SOCCER_LEAGUES.get(DEFAULT_SOCCER_LEAGUE) or next(iter(SOCCER_LEAGUES.values()))
 # State site prefix for the sportscontent API (dkusnj = NJ, dkusil = IL, ...).
 # Both return identical event/market data for national leagues, but keep it
 # env-overridable to mirror DK_PRICE_HOST's state scoping.
@@ -115,10 +136,36 @@ DK_PRICE_HEADERS = {
 # at most N attempts instead of stochastically retrying the bad ones.
 _IMPERSONATES = ["chrome", "chrome120", "chrome116", "chrome110", "chrome107",
                  "chrome101", "edge101", "edge99", "safari17_2_ios"]
+# Optional override (comma-separated curl_cffi profiles), e.g.
+# DK_IMPERSONATE=chrome116,safari17_2_ios — pins the fingerprint list when an
+# egress path rejects the newest "chrome" TLS profile (some corporate/proxy
+# networks reset it). Empty = the default rotation above.
+_imp_env = (_os.environ.get("DK_IMPERSONATE", "") or "").strip()
+if _imp_env:
+    _override = [p.strip() for p in _imp_env.split(",") if p.strip()]
+    if _override:
+        _IMPERSONATES = _override
 
 _session_lock = threading.Lock()
 _imp_idx = 0
-session = cffi_requests.Session(impersonate=_IMPERSONATES[0])
+
+# Optional outbound proxy for all DK/Pinnacle curl_cffi traffic. Set DK_PROXY to
+# a residential/rotating proxy URL (http://user:pass@host:port) when DK's Akamai
+# edge scores this deployment's datacenter IP and 403s even with a valid cookie
+# — the last lever short of moving hosts. Empty = go direct (default). Pinnacle
+# rides the same session, which is harmless (it works over any egress).
+_DK_PROXY = (_os.environ.get("DK_PROXY", "") or "").strip()
+_PROXIES = {"https": _DK_PROXY, "http": _DK_PROXY} if _DK_PROXY else None
+
+
+def _new_session(imp):
+    kw = {"impersonate": imp}
+    if _PROXIES:
+        kw["proxies"] = _PROXIES
+    return cffi_requests.Session(**kw)
+
+
+session = _new_session(_IMPERSONATES[0])
 
 # Throttle gate: once DK returns a 403 we pause all threads for a cool-off.
 # Without this, every in-flight request races into the Akamai block and the
@@ -130,7 +177,7 @@ def _rotate_session():
     global session, _imp_idx
     with _session_lock:
         _imp_idx = (_imp_idx + 1) % len(_IMPERSONATES)
-        fresh = cffi_requests.Session(impersonate=_IMPERSONATES[_imp_idx])
+        fresh = _new_session(_IMPERSONATES[_imp_idx])
         # Carry the cookie jar over: Akamai clearance cookies (_abck/bm_sz on
         # .draftkings.com) are what let the pricing POSTs through, and losing
         # them on every rotation put each new fingerprint back at square one.
@@ -334,6 +381,26 @@ def _wait_for_cooloff():
 
 
 def _get_with_retry(url, params=None, timeout=15, attempts=6):
+    """GET with exponential backoff + session rotation on Akamai blocks.
+
+    DK-bound GETs also get the DK_COOKIES jar (when configured): market/games
+    GETs normally pass without cookies, but some egress IPs (Railway) get the
+    Akamai edge 403 on plain GETs too — a real browser cookie clears those the
+    same way it clears the pricing POST."""
+    global _get_warmup_done
+    if not _get_warmup_done and "draftkings.com" in url:
+        _get_warmup_done = True
+        try:
+            _warm_dk_cookies()
+        except Exception:
+            pass
+    return _get_with_retry_inner(url, params=params, timeout=timeout, attempts=attempts)
+
+
+_get_warmup_done = False
+
+
+def _get_with_retry_inner(url, params=None, timeout=15, attempts=6):
     """GET with exponential backoff + session rotation on Akamai blocks.
 
     DK rate-limits aggressively once we fan out across ~100 subcategory
@@ -3127,6 +3194,163 @@ def _match_soccer_selection(cand, props_for_kind, home, away):
     return None
 
 
+_SOCCER_COMBO_KINDS = {"btts_total", "btts_winner", "winner_total", "ht_ft",
+                       "oddeven_total"}
+
+
+def _price_event_combos(md, home, away, candidates, sgp_only=False, deadline=None):
+    """Match Pinnacle combo candidates to one already-fetched DK event's markets
+    (md = get_markets(eid, soccer_only=True)) and price the real 2-leg SGPs via
+    calculateBets. Shared by find_sgps_worldcup (one game) and
+    find_sgps_soccer_all (sweep). Returns (results, had_jobs, truncated)."""
+    import concurrent.futures as _cf
+    props_by_kind = {}
+    market_names_by_kind = {}
+    for p in md["props"]:
+        blob = " ".join([p.get("marketName", ""), p.get("marketType", ""),
+                         p.get("subcategory", "")])
+        kind = _soccer_market_kind(blob) or \
+               _soccer_straight_kind(p.get("marketName", ""), p.get("subcategory", ""))
+        if not kind:
+            continue
+        props_by_kind.setdefault(kind, []).append(p)
+        market_names_by_kind.setdefault(kind, set()).add(p.get("marketName", ""))
+
+    def _leg_specs(c):
+        key = c.get("market_key")
+        tot = {"market_key": "total_goals",
+               "total_side": c.get("total_side"),
+               "total_line": c.get("total_line")}
+        if key == "btts_total":
+            return [{"market_key": "btts", "btts": c.get("btts")}, tot]
+        if key == "btts_winner":
+            return [{"market_key": "btts", "btts": c.get("btts")},
+                    {"market_key": "moneyline", "result": c.get("result")}]
+        if key == "winner_total":
+            return [{"market_key": "moneyline", "result": c.get("result")}, tot]
+        if key == "ht_ft":
+            return [{"market_key": "ml_1h", "result": c.get("ht")},
+                    {"market_key": "moneyline", "result": c.get("ft")}]
+        if key == "oddeven_total":
+            return [{"market_key": "oddeven", "odd_even": c.get("odd_even")}, tot]
+        return None
+
+    def _match_prebuilt(c):
+        pool = props_by_kind.get(c.get("market_key"), [])
+        return _match_soccer_selection(c, pool, home, away) if pool else None
+
+    resolved = []
+    for c in candidates:
+        entry = {"c": c, "legs": None, "prebuilt": None, "leg_fail": None}
+        if c.get("market_key") in _SOCCER_COMBO_KINDS:
+            legs = []
+            for sp in _leg_specs(c) or []:
+                pool = props_by_kind.get(sp["market_key"], [])
+                m = _match_soccer_selection(sp, pool, home, away) if pool else None
+                if not m:
+                    entry["leg_fail"] = sp["market_key"]
+                    legs = None
+                    break
+                legs.append(m)
+            entry["legs"] = legs
+            entry["prebuilt"] = _match_prebuilt(c)
+        else:
+            entry["prebuilt"] = _match_prebuilt(c)
+        resolved.append(entry)
+
+    price_cache = {}
+    jobs = []
+    for e in resolved:
+        if e["legs"]:
+            ids = frozenset(l["selectionId"] for l in e["legs"])
+            if len(ids) == 2 and ids not in price_cache:
+                price_cache[ids] = "pending"
+                jobs.append(ids)
+
+    truncated = False
+    if deadline is None:
+        deadline = _time.monotonic() + 110.0
+
+    def _price_job(ids):
+        return ids, _price_combo(sorted(ids))
+    if jobs:
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            futs = [ex.submit(_price_job, j) for j in jobs]
+            try:
+                for f in as_completed(futs, timeout=max(0.5, deadline - _time.monotonic())):
+                    try:
+                        k, price = f.result()
+                        price_cache[k] = price
+                    except Exception:
+                        pass
+            except _cf.TimeoutError:
+                truncated = True
+                for f in futs:
+                    f.cancel()
+
+    results = []
+    for e in resolved:
+        c = e["c"]
+        key = c.get("market_key")
+        out = {"id": c.get("id"), "market_key": key}
+        if key in _SOCCER_COMBO_KINDS:
+            price = None
+            if e["legs"]:
+                ids = frozenset(l["selectionId"] for l in e["legs"])
+                price = price_cache.get(ids)
+                if price == "pending":
+                    price = None
+            if price:
+                out["matched"] = True
+                out["via"] = "sgp"
+                out["dk_american"] = price.get("sgpOdds")
+                out["dk_decimal"] = price.get("sgpDecimal")
+                out["dk_market"] = "SGP: " + " + ".join(
+                    l.get("marketName", "") for l in e["legs"])
+                out["dk_label"] = " + ".join(
+                    (l.get("label") or l.get("outcomeType") or "") for l in e["legs"])
+            elif e["prebuilt"] and not sgp_only:
+                m = e["prebuilt"]
+                out["matched"] = True
+                out["via"] = "prebuilt"
+                out["dk_american"] = m.get("oddsAmerican")
+                out["dk_decimal"] = m.get("oddsDecimal")
+                out["dk_label"] = m.get("label") or m.get("outcomeType")
+                out["dk_market"] = m.get("marketName")
+                out["isDisabled"] = m.get("isDisabled", False)
+            else:
+                out["matched"] = False
+                sgp_why = ("sgp leg unresolved: " + str(e.get("leg_fail"))
+                           if not e["legs"] else
+                           "dk:sgp_price_unavailable (combination refused or timed out)")
+                if sgp_only and e["prebuilt"]:
+                    out["missing"] = (sgp_why +
+                                      "; a prebuilt combo exists but sgp_only is set "
+                                      "(prebuilt straight markets aren't SGPs)")
+                else:
+                    out["missing"] = sgp_why + "; no prebuilt combo market either"
+            results.append(out)
+            continue
+        m = e["prebuilt"]
+        if m:
+            out["matched"] = True
+            out["via"] = "prebuilt"
+            out["dk_american"] = m.get("oddsAmerican")
+            out["dk_decimal"] = m.get("oddsDecimal")
+            out["dk_label"] = m.get("label") or m.get("outcomeType")
+            out["dk_market"] = m.get("marketName")
+            out["isDisabled"] = m.get("isDisabled", False)
+        else:
+            pool = props_by_kind.get(key, [])
+            out["matched"] = False
+            out["missing"] = ("no DK market of this kind" if not pool
+                              else "no selection matched in: " +
+                                   ", ".join(sorted(market_names_by_kind.get(key, []))[:4]))
+        results.append(out)
+
+    return results, bool(jobs), truncated
+
+
 def find_sgps_worldcup(payload):
     """Match a batch of Pinnacle soccer combo candidates against DK's listed
     combo markets for one match and return DK's posted odds.
@@ -3181,167 +3405,8 @@ def find_sgps_worldcup(payload):
     except Exception as e:
         return {"error": f"DK market scan failed for event {eid}: {e}"}
 
-    # Bucket selections by the combo kind their market classifies into.
-    props_by_kind = {}
-    market_names_by_kind = {}
-    for p in md["props"]:
-        blob = " ".join([p.get("marketName", ""), p.get("marketType", ""),
-                         p.get("subcategory", "")])
-        kind = _soccer_market_kind(blob) or \
-               _soccer_straight_kind(p.get("marketName", ""), p.get("subcategory", ""))
-        if not kind:
-            continue
-        props_by_kind.setdefault(kind, []).append(p)
-        market_names_by_kind.setdefault(kind, set()).add(p.get("marketName", ""))
-
-    # Combo candidates are priced as REAL 2-leg SGPs (leg selections fed to
-    # DK's calculateBets) rather than read off the prebuilt combo markets —
-    # SGP-only boosts apply to these tickets, and the SGP engine prices
-    # cells DK never prebuilds (e.g. Under 2.5 & BTTS No). The prebuilt
-    # combo market remains the fallback when a leg can't be resolved or
-    # DK refuses the combination.
-    import concurrent.futures as _cf
-    COMBO_KINDS = {"btts_total", "btts_winner", "winner_total", "ht_ft",
-                   "oddeven_total"}
-
-    def _leg_specs(c):
-        key = c.get("market_key")
-        tot = {"market_key": "total_goals",
-               "total_side": c.get("total_side"),
-               "total_line": c.get("total_line")}
-        if key == "btts_total":
-            return [{"market_key": "btts", "btts": c.get("btts")}, tot]
-        if key == "btts_winner":
-            return [{"market_key": "btts", "btts": c.get("btts")},
-                    {"market_key": "moneyline", "result": c.get("result")}]
-        if key == "winner_total":
-            return [{"market_key": "moneyline", "result": c.get("result")}, tot]
-        if key == "ht_ft":
-            return [{"market_key": "ml_1h", "result": c.get("ht")},
-                    {"market_key": "moneyline", "result": c.get("ft")}]
-        if key == "oddeven_total":
-            return [{"market_key": "oddeven", "odd_even": c.get("odd_even")}, tot]
-        return None
-
-    def _match_prebuilt(c):
-        pool = props_by_kind.get(c.get("market_key"), [])
-        return _match_soccer_selection(c, pool, home, away) if pool else None
-
-    resolved = []
-    for c in candidates:
-        entry = {"c": c, "legs": None, "prebuilt": None, "leg_fail": None}
-        if c.get("market_key") in COMBO_KINDS:
-            # SGP-first: a hand-built 2-leg ticket is boost-eligible and covers
-            # cells DK never prebuilds. But knockout slates drop the leg
-            # markets outright (no plain BTTS, no 1st-half moneyline — only
-            # extra-time variants), and calculateBets outages kill pricing for
-            # even resolvable legs, so the prebuilt combo market (HT/FT,
-            # Moneyline/BTTS, ...) is the fallback: a real posted DK price
-            # beats reporting "no match".
-            legs = []
-            for sp in _leg_specs(c) or []:
-                pool = props_by_kind.get(sp["market_key"], [])
-                m = _match_soccer_selection(sp, pool, home, away) if pool else None
-                if not m:
-                    entry["leg_fail"] = sp["market_key"]
-                    legs = None
-                    break
-                legs.append(m)
-            entry["legs"] = legs
-            entry["prebuilt"] = _match_prebuilt(c)
-        else:
-            entry["prebuilt"] = _match_prebuilt(c)
-        resolved.append(entry)
-
-    price_cache = {}
-    jobs = []
-    for e in resolved:
-        if e["legs"]:
-            ids = frozenset(l["selectionId"] for l in e["legs"])
-            if len(ids) == 2 and ids not in price_cache:
-                price_cache[ids] = "pending"
-                jobs.append(ids)
-
-    truncated = False
-    deadline = _time.monotonic() + 110.0
-    def _price_job(ids):
-        return ids, _price_combo(sorted(ids))
-    if jobs:
-        with ThreadPoolExecutor(max_workers=8) as ex:
-            futs = [ex.submit(_price_job, j) for j in jobs]
-            try:
-                for f in as_completed(futs, timeout=max(0.5, deadline - _time.monotonic())):
-                    try:
-                        k, price = f.result()
-                        price_cache[k] = price
-                    except Exception:
-                        pass
-            except _cf.TimeoutError:
-                truncated = True
-                for f in futs:
-                    f.cancel()
-
-    results = []
-    for e in resolved:
-        c = e["c"]
-        key = c.get("market_key")
-        out = {"id": c.get("id"), "market_key": key}
-        if key in COMBO_KINDS:
-            price = None
-            if e["legs"]:
-                ids = frozenset(l["selectionId"] for l in e["legs"])
-                price = price_cache.get(ids)
-                if price == "pending":
-                    price = None
-            if price:
-                out["matched"] = True
-                out["via"] = "sgp"
-                out["dk_american"] = price.get("sgpOdds")
-                out["dk_decimal"] = price.get("sgpDecimal")
-                out["dk_market"] = "SGP: " + " + ".join(
-                    l.get("marketName", "") for l in e["legs"])
-                out["dk_label"] = " + ".join(
-                    (l.get("label") or l.get("outcomeType") or "") for l in e["legs"])
-            elif e["prebuilt"] and not sgp_only:
-                m = e["prebuilt"]
-                out["matched"] = True
-                out["via"] = "prebuilt"
-                out["dk_american"] = m.get("oddsAmerican")
-                out["dk_decimal"] = m.get("oddsDecimal")
-                out["dk_label"] = m.get("label") or m.get("outcomeType")
-                out["dk_market"] = m.get("marketName")
-                out["isDisabled"] = m.get("isDisabled", False)
-            else:
-                out["matched"] = False
-                sgp_why = ("sgp leg unresolved: " + str(e.get("leg_fail"))
-                           if not e["legs"] else
-                           "dk:sgp_price_unavailable (combination refused or timed out)")
-                # In sgp_only mode a prebuilt straight combo is deliberately not
-                # a match — it isn't an SGP and won't satisfy DK's SGP promo.
-                if sgp_only and e["prebuilt"]:
-                    out["missing"] = (sgp_why +
-                                      "; a prebuilt combo exists but sgp_only is set "
-                                      "(prebuilt straight markets aren't SGPs)")
-                else:
-                    out["missing"] = sgp_why + "; no prebuilt combo market either"
-            results.append(out)
-            continue
-        m = e["prebuilt"]
-        if m:
-            out["matched"] = True
-            out["via"] = "prebuilt"
-            out["dk_american"] = m.get("oddsAmerican")
-            out["dk_decimal"] = m.get("oddsDecimal")
-            out["dk_label"] = m.get("label") or m.get("outcomeType")
-            out["dk_market"] = m.get("marketName")
-            out["isDisabled"] = m.get("isDisabled", False)
-        else:
-            pool = props_by_kind.get(key, [])
-            out["matched"] = False
-            out["missing"] = ("no DK market of this kind" if not pool
-                              else "no selection matched in: " +
-                                   ", ".join(sorted(market_names_by_kind.get(key, []))[:4]))
-        results.append(out)
+    results, had_jobs, truncated = _price_event_combos(
+        md, home, away, candidates, sgp_only=sgp_only)
 
     # Unique fetched market names — the debugging lifeline when DK renames
     # things (the tennis scan shipped blind and burned a day on this).
@@ -3352,7 +3417,7 @@ def find_sgps_worldcup(payload):
             "league_id": games_data.get("leagueId"),
             "home": event.get("homeTeam"), "away": event.get("awayTeam"),
             "available_markets": seen_markets[:80]}
-    if jobs:
+    if had_jobs:
         resp["sgp_price_diag"] = dict(_PRICE_DIAG, http=dict(_PRICE_DIAG["http"]))
     if truncated:
         resp["truncated"] = True
@@ -4025,6 +4090,218 @@ def get_price(selection_ids):
     }
 
 
+def _parse_iso_epoch(s):
+    """Best-effort ISO-8601 -> unix seconds. Returns None on failure."""
+    if not s:
+        return None
+    import datetime
+    t = str(s).strip().replace("Z", "+00:00")
+    try:
+        return datetime.datetime.fromisoformat(t).timestamp()
+    except Exception:
+        pass
+    for fmt in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M%z", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            return datetime.datetime.strptime(t, fmt).timestamp()
+        except Exception:
+            continue
+    return None
+
+
+def _dk_games_for_league(key, attempts=2):
+    """Fetch one league's DK games with a SHORT retry budget so a blocked league
+    (Akamai 403 from a flagged IP) fails fast instead of burning the sweep's
+    time budget. Returns (events_list, error_str)."""
+    entry = _soccer_league(key)
+    lid = entry.get("dk_id")
+    if not lid:
+        return None, "no dk_id configured"
+    try:
+        r = _get_with_retry(f"{DK_LEAGUES}/{lid}", attempts=attempts, timeout=12)
+    except Exception as e:
+        return None, str(e)[:160]
+    out = []
+    for e in r.json().get("events", []) or []:
+        parts = e.get("participants", []) or []
+        home = next((p for p in parts if p.get("venueRole") == "Home"), None) or (parts[0] if parts else {})
+        away = next((p for p in parts if p.get("venueRole") == "Away"), None) or (parts[1] if len(parts) > 1 else {})
+        out.append({"id": _ev_id(e),
+                    "homeTeam": (home or {}).get("name", ""),
+                    "awayTeam": (away or {}).get("name", ""),
+                    "hasSGP": "SGP" in (e.get("tags", []) or [])})
+    return out, None
+
+
+def find_sgps_soccer_all(payload):
+    """One-button sweep of the major soccer leagues: every upcoming game's
+    Pinnacle combo fair lines (BTTS/Total, BTTS/Winner, Winner/Total,
+    Odd-Even/Total, HT/FT) vs DK's real 2-leg SGP price, as one flat EV-ranked
+    list. No league/game picking.
+
+    The Pinnacle side always works (guest API). The DK side is best-effort: if
+    DK's Akamai edge 403s this server's IP, DK is marked unavailable and rows
+    still carry Pinnacle fair lines (the price to beat).
+
+    Input (all optional): { sgp_only, max_games, window_hours, leagues[],
+                            deadline_s }
+    """
+    payload = payload or {}
+    sgp_only = payload.get("sgp_only", True)
+    max_games = int(payload.get("max_games", 24))
+    window_hours = float(payload.get("window_hours", 72))
+    leagues = payload.get("leagues") or MAJOR_SOCCER_LEAGUES
+    deadline = _time.monotonic() + float(payload.get("deadline_s", 95))
+    now = _time.time()
+    lo, hi = now - 3 * 3600, now + window_hours * 3600
+
+    # --- Phase 1: Pinnacle games per league (concurrent) ---
+    def _pin_games(key):
+        try:
+            g = pinnacle_wc_games(league=key)
+            return key, g.get("matches", []), None
+        except Exception as e:
+            return key, [], str(e)[:120]
+
+    league_errors = {}
+    all_games = []  # (kickoff_epoch, league_key, match)
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        for key, matches, err in ex.map(_pin_games, leagues):
+            if err:
+                league_errors[key] = "pinnacle: " + err
+            for m in matches:
+                ep = _parse_iso_epoch(m.get("startTime"))
+                if ep is None or (lo <= ep <= hi):
+                    all_games.append(((ep or hi), key, m))
+    all_games.sort(key=lambda t: t[0])
+    all_games = all_games[:max_games]
+
+    # --- Phase 2: Pinnacle specials -> combo candidates per game (concurrent) ---
+    def _specials(item):
+        ep, key, m = item
+        try:
+            spec = pinnacle_wc_specials(m["id"])
+            if spec.get("error"):
+                return item, None, spec["error"]
+            return item, spec, None
+        except Exception as e:
+            return item, None, str(e)[:120]
+
+    games = []
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        for item, spec, err in ex.map(_specials, all_games):
+            ep, key, m = item
+            if not spec:
+                continue
+            home, away = spec.get("home") or m.get("home"), spec.get("away") or m.get("away")
+            cands = []
+            for g in spec.get("groups", []):
+                if g.get("kind") not in _SOCCER_COMBO_KINDS:
+                    continue
+                for i, s in enumerate(g.get("sels", [])):
+                    if s.get("fair_prob") is None or not s.get("fields"):
+                        continue
+                    c = {"id": g["key"] + ":" + str(i), "market_key": g["kind"],
+                         "group_label": g.get("label", ""),
+                         "selection": s.get("name", ""),
+                         "pin_american": s.get("odds"),
+                         "fair_american": s.get("fair_american"),
+                         "fair_prob": s.get("fair_prob")}
+                    c.update(s["fields"])
+                    cands.append(c)
+            if cands:
+                games.append({"key": key, "home": home, "away": away,
+                              "game": (away or "?") + " @ " + (home or "?"),
+                              "start": m.get("startTime", ""), "candidates": cands})
+
+    # --- Phase 3: DK match + price per league (best-effort, IP-block-aware) ---
+    dk_events_by_league = {}
+    dk_error_by_league = {}
+    dk_blocked = False
+    leagues_with_games = [k for k in leagues if any(g["key"] == k for g in games)]
+    for key in leagues_with_games:
+        if dk_blocked:
+            dk_error_by_league[key] = "skipped (DK unreachable from this IP)"
+            continue
+        evs, err = _dk_games_for_league(key)
+        if err:
+            dk_error_by_league[key] = err
+            if not dk_events_by_league:   # first failure, no prior success => IP block
+                dk_blocked = True
+            continue
+        dk_events_by_league[key] = evs
+
+    def _amer_to_dec(a):
+        try:
+            a = float(str(a).replace("−", "-"))
+        except (TypeError, ValueError):
+            return None
+        return 1 + (a / 100.0 if a > 0 else 100.0 / -a)
+
+    rows = []
+    priced_any = False
+    for g in games:
+        dk_result_by_id = {}
+        dk_status = "blocked" if (dk_blocked or g["key"] not in dk_events_by_league) else None
+        if dk_status is None:
+            event = _event_for_soccer_match(g["home"], g["away"], dk_events_by_league[g["key"]])
+            if not event:
+                dk_status = "no_dk_event"
+            elif _time.monotonic() >= deadline:
+                dk_status = "deadline"
+            else:
+                try:
+                    md = get_markets(event["id"], soccer_only=True)
+                    res, _hj, _tr = _price_event_combos(
+                        md, g["home"], g["away"], g["candidates"],
+                        sgp_only=sgp_only, deadline=deadline)
+                    dk_result_by_id = {r["id"]: r for r in res}
+                    dk_status = "scanned"
+                except Exception as e:
+                    dk_status = "dk_error:" + str(e)[:60]
+        lg_label = _soccer_league(g["key"]).get("label", g["key"])
+        for c in g["candidates"]:
+            row = {"league": lg_label, "game": g["game"], "start": g["start"],
+                   "market_key": c["market_key"], "group_label": c["group_label"],
+                   "selection": c["selection"], "pin_american": c["pin_american"],
+                   "fair_american": c["fair_american"], "fair_prob": c["fair_prob"],
+                   "dk_american": None, "dk_decimal": None, "ev_pct": None,
+                   "kelly_pct": None, "via": None, "dk_status": dk_status}
+            dr = dk_result_by_id.get(c["id"])
+            if dr and dr.get("matched"):
+                dec = dr.get("dk_decimal")
+                if not dec or dec <= 1:
+                    dec = _amer_to_dec(dr.get("dk_american"))
+                row["dk_american"] = dr.get("dk_american")
+                row["dk_decimal"] = dec
+                row["via"] = dr.get("via")
+                if dec and dec > 1:
+                    row["ev_pct"] = (c["fair_prob"] * dec - 1) * 100
+                    row["kelly_pct"] = (c["fair_prob"] * dec - 1) / (dec - 1) * 100
+                    priced_any = True
+                row["dk_status"] = "priced"
+            elif dr:
+                row["dk_status"] = "no_match"
+            rows.append(row)
+
+    def _sort_key(r):
+        if r["ev_pct"] is not None:
+            return (0, -r["ev_pct"])
+        if r["dk_american"] is not None:
+            return (1, 0)
+        return (2, -(r["fair_prob"] or 0))
+    rows.sort(key=_sort_key)
+
+    summary = {
+        "leagues_swept": len(leagues), "games_found": len(all_games),
+        "games_with_candidates": len(games), "rows": len(rows),
+        "dk_blocked": dk_blocked, "dk_priced_any": priced_any,
+        "dk_errors": dk_error_by_league, "pinnacle_errors": league_errors,
+    }
+    if games:
+        summary["sgp_price_diag"] = dict(_PRICE_DIAG, http=dict(_PRICE_DIAG["http"]))
+    return {"rows": rows, "summary": summary, "sgp_only": bool(sgp_only)}
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print(json.dumps({"error": "Usage: dk_api.py <games|markets|featured|price|games-tennis|find-sgps-tennis> [args]"}))
@@ -4089,6 +4366,10 @@ if __name__ == "__main__":
             stdin_data = sys.stdin.read().strip()
             payload = json.loads(stdin_data) if stdin_data else {}
             result = find_sgps_worldcup(payload)
+        elif cmd == "find-sgps-soccer-all":
+            stdin_data = sys.stdin.read().strip()
+            payload = json.loads(stdin_data) if stdin_data else {}
+            result = find_sgps_soccer_all(payload)
         elif cmd == "pinnacle-wc-games":
             # arg may be a numeric Pinnacle league id or a registry key.
             arg = sys.argv[2] if len(sys.argv) >= 3 else None
