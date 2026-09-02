@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-01T15:41:37.917528Z",
+  "generated_at": "2026-09-02T15:08:19.099440Z",
   "source": "ESPN WNBA public API",
   "seasons": [
     2024,
@@ -18,13 +18,13 @@
   "min_games_reportable": 20,
   "min_mpg_included": 0.0,
   "schedule_today": {
-    "date": "20260901",
+    "date": "20260902",
     "team_ids": [],
     "games": []
   },
-  "n_players": 203,
+  "n_players": 202,
   "n_players_reportable": 176,
-  "total_game_rows": 13949,
+  "total_game_rows": 13943,
   "players": [
     {
       "athlete_id": "3149391",
@@ -2100,7 +2100,7 @@
       "playing_today": false
     },
     {
-      "athlete_id": "5349415",
+      "athlete_id": "5208985",
       "name": "Alicia Florez",
       "position": "G",
       "team_id": "16",
@@ -74240,147 +74240,6 @@
           "pts": 0,
           "reb": 3,
           "ast": 1,
-          "tpm": 0
-        }
-      ],
-      "playing_today": false
-    },
-    {
-      "athlete_id": "4433542",
-      "name": "Saylor Poffenbarger",
-      "position": "G",
-      "team_id": "11",
-      "team_abbr": "PHX",
-      "team_name": "Phoenix Mercury",
-      "n_games": 6,
-      "effective_n": null,
-      "min_mean": 6.7,
-      "games_by_season": {
-        "2026": 6
-      },
-      "latest_season": "2026",
-      "pts_mean": 0.0,
-      "reb_mean": 1.33,
-      "ast_mean": 0.17,
-      "tpm_mean": 0.0,
-      "pts_mean_weighted": 0.0,
-      "pts_reb": {
-        "unweighted": {
-          "r": null,
-          "p_value": null
-        },
-        "weighted": {
-          "r": null,
-          "p_value": null
-        }
-      },
-      "pts_ast": {
-        "unweighted": {
-          "r": null,
-          "p_value": null
-        },
-        "weighted": {
-          "r": null,
-          "p_value": null
-        }
-      },
-      "pts_3pm": {
-        "unweighted": {
-          "r": null,
-          "p_value": null
-        },
-        "weighted": {
-          "r": null,
-          "p_value": null
-        }
-      },
-      "by_season": {
-        "2026": {
-          "games": 6,
-          "min_mean": 6.7,
-          "pts_mean": 0.0,
-          "reb_mean": 1.33,
-          "ast_mean": 0.17,
-          "tpm_mean": 0.0,
-          "pts_reb": {
-            "r": null,
-            "p_value": null
-          },
-          "pts_ast": {
-            "r": null,
-            "p_value": null
-          },
-          "pts_3pm": {
-            "r": null,
-            "p_value": null
-          }
-        }
-      },
-      "latest_games": [
-        {
-          "d": "2026-05-29",
-          "opp": "MIN",
-          "loc": "vs",
-          "res": "L",
-          "min": 1,
-          "pts": 0,
-          "reb": 0,
-          "ast": 0,
-          "tpm": 0
-        },
-        {
-          "d": "2026-06-02",
-          "opp": "WSH",
-          "loc": "@",
-          "res": "L",
-          "min": 6,
-          "pts": 0,
-          "reb": 3,
-          "ast": 0,
-          "tpm": 0
-        },
-        {
-          "d": "2026-06-05",
-          "opp": "CON",
-          "loc": "vs",
-          "res": "W",
-          "min": 6,
-          "pts": 0,
-          "reb": 0,
-          "ast": 0,
-          "tpm": 0
-        },
-        {
-          "d": "2026-06-07",
-          "opp": "TOR",
-          "loc": "@",
-          "res": "L",
-          "min": 8,
-          "pts": 0,
-          "reb": 3,
-          "ast": 1,
-          "tpm": 0
-        },
-        {
-          "d": "2026-06-22",
-          "opp": "CON",
-          "loc": "@",
-          "res": "L",
-          "min": 5,
-          "pts": 0,
-          "reb": 0,
-          "ast": 0,
-          "tpm": 0
-        },
-        {
-          "d": "2026-08-30",
-          "opp": "TOR",
-          "loc": "vs",
-          "res": "W",
-          "min": 14,
-          "pts": 0,
-          "reb": 2,
-          "ast": 0,
           "tpm": 0
         }
       ],
