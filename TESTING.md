@@ -31,6 +31,19 @@ python3 scripts/nba_dk_match_tests.py
 # enumeration, null-dkDecimal FV math, low→high FV odds sort.
 # Expected final line: "All FV-fallback smoke checks passed."
 node scripts/smoke_fv_fallback.js
+
+# DK retry layer: a TLS profile the egress resets (curl 35) is retired and
+# skipped without burning the attempt budget; timeouts stay transient.
+# Landed 2026-09-03. Expected final line:
+# "ALL TLS ROTATION SMOKE CHECKS PASSED"
+python3 scripts/smoke_dk_tls_rotation.py
+
+# Soccer SGP: league registry + club aliases + BTTS/Total leg resolution,
+# then the one-button sweep's aggregation and DK-down/DK-blocked degradation.
+# Expected final lines: "ALL SMOKE CHECKS PASSED" and
+# "ALL SWEEP SMOKE CHECKS PASSED"
+python3 scripts/smoke_soccer_epl.py
+python3 scripts/smoke_soccer_sweep.py
 ```
 
 Neither needs jsdom or a running server — both eval the NBA module in a

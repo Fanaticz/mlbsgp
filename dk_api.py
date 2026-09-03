@@ -19,6 +19,7 @@ import threading
 import time as _time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from curl_cffi import requests as cffi_requests
+from curl_cffi.requests import exceptions as cffi_exceptions
 
 DK_MLB_LEAGUE_ID = "84240"
 # NBA league ID on DraftKings' nav endpoint. Override-able via env if DK
@@ -134,6 +135,13 @@ DK_PRICE_HEADERS = {
 # "chrome" stays under the radar. We round-robin in this order on each rotate
 # rather than random.choice'ing — guarantees we exhaust all fingerprints in
 # at most N attempts instead of stochastically retrying the bad ones.
+#
+# The flip side: some egress paths reset the newest "chrome" ClientHello at
+# the transport layer (curl error 35, before any HTTP). That is handled at
+# runtime — a profile that resets is retired for the process and skipped by
+# rotation (see _dead_profiles) — so the order above stays Akamai-optimal
+# without hard-coding around any one network. DK_IMPERSONATE still pins the
+# list outright when you already know what an egress accepts.
 _IMPERSONATES = ["chrome", "chrome120", "chrome116", "chrome110", "chrome107",
                  "chrome101", "edge101", "edge99", "safari17_2_ios"]
 # Optional override (comma-separated curl_cffi profiles), e.g.
@@ -162,7 +170,12 @@ def _new_session(imp):
     kw = {"impersonate": imp}
     if _PROXIES:
         kw["proxies"] = _PROXIES
-    return cffi_requests.Session(**kw)
+    s = cffi_requests.Session(**kw)
+    # Remember which fingerprint this session speaks so a retry loop can
+    # retire the profile *it* failed on — not whichever happens to be current
+    # by the time it reports back (worker threads race through here).
+    s._dk_impersonate = imp
+    return s
 
 
 session = _new_session(_IMPERSONATES[0])
@@ -173,10 +186,68 @@ session = _new_session(_IMPERSONATES[0])
 _cooloff_until = 0.0
 
 
-def _rotate_session():
+# Fingerprints this process has proven cannot even complete a TLS handshake
+# on its egress. Some intermediaries (corporate/agent proxies, certain
+# datacenter routes) reset the newest "chrome" ClientHello outright — curl
+# error 35, before any HTTP happens — and that is deterministic per profile:
+# retrying the same fingerprint can never succeed, unlike a timeout or a DNS
+# blip. The retry loops used to rotate only on a 403 *status*, never on an
+# exception, so a "chrome"-first egress burned every attempt on the dead
+# profile and could not scrape at all. Rotation now skips retired profiles;
+# if every profile ends up retired the set is cleared so we cycle rather
+# than deadlock with nothing left to try.
+_dead_profiles = set()
+
+# curl codes that mean "the transport rejected this fingerprint": 35 = SSL
+# connect error (the reset-by-peer case above), 55/56 = send/recv failure
+# during the handshake. Timeouts (28), DNS (6), refused (7) are NOT profile
+# faults — the same profile may well succeed on the next try.
+_PROFILE_FAULT_CURL_CODES = (35, 55, 56)
+
+
+def _is_profile_fault(exc):
+    """True when `exc` is a TLS/impersonation-level failure the same
+    fingerprint will hit again, so the caller should retire that profile and
+    rotate immediately instead of sleeping and re-sending on it."""
+    if isinstance(exc, cffi_exceptions.ImpersonateError):
+        return True
+    return getattr(exc, "code", None) in _PROFILE_FAULT_CURL_CODES
+
+
+def _retire_profile(sess, exc):
+    """Retire the fingerprint `sess` used and swap in the next live one.
+    Returns True when `exc` was a profile fault (and so was handled by
+    rotation); False means it was transient and the caller should back off."""
+    if not _is_profile_fault(exc):
+        return False
+    _rotate_session(retire=getattr(sess, "_dk_impersonate", None))
+    return True
+
+
+def _tls_diag():
+    """Which fingerprint the shared session speaks now, and which ones this
+    process gave up on — surfaced next to the cookie diag so an empty +EV
+    state can say "your egress resets chrome/chrome120" without shell access."""
+    with _session_lock:
+        return {"tls_profile": getattr(session, "_dk_impersonate", None),
+                "dead_profiles": sorted(_dead_profiles)}
+
+
+def _rotate_session(retire=None):
     global session, _imp_idx
     with _session_lock:
-        _imp_idx = (_imp_idx + 1) % len(_IMPERSONATES)
+        if retire:
+            _dead_profiles.add(retire)
+            if len(_dead_profiles) >= len(_IMPERSONATES):
+                _dead_profiles.clear()
+            # A sibling thread that hit the same reset may already have moved
+            # us off that profile; the session it built is good as-is.
+            if _IMPERSONATES[_imp_idx] != retire:
+                return
+        for _ in range(len(_IMPERSONATES)):
+            _imp_idx = (_imp_idx + 1) % len(_IMPERSONATES)
+            if _IMPERSONATES[_imp_idx] not in _dead_profiles:
+                break
         fresh = _new_session(_IMPERSONATES[_imp_idx])
         # Carry the cookie jar over: Akamai clearance cookies (_abck/bm_sz on
         # .draftkings.com) are what let the pricing POSTs through, and losing
@@ -360,11 +431,17 @@ def _legacy_warmup():
         if _warmup_done:
             return
         _warmup_done = True
+    sess = session
     try:
-        session.get("https://sportsbook.draftkings.com/", timeout=10,
-                    headers={"Accept": "text/html,application/xhtml+xml"})
-    except Exception:
-        pass
+        sess.get("https://sportsbook.draftkings.com/", timeout=10,
+                 headers={"Accept": "text/html,application/xhtml+xml"})
+    except Exception as e:
+        # A reset here means the profile is dead for the real requests too;
+        # retire it now so the first market GET doesn't rediscover it.
+        try:
+            _retire_profile(sess, e)
+        except Exception:
+            pass
 
 
 def _trigger_cooloff(seconds):
@@ -412,10 +489,16 @@ def _get_with_retry_inner(url, params=None, timeout=15, attempts=6):
       - back off with jitter."""
     last_exc = None
     last_status = None
-    for attempt in range(attempts):
+    attempt = 0
+    # A profile fault (the transport resetting this fingerprint) is fixed by
+    # rotating, not by waiting, so it doesn't consume an attempt — otherwise a
+    # 2-attempt caller like the soccer sweep dies before reaching a live
+    # profile. Bounded by the profile count so a fully-dead list terminates.
+    faults = 0
+    while attempt < attempts:
         _wait_for_cooloff()
+        sess = session
         try:
-            sess = session
             r = sess.get(url, params=params, timeout=timeout)
             last_status = r.status_code
             if r.status_code == 200:
@@ -427,13 +510,17 @@ def _get_with_retry_inner(url, params=None, timeout=15, attempts=6):
                     if attempt >= 1:
                         _rotate_session()
                 _time.sleep(0.6 * (2 ** attempt) + random.uniform(0, 0.4))
+                attempt += 1
                 continue
             # Any other non-200 is unrecoverable
             r.raise_for_status()
         except Exception as e:
             last_exc = e
+            if faults < len(_IMPERSONATES) and _retire_profile(sess, e):
+                faults += 1
+                continue
             _time.sleep(0.6 * (2 ** attempt) + random.uniform(0, 0.4))
-            continue
+        attempt += 1
     if last_exc:
         raise last_exc
     raise RuntimeError(f"DK request failed after {attempts} attempts: {url} (last status={last_status})")
@@ -453,10 +540,12 @@ def _post_with_retry(url, json=None, timeout=15, attempts=4, headers=None):
     _warm_dk_cookies()
     last_exc = None
     r = None
-    for attempt in range(attempts):
+    attempt = 0
+    faults = 0  # profile faults rotate for free; see _get_with_retry_inner
+    while attempt < attempts:
         _wait_for_cooloff()
+        sess = session
         try:
-            sess = session
             r = sess.post(url, json=json, timeout=timeout, headers=headers)
             if r.status_code not in (403, 429, 502, 503, 504):
                 return r
@@ -467,7 +556,11 @@ def _post_with_retry(url, json=None, timeout=15, attempts=4, headers=None):
             _time.sleep(0.6 * (2 ** attempt) + random.uniform(0, 0.4))
         except Exception as e:
             last_exc = e
+            if faults < len(_IMPERSONATES) and _retire_profile(sess, e):
+                faults += 1
+                continue
             _time.sleep(0.6 * (2 ** attempt) + random.uniform(0, 0.4))
+        attempt += 1
     if r is not None:
         return r
     raise last_exc if last_exc else RuntimeError(f"DK POST failed: {url}")
@@ -3418,7 +3511,7 @@ def find_sgps_worldcup(payload):
             "home": event.get("homeTeam"), "away": event.get("awayTeam"),
             "available_markets": seen_markets[:80]}
     if had_jobs:
-        resp["sgp_price_diag"] = dict(_PRICE_DIAG, http=dict(_PRICE_DIAG["http"]))
+        resp["sgp_price_diag"] = dict(_PRICE_DIAG, http=dict(_PRICE_DIAG["http"]), **_tls_diag())
     if truncated:
         resp["truncated"] = True
     return resp
@@ -3450,10 +3543,13 @@ _PIN_SPECIAL_KEYS = [
 def _pin_get(path, attempts=4):
     headers = {"X-API-Key": PIN_GUEST_KEY, "Accept": "application/json"}
     last_err = None
-    for i in range(attempts):
+    i = 0
+    faults = 0  # profile faults rotate for free; see _get_with_retry_inner
+    while i < attempts:
         _wait_for_cooloff()
+        sess = session
         try:
-            r = session.get(f"{PIN_API}{path}", headers=headers, timeout=15)
+            r = sess.get(f"{PIN_API}{path}", headers=headers, timeout=15)
             if r.status_code == 200:
                 return r.json()
             last_err = f"HTTP {r.status_code}"
@@ -3462,7 +3558,11 @@ def _pin_get(path, attempts=4):
                 _rotate_session()
         except Exception as e:
             last_err = str(e)
+            if faults < len(_IMPERSONATES) and _retire_profile(sess, e):
+                faults += 1
+                continue
         _time.sleep(0.5 * (i + 1))
+        i += 1
     raise RuntimeError(f"pinnacle GET {path} failed: {last_err}")
 
 
@@ -4036,7 +4136,7 @@ def find_sgps(legs, enum_size=2):
     # Same diagnosability the World Cup path got in the 2026-07-04 fix: when
     # every combo silently fails to price, the tally says WHY (Akamai 403
     # storm vs incompatible legs vs DK outage) without shell access to prod.
-    out["sgp_price_diag"] = dict(_PRICE_DIAG, http=dict(_PRICE_DIAG["http"]))
+    out["sgp_price_diag"] = dict(_PRICE_DIAG, http=dict(_PRICE_DIAG["http"]), **_tls_diag())
     return out
 
 
@@ -4298,7 +4398,7 @@ def find_sgps_soccer_all(payload):
         "dk_errors": dk_error_by_league, "pinnacle_errors": league_errors,
     }
     if games:
-        summary["sgp_price_diag"] = dict(_PRICE_DIAG, http=dict(_PRICE_DIAG["http"]))
+        summary["sgp_price_diag"] = dict(_PRICE_DIAG, http=dict(_PRICE_DIAG["http"]), **_tls_diag())
     return {"rows": rows, "summary": summary, "sgp_only": bool(sgp_only)}
 
 
