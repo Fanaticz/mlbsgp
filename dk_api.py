@@ -538,6 +538,9 @@ def _post_with_retry(url, json=None, timeout=15, attempts=4, headers=None):
     semantics. On exhaustion, return the last response (status tallies feed
     _PRICE_DIAG) or raise if we never got one."""
     _warm_dk_cookies()
+    # Both callers today are the calculateBets endpoint; gate the breaker on the
+    # host so a future non-pricing POST doesn't inherit it.
+    is_price = DK_PRICE_HOST in str(url)
     last_exc = None
     r = None
     attempt = 0
@@ -547,7 +550,14 @@ def _post_with_retry(url, json=None, timeout=15, attempts=4, headers=None):
         sess = session
         try:
             r = sess.post(url, json=json, timeout=timeout, headers=headers)
+            if is_price:
+                _note_price_status(r.status_code)
             if r.status_code not in (403, 429, 502, 503, 504):
+                return r
+            # A tripped breaker means the remaining attempts would only collect
+            # more 403s; hand back the response so the 403 still lands in the
+            # diag tally, just without burning the backoff.
+            if is_price and _price_blocked():
                 return r
             if r.status_code in (403, 429):
                 _trigger_cooloff(1.5 + attempt * 1.2)
@@ -1052,11 +1062,65 @@ def _american_from_decimal(dec):
 # API response without shell access to production — find_sgps_worldcup
 # returns a snapshot as `sgp_price_diag`.
 _PRICE_DIAG = {"calls": 0, "ok": 0, "incompatible": 0, "no_bet": 0,
-               "exceptions": 0, "http": {}, "cookie_source": None, "abck": None}
+               "exceptions": 0, "http": {}, "cookie_source": None, "abck": None,
+               "breaker_tripped": False, "skipped_blocked": 0}
+
+# calculateBets circuit breaker.
+#
+# When Akamai has scored the egress IP, EVERY pricing POST 403s — a validated
+# cookie doesn't help (that is the "IP-flagged" case the soccer status line
+# calls out). The sweep prices up to ~30 combos, each retried 4× with backoff,
+# behind a 95s deadline, so a blocked IP spent the entire budget re-POSTing
+# into the block and then reported rows as "deadline" — which reads as "slow,
+# try again" when the truth is "this IP can't price, set DK_PROXY". Observed
+# 2026-09-03: 27 of 29 calls 403, 103s elapsed, 87 rows marked deadline.
+#
+# So: once this many pricing 403s land back-to-back, stop POSTing for the rest
+# of the process and report the rows honestly. ANY success resets the streak,
+# which is what separates a hard block from mere rate-limiting — a flagged-but-
+# not-blocked IP (a couple through, then a burst of 403s) keeps pricing instead
+# of being written off after the first bad patch. Tune with
+# DK_PRICE_BREAKER_403S; 0 disables the breaker entirely.
+try:
+    _PRICE_BREAKER_403S = int(_os.environ.get("DK_PRICE_BREAKER_403S", "12") or 12)
+except ValueError:
+    _PRICE_BREAKER_403S = 12
+_price_breaker = {"streak": 0, "tripped": False}
+_price_breaker_lock = threading.Lock()
+
+
+def _price_blocked():
+    """True once the breaker has tripped — callers should skip the POST."""
+    if _PRICE_BREAKER_403S <= 0:
+        return False
+    with _price_breaker_lock:
+        return _price_breaker["tripped"]
+
+
+def _note_price_status(status):
+    """Feed a pricing response's status to the breaker. 403 extends the streak
+    (and trips at the threshold); anything else clears it, because a served
+    response proves this IP can still price."""
+    if _PRICE_BREAKER_403S <= 0:
+        return
+    with _price_breaker_lock:
+        if status == 403:
+            _price_breaker["streak"] += 1
+            if (not _price_breaker["tripped"]
+                    and _price_breaker["streak"] >= _PRICE_BREAKER_403S):
+                _price_breaker["tripped"] = True
+                _PRICE_DIAG["breaker_tripped"] = True
+        else:
+            _price_breaker["streak"] = 0
 
 
 def _price_combo(selection_ids):
     """Call calculateBets for a list of selection IDs. Returns None on incompat/error."""
+    # Blocked IP: skip the POST entirely rather than spend the caller's deadline
+    # rediscovering the block once per combo.
+    if _price_blocked():
+        _PRICE_DIAG["skipped_blocked"] += 1
+        return None
     _PRICE_DIAG["calls"] += 1
     try:
         payload = {
@@ -3366,6 +3430,10 @@ def _price_event_combos(md, home, away, candidates, sgp_only=False, deadline=Non
 
     def _price_job(ids):
         return ids, _price_combo(sorted(ids))
+    # Breaker already tripped by an earlier game in the sweep: don't stand up a
+    # thread pool whose only product is 403s. The rows report price_blocked.
+    if jobs and _price_blocked():
+        jobs = []
     if jobs:
         with ThreadPoolExecutor(max_workers=8) as ex:
             futs = [ex.submit(_price_job, j) for j in jobs]
@@ -3413,6 +3481,12 @@ def _price_event_combos(md, home, away, candidates, sgp_only=False, deadline=Non
                 out["isDisabled"] = m.get("isDisabled", False)
             else:
                 out["matched"] = False
+                # Legs resolved but DK never priced them because this IP is
+                # blocked — a different problem from a leg that didn't match,
+                # and the only one a proxy fixes. Flag it so the caller can say
+                # so instead of reporting "no match".
+                if e["legs"] and _price_blocked():
+                    out["price_blocked"] = True
                 sgp_why = ("sgp leg unresolved: " + str(e.get("leg_fail"))
                            if not e["legs"] else
                            "dk:sgp_price_unavailable (combination refused or timed out)")
@@ -4346,6 +4420,11 @@ def find_sgps_soccer_all(payload):
             event = _event_for_soccer_match(g["home"], g["away"], dk_events_by_league[g["key"]])
             if not event:
                 dk_status = "no_dk_event"
+            elif _price_blocked() and not priced_any:
+                # Every pricing POST is 403ing and nothing has priced all
+                # sweep: the remaining games can't do better, so skip their
+                # market fetches too and finish now with an honest status.
+                dk_status = "pricing_blocked"
             elif _time.monotonic() >= deadline:
                 dk_status = "deadline"
             else:
@@ -4380,7 +4459,7 @@ def find_sgps_soccer_all(payload):
                     priced_any = True
                 row["dk_status"] = "priced"
             elif dr:
-                row["dk_status"] = "no_match"
+                row["dk_status"] = "pricing_blocked" if dr.get("price_blocked") else "no_match"
             rows.append(row)
 
     def _sort_key(r):

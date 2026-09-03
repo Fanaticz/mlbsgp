@@ -38,6 +38,12 @@ node scripts/smoke_fv_fallback.js
 # "ALL TLS ROTATION SMOKE CHECKS PASSED"
 python3 scripts/smoke_dk_tls_rotation.py
 
+# calculateBets circuit breaker: consecutive-403 trip, streak reset on any
+# success (rate-limited != blocked), no-POST-once-tripped, and the sweep
+# reporting pricing_blocked instead of deadline. Landed 2026-09-03.
+# Expected final line: "ALL PRICE BREAKER SMOKE CHECKS PASSED"
+python3 scripts/smoke_dk_price_breaker.py
+
 # Soccer SGP: league registry + club aliases + BTTS/Total leg resolution,
 # then the one-button sweep's aggregation and DK-down/DK-blocked degradation.
 # Expected final lines: "ALL SMOKE CHECKS PASSED" and
