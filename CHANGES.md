@@ -1,5 +1,17 @@
 # Changes
 
+## 2026-09-03 session
+
+### DK soccer lines: scraping works again on egress paths that reset the "chrome" TLS profile
+Symptom: the soccer sweep — and every other DK call — died after ~30s with `curl: (35) Recv failure: Connection reset by peer`, even though DK itself was reachable: the games feed answered 200 the moment a different fingerprint was used. The root cause was in our retry layer, not at DK. `_IMPERSONATES` leads with the newest `chrome` profile (deliberately — Akamai 503s the pinned versions on some IPs), some intermediaries reset that ClientHello at the transport layer before any HTTP happens, and `_get_with_retry_inner` / `_post_with_retry` / `_pin_get` only rotated the fingerprint on a 403 *status*. A reset arrives as an *exception*, so every attempt re-sent on the same dead profile and the scrape could never reach the profiles that work.
+
+- **`dk_api.py`** — a profile fault (curl 35/55/56, `ImpersonateError`) now **retires** that fingerprint for the process (`_dead_profiles`) and rotates immediately, without charging the attempt — so the sweep's per-league `attempts=2` still reaches a live profile. Retired profiles are skipped by every later rotation (403-driven ones and wrap-around included); if every profile dies the set clears so we cycle rather than deadlock. Timeouts, DNS and refused stay transient (same profile, normal backoff). Each session is tagged with its profile so a worker thread retires the one *it* failed on, not whichever is current when it reports back. The homepage cookie warmup retires a reset profile too, so the first market GET doesn't rediscover it. `_IMPERSONATES` order is unchanged — the Akamai rationale still holds and runtime retirement makes it safe on any network — and `DK_IMPERSONATE` still pins the list outright.
+- **Diag** — `sgp_price_diag` now also carries `tls_profile` (what the shared session speaks) and `dead_profiles` (what this process gave up on), so an empty +EV state can be told apart from a cookie problem without shell access.
+
+Verified: new `scripts/smoke_dk_tls_rotation.py` (fault classifier, no-attempt-cost retirement, wrap-around skipping, timeout-is-transient, all-dead termination, thread-race no-op, POST/Pinnacle/warmup parity, diag); the existing EPL + sweep smokes still pass; and live with the **default** config (no env pin) the previously failing EPL games call returns the full slate, with a multi-league sweep rendering the Pinnacle fair board and resolving DK legs. Also confirmed live in passing: all 13 league ids in the registry still resolve to the right DK competitions (SGP-tagged games in every one), the per-event market feed still parses every soccer kind, and Pinnacle's combo groups (BTTS×Total, BTTS×Winner, Winner×Total, Odd/Even×Total, HT/FT) all devig with 20/20 club names matching across books.
+
+**Unchanged, and worth restating:** `calculateBets` still sits behind Akamai's *validated* `_abck` gate — from a datacenter egress it 403s with `abck=unvalidated`, exactly as documented in the 2026-08 entries. So without a cookie the sweep shows Pinnacle fair lines with DK legs resolved but no combined DK SGP price; paste `DK_COOKIES` (soccer tab → DK cookie box) and real pricing layers in. Nothing in this change touches that gate.
+
 ## 2026-08-24 session
 
 ### Soccer: one-button "Scrape SGPs" sweep across all major leagues
