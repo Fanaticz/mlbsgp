@@ -84,15 +84,27 @@
     var http = diag.http || {};
     var n403 = (http['403'] || 0) + (http['429'] || 0);
     var level, msg;
+    var skipped = diag.skipped_blocked || 0;
     if (s.dk_priced_any) {
       level = 'ok';
       msg = '✅ DK SGP pricing live — priced ' + (diag.ok || 0) + ' combo(s). EV% is DK vs Pinnacle fair.';
-    } else if (s.dk_blocked || n403 > 0) {
+      // Partial pricing: a few got through, then Akamai started 403ing and the
+      // breaker stopped the rest. Say so, or "priced 2 combo(s)" out of a
+      // hundred rows looks like the other 98 simply didn't match.
+      if (diag.breaker_tripped || skipped > 0) {
+        level = 'warn';
+        msg += ' Then DK started refusing (Akamai 403) and pricing stopped early, so ' + skipped +
+          ' combo(s) went unpriced — this IP is rate-limited. A residential proxy (DK_PROXY) prices the full board.';
+      }
+    } else if (s.dk_blocked || n403 > 0 || skipped > 0) {
       var abck = diag.abck || 'absent';
       if (abck === 'validated') {
         level = 'warn';
         msg = '⚠ DK blocked this server\'s IP (Akamai 403) despite a validated cookie — showing Pinnacle fair lines only. ' +
           'A residential proxy for DK is the remaining lever.';
+        if (diag.breaker_tripped) {
+          msg += ' (Stopped after ' + n403 + ' refused price call(s) instead of retrying every combo, so the scrape returns fast.)';
+        }
       } else {
         level = 'err';
         msg = '⛔ DK unreachable (Akamai 403, _abck ' + abck + ') — showing Pinnacle fair lines only. ' +
