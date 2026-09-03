@@ -18,6 +18,14 @@ With the transport fixed, real DK SGP prices came back (verified live: `BTTS Yes
 
 Verified: new `scripts/smoke_dk_price_breaker.py` (20 checks incl. the streak-reset case, non-pricing hosts not gated, breaker disabled via env, and an end-to-end hard-blocked sweep that keeps every Pinnacle fair line and reports `pricing_blocked`); all existing guards still pass.
 
+### Run it locally: auto-detected Python interpreter + `LOCAL_RUN.md`
+Running the app on a home machine sidesteps both DK obstacles at once — a residential IP isn't carrying the datacenter penalty, and the `_abck` cookie is presented from the same IP that earned it (pasting a browser cookie into a server in another state is itself a signal Akamai looks for). The soccer tab needs no local data files; it fetches Pinnacle and DK live per scrape.
+
+- **`server.js`** — the Python helpers were spawned as a hard-coded `python3`. On Windows the launcher is normally `python`, and a bare `python3` can hit the Microsoft Store stub, which surfaced only as an opaque `dk_api.py exited with code 9009`. The interpreter is now resolved once at boot — `PYTHON` env wins, else platform-appropriate candidates (`python`,`python3`,`py` on Windows; `python3`,`python` elsewhere), probed with `--version` and requiring `status === 0` so the Store stub is rejected rather than selected — and logged on startup. Both spawn sites (`dkCall`, the NBA correlations parser) use it.
+- **`LOCAL_RUN.md`** — setup, per-platform pip/interpreter gotchas, the cookie walkthrough, a status-line table, the env-var reference, and the no-auth security note.
+
+Verified end-to-end on a real local boot (`npm ci && npm start`): interpreter resolved and logged, `/api/soccer/leagues` and `/api/soccer/scrape-all` both spawn correctly, and the no-cookie sweep now returns in **22s instead of 103s** with all 87 rows carrying Pinnacle fair lines and reporting `pricing_blocked` (8 pricing calls, 21 skipped by the breaker, vs 29 calls before).
+
 **Unchanged, and worth restating:** `calculateBets` still sits behind Akamai's *validated* `_abck` gate — from a datacenter egress it 403s with `abck=unvalidated`, exactly as documented in the 2026-08 entries. So without a cookie the sweep shows Pinnacle fair lines with DK legs resolved but no combined DK SGP price; paste `DK_COOKIES` (soccer tab → DK cookie box) and real pricing layers in. Nothing in this change touches that gate.
 
 ## 2026-08-24 session

@@ -1643,6 +1643,30 @@ app.post('/api/sgp-insight', async (req, res) => {
 const { execFile } = require('child_process');
 const DK_PY = path.join(__dirname, 'dk_api.py');
 
+// Which interpreter runs the Python helpers. On Linux/macOS (and the Railway
+// image) `python3` is right; on Windows the launcher is usually `python` and
+// `python3` either doesn't exist or is the Store stub that opens a web page —
+// which surfaced as an opaque "dk_api.py exited with code 9009". Resolve it
+// once at boot: PYTHON env wins, else the platform default, and fall back to
+// whichever of python3/python actually answers --version.
+const PYTHON = (function resolvePython() {
+  const explicit = (process.env.PYTHON || '').trim();
+  if (explicit) return explicit;
+  const candidates = process.platform === 'win32'
+    ? ['python', 'python3', 'py']
+    : ['python3', 'python'];
+  for (const cmd of candidates) {
+    try {
+      const probe = require('child_process').spawnSync(cmd, ['--version'], { timeout: 5000 });
+      // A Windows Store stub exits non-zero (or errors) instead of printing a
+      // version, so status===0 is the real check, not merely "no error".
+      if (!probe.error && probe.status === 0) return cmd;
+    } catch (_) { /* try the next candidate */ }
+  }
+  return candidates[0];   // nothing answered; let the spawn fail loudly
+})();
+console.log('Python interpreter: ' + PYTHON + ' (override with PYTHON=...)');
+
 // Runtime DK cookie set from the website (POST /api/dk/cookies) instead of the
 // DK_COOKIES env var — lets you paste a fresh cookie from your phone without a
 // Railway redeploy. Held in memory only (never logged, never written to disk,
@@ -1666,7 +1690,7 @@ function dkCall(args, stdinData) {
     const childEnv = DK_RUNTIME_COOKIES
       ? Object.assign({}, process.env, { DK_COOKIES: DK_RUNTIME_COOKIES })
       : process.env;
-    const proc = require('child_process').spawn('python3', [DK_PY, ...args], {
+    const proc = require('child_process').spawn(PYTHON, [DK_PY, ...args], {
       maxBuffer: 50 * 1024 * 1024,
       timeout: 130000,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -2254,7 +2278,7 @@ const nbaUpload = multer({
 
 function nbaRunPython(args, stdinBuf) {
   return new Promise((resolve, reject) => {
-    const proc = require('child_process').spawn('python3', [NBA_PARSE_PY, ...args], {
+    const proc = require('child_process').spawn(PYTHON, [NBA_PARSE_PY, ...args], {
       timeout: 60000,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, NBA_DATA_DIR },
