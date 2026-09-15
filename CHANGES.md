@@ -10,6 +10,13 @@ Trying to pull an MLB pitcher SGP from a cloud container reproduced the known sh
 
 Findings from this container, for the record: curl_cffi with the `chrome` profile gets `200` on the sportsbook HTML while the wager POST 403s; headless Chromium via Playwright is denied at the homepage outright with the default UA, and with a normal UA loads the page (13 cookies) but `_abck` never leaves `-1` — so `DK_COOKIE_BROWSER` cannot mint from a flagged IP and the probe now says so when that fallback happens. The container also only has direct egress on 443, so a residential `DK_PROXY` used *from here* has to listen on 443; a home machine on a VPN has no such limit.
 
+### `scripts/dk_live_feed.py`: DK's live game-state socket, straight from the source
+DK's event/live pages don't scrape scores — they hold a JSON-RPC 2.0 websocket to `wss://sportsbook-ws-us-<state>.draftkings.com/websocket` (the `SportsbookLeague` class in `@draftkings/dk-data-layer`), one `subscribe` per query (`entity: events`, `queryParams: {query: "$filter=leagueId eq '84240'", initialData, projection: "sportsbook", locale}`), then a stream of `update` messages with `add/change/remove` of events, markets and selections. It is the public sports-data socket, not the Akamai-gated wager endpoint: no cookie, no residential IP, no 403 from a cloud container.
+
+- **`scripts/dk_live_feed.py`** — subscribes to a league (default MLB) or one `--event`, reconnects with backoff, and prints one JSON row per live-state change: event `status` / `eventStatus` (state, period, clock, scores) / `eventScorecard` (per-interval scores), and markets' `statistics.live[] {type, prefix, value}` — the running per-prop stat DK shows on the live page (a pitcher's K count so far). `--raw` dumps every message.
+
+Also checked and ruled out for MLB: **Simplebet** (DK-owned play-by-play; a Phoenix socket at `api.simplebet.io/play-by-play` reachable with the public `api_key` in DK's page config — `get_matches` lists NFL and CFB only, no MLB) and **Sportradar** (the match-tracker widget; its `licensing` response is an encrypted blob the widget decrypts client-side — a licensed feed, left alone).
+
 ## 2026-09-03 session
 
 ### DK soccer lines: scraping works again on egress paths that reset the "chrome" TLS profile
