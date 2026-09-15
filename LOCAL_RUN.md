@@ -74,6 +74,43 @@ The status line above the table tells you where you stand:
 Cookies last a few hours and are held **in server memory only**, so re-paste
 after a restart.
 
+## Testing whether a VPN / proxy can price DK SGPs
+
+`scripts/probe_dk_price.py` runs one real 2-leg pitcher SGP through
+`calculateBets` on whatever egress you give it and prints a verdict that
+separates the two things Akamai 403s on — the IP and the `_abck` cookie —
+so a VPN trial gets a yes/no instead of another "Access Denied".
+
+```bash
+# 1. connect the VPN (or export DK_PROXY=http://user:pass@host:port)
+# 2. baseline — expect "AMBIGUOUS" here: no validated cookie yet
+python3 scripts/probe_dk_price.py
+# 3. mint a validated cookie ON THE SAME EGRESS: open draftkings.com in a
+#    normal browser, open a game, add 2 legs to the bet slip, then in the
+#    DevTools console run copy(document.cookie)
+# 4. the real test
+DK_COOKIES='<paste>' python3 scripts/probe_dk_price.py
+```
+
+| Verdict | Meaning |
+|---|---|
+| `PASS — DK priced the SGP at …` | This egress + cookie can drive the +EV finder. Run the app from here. |
+| `FAIL (403, cookie validated)` | The cookie is fine; Akamai has scored the IP itself. Only a different exit (another VPN server, a residential proxy) changes this. |
+| `FAIL (403, _abck unvalidated)` | Not a verdict on the IP yet — redo step 3 (interact with a game page more, copy again). |
+
+Notes:
+- The browser that mints the cookie and the script must share the egress.
+  Akamai binds `_abck` to the IP that earned it, so a cookie copied from a
+  home browser will not rescue a server in another location, and vice versa.
+- Pass a pitcher name to pick the game: `python3 scripts/probe_dk_price.py Yamamoto`.
+- Read endpoints (`games`, `markets`) work from datacenter IPs; only the
+  pricing POST is IP-scored. A datacenter host that fails the probe with a
+  validated cookie (observed 2026-09-15 from a cloud container: markets fine,
+  homepage 200 via curl_cffi, headless Chromium denied outright, pricing 403)
+  needs a residential `DK_PROXY` — there is no cookie-side fix.
+- `DK_COOKIE_BROWSER=1` (headless Chromium mint) is only useful on an egress
+  Akamai already trusts; from a flagged IP the sensor never validates.
+
 ## Useful environment variables
 
 | Variable | Purpose |

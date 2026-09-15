@@ -1,5 +1,15 @@
 # Changes
 
+## 2026-09-15 session
+
+### `scripts/probe_dk_price.py`: a one-command yes/no for "can this VPN / proxy price DK SGPs?"
+Trying to pull an MLB pitcher SGP from a cloud container reproduced the known shape exactly — `games` and `markets` fine (full 15-game slate, 265 pitcher props on LAD@CIN), every `calculateBets` POST `403 Access Denied` on every state host, `abck=unvalidated`. That combination is ambiguous by construction: an unvalidated cookie 403s on *any* IP, so the bare failure says nothing about whether a VPN would help, and the next question was "how do we test one?".
+
+- **`scripts/probe_dk_price.py`** — runs one real 2-leg cross-stat pitcher SGP (K Over + ER Under on the first SGP-eligible starter, or a named one: `probe_dk_price.py Yamamoto`) through the same curl_cffi session as the app, so `DK_PROXY`, the TLS profile and the cookie sources all apply, and prints the egress IP as DK sees it, the cookie source actually used, the `_abck` state and a verdict: **PASS** (priced, or the endpoint answered with a combinability rejection), **FAIL (403, cookie validated)** — the IP is scored, only the egress can change it — or **FAIL (403, _abck unvalidated)** — not a verdict on the IP yet, with the paste-a-cookie-on-the-same-VPN steps. Exit 0 / 2 / 1.
+- **`LOCAL_RUN.md`** — "Testing whether a VPN / proxy can price DK SGPs": the four-step recipe (VPN → bare probe → mint a validated cookie in a normal browser *on the same egress* → `DK_COOKIES=… probe`) and a verdict table.
+
+Findings from this container, for the record: curl_cffi with the `chrome` profile gets `200` on the sportsbook HTML while the wager POST 403s; headless Chromium via Playwright is denied at the homepage outright with the default UA, and with a normal UA loads the page (13 cookies) but `_abck` never leaves `-1` — so `DK_COOKIE_BROWSER` cannot mint from a flagged IP and the probe now says so when that fallback happens. The container also only has direct egress on 443, so a residential `DK_PROXY` used *from here* has to listen on 443; a home machine on a VPN has no such limit.
+
 ## 2026-09-03 session
 
 ### DK soccer lines: scraping works again on egress paths that reset the "chrome" TLS profile
