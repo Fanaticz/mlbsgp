@@ -2224,6 +2224,8 @@ function evRenderResults(){
         var tail;
         if(blocked&&diag.abck==='unvalidated'){
           tail='DraftKings’ Akamai bot protection is blocking the pricing POST: the _abck cookie is unvalidated, which curl alone can’t fix. Supply validated cookies via DK_COOKIES (paste from a logged-out browser) or enable DK_COOKIE_BROWSER.';
+        }else if(blocked&&diag.proxy&&diag.proxy.host){
+          tail='DraftKings is bot-blocking the pricing POST even through DK_PROXY ('+diag.proxy.host+'; cookie source: '+(diag.cookie_source||'?')+', _abck: '+(diag.abck||'?')+'). '+(diag.proxy.sticky?'That exit is scored too — try another location / pool or a new DK_PROXY_SESSION.':'Pin one exit with {session} in DK_PROXY so the cookie and the POST share an IP.');
         }else if(blocked){
           tail='DraftKings is bot-blocking the pricing POST (cookie source: '+(diag.cookie_source||'?')+', _abck: '+(diag.abck||'?')+'). If it persists, refresh the DK_COOKIES value.';
         }else{

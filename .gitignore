@@ -12,3 +12,5 @@ venv/
 # gz snapshots — they're ephemeral and belong to the running environment.
 /data/
 nba_data_local/
+# SeleniumBase drops lock files here when the uc cookie-mint engine runs from the repo dir
+downloaded_files/
