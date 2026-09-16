@@ -44,6 +44,14 @@ python3 scripts/smoke_dk_tls_rotation.py
 # Expected final line: "ALL PRICE BREAKER SMOKE CHECKS PASSED"
 python3 scripts/smoke_dk_price_breaker.py
 
+# Sticky DK_PROXY session shared by curl_cffi and the browser cookie mint
+# across subprocesses ({session} substitution, state-dir reuse, TTL,
+# credential-free diag), browser proxy kwarg, engine selection, and the mint
+# itself against a fake driver (proxy at launch, UA rewrite, second-page hop,
+# disk cache keyed to the exit, failure → warmup fallback). Landed 2026-09-16.
+# Expected final line: "ALL PROXY/MINT SMOKE CHECKS PASSED"
+python3 scripts/smoke_dk_proxy_mint.py
+
 # Soccer SGP: league registry + club aliases + BTTS/Total leg resolution,
 # then the one-button sweep's aggregation and DK-down/DK-blocked degradation.
 # Expected final lines: "ALL SMOKE CHECKS PASSED" and

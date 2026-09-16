@@ -100,8 +100,20 @@
       var abck = diag.abck || 'absent';
       if (abck === 'validated') {
         level = 'warn';
-        msg = '⚠ DK blocked this server\'s IP (Akamai 403) despite a validated cookie — showing Pinnacle fair lines only. ' +
-          'A residential proxy for DK is the remaining lever.';
+        var px = diag.proxy || null;
+        if (px && px.host) {
+          // DK_PROXY is on and DK still refuses: either the proxy's exit is
+          // scored too, or (no {session} pin) it rotated between the cookie
+          // mint and the POST, so the _abck was minted on a different IP.
+          msg = '⚠ DK blocked the pricing POST (Akamai 403) despite a validated cookie, with DK_PROXY on (' + px.host + ') — ' +
+            (px.sticky
+              ? 'that exit is scored too; try another location / pool, or a new DK_PROXY_SESSION.'
+              : 'either that exit is scored too, or the proxy rotates and the cookie and the POST left from different IPs — pin one exit with {session} in DK_PROXY.') +
+            ' Showing Pinnacle fair lines only.';
+        } else {
+          msg = '⚠ DK blocked this server\'s IP (Akamai 403) despite a validated cookie — showing Pinnacle fair lines only. ' +
+            'A residential proxy for DK is the remaining lever.';
+        }
         if (diag.breaker_tripped) {
           msg += ' (Stopped after ' + n403 + ' refused price call(s) instead of retrying every combo, so the scrape returns fast.)';
         }

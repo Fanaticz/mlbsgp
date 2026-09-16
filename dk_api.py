@@ -17,6 +17,12 @@ import re
 import random
 import threading
 import time as _time
+import hashlib
+import importlib
+import secrets
+import socket
+import tempfile
+from urllib.parse import urlsplit, unquote
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from curl_cffi import requests as cffi_requests
 from curl_cffi.requests import exceptions as cffi_exceptions
@@ -157,13 +163,168 @@ if _imp_env:
 _session_lock = threading.Lock()
 _imp_idx = 0
 
-# Optional outbound proxy for all DK/Pinnacle curl_cffi traffic. Set DK_PROXY to
-# a residential/rotating proxy URL (http://user:pass@host:port) when DK's Akamai
-# edge scores this deployment's datacenter IP and 403s even with a valid cookie
-# — the last lever short of moving hosts. Empty = go direct (default). Pinnacle
-# rides the same session, which is harmless (it works over any egress).
-_DK_PROXY = (_os.environ.get("DK_PROXY", "") or "").strip()
+# Optional outbound proxy for all DK/Pinnacle curl_cffi traffic — and for the
+# headless-browser cookie mint (DK_COOKIE_BROWSER), which MUST share it: Akamai
+# binds a validated _abck to the IP that earned it, so a cookie minted on one
+# exit and POSTed from another is worth nothing. Set DK_PROXY to a residential
+# or mobile proxy URL (http://user:pass@host:port) when DK's Akamai edge scores
+# this deployment's datacenter IP and 403s calculateBets even with a valid
+# cookie — the last lever short of moving hosts. Empty = go direct (default).
+# Pinnacle rides the same session, which is harmless (it works over any egress).
+#
+# Sticky sessions. Every dk_api.py invocation is a fresh subprocess, and a
+# rotating proxy hands each connection a new exit, so the cookie and the POST
+# would never share an IP. Providers pin the exit through the username: write
+# the provider's session token as `{session}` and ONE id is filled in for every
+# subprocess on this host — kept in DK_STATE_DIR, rotated after
+# DK_PROXY_SESSION_TTL seconds (default 600, inside every provider's sticky
+# window), or pinned outright with DK_PROXY_SESSION. Formats as of 2026-09
+# (check the provider's docs):
+#   Bright Data  http://brd-customer-X-zone-Y-session-{session}:PASS@brd.superproxy.io:33335
+#   Oxylabs      http://customer-USER-sessid-{session}-sesstime-10:PASS@pr.oxylabs.io:7777
+#   Decodo       http://user-USER-session-{session}-sessionduration-10:PASS@gate.decodo.com:7000
+#   IPRoyal      http://USER_session-{session}_lifetime-10m:PASS@geo.iproyal.com:12321
+# The browser mint reads the same resolved URL, so both hops present one exit.
+_DK_PROXY_RAW = (_os.environ.get("DK_PROXY", "") or "").strip()
+
+# Small on-disk state shared by the dk_api.py subprocesses server.js spawns per
+# request: the sticky proxy session id and the browser-minted cookie cache
+# (otherwise every `games`/`markets`/pricing call would mint afresh, ~30-50s
+# each, on a new exit). Owner-only files; override the location with
+# DK_STATE_DIR (the default is under the system temp dir).
+_DK_STATE_DIR = ((_os.environ.get("DK_STATE_DIR", "") or "").strip()
+                 or _os.path.join(tempfile.gettempdir(), "mlbsgp-dk"))
+
+
+def _state_path(name):
+    return _os.path.join(_DK_STATE_DIR, name)
+
+
+def _read_state(name):
+    try:
+        with open(_state_path(name)) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _write_state(name, obj):
+    """Atomic, owner-only write — these files hold a proxy session token and
+    Akamai clearance cookies. Best-effort: a read-only filesystem just means
+    each subprocess mints for itself, as before."""
+    try:
+        _os.makedirs(_DK_STATE_DIR, mode=0o700, exist_ok=True)
+        tmp = _state_path(name) + f".{_os.getpid()}.tmp"
+        with open(tmp, "w") as f:
+            json.dump(obj, f)
+        _os.chmod(tmp, 0o600)
+        _os.replace(tmp, _state_path(name))
+        return True
+    except Exception:
+        return False
+
+
+try:
+    _PROXY_SESSION_TTL_S = float(_os.environ.get("DK_PROXY_SESSION_TTL", "600") or 600)
+except ValueError:
+    _PROXY_SESSION_TTL_S = 600.0
+
+
+def _proxy_host(url):
+    """scheme://host:port with the credentials stripped — the only form of a
+    proxy URL that may be logged or surfaced in a diag."""
+    if not url:
+        return None
+    try:
+        u = urlsplit(url)
+        host = u.hostname or ""
+        return f"{u.scheme}://{host}:{u.port}" if u.port else f"{u.scheme}://{host}"
+    except Exception:
+        return "?"
+
+
+def _proxy_session_id(raw=None):
+    """The sticky-session token every subprocess (and the browser mint) on this
+    host substitutes for `{session}`. DK_PROXY_SESSION pins it; otherwise it
+    lives in the state dir, keyed to the proxy host, and is re-drawn once it is
+    older than DK_PROXY_SESSION_TTL so a stale exit isn't reused forever."""
+    raw = _DK_PROXY_RAW if raw is None else raw
+    pinned = (_os.environ.get("DK_PROXY_SESSION", "") or "").strip()
+    if pinned:
+        return pinned
+    host = _proxy_host(raw)
+    st = _read_state("proxy_session.json") or {}
+    now = _time.time()
+    try:
+        age = now - float(st.get("ts") or 0)
+    except (TypeError, ValueError):
+        age = _PROXY_SESSION_TTL_S
+    if st.get("id") and st.get("proxy") == host and 0 <= age < _PROXY_SESSION_TTL_S:
+        return str(st["id"])
+    sid = secrets.token_hex(4)  # 8 alnum chars — accepted by every provider above
+    if not _write_state("proxy_session.json", {"id": sid, "proxy": host, "ts": now}):
+        # No writable state dir (read-only image, bad DK_STATE_DIR): a random
+        # id per subprocess would silently un-stick the proxy. Fall back to an
+        # id that is stable for this host + proxy — it never rotates, but the
+        # cookie and the POST still share an exit.
+        seed = f"{socket.gethostname()}|{_os.getuid() if hasattr(_os, 'getuid') else ''}|{host}"
+        return hashlib.sha1(seed.encode()).hexdigest()[:8]
+    return sid
+
+
+# The id actually baked into this process's proxy URL — what the diag and the
+# cookie-cache key report, so they can't drift from the sessions if the state
+# file rolls over mid-process.
+_PROXY_SESSION_USED = None
+
+
+def _resolve_proxy_url(raw):
+    global _PROXY_SESSION_USED
+    if not raw:
+        return ""
+    if "{session}" in raw:
+        _PROXY_SESSION_USED = _proxy_session_id(raw)
+        return raw.replace("{session}", _PROXY_SESSION_USED)
+    return raw
+
+
+_DK_PROXY = _resolve_proxy_url(_DK_PROXY_RAW)
 _PROXIES = {"https": _DK_PROXY, "http": _DK_PROXY} if _DK_PROXY else None
+
+
+def _proxy_diag():
+    """Credential-free proxy summary for sgp_price_diag. `sticky` is True when
+    the URL carries the {session} placeholder (so we KNOW every hop shares an
+    exit) and None when the URL is opaque to us — it may still be sticky."""
+    if not _DK_PROXY:
+        return None
+    pinned = bool((_os.environ.get("DK_PROXY_SESSION", "") or "").strip())
+    placeholder = "{session}" in _DK_PROXY_RAW
+    return {"host": _proxy_host(_DK_PROXY),
+            "sticky": True if (placeholder or pinned) else None,
+            "session": _PROXY_SESSION_USED if placeholder else None}
+
+
+def _browser_proxy_kw(url):
+    """Playwright `launch(proxy=...)` for a proxy URL. Chromium rejects
+    credentials embedded in the server URL, so they go in as username/password.
+    (SOCKS5 with auth is not supported by Chromium — use an http(s) proxy.)"""
+    if not url:
+        return None
+    try:
+        u = urlsplit(url)
+    except Exception:
+        return None
+    if not u.hostname:
+        return None
+    scheme = u.scheme or "http"
+    server = f"{scheme}://{u.hostname}:{u.port}" if u.port else f"{scheme}://{u.hostname}"
+    kw = {"server": server}
+    if u.username:
+        kw["username"] = unquote(u.username)
+    if u.password:
+        kw["password"] = unquote(u.password)
+    return kw
 
 
 def _new_session(imp):
@@ -280,7 +441,9 @@ _warmup_done = False
 #      stopgap; refresh it when it expires. Must include a validated _abck.
 #   2. DK_COOKIE_BROWSER=1 — mint cookies with a headless browser that runs
 #      the sensor JS, cached with a TTL and re-minted when stale. Durable, but
-#      needs Playwright + Chromium in the image; off by default.
+#      needs a driver (patchright / playwright / seleniumbase — see
+#      DK_COOKIE_BROWSER_ENGINE) + Chromium in the image; off by default. Rides
+#      DK_PROXY when set so the cookie and the POST share one exit.
 #   3. homepage warmup (legacy) — collects an unvalidated _abck. Kept as the
 #      last-ditch fallback so behavior never regresses when neither of the
 #      above is configured.
@@ -327,15 +490,83 @@ def _load_cookie_string_into(sess, cookie_str):
     return n
 
 
-def _mint_cookies_with_browser():
-    """Best-effort: launch a headless browser, load the DK sportsbook so the
-    Akamai sensor validates _abck, and return a {name: value} dict. Cached with
-    a TTL. Returns None if Playwright/Chromium is unavailable or the mint fails,
-    so callers transparently fall back to the warmup path.
+_DK_MINT_URL = "https://sportsbook.draftkings.com/"
+# Second page the mint clicks through to when the homepage alone hasn't
+# validated _abck: the sensor tends to post after a navigation with input
+# events behind it, which is also what the "add 2 legs to the slip" manual
+# recipe in LOCAL_RUN.md relies on.
+_MINT_SECOND_PATH = (_os.environ.get("DK_COOKIE_BROWSER_PATH", "") or "").strip() or "leagues/baseball/mlb"
+_MINT_HEADLESS = (_os.environ.get("DK_COOKIE_BROWSER_HEADLESS", "1") or "1").strip().lower() not in ("0", "false", "no")
+try:
+    _MINT_WAIT_S = float(_os.environ.get("DK_COOKIE_BROWSER_WAIT", "30") or 30)
+except ValueError:
+    _MINT_WAIT_S = 30.0
 
-    Enabling this in production requires Playwright + a Chromium build in the
-    image. Point DK_CHROMIUM_PATH at the browser binary if it isn't on the
-    default Playwright search path."""
+# Which driver mints. 'auto' prefers patchright — a Playwright fork with the
+# CDP tells (Runtime.enable, the __playwright bindings) removed so the Akamai
+# sensor sees an ordinary Chrome — and falls back to stock playwright. 'uc' is
+# SeleniumBase's undetected-chromedriver mode (pip install seleniumbase; runs
+# best headed, e.g. under xvfb-run, DK_COOKIE_BROWSER_HEADLESS=0). Whatever the
+# engine, it can only validate on an exit Akamai already trusts — from a
+# flagged datacenter IP none of them do, which is the DK_PROXY case.
+_MINT_ENGINE_ORDER = {
+    "auto": ("patchright", "playwright"),
+    "patchright": ("patchright",),
+    "playwright": ("playwright",),
+    "uc": ("uc",),
+    "seleniumbase": ("uc",),
+}
+# What the last mint did — merged into sgp_price_diag as `mint`.
+_MINT_DIAG = {"engine": None, "source": None, "abck": None, "error": None}
+
+
+def _mint_engine():
+    """(engine name, sync_playwright callable or None) for the configured
+    DK_COOKIE_BROWSER_ENGINE, or (None, None) when nothing usable is installed."""
+    want = (_os.environ.get("DK_COOKIE_BROWSER_ENGINE", "") or "auto").strip().lower()
+    for name in _MINT_ENGINE_ORDER.get(want, _MINT_ENGINE_ORDER["auto"]):
+        if name == "uc":
+            try:
+                importlib.import_module("seleniumbase")
+                return "uc", None
+            except Exception:
+                continue
+        try:
+            mod = importlib.import_module(name + ".sync_api")
+            return name, mod.sync_playwright
+        except Exception:
+            continue
+    return None, None
+
+
+def _abck_state_of_value(v):
+    if not v:
+        return "absent"
+    parts = str(v).split("~")
+    return "validated" if len(parts) > 1 and parts[1] != "-1" else "unvalidated"
+
+
+def _mint_proxy_url():
+    """The mint rides DK_PROXY when set — same exit as the POST, no exceptions.
+    Only with no DK_PROXY does it honour an ambient HTTPS_PROXY, for egresses
+    that need one to reach the internet at all."""
+    return _DK_PROXY or (_os.environ.get("HTTPS_PROXY") or _os.environ.get("https_proxy") or "")
+
+
+def _browser_cookie_cache_key():
+    """Minted cookies are only good on the exit that minted them."""
+    return f"{_proxy_host(_DK_PROXY) or 'direct'}|{_PROXY_SESSION_USED or ''}"
+
+
+def _mint_cookies_with_browser():
+    """Best-effort: drive a browser through the DK sportsbook so the Akamai
+    sensor validates _abck, and return a {name: value} dict. Cached in memory
+    and in the state dir (keyed to the proxy exit) for DK_COOKIE_BROWSER_TTL,
+    so the per-request subprocesses share one mint. Returns None if no driver
+    is installed or the mint fails, so callers fall back to the warmup path.
+
+    Point DK_CHROMIUM_PATH at the browser binary if it isn't on the driver's
+    default search path."""
     now = _time.time()
     cache = _BROWSER_COOKIE_CACHE
     if cache["cookies"] and now - cache["ts"] < _BROWSER_COOKIE_TTL_S:
@@ -344,42 +575,154 @@ def _mint_cookies_with_browser():
         now = _time.time()
         if cache["cookies"] and now - cache["ts"] < _BROWSER_COOKIE_TTL_S:
             return cache["cookies"]
+        key = _browser_cookie_cache_key()
+        disk = _read_state("browser_cookies.json") or {}
         try:
-            from playwright.sync_api import sync_playwright
-        except Exception:
+            disk_age = now - float(disk.get("ts") or 0)
+        except (TypeError, ValueError):
+            disk_age = _BROWSER_COOKIE_TTL_S
+        if (disk.get("cookies") and disk.get("key") == key
+                and 0 <= disk_age < _BROWSER_COOKIE_TTL_S):
+            cache["ts"] = now - disk_age
+            cache["cookies"] = dict(disk["cookies"])
+            _MINT_DIAG.update(engine=disk.get("engine"), source="disk", error=None,
+                              abck=_abck_state_of_value(cache["cookies"].get("_abck")))
+            return cache["cookies"]
+        engine, sp = _mint_engine()
+        if not engine:
+            _MINT_DIAG.update(engine=None, source="unavailable", abck=None, error=None)
             return None
-        exe = _os.environ.get("DK_CHROMIUM_PATH") or None
-        proxy = _os.environ.get("HTTPS_PROXY") or _os.environ.get("https_proxy")
         try:
-            with sync_playwright() as p:
-                launch_kw = {"headless": True, "args": ["--no-sandbox"]}
-                if exe:
-                    launch_kw["executable_path"] = exe
-                if proxy:
-                    launch_kw["proxy"] = {"server": proxy}
-                browser = p.chromium.launch(**launch_kw)
-                ctx = browser.new_context(ignore_https_errors=bool(proxy))
-                page = ctx.new_page()
-                page.goto("https://sportsbook.draftkings.com/",
-                          wait_until="domcontentloaded", timeout=45000)
-                cookies = {}
-                # Poll until _abck flips to validated (sensor POST completes).
-                for _ in range(12):
-                    page.wait_for_timeout(1000)
-                    jar = ctx.cookies()
-                    ab = next((c for c in jar if c["name"] == "_abck"), None)
-                    if ab and (ab["value"].split("~")[1:2] or ["-1"])[0] != "-1":
-                        cookies = {c["name"]: c["value"] for c in jar}
-                        break
-                if not cookies:
-                    cookies = {c["name"]: c["value"] for c in ctx.cookies()}
-                browser.close()
-                if cookies:
-                    cache["ts"] = now
-                    cache["cookies"] = cookies
-                return cookies or None
-        except Exception:
+            cookies = _mint_seleniumbase() if engine == "uc" else _mint_playwright_like(sp)
+        except Exception as e:
+            # Keep the message: "failed:Error" alone can't tell a proxy auth
+            # rejection from a missing browser binary or a page-load timeout.
+            _MINT_DIAG.update(engine=engine, source="failed:" + type(e).__name__, abck=None,
+                              error=str(e).strip().splitlines()[0][:160] if str(e).strip() else None)
             return None
+        if not cookies:
+            _MINT_DIAG.update(engine=engine, source="empty", abck="absent", error=None)
+            return None
+        abck = _abck_state_of_value(cookies.get("_abck"))
+        cache["ts"] = now
+        cache["cookies"] = cookies
+        _write_state("browser_cookies.json",
+                     {"ts": now, "key": key, "engine": engine, "abck": abck, "cookies": cookies})
+        _MINT_DIAG.update(engine=engine, source="fresh", abck=abck, error=None)
+        return cookies
+
+
+def _mint_playwright_like(sync_playwright):
+    """Mint via playwright or patchright (same API). Returns {name: value}."""
+    exe = _os.environ.get("DK_CHROMIUM_PATH") or None
+    proxy_kw = _browser_proxy_kw(_mint_proxy_url())
+    with sync_playwright() as p:
+        launch_kw = {"headless": _MINT_HEADLESS, "args": ["--no-sandbox"]}
+        if exe:
+            launch_kw["executable_path"] = exe
+        if proxy_kw:
+            launch_kw["proxy"] = proxy_kw
+        browser = p.chromium.launch(**launch_kw)
+        try:
+            ctx_kw = {"ignore_https_errors": bool(proxy_kw), "locale": "en-US",
+                      "viewport": {"width": 1366, "height": 768}}
+            # Headless Chromium announces itself as "HeadlessChrome/…", which
+            # DK's edge denies outright (observed: 403 on the homepage). Keep
+            # the browser's own UA — platform and version stay truthful — and
+            # only drop the Headless token.
+            probe = browser.new_context(**ctx_kw)
+            try:
+                ua = probe.new_page().evaluate("navigator.userAgent") or ""
+            finally:
+                probe.close()
+            if "HeadlessChrome" in ua:
+                ctx_kw["user_agent"] = ua.replace("HeadlessChrome", "Chrome")
+            ctx = browser.new_context(**ctx_kw)
+            page = ctx.new_page()
+            page.goto(_DK_MINT_URL, wait_until="domcontentloaded", timeout=45000)
+            deadline = _time.time() + _MINT_WAIT_S
+            hopped = False
+            i = 0
+            cookies = None
+            while _time.time() < deadline:
+                # The sensor posts after it has seen input events, not on a
+                # bare load — nudge the page the way a person would.
+                try:
+                    page.mouse.move(180 + (i * 37) % 700, 220 + (i * 53) % 320)
+                    if i % 3 == 0:
+                        page.mouse.wheel(0, 140)
+                except Exception:
+                    pass
+                page.wait_for_timeout(1000)
+                jar = ctx.cookies()
+                ab = next((c for c in jar if c["name"] == "_abck"), None)
+                if ab and _abck_state_of_value(ab["value"]) == "validated":
+                    cookies = {c["name"]: c["value"] for c in jar}
+                    break
+                if not hopped and _time.time() > deadline - _MINT_WAIT_S / 2:
+                    hopped = True
+                    try:
+                        page.goto(_DK_MINT_URL + _MINT_SECOND_PATH,
+                                  wait_until="domcontentloaded", timeout=30000)
+                    except Exception:
+                        pass
+                i += 1
+            if cookies is None:
+                cookies = {c["name"]: c["value"] for c in ctx.cookies()}
+        finally:
+            browser.close()
+    return cookies or None
+
+
+def _mint_seleniumbase():
+    """Mint via SeleniumBase UC mode (undetected chromedriver). Returns
+    {name: value}. Auth proxies go in as user:pass@host:port, which UC mode
+    supports for http proxies."""
+    from seleniumbase import Driver
+    exe = _os.environ.get("DK_CHROMIUM_PATH") or None
+    kw = {"uc": True, "headless": _MINT_HEADLESS}
+    if exe:
+        kw["binary_location"] = exe
+    src = _mint_proxy_url()
+    if src:
+        u = urlsplit(src)
+        if u.hostname:
+            auth = f"{unquote(u.username or '')}:{unquote(u.password or '')}@" if u.username else ""
+            hostport = f"{u.hostname}:{u.port}" if u.port else u.hostname
+            scheme = f"{u.scheme}://" if u.scheme and u.scheme != "http" else ""
+            kw["proxy"] = f"{scheme}{auth}{hostport}"
+    d = Driver(**kw)
+    try:
+        d.uc_open_with_reconnect(_DK_MINT_URL, reconnect_time=6)
+        deadline = _time.time() + _MINT_WAIT_S
+        hopped = False
+        i = 0
+        jar = {}
+        while _time.time() < deadline:
+            try:
+                d.execute_script("window.scrollBy(0, %d)" % (60 + (i * 40) % 300))
+            except Exception:
+                pass
+            _time.sleep(1)
+            try:
+                jar = {c["name"]: c["value"] for c in d.get_cookies()}
+            except Exception:
+                jar = {}
+            if _abck_state_of_value(jar.get("_abck")) == "validated":
+                break
+            if not hopped and _time.time() > deadline - _MINT_WAIT_S / 2:
+                hopped = True
+                try:
+                    d.uc_open_with_reconnect(_DK_MINT_URL + _MINT_SECOND_PATH, reconnect_time=5)
+                except Exception:
+                    pass
+            i += 1
+        return jar or None
+    finally:
+        try:
+            d.quit()
+        except Exception:
+            pass
 
 
 def _warm_dk_cookies():
@@ -417,6 +760,8 @@ def _warm_dk_cookies():
     try:
         _PRICE_DIAG["cookie_source"] = _cookie_source
         _PRICE_DIAG["abck"] = _abck_validation_state(session.cookies.jar)
+        _PRICE_DIAG["proxy"] = _proxy_diag()
+        _PRICE_DIAG["mint"] = dict(_MINT_DIAG) if _MINT_DIAG.get("source") else None
     except Exception:
         pass
 
@@ -1063,7 +1408,8 @@ def _american_from_decimal(dec):
 # returns a snapshot as `sgp_price_diag`.
 _PRICE_DIAG = {"calls": 0, "ok": 0, "incompatible": 0, "no_bet": 0,
                "exceptions": 0, "http": {}, "cookie_source": None, "abck": None,
-               "breaker_tripped": False, "skipped_blocked": 0}
+               "breaker_tripped": False, "skipped_blocked": 0,
+               "proxy": None, "mint": None}
 
 # calculateBets circuit breaker.
 #
