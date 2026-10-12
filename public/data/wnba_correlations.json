@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-11T16:48:40.036244Z",
+  "generated_at": "2026-10-12T20:26:02.539256Z",
   "source": "ESPN WNBA public API",
   "seasons": [
     2024,
@@ -18,7 +18,7 @@
   "min_games_reportable": 20,
   "min_mpg_included": 0.0,
   "schedule_today": {
-    "date": "20261011",
+    "date": "20261012",
     "team_ids": [],
     "games": []
   },
