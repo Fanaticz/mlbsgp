@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-18T14:37:14.301397Z",
+  "generated_at": "2026-10-19T17:42:24.230681Z",
   "source": "ESPN WNBA public API",
   "seasons": [
     2024,
@@ -18,9 +18,22 @@
   "min_games_reportable": 20,
   "min_mpg_included": 0.0,
   "schedule_today": {
-    "date": "20261018",
-    "team_ids": [],
-    "games": []
+    "date": "20261019",
+    "team_ids": [
+      "129689",
+      "20"
+    ],
+    "games": [
+      {
+        "start": "2026-10-20T00:00Z",
+        "state": "pre",
+        "matchup": "ATL @ GS",
+        "team_abbrs": [
+          "GS",
+          "ATL"
+        ]
+      }
+    ]
   },
   "n_players": 211,
   "n_players_reportable": 182,
@@ -4008,7 +4021,7 @@
           "tpm": 4
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "924",
@@ -6605,7 +6618,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4433411",
@@ -9392,7 +9405,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "5345325",
@@ -14329,7 +14342,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "2490553",
@@ -17505,7 +17518,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "5105729",
@@ -23120,7 +23133,7 @@
           "tpm": 2
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4433635",
@@ -29049,7 +29062,7 @@
           "tpm": 2
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4858656",
@@ -32680,7 +32693,7 @@
           "tpm": 2
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "5105740",
@@ -32997,7 +33010,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "2566453",
@@ -34025,7 +34038,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4065870",
@@ -36353,7 +36366,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4433386",
@@ -40199,7 +40212,7 @@
           "tpm": 2
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "3906769",
@@ -41160,7 +41173,7 @@
           "tpm": 3
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4682855",
@@ -42493,7 +42506,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4899328",
@@ -43073,7 +43086,7 @@
           "tpm": 1
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "3916514",
@@ -46377,7 +46390,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "3142191",
@@ -48997,7 +49010,7 @@
           "tpm": 1
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4433633",
@@ -51365,7 +51378,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "5345444",
@@ -57526,7 +57539,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4433416",
@@ -62571,7 +62584,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "5274110",
@@ -67920,7 +67933,7 @@
           "tpm": 2
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "5106170",
@@ -78371,7 +78384,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4433630",
@@ -82402,7 +82415,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4688629",
@@ -83056,7 +83069,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "2491205",
@@ -87447,7 +87460,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "5346554",
@@ -89305,7 +89318,7 @@
           "tpm": 0
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4565515",
@@ -91119,7 +91132,7 @@
           "tpm": 1
         }
       ],
-      "playing_today": false
+      "playing_today": true
     },
     {
       "athlete_id": "4398766",
