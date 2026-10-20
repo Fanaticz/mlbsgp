@@ -1,4 +1,4 @@
-# Daily data refresh: MLB pitcher correlation data + WNBA correlations.
+# Daily data refresh: MLB pitcher correlation data + NBA correlations.
 #
 # Pulls new box scores from ESPN's public APIs, rebuilds the derived JSON in
 # public/data/, and commits the result to the default branch. Dedupe against
@@ -7,7 +7,7 @@
 #
 # 11:00 UTC = 6/7am ET, after even the latest West Coast games are final.
 # If nothing changed (off-day, off-season), no commit is made.
-name: Refresh MLB + WNBA data
+name: Refresh MLB + NBA data
 
 on:
   schedule:
@@ -44,8 +44,8 @@ jobs:
       - name: Rebuild correlation aggregates
         run: python build_aggregates.py
 
-      - name: Refresh WNBA correlations
-        run: python scripts/wnba_fetch_correlations.py
+      - name: Refresh NBA correlations
+        run: python scripts/nba_fetch_correlations.py --workers 16
 
       - name: Commit and push if data changed
         run: |
@@ -56,5 +56,5 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Daily data refresh: MLB pitchers + WNBA correlations [skip ci]"
+          git commit -m "Daily data refresh: MLB pitchers + NBA correlations [skip ci]"
           git push

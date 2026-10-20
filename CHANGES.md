@@ -1,5 +1,10 @@
 # Changes
 
+## 2026-10-20 session
+
+### WNBA correlations tab → NBA
+The WNBA tab is now **NBA**, same data and page: per-player PTS·REB / PTS·AST / PTS·3PM correlations (pooled, recency-weighted, Kish effective-N p-values), per-season history and the this-season prop builder. `scripts/wnba_fetch_correlations.py` → `scripts/nba_fetch_correlations.py` (ESPN `nba` endpoints; seasons default to 2025/2026/2027 with weights 0.15/0.35/0.50 — ESPN names a season by the year it ends, so 2027 = 2026-27). NBA gamelogs order columns differently (`MIN, FG, FG%, 3PT, …, REB, AST, …, PTS`), so the script now reads stat positions from each payload's `labels` instead of hard-coded indices. `public/wnba.html` → `public/nba.html`, data `public/data/nba_correlations.json` (WNBA JSON removed). In `index.html` the sport button reads NBA and deep-links as `?sport=nbacorr` (`?sport=nba` stays reserved for the hidden +EV Finder). The daily refresh workflow runs the NBA script instead of WNBA.
+
 ## 2026-09-16 session
 
 ### `DK_PROXY` sticky sessions + the cookie mint rides the proxy: one exit for the cookie and the POST

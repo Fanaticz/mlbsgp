@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>WNBA PTS Correlations</title>
+<title>NBA PTS Correlations</title>
 <style>
   :root {
     --bg:#0f1419; --panel:#1a2129; --line:#2a333d; --txt:#e6edf3;
@@ -99,7 +99,7 @@
 </head>
 <body>
 <header>
-  <h1>WNBA Points Correlations <span class="muted" style="font-size:13px">— PTS·REB &amp; PTS·AST</span></h1>
+  <h1>NBA Points Correlations <span class="muted" style="font-size:13px">— PTS·REB &amp; PTS·AST</span></h1>
   <div class="sub" id="meta">Loading…</div>
 </header>
 
@@ -133,7 +133,7 @@
 <div class="err" id="err" style="display:none"></div>
 
 <script>
-const SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/scoreboard";
+const SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard";
 let DATA = null;        // full payload
 let TODAY_IDS = null;   // Set<string> of team_ids playing today (live)
 let MODE = "today";
@@ -166,7 +166,7 @@ async function liveTodayIds() {
 
 function renderSched(games, live) {
   const el = document.getElementById("sched");
-  if (!games || !games.length) { el.textContent = "No WNBA games today."; return; }
+  if (!games || !games.length) { el.textContent = "No NBA games today."; return; }
   el.innerHTML = `<span class="muted">${live?"Today’s slate (live)":"Today’s slate"}:</span> ` +
     games.map(g => `<span class="g"><b>${g.matchup}</b>${g.st?` <span class="muted">${g.st}</span>`:""}</span>`).join("");
 }
@@ -252,7 +252,7 @@ function drawProp(pb, p) {
   const chartEl = pb.querySelector(".pb-chart");
   const quadEl = pb.querySelector(".quads");
   if (!games.length) {
-    chartEl.innerHTML = `<div class="muted" style="padding:20px 0">No ${p.latest_season||"current"}-season games in the data file — re-run scripts/wnba_fetch_correlations.py.</div>`;
+    chartEl.innerHTML = `<div class="muted" style="padding:20px 0">No ${p.latest_season||"current"}-season games in the data file — re-run scripts/nba_fetch_correlations.py.</div>`;
     quadEl.innerHTML = "";
     return;
   }
@@ -494,13 +494,13 @@ function setMode(m) {
 
 async function init() {
   try {
-    const r = await fetch("./data/wnba_correlations.json");
-    if (!r.ok) throw new Error("could not load data/wnba_correlations.json");
+    const r = await fetch("./data/nba_correlations.json");
+    if (!r.ok) throw new Error("could not load data/nba_correlations.json");
     DATA = await r.json();
   } catch (e) {
     document.getElementById("err").style.display = "block";
     document.getElementById("err").textContent = "Error: " + e.message +
-      " — run scripts/wnba_fetch_correlations.py first.";
+      " — run scripts/nba_fetch_correlations.py first.";
     return;
   }
 

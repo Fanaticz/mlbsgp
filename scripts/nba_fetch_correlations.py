@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
-"""Pull WNBA per-game logs from ESPN and compute per-player correlations
+"""Pull NBA per-game logs from ESPN and compute per-player correlations
 between PTS-REB, PTS-AST and PTS-3PM over the last three seasons.
+
+Seasons use ESPN's convention of naming a season by the year it ends, so
+2027 = the 2026-27 season.
 
 Correlations are reported two ways per player: unweighted (every game equal)
 and recency-weighted, where each game carries a per-season weight (default
-2024=0.15, 2025=0.35, 2026=0.50 — only the ratios matter). The weighted
+2025=0.15, 2026=0.35, 2027=0.50 — only the ratios matter). The weighted
 significance test uses the Kish effective sample size so leaning on recent
 games is reflected honestly in the p-value.
 
 Data source (public ESPN endpoints, no key required):
   - Season athlete index:
-      https://sports.core.api.espn.com/v2/sports/basketball/leagues/wnba/seasons/{Y}/athletes?limit=1000
+      https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/seasons/{Y}/athletes?limit=1000
   - Athlete bio (name/position):
-      https://sports.core.api.espn.com/v2/sports/basketball/leagues/wnba/seasons/{Y}/athletes/{id}
+      https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/seasons/{Y}/athletes/{id}
   - Per-game log:
-      https://site.web.api.espn.com/apis/common/v3/sports/basketball/wnba/athletes/{id}/gamelog?season={Y}
+      https://site.web.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/{id}/gamelog?season={Y}
 
 For each athlete we collect (PTS, REB, AST) for every regular-season game in the
 requested seasons, pool the games, and compute the Pearson correlation for the
@@ -22,13 +25,13 @@ two prop pairs. A two-sided p-value is computed from the t-distribution via the
 regularized incomplete beta function (no scipy dependency).
 
 Outputs:
-  - JSON: public/data/wnba_correlations.json  (or --out)
+  - JSON: public/data/nba_correlations.json  (or --out)
   - A human-readable summary table to stdout.
 
 Usage:
-  python3 scripts/wnba_fetch_correlations.py                 # seasons 2024,2025,2026
-  python3 scripts/wnba_fetch_correlations.py --seasons 2024 2025
-  python3 scripts/wnba_fetch_correlations.py --min-games 25 --workers 8
+  python3 scripts/nba_fetch_correlations.py                 # seasons 2025,2026,2027
+  python3 scripts/nba_fetch_correlations.py --seasons 2025 2026
+  python3 scripts/nba_fetch_correlations.py --min-games 25 --workers 8
 """
 
 from __future__ import annotations
@@ -46,25 +49,27 @@ from typing import Any
 
 import requests
 
-CORE = "https://sports.core.api.espn.com/v2/sports/basketball/leagues/wnba"
-SITE = "https://site.web.api.espn.com/apis/common/v3/sports/basketball/wnba"
+CORE = "https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba"
+SITE = "https://site.web.api.espn.com/apis/common/v3/sports/basketball/nba"
 # site.web.api serves the same /apis/site/v2 paths as site.api.espn.com, which
 # started returning 403 to datacenter IPs (get_json swallows that as None, so
 # rosters and the slate came back empty instead of erroring).
-SITE_API = "https://site.web.api.espn.com/apis/site/v2/sports/basketball/wnba"
+SITE_API = "https://site.web.api.espn.com/apis/site/v2/sports/basketball/nba"
 
 # Column positions inside each gamelog event's `stats` array. The order is
-# fixed by the league-level `names` array returned alongside the events:
-#   ['MIN','PTS','REB','AST','STL','BLK','TO','FG','FG%','3PT','3P%', ...]
-# The 3PT cell is a "made-attempted" string like "3-5"; we take the made part.
-MIN_IDX, PTS_IDX, REB_IDX, AST_IDX, TPM_IDX = 0, 1, 2, 3, 9
+# fixed by the `labels` array returned alongside the events; for the NBA:
+#   ['MIN','FG','FG%','3PT','3P%','FT','FT%','REB','AST','BLK','STL','PF','TO','PTS']
+# These are the defaults; gamelog_columns() re-reads them from each payload's
+# labels in case ESPN reorders. The 3PT cell is a "made-attempted" string like
+# "3-5"; we take the made part.
+DEFAULT_COLS = {"MIN": 0, "PTS": 13, "REB": 7, "AST": 8, "3PT": 3}
 
 ID_RE = re.compile(r"/athletes/(\d+)")
 
 
 def make_session() -> requests.Session:
     s = requests.Session()
-    s.headers.update({"User-Agent": "Mozilla/5.0 (wnba-correlations/1.0)"})
+    s.headers.update({"User-Agent": "Mozilla/5.0 (nba-correlations/1.0)"})
     return s
 
 
@@ -143,7 +148,7 @@ def team_roster_map(sess: requests.Session) -> dict[str, dict]:
 
 
 def schedule_today(sess: requests.Session) -> dict:
-    """Today's WNBA slate from the public scoreboard. Returns the date used,
+    """Today's NBA slate from the public scoreboard. Returns the date used,
     the set of team_ids playing, and a compact per-game list."""
     day = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d")
     data = get_json(sess, f"{SITE_API}/scoreboard?dates={day}")
@@ -182,6 +187,12 @@ def _made(v: Any) -> float | None:
     return _num(str(v).split("-")[0])
 
 
+def gamelog_columns(data: dict) -> dict[str, int]:
+    labels = data.get("labels") or []
+    cols = {k: labels.index(k) for k in DEFAULT_COLS if k in labels}
+    return cols if len(cols) == len(DEFAULT_COLS) else DEFAULT_COLS
+
+
 def regular_season_games(
     sess: requests.Session, aid: str, season: int
 ) -> list[dict]:
@@ -196,6 +207,8 @@ def regular_season_games(
     if not data:
         return []
     ev_meta = data.get("events") or {}
+    cols = gamelog_columns(data)
+    last_idx = max(cols.values())
     out: list[dict] = []
     seen: set[str] = set()
     for st in data.get("seasonTypes") or []:
@@ -207,13 +220,13 @@ def regular_season_games(
                 if eid and eid in seen:
                     continue
                 stats = ev.get("stats") or []
-                if len(stats) <= TPM_IDX:
+                if len(stats) <= last_idx:
                     continue
-                pts = _num(stats[PTS_IDX])
-                reb = _num(stats[REB_IDX])
-                ast = _num(stats[AST_IDX])
-                tpm = _made(stats[TPM_IDX])
-                mins = _num(stats[MIN_IDX])
+                pts = _num(stats[cols["PTS"]])
+                reb = _num(stats[cols["REB"]])
+                ast = _num(stats[cols["AST"]])
+                tpm = _made(stats[cols["3PT"]])
+                mins = _num(stats[cols["MIN"]])
                 if pts is None or reb is None or ast is None or tpm is None:
                     continue
                 if eid:
@@ -460,9 +473,9 @@ def process_player(
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--seasons", type=int, nargs="+", default=[2024, 2025, 2026],
-                    help="Seasons to pool (default: 2024 2025 2026; 2026 in progress).")
-    ap.add_argument("--weights", default="2024=0.15,2025=0.35,2026=0.50",
+    ap.add_argument("--seasons", type=int, nargs="+", default=[2025, 2026, 2027],
+                    help="Seasons to pool (default: 2025 2026 2027; 2027 = 2026-27, in progress).")
+    ap.add_argument("--weights", default="2025=0.15,2026=0.35,2027=0.50",
                     help="Per-game recency weights as season=weight pairs. Only "
                          "the ratios matter (weighted Pearson is scale-free in "
                          "weights). Seasons absent here default to weight 0.")
@@ -473,7 +486,7 @@ def main() -> None:
                          "(0 = keep everyone; filtering is done in the viewer).")
     ap.add_argument("--workers", type=int, default=8,
                     help="Concurrent HTTP workers.")
-    ap.add_argument("--out", default=os.path.join("public", "data", "wnba_correlations.json"))
+    ap.add_argument("--out", default=os.path.join("public", "data", "nba_correlations.json"))
     ap.add_argument("--limit", type=int, default=0,
                     help="Cap players processed (0 = all). For quick test runs.")
     args = ap.parse_args()
@@ -495,7 +508,7 @@ def main() -> None:
     print(f"  rosters: {len(team_map)} players mapped to teams; "
           f"{len(sched['games'])} games today ({sched['date']})", file=sys.stderr)
 
-    print(f"Fetching WNBA athlete index for seasons {args.seasons} ...",
+    print(f"Fetching NBA athlete index for seasons {args.seasons} ...",
           file=sys.stderr)
     ids: set[str] = set()
     for yr in args.seasons:
@@ -543,7 +556,7 @@ def main() -> None:
     payload = {
         "generated_at": dt.datetime.now(dt.timezone.utc)
             .isoformat().replace("+00:00", "Z"),
-        "source": "ESPN WNBA public API",
+        "source": "ESPN NBA public API",
         "seasons": args.seasons,
         "scope": "regular-season games, pooled across seasons; correlations per player",
         "weighting": {
@@ -570,7 +583,7 @@ def main() -> None:
 
     wtxt = " ".join(f"{k}={v}" for k, v in sorted(weights.items()))
     print()
-    print(f"WNBA PTS correlations — seasons {args.seasons}, recency-weighted "
+    print(f"NBA PTS correlations — seasons {args.seasons}, recency-weighted "
           f"(per-game weights {wtxt})")
     print(f"Players with >= {args.min_games} games and >= {args.min_mpg} mpg: "
           f"{len(reportable)} (of {len(players)} included); {total_games} game rows")
