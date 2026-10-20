@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-20T12:45:49.388366Z",
+  "generated_at": "2026-10-20T15:50:00.147221Z",
   "source": "ESPN NBA public API",
   "seasons": [
     2025,
@@ -58,8 +58,8 @@
     ]
   },
   "n_players": 572,
-  "n_players_reportable": 502,
-  "total_game_rows": 49956,
+  "n_players_reportable": 503,
+  "total_game_rows": 50037,
   "players": [
     {
       "athlete_id": "4067017",
@@ -4361,7 +4361,7 @@
       "reb_mean": 3.12,
       "ast_mean": 2.38,
       "tpm_mean": 2.25,
-      "pts_mean_weighted": 10.38,
+      "pts_mean_weighted": 10.37,
       "pts_reb": {
         "unweighted": {
           "r": 0.5395,
@@ -41304,7 +41304,7 @@
             "p_value": 0.2091
           },
           "pts_ast": {
-            "r": 0.0,
+            "r": -0.0,
             "p_value": 1.0
           },
           "pts_3pm": {
@@ -52236,7 +52236,7 @@
       "reb_mean": 4.35,
       "ast_mean": 0.5,
       "tpm_mean": 0.0,
-      "pts_mean_weighted": 5.01,
+      "pts_mean_weighted": 5.02,
       "pts_reb": {
         "unweighted": {
           "r": 0.7314,
@@ -304274,49 +304274,70 @@
       "team_id": "29",
       "team_abbr": "MEM",
       "team_name": "Memphis Grizzlies",
-      "n_games": 10,
-      "effective_n": 10.0,
-      "min_mean": 21.2,
+      "n_games": 91,
+      "effective_n": 80.4,
+      "min_mean": 21.5,
       "games_by_season": {
+        "2025": 81,
         "2026": 10
       },
       "latest_season": "2026",
-      "pts_mean": 11.4,
-      "reb_mean": 2.2,
-      "ast_mean": 4.7,
-      "tpm_mean": 1.0,
-      "pts_mean_weighted": 11.4,
+      "pts_mean": 10.05,
+      "reb_mean": 3.16,
+      "ast_mean": 4.41,
+      "tpm_mean": 1.1,
+      "pts_mean_weighted": 10.23,
       "pts_reb": {
         "unweighted": {
-          "r": 0.2979,
-          "p_value": 0.40322
+          "r": 0.3343,
+          "p_value": 0.0012
         },
         "weighted": {
-          "r": 0.2979,
-          "p_value": 0.40322
+          "r": 0.3121,
+          "p_value": 0.00473
         }
       },
       "pts_ast": {
         "unweighted": {
-          "r": -0.0644,
-          "p_value": 0.85967
+          "r": 0.3621,
+          "p_value": 0.00042
         },
         "weighted": {
-          "r": -0.0644,
-          "p_value": 0.85967
+          "r": 0.3414,
+          "p_value": 0.00189
         }
       },
       "pts_3pm": {
         "unweighted": {
-          "r": 0.4756,
-          "p_value": 0.16471
+          "r": 0.6265,
+          "p_value": 0.0
         },
         "weighted": {
-          "r": 0.4756,
-          "p_value": 0.16471
+          "r": 0.612,
+          "p_value": 0.0
         }
       },
       "by_season": {
+        "2025": {
+          "games": 81,
+          "min_mean": 21.5,
+          "pts_mean": 9.89,
+          "reb_mean": 3.28,
+          "ast_mean": 4.37,
+          "tpm_mean": 1.11,
+          "pts_reb": {
+            "r": 0.3584,
+            "p_value": 0.00102
+          },
+          "pts_ast": {
+            "r": 0.3791,
+            "p_value": 0.00048
+          },
+          "pts_3pm": {
+            "r": 0.6399,
+            "p_value": 0.0
+          }
+        },
         "2026": {
           "games": 10,
           "min_mean": 21.2,
