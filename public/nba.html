@@ -120,6 +120,9 @@
   <label class="muted" title="Optional. 0 = show everyone (small samples included).">Min G
     <input type="number" id="ming" value="0" min="0" step="1" style="width:56px" />
   </label>
+  <label class="muted" title="Games under 60% of a player's median minutes that season (injury exits, blowout rest). Always left out of the r values; this only shows them in the box stats and prop builder.">
+    <input type="checkbox" id="shortg" /> Show short-min games
+  </label>
   <label class="muted">Sort:
     <select id="sortsel">
       <option value="pts_reb.weighted">PTS·REB r (weighted)</option>
@@ -146,6 +149,9 @@ let SORT = { key: "pts_reb.weighted", dir: -1 };
 let BLEND = [];         // [last season, this season] — blended by box stats + prop builder
 let SW = {};            // per-game season weights (recency tilt), from the data file
 const gw = g => SW[g.s] || 0;
+let SHOW_SHORT = false;  // include games flagged `short` (low minutes) in box stats + prop builder
+const logOf = p => (p.recent_games || []).filter(g => SHOW_SHORT || !g.short);
+const nShortHidden = p => SHOW_SHORT ? 0 : (p.recent_games || []).filter(g => g.short).length;
 
 const num = (v, d=2) => (v===null||v===undefined||Number.isNaN(v)) ? "—" : v.toFixed(d);
 const get = (o, path) => path.split(".").reduce((a,k)=> (a==null?a:a[k]), o);
@@ -255,7 +261,7 @@ function niceStep(span, target = 7) {
 // Build the SVG scatter + quadrant tiles inside the given .pb container.
 function drawProp(pb, p) {
   const st = propState(p);
-  const games = p.recent_games || [];
+  const games = logOf(p);
   const yKey = st.yStat, yLab = STAT_LABEL[yKey];
   const chartEl = pb.querySelector(".pb-chart");
   const quadEl = pb.querySelector(".quads");
@@ -379,7 +385,8 @@ function drawProp(pb, p) {
 // Static shell for the builder; drawProp fills in the chart + tiles.
 function propHTML(p) {
   const st = propState(p);
-  const g = p.recent_games || [];
+  const g = logOf(p);
+  const hid = nShortHidden(p);
   const [last, cur] = BLEND;
   const nCur = g.filter(x => x.s === cur).length, nLast = g.length - nCur;
   const wAll = nLast * SW[last] + nCur * SW[cur];
@@ -390,7 +397,8 @@ function propHTML(p) {
       season (${cur}). Every dot is one game (bigger dot = same score in multiple games). Set your
       lines; the tiles show how often each over/under combo hit, with the fair odds that hit rate
       implies. Hit rates are weighted: a ${cur} game counts ${(SW[cur] / SW[last]).toFixed(1)}× a ${last}
-      game (the same recency weights as the r columns), so this season is ${share}% of the weight for now.</div>
+      game (the same recency weights as the r columns), so this season is ${share}% of the weight for now.${hid ?
+      ` ${hid} short-minute game${hid===1?"":"s"} hidden (under 60% of his usual minutes).` : ""}</div>
     <div class="pb-legend"><span><i style="background:var(--accent)"></i>${cur} · this season</span>
       <span><i style="background:var(--prev)"></i>${last} · last season</span></div>
     <div class="pb-controls">
@@ -438,7 +446,8 @@ function detailHTML(p) {
   const yrs = Object.keys(p.by_season||{}).sort();
   let body = yrs.map(y => {
     const s = p.by_season[y];
-    return `<tr><td class="l"><b>${y}</b></td><td>${s.games}</td><td>${num(s.min_mean,1)}</td>`+
+    const sg = s.short_games ? ` <span class="muted" title="short-minute games left out">(−${s.short_games})</span>` : "";
+    return `<tr><td class="l"><b>${y}</b></td><td>${s.games}${sg}</td><td>${num(s.min_mean,1)}</td>`+
            `<td>${num(s.pts_mean,1)}</td><td>${num(s.reb_mean,1)}</td><td>${num(s.ast_mean,1)}</td><td>${num(s.tpm_mean,1)}</td>`+
            `<td class="l">${rMini(s.pts_reb)}</td><td class="l">${rMini(s.pts_ast)}</td><td class="l">${rMini(s.pts_3pm)}</td></tr>`;
   }).join("");
@@ -518,6 +527,24 @@ function setMode(m) {
   render();
 }
 
+// Box stats shown in the left columns: last season + this season, each game
+// weighted by its season (the same per-game recency weights as the pooled r).
+// Re-run when the short-minute toggle changes. No games -> "—".
+function blendBox() {
+  DATA.players.forEach(p => {
+    const gs = logOf(p);
+    const sum = { min:0, pts:0, reb:0, ast:0, tpm:0 };
+    let w = 0;
+    for (const g of gs) {
+      const k = gw(g);
+      w += k;
+      for (const f in sum) sum[f] += k * g[f];
+    }
+    p._g = gs.length;
+    for (const f in sum) p["_" + f] = w ? sum[f] / w : null;
+  });
+}
+
 async function init() {
   try {
     const r = await fetch("./data/nba_correlations.json");
@@ -530,27 +557,13 @@ async function init() {
     return;
   }
 
-  // Precompute the box stats shown in the left columns: last season + this
-  // season, each game weighted by its season (the same per-game recency
-  // weights as the pooled r). No games in either season -> "—".
   SW = DATA.weighting?.per_game_season_weights || {};
   BLEND = DATA.recent_seasons || [];
-  DATA.players.forEach(p => {
-    const gs = p.recent_games || [];
-    const sum = { min:0, pts:0, reb:0, ast:0, tpm:0 };
-    let w = 0;
-    for (const g of gs) {
-      const k = gw(g);
-      w += k;
-      for (const f in sum) sum[f] += k * g[f];
-    }
-    p._g = gs.length;
-    for (const f in sum) p["_" + f] = w ? sum[f] / w : null;
-  });
+  blendBox();
 
   const wtxt = Object.entries(SW).map(([k,v])=>`${k}: ${v}`).join(", ");
   document.getElementById("meta").innerHTML =
-    `Seasons ${DATA.seasons.join("–")} · regular season · recency weights (${wtxt}) · ` +
+    `Seasons ${DATA.seasons.join("–")} · regular season, short-minute games (&lt;60% of usual) excluded from r · recency weights (${wtxt}) · ` +
     `${DATA.players.length} players · box stats + prop builder = ${BLEND.join(" + ")} weighted · r = all seasons pooled/weighted · ` +
     `click a player for the prop builder + per-season history · generated ${new Date(DATA.generated_at).toLocaleString()}`;
 
@@ -567,6 +580,9 @@ async function init() {
   document.getElementById("search").oninput = render;
   document.getElementById("minmpg").oninput = render;
   document.getElementById("ming").oninput = render;
+  document.getElementById("shortg").onchange = e => {
+    SHOW_SHORT = e.target.checked; blendBox(); render();
+  };
   document.getElementById("sortsel").onchange = e => {
     SORT = { key: e.target.value, dir: -1 }; render();
   };

@@ -21,7 +21,8 @@ Data source (public ESPN endpoints, no key required):
 
 For each athlete we collect (PTS, REB, AST) for every regular-season game in the
 requested seasons, pool the games, and compute the Pearson correlation for the
-two prop pairs. A two-sided p-value is computed from the t-distribution via the
+two prop pairs. Short-minute games (under 60% of the player's median minutes
+that season; --short-min-frac) are left out of the correlations. A two-sided p-value is computed from the t-distribution via the
 regularized incomplete beta function (no scipy dependency).
 
 Outputs:
@@ -43,6 +44,7 @@ import json
 import math
 import os
 import re
+import statistics
 import sys
 import time
 from typing import Any
@@ -389,9 +391,24 @@ def _season_stats(games: list[dict]) -> dict:
     }
 
 
+def mark_short_games(games: list[dict], frac: float) -> float:
+    """Flag games where the player logged under `frac` x his median minutes for
+    that season (injury exits, blowout rest, minutes restrictions). Those games
+    drag every stat down together and manufacture positive correlation, so they
+    are left out of the correlations and the box means. Returns the cutoff."""
+    if frac <= 0 or not games:
+        for gm in games:
+            gm["short"] = False
+        return 0.0
+    cut = frac * statistics.median(gm["min"] for gm in games)
+    for gm in games:
+        gm["short"] = gm["min"] < cut
+    return cut
+
+
 def process_player(
     sess: requests.Session, aid: str, seasons: list[int], weights: dict[int, float],
-    min_mpg: float, team_map: dict[str, dict], recent: list[int]
+    min_mpg: float, team_map: dict[str, dict], recent: list[int], short_frac: float
 ) -> dict | None:
     by_year: dict[int, list[dict]] = {}
     pts: list[float] = []
@@ -401,12 +418,18 @@ def process_player(
     mins: list[float] = []
     ws: list[float] = []
     per_season: dict[str, int] = {}
+    all_by_year: dict[int, list[dict]] = {}
+    n_short = 0
     for yr in seasons:
-        g = regular_season_games(sess, aid, yr)
+        g_all = regular_season_games(sess, aid, yr)
+        mark_short_games(g_all, short_frac)
+        g = [gm for gm in g_all if not gm["short"]]
         if not g:
             continue
+        all_by_year[yr] = g_all
         by_year[yr] = g
         per_season[str(yr)] = len(g)
+        n_short += len(g_all) - len(g)
         w = weights.get(yr, 0.0)
         for gm in g:
             pts.append(gm["pts"]); reb.append(gm["reb"]); ast.append(gm["ast"])
@@ -435,21 +458,24 @@ def process_player(
     W = sum(ws) or 1.0
     team = team_map.get(aid, {})
     # Per-season breakdown (only seasons with >=3 games get correlations).
-    by_season = {str(yr): _season_stats(by_year[yr])
+    by_season = {str(yr): {**_season_stats(by_year[yr]),
+                           "short_games": len(all_by_year[yr]) - len(by_year[yr])}
                  for yr in sorted(by_year) if len(by_year[yr]) >= 3}
     latest = max(by_year) if by_year else None
     # Full game-by-game log for the recent seasons (last season + this one),
     # date-ordered, each game tagged with its season `s`. Powers the viewer's
     # prop-builder scatter and box-stat columns, which blend these seasons
     # using the per-game recency weights. Ints stored as ints to keep the
-    # JSON compact.
+    # JSON compact. Short-minute games stay in the log, flagged `short: 1`, so
+    # the viewer can show them (or not); they never feed the r values.
     def _i(v: float) -> int | float:
         return int(v) if float(v).is_integer() else v
     recent_games = [
         {"s": yr, "d": gm["date"], "opp": gm["opp"], "loc": gm["loc"],
          "res": gm["res"], "min": _i(gm["min"]), "pts": _i(gm["pts"]),
-         "reb": _i(gm["reb"]), "ast": _i(gm["ast"]), "tpm": _i(gm["tpm"])}
-        for yr in recent for gm in by_year.get(yr, [])
+         "reb": _i(gm["reb"]), "ast": _i(gm["ast"]), "tpm": _i(gm["tpm"]),
+         **({"short": 1} if gm["short"] else {})}
+        for yr in recent for gm in all_by_year.get(yr, [])
     ]
     return {
         "athlete_id": aid,
@@ -459,6 +485,7 @@ def process_player(
         "team_abbr": team.get("team_abbr", ""),
         "team_name": team.get("team_name", ""),
         "n_games": n,
+        "n_short_games": n_short,
         "effective_n": None if n_eff is None else round(n_eff, 1),
         "min_mean": round(mpg, 1),
         "games_by_season": per_season,
@@ -498,6 +525,10 @@ def main() -> None:
     ap.add_argument("--min-mpg", type=float, default=0.0,
                     help="Optional min average minutes/game to include a player "
                          "(0 = keep everyone; filtering is done in the viewer).")
+    ap.add_argument("--short-min-frac", type=float, default=0.6,
+                    help="Drop games where the player played under this fraction "
+                         "of his median minutes that season from correlations and "
+                         "box means (0 = keep every game).")
     ap.add_argument("--workers", type=int, default=8,
                     help="Concurrent HTTP workers.")
     ap.add_argument("--out", default=os.path.join("public", "data", "nba_correlations.json"))
@@ -546,7 +577,8 @@ def main() -> None:
         sessions = [make_session() for _ in range(args.workers)]
         futs = {
             ex.submit(process_player, sessions[i % args.workers], aid,
-                      args.seasons, weights, args.min_mpg, team_map, recent): aid
+                      args.seasons, weights, args.min_mpg, team_map, recent,
+                      args.short_min_frac): aid
             for i, aid in enumerate(id_list)
         }
         for fut in cf.as_completed(futs):
@@ -585,6 +617,11 @@ def main() -> None:
         "recent_seasons": recent,
         "min_games_reportable": args.min_games,
         "min_mpg_included": args.min_mpg,
+        "short_game_rule": {
+            "min_frac_of_season_median": args.short_min_frac,
+            "note": "games under this fraction of the player's median minutes "
+                    "that season are excluded from r values and box means",
+        },
         "schedule_today": sched,
         "n_players": len(players),
         "n_players_reportable": len(reportable),
