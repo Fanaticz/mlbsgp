@@ -193,6 +193,16 @@ def gamelog_columns(data: dict) -> dict[str, int]:
     return cols if len(cols) == len(DEFAULT_COLS) else DEFAULT_COLS
 
 
+def _exhibition(meta: dict) -> bool:
+    """ESPN files the All-Star game(s) and the NBA Cup final under "Regular
+    Season", but neither counts toward official regular-season stats (and an
+    untimed 5-minute All-Star stint is a big outlier). Both carry an eventNote."""
+    note = (meta.get("eventNote") or "").lower()
+    if "all-star" in note:
+        return True
+    return ("cup" in note or "in-season tournament" in note) and "championship" in note
+
+
 def regular_season_games(
     sess: requests.Session, aid: str, season: int
 ) -> list[dict]:
@@ -218,6 +228,8 @@ def regular_season_games(
             for ev in cat.get("events") or []:
                 eid = str(ev.get("eventId") or "")
                 if eid and eid in seen:
+                    continue
+                if _exhibition(ev_meta.get(eid) or {}):
                     continue
                 stats = ev.get("stats") or []
                 if len(stats) <= last_idx:
