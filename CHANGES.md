@@ -2,6 +2,9 @@
 
 ## 2026-10-27 session
 
+### NBA tab: box stats + prop builder use all three seasons
+The prop builder and the left box-stat columns now use every pulled season (2025 + 2026 + 2027, i.e. the last two seasons plus this one), not just the last two, with the same recency weights (0.15 / 0.35 / 0.50). Tatum goes from 19 games to 91. `recent_games` / `recent_seasons` now cover all three seasons; the scatter colors 2027 orange, 2026 blue, 2025 grey. JSON regenerated (17.7 MB raw, ~1.5 MB gzipped).
+
 ### NBA tab: game total, team score and opponent score vs REB
 For SGPs like game Under + player REB Over. The game logs already carry the final score, so no extra requests.
 

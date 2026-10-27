@@ -505,7 +505,7 @@ def process_player(
                            "short_games": len(all_by_year[yr]) - len(by_year[yr])}
                  for yr in sorted(by_year) if len(by_year[yr]) >= 3}
     latest = max(by_year) if by_year else None
-    # Full game-by-game log for the recent seasons (last season + this one),
+    # Full game-by-game log for every pulled season,
     # date-ordered, each game tagged with its season `s`. Powers the viewer's
     # prop-builder scatter and box-stat columns, which blend these seasons
     # using the per-game recency weights. Ints stored as ints to keep the
@@ -589,9 +589,9 @@ def main() -> None:
         k, _, v = tok.partition("=")
         weights[int(k)] = float(v)
 
-    # Last season + this one: the per-game logs the viewer's prop builder and
+    # Every pulled season (last two + this one by default): the per-game logs the viewer's prop builder and
     # box-stat columns blend.
-    recent = sorted(args.seasons)[-2:]
+    recent = sorted(args.seasons)
 
     sess = make_session()
 

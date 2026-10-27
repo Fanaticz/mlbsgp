@@ -8,7 +8,7 @@
   :root {
     --bg:#0f1419; --panel:#1a2129; --line:#2a333d; --txt:#e6edf3;
     --muted:#8b98a5; --accent:#f5a623; --pos:#3fb950; --neg:#f85149;
-    --prev:#5f7489;
+    --prev:#6f9fd0; --old:#4e5965;
   }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--txt);
@@ -69,7 +69,7 @@
   table.sub td { padding:4px 12px; border-bottom:1px solid #20272f; white-space:nowrap; }
   table.sub tr.pool td { border-top:1px solid var(--line); }
 
-  /* --- prop builder (last season + this season scatter) --- */
+  /* --- prop builder (every pulled season, scatter) --- */
   .pb { border:1px solid var(--line); border-radius:10px; background:var(--panel);
     padding:12px 14px 14px; margin-bottom:14px; }
   .pb-title { font-size:13px; font-weight:600; margin-bottom:2px; }
@@ -149,7 +149,7 @@ let DATA = null;        // full payload
 let TODAY_IDS = null;   // Set<string> of team_ids playing today (live)
 let MODE = "today";
 let SORT = { key: "pts_reb.weighted", dir: -1 };
-let BLEND = [];         // [last season, this season] — blended by box stats + prop builder
+let BLEND = [];         // seasons, oldest first — blended by box stats + prop builder
 let SW = {};            // per-game season weights (recency tilt), from the data file
 const gw = g => SW[g.s] || 0;
 let SHOW_SHORT = false;  // include games flagged `short` (low minutes) in box stats + prop builder
@@ -188,7 +188,7 @@ function renderSched(games, live) {
     games.map(g => `<span class="g"><b>${g.matchup}</b>${g.st?` <span class="muted">${g.st}</span>`:""}</span>`).join("");
 }
 
-// Box-score columns (G..3PM) blend last season and this season (BLEND), each
+// Box-score columns (G..3PM) blend every pulled season (BLEND), each
 // game weighted by its season, via the _g/_min/... fields precomputed in
 // init(). The correlation columns remain pooled + recency-weighted across
 // every season; expand a row for the per-season history.
@@ -196,7 +196,7 @@ const COLS = [
   { k:"name", h:"Player", l:true,  v:p=>`<span class="care" >${EXPANDED.has(p.athlete_id)?"▾":"▸"}</span>${TODAY_IDS&&TODAY_IDS.has(p.team_id)?'<span class="dot"></span>':''}<span class="name">${p.name}</span>` },
   { k:"team_abbr", h:"Tm", l:true, v:p=>`<span class="team">${p.team_abbr||"—"}</span>` },
   { k:"position", h:"Pos", l:true, v:p=>p.position||"—" },
-  { k:"_g", h:"G", ht:"Games last season + this season", v:p=>p._g },
+  { k:"_g", h:"G", ht:"Games across the pulled seasons (short-minute games hidden unless toggled)", v:p=>p._g },
   { k:"effective_n", h:"nEff", ht:"Effective sample size of the pooled weighted correlation", v:p=>num(p.effective_n,1) },
   { k:"_min", h:"Min", v:p=>num(p._min,1) },
   { k:"_pts", h:"Pts", v:p=>num(p._pts,1) },
@@ -231,7 +231,7 @@ function rMini(pair) {
          ` <span class="raw">p=${num(pair.p_value,3)}</span>`;
 }
 
-// ---- Prop builder: last season + this season two-stat scatter, weighted -----
+// ---- Prop builder: two-stat scatter over every pulled season, weighted -----
 // Per-player builder settings survive re-renders. yStat is the second stat.
 const PROPS = new Map();
 const STAT_LABEL = { pts:"PTS", reb:"REB", ast:"AST", tpm:"3PM", tot:"Game total", tm:"Team score", op:"Opp score" };
@@ -341,17 +341,20 @@ function drawProp(pb, p) {
     labels += `<text x="${ML-8}" y="${Y(v)+3.5}" text-anchor="end">${v}</text>`;
   }
 
-  const cur = BLEND[BLEND.length - 1];
+  // One layer per season, oldest first: each layer's dot is sized by games
+  // from that season onward, so older seasons show as rings around newer.
   const dot = (k, m) => {
     const [gx, gy] = k.split(",").map(Number);
     return `<circle cx="${X(gx)}" cy="${Y(gy)}" r="${5 + 2.2 * Math.sqrt(m - 1)}" data-k="${k}"/>`;
   };
-  let prevDots = "", curDots = "";
-  for (const [k, gs] of cells) {
-    const m = gs.filter(g => g.s === cur).length;
-    if (m < gs.length) prevDots += dot(k, gs.length);
-    if (m) curDots += dot(k, m);
-  }
+  const layers = BLEND.map((yr, i) => {
+    let d = "";
+    for (const [k, gs] of cells) {
+      if (!gs.some(g => g.s === yr)) continue;
+      d += dot(k, gs.filter(g => g.s >= yr).length);
+    }
+    return `<g fill="${seasonColor(i)}" stroke="#10161c" stroke-width="2">${d}</g>`;
+  }).join("");
 
   chartEl.innerHTML =
     `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img"
@@ -366,8 +369,7 @@ function drawProp(pb, p) {
         <text x="${Math.min(X(st.xLine)+4, W-MR-24)}" y="${MT+11}">${st.xLine}</text>
         <text x="${W-MR-4}" y="${Y(st.yLine)-5}" text-anchor="end">${st.yLine}</text>
       </g>
-      <g fill="var(--prev)" stroke="#10161c" stroke-width="2">${prevDots}</g>
-      <g fill="var(--accent)" stroke="#10161c" stroke-width="2">${curDots}</g>
+      ${layers}
       <text x="${(ML+W-MR)/2}" y="${H-6}" text-anchor="middle" fill="#8b98a5" font-size="12">${xLab}</text>
       <text x="12" y="${(MT+H-MB)/2}" text-anchor="middle" fill="#8b98a5" font-size="12"
         transform="rotate(-90 12 ${(MT+H-MB)/2})">${yLab}</text>
@@ -395,24 +397,28 @@ function drawProp(pb, p) {
 }
 
 // Static shell for the builder; drawProp fills in the chart + tiles.
+// Dot color per BLEND index: newest = accent, then progressively dimmer.
+const seasonColor = i => ["var(--accent)", "var(--prev)", "var(--old)"][BLEND.length - 1 - i] || "var(--old)";
+
 function propHTML(p) {
   const st = propState(p);
   const g = logOf(p).filter(x => x[st.xStat] != null);
   const hid = nShortHidden(p);
-  const [last, cur] = BLEND;
-  const nCur = g.filter(x => x.s === cur).length, nLast = g.length - nCur;
-  const wAll = nLast * SW[last] + nCur * SW[cur];
-  const share = wAll ? Math.round(100 * nCur * SW[cur] / wAll) : 0;
+  const cur = BLEND[BLEND.length - 1];
+  const nBy = BLEND.map(yr => g.filter(x => x.s === yr).length);
+  const wAll = BLEND.reduce((a, yr, i) => a + nBy[i] * SW[yr], 0);
+  const share = wAll ? Math.round(100 * nBy[nBy.length - 1] * SW[cur] / wAll) : 0;
+  const ratios = BLEND.slice(0, -1).map(yr => `${(SW[cur] / SW[yr]).toFixed(1)}× a ${yr} game`).join(", ");
   return `<div class="pb" data-id="${p.athlete_id}">
-    <div class="pb-title">Prop builder — last season + this season, weighted</div>
-    <div class="pb-sub">${g.length} game${g.length===1?"":"s"}: ${nLast} last season (${last}) + ${nCur} this
-      season (${cur}). Every dot is one game (bigger dot = same score in multiple games). Set your
+    <div class="pb-title">Prop builder — ${BLEND.join(" + ")}, weighted</div>
+    <div class="pb-sub">${g.length} game${g.length===1?"":"s"}: ${BLEND.map((yr, i) => `${nBy[i]} in ${yr}`).join(" + ")}.
+      Every dot is one game (bigger dot = same score in multiple games). Set your
       lines; the tiles show how often each over/under combo hit, with the fair odds that hit rate
-      implies. Hit rates are weighted: a ${cur} game counts ${(SW[cur] / SW[last]).toFixed(1)}× a ${last}
-      game (the same recency weights as the r columns), so this season is ${share}% of the weight for now.${hid ?
+      implies. Hit rates are weighted: a ${cur} game counts ${ratios}
+      (the same recency weights as the r columns), so this season is ${share}% of the weight for now.${hid ?
       ` ${hid} short-minute game${hid===1?"":"s"} hidden (under 60% of his usual minutes).` : ""}</div>
-    <div class="pb-legend"><span><i style="background:var(--accent)"></i>${cur} · this season</span>
-      <span><i style="background:var(--prev)"></i>${last} · last season</span></div>
+    <div class="pb-legend">${BLEND.slice().reverse().map((yr, j) =>
+      `<span><i style="background:${seasonColor(BLEND.length - 1 - j)}"></i>${yr}${j===0?" · this season":j===1?" · last season":""}</span>`).join("")}</div>
     <div class="pb-controls">
       <label>1st stat<select data-f="xStat">${opts(X_STATS, st.xStat)}</select></label>
       <label>${STAT_LABEL[st.xStat]} line<input type="number" step="0.5" min="0" value="${st.xLine}" data-f="xLine"></label>
@@ -494,7 +500,7 @@ function render() {
   const minG = +document.getElementById("ming").value || 0;
   // No baked-in filtering: show everyone (negative correlations included).
   // The two inputs are optional, off by default (0). Filter on the blended
-  // last + this season figures that the left columns display.
+  // blended multi-season figures that the left columns display.
   let rows = DATA.players.filter(p => p._g >= minG && (p._min||0) >= minMpg);
   if (MODE === "today") {
     const ids = TODAY_IDS || new Set(DATA.schedule_today.team_ids);
@@ -547,7 +553,7 @@ function setMode(m) {
   render();
 }
 
-// Box stats shown in the left columns: last season + this season, each game
+// Box stats shown in the left columns: every pulled season, each game
 // weighted by its season (the same per-game recency weights as the pooled r).
 // Re-run when the short-minute toggle changes. No games -> "—".
 function blendBox() {
