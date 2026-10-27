@@ -256,7 +256,12 @@ h1 em{color:var(--ac);font-style:normal;}
      Phase 2 only: NBA side is a placeholder shell; Phase 3 populates it. -->
 <div class="sport-bar" id="sportBar">
   <span class="sport-label">SPORT</span>
-  <button class="sport-btn active" id="sportBtnMlb" type="button" onclick="setSport('mlb')" aria-pressed="true"><span class="sport-dot"></span>MLB</button>
+  <!-- MLB and Soccer tabs hidden per product decision; NBA is the default.
+       Their pages and JS are kept, and ?sport=mlb / ?sport=worldcup still
+       open them. Uncomment to re-enable. -->
+  <!--
+  <button class="sport-btn" id="sportBtnMlb" type="button" onclick="setSport('mlb')" aria-pressed="false"><span class="sport-dot"></span>MLB</button>
+  -->
   <!-- NBA and Tennis tabs hidden per product decision. The JS modules, nav,
        headers and pages below are intentionally KEPT so they can be re-enabled
        by uncommenting these two buttons. -->
@@ -264,8 +269,10 @@ h1 em{color:var(--ac);font-style:normal;}
   <button class="sport-btn" id="sportBtnNba" type="button" onclick="setSport('nba')" aria-pressed="false"><span class="sport-dot"></span>NBA</button>
   <button class="sport-btn" id="sportBtnTennis" type="button" onclick="setSport('tennis')" aria-pressed="false"><span class="sport-dot"></span>TENNIS</button>
   -->
-  <button class="sport-btn" id="sportBtnNbaCorr" type="button" onclick="setSport('nbacorr')" aria-pressed="false"><span class="sport-dot"></span>NBA</button>
+  <button class="sport-btn active" id="sportBtnNbaCorr" type="button" onclick="setSport('nbacorr')" aria-pressed="true"><span class="sport-dot"></span>NBA</button>
+  <!--
   <button class="sport-btn" id="sportBtnWorldcup" type="button" onclick="setSport('worldcup')" aria-pressed="false"><span class="sport-dot"></span>SOCCER</button>
+  -->
 </div>
 <div class="nav" id="navMlb">
   <button class="nav-tab active" onclick="showPage('global')">Global</button>
@@ -3388,7 +3395,7 @@ function getRawCorr(rc,leg1,leg2){if(!rc)return null;var s1=statOf(leg1);var s2=
    its page content fills in during Phase 3. */
 function getSportFromUrl(){
   var m = window.location.search.match(/[?&]sport=(mlb|nba|tennis|worldcup|nbacorr)(?:&|$)/i);
-  return m ? m[1].toLowerCase() : 'mlb';
+  return m ? m[1].toLowerCase() : 'nbacorr';
 }
 function setSport(sport){
   if(sport !== 'nba' && sport !== 'tennis' && sport !== 'worldcup' && sport !== 'nbacorr') sport = 'mlb';
