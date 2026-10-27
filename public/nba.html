@@ -8,6 +8,7 @@
   :root {
     --bg:#0f1419; --panel:#1a2129; --line:#2a333d; --txt:#e6edf3;
     --muted:#8b98a5; --accent:#f5a623; --pos:#3fb950; --neg:#f85149;
+    --prev:#5f7489;
   }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--txt);
@@ -60,7 +61,7 @@
   tbody tr.prow { cursor:pointer; }
   tbody tr.prow:hover .care { color:var(--accent); }
   tbody tr.drow td { padding:0; background:#10161c; }
-  .detail-wrap { padding:10px 16px 14px; text-align:left; }
+  .detail-wrap { padding:10px 16px 14px; text-align:left; white-space:normal; }
   .detail-h { font-size:12px; color:var(--muted); margin-bottom:8px; }
   table.sub { width:auto; min-width:0; border-collapse:collapse; }
   table.sub th { position:static; top:auto; background:transparent; cursor:default;
@@ -68,11 +69,15 @@
   table.sub td { padding:4px 12px; border-bottom:1px solid #20272f; white-space:nowrap; }
   table.sub tr.pool td { border-top:1px solid var(--line); }
 
-  /* --- prop builder (this-season scatter) --- */
+  /* --- prop builder (last season + this season scatter) --- */
   .pb { border:1px solid var(--line); border-radius:10px; background:var(--panel);
     padding:12px 14px 14px; margin-bottom:14px; }
   .pb-title { font-size:13px; font-weight:600; margin-bottom:2px; }
   .pb-sub { color:var(--muted); font-size:11.5px; margin-bottom:10px; }
+  .pb-legend { display:flex; flex-wrap:wrap; gap:6px 16px; color:var(--muted);
+    font-size:11.5px; margin-bottom:10px; }
+  .pb-legend i { display:inline-block; width:9px; height:9px; border-radius:50%;
+    margin-right:6px; vertical-align:-1px; }
   .pb-controls { display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center;
     margin-bottom:12px; }
   .pb-controls label { color:var(--muted); font-size:12px; }
@@ -138,6 +143,9 @@ let DATA = null;        // full payload
 let TODAY_IDS = null;   // Set<string> of team_ids playing today (live)
 let MODE = "today";
 let SORT = { key: "pts_reb.weighted", dir: -1 };
+let BLEND = [];         // [last season, this season] — blended by box stats + prop builder
+let SW = {};            // per-game season weights (recency tilt), from the data file
+const gw = g => SW[g.s] || 0;
 
 const num = (v, d=2) => (v===null||v===undefined||Number.isNaN(v)) ? "—" : v.toFixed(d);
 const get = (o, path) => path.split(".").reduce((a,k)=> (a==null?a:a[k]), o);
@@ -171,15 +179,15 @@ function renderSched(games, live) {
     games.map(g => `<span class="g"><b>${g.matchup}</b>${g.st?` <span class="muted">${g.st}</span>`:""}</span>`).join("");
 }
 
-// Box-score columns (G..3PM) show the player's LATEST season only (e.g. 2026)
-// via the _g/_min/... fields precomputed in init(). The correlation columns
-// remain pooled + recency-weighted across seasons; expand a row for the
-// per-season history.
+// Box-score columns (G..3PM) blend last season and this season (BLEND), each
+// game weighted by its season, via the _g/_min/... fields precomputed in
+// init(). The correlation columns remain pooled + recency-weighted across
+// every season; expand a row for the per-season history.
 const COLS = [
   { k:"name", h:"Player", l:true,  v:p=>`<span class="care" >${EXPANDED.has(p.athlete_id)?"▾":"▸"}</span>${TODAY_IDS&&TODAY_IDS.has(p.team_id)?'<span class="dot"></span>':''}<span class="name">${p.name}</span>` },
   { k:"team_abbr", h:"Tm", l:true, v:p=>`<span class="team">${p.team_abbr||"—"}</span>` },
   { k:"position", h:"Pos", l:true, v:p=>p.position||"—" },
-  { k:"_g", h:"G", ht:"Games in latest season", v:p=>p._g },
+  { k:"_g", h:"G", ht:"Games last season + this season", v:p=>p._g },
   { k:"effective_n", h:"nEff", ht:"Effective sample size of the pooled weighted correlation", v:p=>num(p.effective_n,1) },
   { k:"_min", h:"Min", v:p=>num(p._min,1) },
   { k:"_pts", h:"Pts", v:p=>num(p._pts,1) },
@@ -210,13 +218,13 @@ function rMini(pair) {
          ` <span class="raw">p=${num(pair.p_value,3)}</span>`;
 }
 
-// ---- Prop builder: this-season (latest season) two-stat scatter ------------
+// ---- Prop builder: last season + this season two-stat scatter, weighted -----
 // Per-player builder settings survive re-renders. yStat is the second stat.
 const PROPS = new Map();
 const STAT_LABEL = { reb:"REB", ast:"AST", tpm:"3PM" };
 const STAT_KEY_MEAN = { reb:"_reb", ast:"_ast", tpm:"_tpm" };
 
-// Default line = season average pushed to the nearest half-point below the
+// Default line = blended average pushed to the nearest half-point below the
 // rounded mean (book-style .5 line, so no pushes out of the box).
 const halfLine = m => Math.max(0.5, Math.round(m || 1) - 0.5);
 
@@ -247,39 +255,41 @@ function niceStep(span, target = 7) {
 // Build the SVG scatter + quadrant tiles inside the given .pb container.
 function drawProp(pb, p) {
   const st = propState(p);
-  const games = p.latest_games || [];
+  const games = p.recent_games || [];
   const yKey = st.yStat, yLab = STAT_LABEL[yKey];
   const chartEl = pb.querySelector(".pb-chart");
   const quadEl = pb.querySelector(".quads");
   if (!games.length) {
-    chartEl.innerHTML = `<div class="muted" style="padding:20px 0">No ${p.latest_season||"current"}-season games in the data file — re-run scripts/nba_fetch_correlations.py.</div>`;
+    chartEl.innerHTML = `<div class="muted" style="padding:20px 0">No ${BLEND.join(" or ")} games for this player.</div>`;
     quadEl.innerHTML = "";
     return;
   }
 
-  // Quadrant hit rates. Over = strictly greater; a game landing exactly on an
-  // integer line is a push and is excluded from all four buckets.
-  let oo = 0, ou = 0, uo = 0, uu = 0, push = 0;
+  // Quadrant hit rates, each game weighted by its season (gw). Over = strictly
+  // greater; a game landing exactly on an integer line is a push and is
+  // excluded from all four buckets. Each bucket holds [games, weight].
+  const q = { oo:[0,0], ou:[0,0], uo:[0,0], uu:[0,0] };
+  let push = 0, wn = 0;
   for (const g of games) {
     const x = g.pts, y = g[yKey];
     if (x === st.ptsLine || y === st.yLine) { push++; continue; }
-    const xo = x > st.ptsLine, yo = y > st.yLine;
-    if (xo && yo) oo++; else if (xo) ou++; else if (yo) uo++; else uu++;
+    const b = q[(x > st.ptsLine ? "o" : "u") + (y > st.yLine ? "o" : "u")];
+    b[0]++; b[1] += gw(g); wn += gw(g);
   }
   const n = games.length - push;
-  const tile = (label, c) => {
-    const pr = n ? c / n : 0;
+  const tile = (label, [c, w]) => {
+    const pr = wn ? w / wn : 0;
     return `<div class="quad"><div class="q-h">${label}</div>` +
-      `<div class="q-v">${n ? Math.round(pr * 100) : "—"}%</div>` +
-      `<div class="q-s">${c}/${n} games · fair ${n ? fairOdds(pr) : "—"}</div></div>`;
+      `<div class="q-v">${wn ? Math.round(pr * 100) : "—"}%</div>` +
+      `<div class="q-s">${c}/${n} games · fair ${wn ? fairOdds(pr) : "—"}</div></div>`;
   };
   // Tiles mirror the chart's quadrants: over/over top-right, under/over
   // top-left, under/under bottom-left, over/under bottom-right.
   const oP = `PTS <b>o${st.ptsLine}</b>`, uP = `PTS <b>u${st.ptsLine}</b>`;
   const oY = `${yLab} <b>o${st.yLine}</b>`, uY = `${yLab} <b>u${st.yLine}</b>`;
   quadEl.innerHTML =
-    tile(`${uP} &amp; ${oY}`, uo) + tile(`${oP} &amp; ${oY}`, oo) +
-    tile(`${uP} &amp; ${uY}`, uu) + tile(`${oP} &amp; ${uY}`, ou) +
+    tile(`${uP} &amp; ${oY}`, q.uo) + tile(`${oP} &amp; ${oY}`, q.oo) +
+    tile(`${uP} &amp; ${uY}`, q.uu) + tile(`${oP} &amp; ${uY}`, q.ou) +
     (push ? `<div class="pb-note">${push} push${push>1?"es":""} (exactly on a line) excluded.</div>` : "");
 
   // Scales — pad the domain so the red lines and edge dots never clip.
@@ -292,7 +302,9 @@ function drawProp(pb, p) {
   const X = v => ML + (v - xmin) / (xmax - xmin) * (W - ML - MR);
   const Y = v => H - MB - (v - ymin) / (ymax - ymin) * (H - MT - MB);
 
-  // Duplicate (x,y) games collapse into one bigger dot.
+  // Duplicate (x,y) games collapse into one bigger dot: a muted dot sized by
+  // every game at that point, with an accent dot on top sized by this
+  // season's games there (so a muted ring = last-season games too).
   const cells = new Map();
   for (const g of games) {
     const k = `${g.pts},${g[yKey]}`;
@@ -311,16 +323,21 @@ function drawProp(pb, p) {
     labels += `<text x="${ML-8}" y="${Y(v)+3.5}" text-anchor="end">${v}</text>`;
   }
 
-  let dots = "";
-  for (const [k, gs] of cells) {
+  const cur = BLEND[BLEND.length - 1];
+  const dot = (k, m) => {
     const [gx, gy] = k.split(",").map(Number);
-    const r = 5 + 2.2 * Math.sqrt(gs.length - 1);
-    dots += `<circle cx="${X(gx)}" cy="${Y(gy)}" r="${r}" data-k="${k}"/>`;
+    return `<circle cx="${X(gx)}" cy="${Y(gy)}" r="${5 + 2.2 * Math.sqrt(m - 1)}" data-k="${k}"/>`;
+  };
+  let prevDots = "", curDots = "";
+  for (const [k, gs] of cells) {
+    const m = gs.filter(g => g.s === cur).length;
+    if (m < gs.length) prevDots += dot(k, gs.length);
+    if (m) curDots += dot(k, m);
   }
 
   chartEl.innerHTML =
     `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img"
-       aria-label="${p.name}: ${p.latest_season} games, PTS vs ${yLab}">
+       aria-label="${p.name}: ${BLEND.join(" + ")} games, PTS vs ${yLab}">
       <g stroke="#2a333d" stroke-width="1">${grid}</g>
       <g fill="#8b98a5" font-size="11">${labels}</g>
       <g stroke="var(--neg)" stroke-width="1.5">
@@ -331,7 +348,8 @@ function drawProp(pb, p) {
         <text x="${Math.min(X(st.ptsLine)+4, W-MR-24)}" y="${MT+11}">${st.ptsLine}</text>
         <text x="${W-MR-4}" y="${Y(st.yLine)-5}" text-anchor="end">${st.yLine}</text>
       </g>
-      <g fill="var(--accent)" stroke="#10161c" stroke-width="2">${dots}</g>
+      <g fill="var(--prev)" stroke="#10161c" stroke-width="2">${prevDots}</g>
+      <g fill="var(--accent)" stroke="#10161c" stroke-width="2">${curDots}</g>
       <text x="${(ML+W-MR)/2}" y="${H-6}" text-anchor="middle" fill="#8b98a5" font-size="12">PTS</text>
       <text x="12" y="${(MT+H-MB)/2}" text-anchor="middle" fill="#8b98a5" font-size="12"
         transform="rotate(-90 12 ${(MT+H-MB)/2})">${yLab}</text>
@@ -361,12 +379,20 @@ function drawProp(pb, p) {
 // Static shell for the builder; drawProp fills in the chart + tiles.
 function propHTML(p) {
   const st = propState(p);
-  const g = p.latest_games || [];
+  const g = p.recent_games || [];
+  const [last, cur] = BLEND;
+  const nCur = g.filter(x => x.s === cur).length, nLast = g.length - nCur;
+  const wAll = nLast * SW[last] + nCur * SW[cur];
+  const share = wAll ? Math.round(100 * nCur * SW[cur] / wAll) : 0;
   return `<div class="pb" data-id="${p.athlete_id}">
-    <div class="pb-title">Prop builder — ${p.latest_season || "current"} season only</div>
-    <div class="pb-sub">${g.length} game${g.length===1?"":"s"} this season. Every dot is one game
-      (bigger dot = same score in multiple games). Set your lines; the tiles show how often
-      each over/under combo hit this season, with the fair odds that hit rate implies.</div>
+    <div class="pb-title">Prop builder — last season + this season, weighted</div>
+    <div class="pb-sub">${g.length} game${g.length===1?"":"s"}: ${nLast} last season (${last}) + ${nCur} this
+      season (${cur}). Every dot is one game (bigger dot = same score in multiple games). Set your
+      lines; the tiles show how often each over/under combo hit, with the fair odds that hit rate
+      implies. Hit rates are weighted: a ${cur} game counts ${(SW[cur] / SW[last]).toFixed(1)}× a ${last}
+      game (the same recency weights as the r columns), so this season is ${share}% of the weight for now.</div>
+    <div class="pb-legend"><span><i style="background:var(--accent)"></i>${cur} · this season</span>
+      <span><i style="background:var(--prev)"></i>${last} · last season</span></div>
     <div class="pb-controls">
       <label>PTS line<input type="number" step="0.5" min="0" value="${st.ptsLine}" data-f="ptsLine"></label>
       <label>2nd stat<select data-f="yStat">
@@ -422,7 +448,7 @@ function detailHTML(p) {
           `<td>${num(p.pts_mean,1)}</td><td>${num(p.reb_mean,1)}</td><td>${num(p.ast_mean,1)}</td><td>${num(p.tpm_mean,1)}</td>`+
           `<td class="l">${rCell(p.pts_reb)}</td><td class="l">${rCell(p.pts_ast)}</td><td class="l">${rCell(p.pts_3pm)}</td></tr>`;
   return `<div class="detail-wrap">${propHTML(p)}<div class="detail-h">Per-season history — box stats &amp; within-season correlations`+
-         ` <span class="muted">(left columns above show ${p.latest_season||"latest"} only; r columns are pooled &amp; recency-weighted)</span></div>`+
+         ` <span class="muted">(left columns above blend ${BLEND.join(" + ")}, weighted like the prop builder; r columns pool every season, recency-weighted)</span></div>`+
          `<table class="sub"><thead><tr><th class="l">Season</th><th>G</th><th>Min</th><th>Pts</th><th>Reb</th><th>Ast</th><th>3PM</th>`+
          `<th class="l">PTS·REB</th><th class="l">PTS·AST</th><th class="l">PTS·3PM</th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
@@ -438,8 +464,8 @@ function render() {
   const minMpg = +document.getElementById("minmpg").value || 0;
   const minG = +document.getElementById("ming").value || 0;
   // No baked-in filtering: show everyone (negative correlations included).
-  // The two inputs are optional, off by default (0). Filter on the latest-
-  // season figures that the left columns display.
+  // The two inputs are optional, off by default (0). Filter on the blended
+  // last + this season figures that the left columns display.
   let rows = DATA.players.filter(p => p._g >= minG && (p._min||0) >= minMpg);
   if (MODE === "today") {
     const ids = TODAY_IDS || new Set(DATA.schedule_today.team_ids);
@@ -504,23 +530,28 @@ async function init() {
     return;
   }
 
-  // Precompute the latest-season box stats shown in the left columns. Falls
-  // back to pooled values if a player somehow has no per-season block.
+  // Precompute the box stats shown in the left columns: last season + this
+  // season, each game weighted by its season (the same per-game recency
+  // weights as the pooled r). No games in either season -> "—".
+  SW = DATA.weighting?.per_game_season_weights || {};
+  BLEND = DATA.recent_seasons || [];
   DATA.players.forEach(p => {
-    const ls = (p.by_season && p.latest_season) ? p.by_season[p.latest_season] : null;
-    p._g   = ls ? ls.games    : p.n_games;
-    p._min = ls ? ls.min_mean : p.min_mean;
-    p._pts = ls ? ls.pts_mean : p.pts_mean;
-    p._reb = ls ? ls.reb_mean : p.reb_mean;
-    p._ast = ls ? ls.ast_mean : p.ast_mean;
-    p._tpm = ls ? ls.tpm_mean : p.tpm_mean;
+    const gs = p.recent_games || [];
+    const sum = { min:0, pts:0, reb:0, ast:0, tpm:0 };
+    let w = 0;
+    for (const g of gs) {
+      const k = gw(g);
+      w += k;
+      for (const f in sum) sum[f] += k * g[f];
+    }
+    p._g = gs.length;
+    for (const f in sum) p["_" + f] = w ? sum[f] / w : null;
   });
 
-  const w = DATA.weighting?.per_game_season_weights || {};
-  const wtxt = Object.entries(w).map(([k,v])=>`${k}: ${v}`).join(", ");
+  const wtxt = Object.entries(SW).map(([k,v])=>`${k}: ${v}`).join(", ");
   document.getElementById("meta").innerHTML =
     `Seasons ${DATA.seasons.join("–")} · regular season · recency weights (${wtxt}) · ` +
-    `${DATA.players.length} players · box stats = latest season · r = pooled/weighted · ` +
+    `${DATA.players.length} players · box stats + prop builder = ${BLEND.join(" + ")} weighted · r = all seasons pooled/weighted · ` +
     `click a player for the prop builder + per-season history · generated ${new Date(DATA.generated_at).toLocaleString()}`;
 
   // Live schedule for the toggle; fall back to the baked snapshot.

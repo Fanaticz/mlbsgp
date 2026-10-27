@@ -1,5 +1,16 @@
 # Changes
 
+## 2026-10-27 session
+
+### NBA tab: box stats + prop builder blend last season and this season, weighted
+Three games into 2026-27, the left box-stat columns (G, Min, Pts, Reb, Ast, 3PM) and the prop builder were running on each player's latest season alone, so SGA showed **3** games. Both now blend last season and this season (the two newest seasons in the data: 2026 + 2027 in ESPN's naming), each game weighted by its season with the same per-game recency weights as the pooled r (0.35 / 0.50, so a 2027 game counts 1.4× a 2026 game). Early in the season last year carries the sample (SGA: 68 + 3 games, this season 6% of the weight), and the tilt moves to this season as games pile up. The r columns are unchanged (all three seasons pooled, 0.15 / 0.35 / 0.50).
+
+- **`scripts/nba_fetch_correlations.py`** — `latest_games` → **`recent_games`**: the date-ordered game log for the last two seasons, each game tagged `s` (season). The payload gains `recent_seasons` (`[2026, 2027]`). Nothing else in the JSON changes.
+- **`public/nba.html`** — box stats are weighted means over `recent_games` (no games in either season → "—", which the default Min mpg 20 hides); default prop lines follow the blended means; quadrant tiles show weighted hit rates (counts stay raw games), with fair odds from the weighted rate. The scatter draws last season in slate under this season in orange (a slate ring around an orange dot = both seasons landed on that score), with a legend and a subtitle giving games per season, the weight ratio and this season's current share. Text in the expanded row now wraps: it inherited the table's `nowrap`, and the longer subtitle ran off-screen.
+- `public/data/nba_correlations.json` regenerated (592 players, same 50,973 game rows as the 10-26 file; 27,271 recent-season game rows, 7.8 MB raw / ~0.56 MB gzipped as served).
+
+Verified: SGA's blended row (G 71, 33.4 min, 30.9 pts, 4.3 reb, 6.4 ast, 1.7 3PM) and all four tiles for PTS 30.5 × REB 3.5 and × AST 5.5 match an independent Python computation from the JSON. For every player, the latest-season games inside `recent_games` are identical to the previous `latest_games`, and every other per-player field is unchanged apart from the day's `playing_today` snapshot. In headless Chromium the page loads with no page errors, the desktop layout has no horizontal overflow, and at phone width the open builder scrolls no wider than before (1080 px vs 1213 px).
+
 ## 2026-10-20 session
 
 ### WNBA correlations tab → NBA

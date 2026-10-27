@@ -379,7 +379,7 @@ def _season_stats(games: list[dict]) -> dict:
 
 def process_player(
     sess: requests.Session, aid: str, seasons: list[int], weights: dict[int, float],
-    min_mpg: float, team_map: dict[str, dict]
+    min_mpg: float, team_map: dict[str, dict], recent: list[int]
 ) -> dict | None:
     by_year: dict[int, list[dict]] = {}
     pts: list[float] = []
@@ -426,16 +426,18 @@ def process_player(
     by_season = {str(yr): _season_stats(by_year[yr])
                  for yr in sorted(by_year) if len(by_year[yr]) >= 3}
     latest = max(by_year) if by_year else None
-    # Full game-by-game log for the latest (current) season, date-ordered.
-    # Powers the prop-builder scatter in the viewer, which is deliberately
-    # this-season-only. Ints stored as ints to keep the JSON compact.
+    # Full game-by-game log for the recent seasons (last season + this one),
+    # date-ordered, each game tagged with its season `s`. Powers the viewer's
+    # prop-builder scatter and box-stat columns, which blend these seasons
+    # using the per-game recency weights. Ints stored as ints to keep the
+    # JSON compact.
     def _i(v: float) -> int | float:
         return int(v) if float(v).is_integer() else v
-    latest_games = [] if latest is None else [
-        {"d": gm["date"], "opp": gm["opp"], "loc": gm["loc"], "res": gm["res"],
-         "min": _i(gm["min"]), "pts": _i(gm["pts"]), "reb": _i(gm["reb"]),
-         "ast": _i(gm["ast"]), "tpm": _i(gm["tpm"])}
-        for gm in by_year[latest]
+    recent_games = [
+        {"s": yr, "d": gm["date"], "opp": gm["opp"], "loc": gm["loc"],
+         "res": gm["res"], "min": _i(gm["min"]), "pts": _i(gm["pts"]),
+         "reb": _i(gm["reb"]), "ast": _i(gm["ast"]), "tpm": _i(gm["tpm"])}
+        for yr in recent for gm in by_year.get(yr, [])
     ]
     return {
         "athlete_id": aid,
@@ -467,7 +469,7 @@ def process_player(
             "weighted": _pair(wp3[0] if wp3 else None, n_eff),
         },
         "by_season": by_season,
-        "latest_games": latest_games,
+        "recent_games": recent_games,
     }
 
 
@@ -499,6 +501,10 @@ def main() -> None:
         k, _, v = tok.partition("=")
         weights[int(k)] = float(v)
 
+    # Last season + this one: the per-game logs the viewer's prop builder and
+    # box-stat columns blend.
+    recent = sorted(args.seasons)[-2:]
+
     sess = make_session()
 
     print("Building team roster map + today's schedule ...", file=sys.stderr)
@@ -528,7 +534,7 @@ def main() -> None:
         sessions = [make_session() for _ in range(args.workers)]
         futs = {
             ex.submit(process_player, sessions[i % args.workers], aid,
-                      args.seasons, weights, args.min_mpg, team_map): aid
+                      args.seasons, weights, args.min_mpg, team_map, recent): aid
             for i, aid in enumerate(id_list)
         }
         for fut in cf.as_completed(futs):
@@ -564,6 +570,7 @@ def main() -> None:
                       "Kish effective-N used for significance",
             "per_game_season_weights": {str(k): v for k, v in sorted(weights.items())},
         },
+        "recent_seasons": recent,
         "min_games_reportable": args.min_games,
         "min_mpg_included": args.min_mpg,
         "schedule_today": sched,
