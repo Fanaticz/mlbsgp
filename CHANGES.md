@@ -2,6 +2,13 @@
 
 ## 2026-10-27 session
 
+### NBA tab: game total, team score and opponent score vs REB
+For SGPs like game Under + player REB Over. The game logs already carry the final score, so no extra requests.
+
+- **`scripts/nba_fetch_correlations.py`** — every game gets `tot` (both teams, incl. OT), `tm` (his team) and `op` (opponent). New per-player `tot_reb` / `tm_reb` / `op_reb` (pooled, unweighted + recency-weighted, same shape as `pts_reb`), `tot_mean` / `tm_mean` / `op_mean`, and the same three r values per season. Games without a score are skipped for these only.
+- **`public/nba.html`** — TOT·REB, TM·REB and OPP·REB r columns (sortable, also in the Sort menu and the per-season table). The prop builder's 1st stat can be Points, Game total, Team score or Opp score; the 2nd stat gains Points. Tooltips show the final score.
+- `public/data/nba_correlations.json` regenerated (586 players).
+
 ### NBA tab: box stats + prop builder blend last season and this season, weighted
 Three games into 2026-27, the left box-stat columns (G, Min, Pts, Reb, Ast, 3PM) and the prop builder were running on each player's latest season alone, so SGA showed **3** games. Both now blend last season and this season (the two newest seasons in the data: 2026 + 2027 in ESPN's naming), each game weighted by its season with the same per-game recency weights as the pooled r (0.35 / 0.50, so a 2027 game counts 1.4× a 2026 game). Early in the season last year carries the sample (SGA: 68 + 3 games, this season 6% of the weight), and the tilt moves to this season as games pile up. The r columns are unchanged (all three seasons pooled, 0.15 / 0.35 / 0.50).
 

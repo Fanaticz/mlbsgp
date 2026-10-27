@@ -36,7 +36,7 @@
   .sched .g { white-space:nowrap; }
   .sched b { color:var(--txt); }
   .wrap { overflow-x:auto; padding:0 12px 60px; }
-  table { border-collapse:collapse; width:100%; min-width:880px; }
+  table { border-collapse:collapse; width:100%; min-width:1240px; }
   th,td { padding:7px 9px; text-align:right; white-space:nowrap; }
   th { position:sticky; top:0; background:var(--panel); color:var(--muted);
     font-weight:600; font-size:11.5px; text-transform:uppercase; letter-spacing:.03em;
@@ -104,7 +104,7 @@
 </head>
 <body>
 <header>
-  <h1>NBA Points Correlations <span class="muted" style="font-size:13px">— PTS·REB &amp; PTS·AST</span></h1>
+  <h1>NBA Points Correlations <span class="muted" style="font-size:13px">— PTS·REB, PTS·AST, PTS·3PM &amp; game score·REB</span></h1>
   <div class="sub" id="meta">Loading…</div>
 </header>
 
@@ -131,6 +131,9 @@
       <option value="pts_reb.unweighted">PTS·REB r (raw)</option>
       <option value="pts_ast.unweighted">PTS·AST r (raw)</option>
       <option value="pts_3pm.unweighted">PTS·3PM r (raw)</option>
+      <option value="tot_reb.weighted">Game total·REB r (weighted)</option>
+      <option value="tm_reb.weighted">Team score·REB r (weighted)</option>
+      <option value="op_reb.weighted">Opp score·REB r (weighted)</option>
     </select>
   </label>
   <span class="count" id="count"></span>
@@ -203,10 +206,14 @@ const COLS = [
   { k:"pts_reb.weighted", h:"PTS·REB r", v:p=>rCell(p.pts_reb) },
   { k:"pts_ast.weighted", h:"PTS·AST r", v:p=>rCell(p.pts_ast) },
   { k:"pts_3pm.weighted", h:"PTS·3PM r", v:p=>rCell(p.pts_3pm) },
+  { k:"tot_reb.weighted", h:"TOT·REB r", ht:"Final game total (both teams) vs his rebounds. Negative = more boards in low-scoring games (pairs with game Under + REB Over)", v:p=>rCell(p.tot_reb) },
+  { k:"tm_reb.weighted", h:"TM·REB r", ht:"His team's final score vs his rebounds", v:p=>rCell(p.tm_reb) },
+  { k:"op_reb.weighted", h:"OPP·REB r", ht:"Opponent's final score vs his rebounds", v:p=>rCell(p.op_reb) },
 ];
 const EXPANDED = new Set();
 
 function rCell(pair) {
+  if (!pair) return "—";
   const w = pair.weighted, u = pair.unweighted;
   if (w.r===null) return "—";
   const col = w.r>0 ? "var(--pos)" : "var(--neg)";
@@ -227,8 +234,10 @@ function rMini(pair) {
 // ---- Prop builder: last season + this season two-stat scatter, weighted -----
 // Per-player builder settings survive re-renders. yStat is the second stat.
 const PROPS = new Map();
-const STAT_LABEL = { reb:"REB", ast:"AST", tpm:"3PM" };
-const STAT_KEY_MEAN = { reb:"_reb", ast:"_ast", tpm:"_tpm" };
+const STAT_LABEL = { pts:"PTS", reb:"REB", ast:"AST", tpm:"3PM", tot:"Game total", tm:"Team score", op:"Opp score" };
+const STAT_NAME = { pts:"Points", reb:"Rebounds", ast:"Assists", tpm:"3PM", tot:"Game total", tm:"Team score", op:"Opp score" };
+const X_STATS = ["pts", "tot", "tm", "op"], Y_STATS = ["reb", "ast", "tpm", "pts"];
+const opts = (ks, cur) => ks.map(k => `<option value="${k}"${k===cur?" selected":""}>${STAT_NAME[k]}</option>`).join("");
 
 // Default line = blended average pushed to the nearest half-point below the
 // rounded mean (book-style .5 line, so no pushes out of the box).
@@ -237,7 +246,8 @@ const halfLine = m => Math.max(0.5, Math.round(m || 1) - 0.5);
 function propState(p) {
   if (!PROPS.has(p.athlete_id)) {
     PROPS.set(p.athlete_id, {
-      ptsLine: halfLine(p._pts),
+      xStat: "pts",
+      xLine: halfLine(p._pts),
       yStat: "reb",
       yLine: halfLine(p._reb),
     });
@@ -261,8 +271,10 @@ function niceStep(span, target = 7) {
 // Build the SVG scatter + quadrant tiles inside the given .pb container.
 function drawProp(pb, p) {
   const st = propState(p);
-  const games = logOf(p);
   const yKey = st.yStat, yLab = STAT_LABEL[yKey];
+  const xKey = st.xStat, xLab = STAT_LABEL[xKey];
+  // Score stats can be missing on a game ESPN didn't score; skip those.
+  const games = logOf(p).filter(g => g[xKey] != null && g[yKey] != null);
   const chartEl = pb.querySelector(".pb-chart");
   const quadEl = pb.querySelector(".quads");
   if (!games.length) {
@@ -277,9 +289,9 @@ function drawProp(pb, p) {
   const q = { oo:[0,0], ou:[0,0], uo:[0,0], uu:[0,0] };
   let push = 0, wn = 0;
   for (const g of games) {
-    const x = g.pts, y = g[yKey];
-    if (x === st.ptsLine || y === st.yLine) { push++; continue; }
-    const b = q[(x > st.ptsLine ? "o" : "u") + (y > st.yLine ? "o" : "u")];
+    const x = g[xKey], y = g[yKey];
+    if (x === st.xLine || y === st.yLine) { push++; continue; }
+    const b = q[(x > st.xLine ? "o" : "u") + (y > st.yLine ? "o" : "u")];
     b[0]++; b[1] += gw(g); wn += gw(g);
   }
   const n = games.length - push;
@@ -291,7 +303,7 @@ function drawProp(pb, p) {
   };
   // Tiles mirror the chart's quadrants: over/over top-right, under/over
   // top-left, under/under bottom-left, over/under bottom-right.
-  const oP = `PTS <b>o${st.ptsLine}</b>`, uP = `PTS <b>u${st.ptsLine}</b>`;
+  const oP = `${xLab} <b>o${st.xLine}</b>`, uP = `${xLab} <b>u${st.xLine}</b>`;
   const oY = `${yLab} <b>o${st.yLine}</b>`, uY = `${yLab} <b>u${st.yLine}</b>`;
   quadEl.innerHTML =
     tile(`${uP} &amp; ${oY}`, q.uo) + tile(`${oP} &amp; ${oY}`, q.oo) +
@@ -300,9 +312,9 @@ function drawProp(pb, p) {
 
   // Scales — pad the domain so the red lines and edge dots never clip.
   const W = 520, H = 400, ML = 46, MR = 16, MT = 14, MB = 42;
-  const xs = games.map(g => g.pts), ys = games.map(g => g[yKey]);
-  const xmax = Math.max(...xs, st.ptsLine) + 2;
-  const xmin = Math.max(0, Math.min(...xs, st.ptsLine) - 2);
+  const xs = games.map(g => g[xKey]), ys = games.map(g => g[yKey]);
+  const xmax = Math.max(...xs, st.xLine) + 2;
+  const xmin = Math.max(0, Math.min(...xs, st.xLine) - 2);
   const ymax = Math.max(...ys, st.yLine) + 1.5;
   const ymin = Math.max(0, Math.min(...ys, st.yLine) - 1.5);
   const X = v => ML + (v - xmin) / (xmax - xmin) * (W - ML - MR);
@@ -313,7 +325,7 @@ function drawProp(pb, p) {
   // season's games there (so a muted ring = last-season games too).
   const cells = new Map();
   for (const g of games) {
-    const k = `${g.pts},${g[yKey]}`;
+    const k = `${g[xKey]},${g[yKey]}`;
     if (!cells.has(k)) cells.set(k, []);
     cells.get(k).push(g);
   }
@@ -343,20 +355,20 @@ function drawProp(pb, p) {
 
   chartEl.innerHTML =
     `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img"
-       aria-label="${p.name}: ${BLEND.join(" + ")} games, PTS vs ${yLab}">
+       aria-label="${p.name}: ${BLEND.join(" + ")} games, ${xLab} vs ${yLab}">
       <g stroke="#2a333d" stroke-width="1">${grid}</g>
       <g fill="#8b98a5" font-size="11">${labels}</g>
       <g stroke="var(--neg)" stroke-width="1.5">
-        <line x1="${X(st.ptsLine)}" y1="${MT}" x2="${X(st.ptsLine)}" y2="${H-MB}"/>
+        <line x1="${X(st.xLine)}" y1="${MT}" x2="${X(st.xLine)}" y2="${H-MB}"/>
         <line x1="${ML}" y1="${Y(st.yLine)}" x2="${W-MR}" y2="${Y(st.yLine)}"/>
       </g>
       <g fill="var(--neg)" font-size="10.5">
-        <text x="${Math.min(X(st.ptsLine)+4, W-MR-24)}" y="${MT+11}">${st.ptsLine}</text>
+        <text x="${Math.min(X(st.xLine)+4, W-MR-24)}" y="${MT+11}">${st.xLine}</text>
         <text x="${W-MR-4}" y="${Y(st.yLine)-5}" text-anchor="end">${st.yLine}</text>
       </g>
       <g fill="var(--prev)" stroke="#10161c" stroke-width="2">${prevDots}</g>
       <g fill="var(--accent)" stroke="#10161c" stroke-width="2">${curDots}</g>
-      <text x="${(ML+W-MR)/2}" y="${H-6}" text-anchor="middle" fill="#8b98a5" font-size="12">PTS</text>
+      <text x="${(ML+W-MR)/2}" y="${H-6}" text-anchor="middle" fill="#8b98a5" font-size="12">${xLab}</text>
       <text x="12" y="${(MT+H-MB)/2}" text-anchor="middle" fill="#8b98a5" font-size="12"
         transform="rotate(-90 12 ${(MT+H-MB)/2})">${yLab}</text>
     </svg><div class="pb-tip"></div>`;
@@ -368,7 +380,7 @@ function drawProp(pb, p) {
     c.onmouseenter = e => {
       const gs = cells.get(c.dataset.k);
       tip.innerHTML = gs.map(g =>
-        `${g.d} ${g.loc} ${g.opp} (${g.res}) — <b>${g.pts} pts, ${g[yKey]} ${yLab.toLowerCase()}</b>`
+        `${g.d} ${g.loc} ${g.opp} (${g.res}${g.tm!=null?` ${g.tm}-${g.op}`:""}) — <b>${g.pts} pts, ${g.reb} reb, ${g.ast} ast, ${g.tpm} 3pm</b>`
       ).join("<br>");
       tip.style.display = "block";
       const bb = chartEl.getBoundingClientRect(), cb = c.getBoundingClientRect();
@@ -385,7 +397,7 @@ function drawProp(pb, p) {
 // Static shell for the builder; drawProp fills in the chart + tiles.
 function propHTML(p) {
   const st = propState(p);
-  const g = logOf(p);
+  const g = logOf(p).filter(x => x[st.xStat] != null);
   const hid = nShortHidden(p);
   const [last, cur] = BLEND;
   const nCur = g.filter(x => x.s === cur).length, nLast = g.length - nCur;
@@ -402,12 +414,9 @@ function propHTML(p) {
     <div class="pb-legend"><span><i style="background:var(--accent)"></i>${cur} · this season</span>
       <span><i style="background:var(--prev)"></i>${last} · last season</span></div>
     <div class="pb-controls">
-      <label>PTS line<input type="number" step="0.5" min="0" value="${st.ptsLine}" data-f="ptsLine"></label>
-      <label>2nd stat<select data-f="yStat">
-        <option value="reb"${st.yStat==="reb"?" selected":""}>Rebounds</option>
-        <option value="ast"${st.yStat==="ast"?" selected":""}>Assists</option>
-        <option value="tpm"${st.yStat==="tpm"?" selected":""}>3PM</option>
-      </select></label>
+      <label>1st stat<select data-f="xStat">${opts(X_STATS, st.xStat)}</select></label>
+      <label>${STAT_LABEL[st.xStat]} line<input type="number" step="0.5" min="0" value="${st.xLine}" data-f="xLine"></label>
+      <label>2nd stat<select data-f="yStat">${opts(Y_STATS, st.yStat)}</select></label>
       <label>${STAT_LABEL[st.yStat]} line<input type="number" step="0.5" min="0" value="${st.yLine}" data-f="yLine"></label>
     </div>
     <div class="pb-body"><div class="pb-chart"></div><div class="quads"></div></div>
@@ -423,12 +432,20 @@ function initProp(pb) {
     const f = el.dataset.f;
     const h = () => {
       const st = propState(p);
-      if (f === "yStat") {
-        st.yStat = el.value;
-        st.yLine = halfLine(p[STAT_KEY_MEAN[el.value]]);
-        const yin = pb.querySelector('[data-f="yLine"]');
-        yin.value = st.yLine;
-        yin.parentElement.firstChild.textContent = STAT_LABEL[el.value] + " line";
+      if (f === "xStat" || f === "yStat") {
+        // New stat -> reset its line to the blended mean, relabel the input.
+        const a = f[0];
+        st[f] = el.value;
+        st[a + "Line"] = halfLine(p["_" + el.value]);
+        const inp = pb.querySelector(`[data-f="${a}Line"]`);
+        inp.value = st[a + "Line"];
+        inp.parentElement.firstChild.textContent = STAT_LABEL[el.value] + " line";
+        // Game counts in the subtitle depend on which games have a score.
+        if (f === "xStat") {
+          pb.outerHTML = propHTML(p);
+          initProp(document.querySelector(`.pb[data-id="${p.athlete_id}"]`));
+          return;
+        }
       } else {
         const v = parseFloat(el.value);
         if (!Number.isFinite(v) || v < 0) return;
@@ -449,17 +466,20 @@ function detailHTML(p) {
     const sg = s.short_games ? ` <span class="muted" title="short-minute games left out">(−${s.short_games})</span>` : "";
     return `<tr><td class="l"><b>${y}</b></td><td>${s.games}${sg}</td><td>${num(s.min_mean,1)}</td>`+
            `<td>${num(s.pts_mean,1)}</td><td>${num(s.reb_mean,1)}</td><td>${num(s.ast_mean,1)}</td><td>${num(s.tpm_mean,1)}</td>`+
-           `<td class="l">${rMini(s.pts_reb)}</td><td class="l">${rMini(s.pts_ast)}</td><td class="l">${rMini(s.pts_3pm)}</td></tr>`;
+           `<td class="l">${rMini(s.pts_reb)}</td><td class="l">${rMini(s.pts_ast)}</td><td class="l">${rMini(s.pts_3pm)}</td>`+
+           `<td class="l">${rMini(s.tot_reb)}</td><td class="l">${rMini(s.tm_reb)}</td><td class="l">${rMini(s.op_reb)}</td></tr>`;
   }).join("");
   // Pooled (all seasons, recency-weighted) reference row.
   body += `<tr class="pool"><td class="l"><b>Pooled</b> <span class="muted">(wtd)</span></td>`+
           `<td>${p.n_games}</td><td>${num(p.min_mean,1)}</td>`+
           `<td>${num(p.pts_mean,1)}</td><td>${num(p.reb_mean,1)}</td><td>${num(p.ast_mean,1)}</td><td>${num(p.tpm_mean,1)}</td>`+
-          `<td class="l">${rCell(p.pts_reb)}</td><td class="l">${rCell(p.pts_ast)}</td><td class="l">${rCell(p.pts_3pm)}</td></tr>`;
+          `<td class="l">${rCell(p.pts_reb)}</td><td class="l">${rCell(p.pts_ast)}</td><td class="l">${rCell(p.pts_3pm)}</td>`+
+          `<td class="l">${rCell(p.tot_reb)}</td><td class="l">${rCell(p.tm_reb)}</td><td class="l">${rCell(p.op_reb)}</td></tr>`;
   return `<div class="detail-wrap">${propHTML(p)}<div class="detail-h">Per-season history — box stats &amp; within-season correlations`+
          ` <span class="muted">(left columns above blend ${BLEND.join(" + ")}, weighted like the prop builder; r columns pool every season, recency-weighted)</span></div>`+
          `<table class="sub"><thead><tr><th class="l">Season</th><th>G</th><th>Min</th><th>Pts</th><th>Reb</th><th>Ast</th><th>3PM</th>`+
-         `<th class="l">PTS·REB</th><th class="l">PTS·AST</th><th class="l">PTS·3PM</th></tr></thead><tbody>${body}</tbody></table></div>`;
+         `<th class="l">PTS·REB</th><th class="l">PTS·AST</th><th class="l">PTS·3PM</th>`+
+         `<th class="l">TOT·REB</th><th class="l">TM·REB</th><th class="l">OPP·REB</th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
 function sortKey(p, key) {
@@ -490,14 +510,14 @@ function render() {
   const thead = document.querySelector("#tbl thead");
   thead.innerHTML = "<tr>" + COLS.map(c => {
     const on = c.k === SORT.key ? "sorted " + (SORT.dir>0?"asc":"") : "";
-    return `<th class="${c.l?'l ':''}${on}" data-k="${c.k}">${c.h}</th>`;
+    return `<th class="${c.l?'l ':''}${on}" data-k="${c.k}"${c.ht?` title="${c.ht}"`:""}>${c.h}</th>`;
   }).join("") + "</tr>";
   thead.querySelectorAll("th").forEach(th => th.onclick = () => {
     const k = th.dataset.k;
     if (SORT.key === k) SORT.dir *= -1;
     else SORT = { key:k, dir: k.includes(".")||["_g","effective_n","_min","_pts","_reb","_ast","_tpm"].includes(k) ? -1 : 1 };
-    document.getElementById("sortsel").value =
-      ["pts_reb.weighted","pts_ast.weighted","pts_3pm.weighted","pts_reb.unweighted","pts_ast.unweighted","pts_3pm.unweighted"].includes(k) ? k : document.getElementById("sortsel").value;
+    const sel = document.getElementById("sortsel");
+    if ([...sel.options].some(o => o.value === k)) sel.value = k;
     render();
   });
 
@@ -533,15 +553,15 @@ function setMode(m) {
 function blendBox() {
   DATA.players.forEach(p => {
     const gs = logOf(p);
-    const sum = { min:0, pts:0, reb:0, ast:0, tpm:0 };
-    let w = 0;
+    // Per-field weight totals: game scores can be missing on a few games.
+    const sum = { min:0, pts:0, reb:0, ast:0, tpm:0, tot:0, tm:0, op:0 };
+    const w = { ...sum };
     for (const g of gs) {
       const k = gw(g);
-      w += k;
-      for (const f in sum) sum[f] += k * g[f];
+      for (const f in sum) if (g[f] != null) { sum[f] += k * g[f]; w[f] += k; }
     }
     p._g = gs.length;
-    for (const f in sum) p["_" + f] = w ? sum[f] / w : null;
+    for (const f in sum) p["_" + f] = w[f] ? sum[f] / w[f] : null;
   });
 }
 

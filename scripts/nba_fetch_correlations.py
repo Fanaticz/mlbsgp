@@ -21,7 +21,8 @@ Data source (public ESPN endpoints, no key required):
 
 For each athlete we collect (PTS, REB, AST) for every regular-season game in the
 requested seasons, pool the games, and compute the Pearson correlation for the
-two prop pairs. Short-minute games (under 60% of the player's median minutes
+prop pairs, plus the game's scoring (game total, the player's team score,
+the opponent's score) vs the player's REB. Short-minute games (under 60% of the player's median minutes
 that season; --short-min-frac) are left out of the correlations. A two-sided p-value is computed from the t-distribution via the
 regularized incomplete beta function (no scipy dependency).
 
@@ -65,6 +66,10 @@ SITE_API = "https://site.web.api.espn.com/apis/site/v2/sports/basketball/nba"
 # labels in case ESPN reorders. The 3PT cell is a "made-attempted" string like
 # "3-5"; we take the made part.
 DEFAULT_COLS = {"MIN": 0, "PTS": 13, "REB": 7, "AST": 8, "3PT": 3}
+
+# Game-scoring stats correlated against the player's REB: final game total
+# (both teams, incl. OT), his team's score, and the opponent's score.
+SCORE_KEYS = ("tot", "tm", "op")
 
 ID_RE = re.compile(r"/athletes/(\d+)")
 
@@ -205,6 +210,18 @@ def _exhibition(meta: dict) -> bool:
     return ("cup" in note or "in-season tournament" in note) and "championship" in note
 
 
+def _scores(meta: dict) -> dict:
+    """Final score from a gamelog event: game total, the player's team score,
+    the opponent's score. All None if ESPN didn't return a score."""
+    hs, aws = _num(meta.get("homeTeamScore")), _num(meta.get("awayTeamScore"))
+    if hs is None or aws is None:
+        return {k: None for k in SCORE_KEYS}
+    opp_id = str((meta.get("opponent") or {}).get("id") or "")
+    home = opp_id != str(meta.get("homeTeamId") or "") if opp_id else meta.get("atVs") != "@"
+    tm, op = (hs, aws) if home else (aws, hs)
+    return {"tot": hs + aws, "tm": tm, "op": op}
+
+
 def regular_season_games(
     sess: requests.Session, aid: str, season: int
 ) -> list[dict]:
@@ -246,6 +263,7 @@ def regular_season_games(
                 if eid:
                     seen.add(eid)
                 m = ev_meta.get(eid) or {}
+                sc = _scores(m)
                 out.append({
                     "pts": pts, "reb": reb, "ast": ast, "tpm": tpm,
                     "min": 0.0 if mins is None else mins,
@@ -253,6 +271,7 @@ def regular_season_games(
                     "opp": (m.get("opponent") or {}).get("abbreviation") or "",
                     "loc": m.get("atVs") or "",
                     "res": m.get("gameResult") or "",
+                    **sc,
                 })
     out.sort(key=lambda g: g["date"])
     return out
@@ -388,7 +407,15 @@ def _season_stats(games: list[dict]) -> dict:
         "pts_reb": _pair(pearson(pts, reb), n),
         "pts_ast": _pair(pearson(pts, ast), n),
         "pts_3pm": _pair(pearson(pts, tpm), n),
+        **{f"{k}_reb": _pair(*_score_reb(games, k)) for k in SCORE_KEYS},
     }
+
+
+def _score_reb(games: list[dict], key: str) -> tuple[float | None, int]:
+    """Unweighted r between a game-score stat and the player's REB, over games
+    with a known final score."""
+    gs = [g for g in games if g[key] is not None]
+    return pearson([g[key] for g in gs], [g["reb"] for g in gs]), len(gs)
 
 
 def mark_short_games(games: list[dict], frac: float) -> float:
@@ -417,6 +444,8 @@ def process_player(
     tpm: list[float] = []
     mins: list[float] = []
     ws: list[float] = []
+    scored: list[dict] = []     # games with a known final score
+    scored_ws: list[float] = []
     per_season: dict[str, int] = {}
     all_by_year: dict[int, list[dict]] = {}
     n_short = 0
@@ -434,6 +463,8 @@ def process_player(
         for gm in g:
             pts.append(gm["pts"]); reb.append(gm["reb"]); ast.append(gm["ast"])
             tpm.append(gm["tpm"]); mins.append(gm["min"]); ws.append(w)
+            if gm["tot"] is not None:
+                scored.append(gm); scored_ws.append(w)
     n = len(pts)
     if n < 3:
         return None
@@ -453,6 +484,18 @@ def process_player(
     wpa = weighted_pearson(pts, ast, ws)
     wp3 = weighted_pearson(pts, tpm, ws)
     n_eff = wpr[1] if wpr else (wpa[1] if wpa else None)
+
+    # Game scoring vs REB (pooled; unweighted + recency-weighted).
+    s_reb = [g["reb"] for g in scored]
+    score_corr = {}
+    for k in SCORE_KEYS:
+        xs = [g[k] for g in scored]
+        wk = weighted_pearson(xs, s_reb, scored_ws)
+        score_corr[f"{k}_reb"] = {
+            "unweighted": _pair(pearson(xs, s_reb), len(xs)),
+            "weighted": _pair(wk[0] if wk else None, wk[1] if wk else None),
+        }
+        score_corr[f"{k}_mean"] = round(sum(xs) / len(xs), 1) if xs else None
 
     # Weighted scoring means, to show what role the recency tilt emphasizes.
     W = sum(ws) or 1.0
@@ -474,6 +517,7 @@ def process_player(
         {"s": yr, "d": gm["date"], "opp": gm["opp"], "loc": gm["loc"],
          "res": gm["res"], "min": _i(gm["min"]), "pts": _i(gm["pts"]),
          "reb": _i(gm["reb"]), "ast": _i(gm["ast"]), "tpm": _i(gm["tpm"]),
+         **{k: _i(gm[k]) for k in SCORE_KEYS if gm[k] is not None},
          **({"short": 1} if gm["short"] else {})}
         for yr in recent for gm in all_by_year.get(yr, [])
     ]
@@ -507,6 +551,7 @@ def process_player(
             "unweighted": _pair(r_p3, n),
             "weighted": _pair(wp3[0] if wp3 else None, n_eff),
         },
+        **score_corr,
         "by_season": by_season,
         "recent_games": recent_games,
     }
