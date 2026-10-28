@@ -38,14 +38,27 @@ so). Then:
 python3 .claude/skills/nba-ast-pts-sgp/sgp.py fv <legs.json>
 ```
 
-Math: correlation for both opposite combos = -(weighted PTS-AST r).
-Joint = r*sqrt(a(1-a)b(1-b)) + a*b (binary phi, same as `jointFromPhi` in
-`public/utils/nbaEvTab.js`). Fair multiplier = 1/joint; EV of a slip =
-payout x joint - 1.
+Math (`margin_r` / `joint` in sgp.py):
+- **Margin r** = recency-weighted, season-centered Pearson PTS-AST r, shrunk
+  (empirical Bayes) toward high-assist starters (>=4 AST, >=24 MPG, >=60 g;
+  avg ~ +0.075). Per-player sampling noise (~0.10) is larger than the real
+  spread between players (~0.08), so raw r's must not be used directly.
+  Players picked for a negative raw r regress toward zero.
+- Opposite-side combos use corr(AST, -PTS) = -margin r.
+- **Joint** = Gaussian copula at the two legs' quantiles (Plackett integral).
+  This is line-aware: the implied binary corr shrinks as lines move away
+  from the median. Don't plug margin r into the phi formula
+  (`r*sqrt(a(1-a)b(1-b)) + a*b`); that formula wants binary corr and
+  overstates it ~1.5x near the median.
+- Fair multiplier = 1/joint; EV of a slip = payout x joint - 1.
+
+If Vulture has no DK points line (DK hanging an alt number), devig the
+other books' main line (multiplicative, averaged) from the user's
+Pikkit screenshots and mark it on the card.
 
 ## Output
 
 One table, both directions side by side per player (combo, FV, fair
 multiplier, r). If the user gave a slip (e.g. Novig 4.14x), state its EV.
 List any player missing a points or assists FV so they can send it.
-None of these r's are individually significant — mention that briefly.
+Show margin r and combo binary corr columns. Deliver as a PNG card (HTML + playwright screenshot) for Discord.
