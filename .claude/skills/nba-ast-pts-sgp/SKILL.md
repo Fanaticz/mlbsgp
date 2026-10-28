@@ -52,6 +52,11 @@ ev ...). Use `avg_fv` for each side. Write a legs JSON in the scratchpad:
 - `"src": "market"` (`†`) = devigged from other books; `"src": "earlier"`
   (`‡`) = carried over from a previous pull. Leave `pts`/`ast` out entirely
   when there is no FV at all (the row shows "no Pts FV").
+- `"from": {"line": 23.5, "over": -105, "under": 105}` on a leg = the FV was
+  posted at a different line; it is shifted to `line` with a normal fit
+  through the posted line using the player's game-log SD (`≈`). Use it when
+  a slip's line (e.g. Novig milestones 10+ / 25+) differs from DK's main
+  line, rather than reusing a stale FV at the old line.
 - `_meta.slips`: `combo` is `UO` (Ast Under + Pts Over) or `OU`; prints EV
   and puts it on the card. Notes become footnotes.
 

@@ -15,8 +15,10 @@
       Fair values are the avg_fv column from Vulture. A missing side is
       filled from the other side's complement (marked *). A leg can carry
       "src": "market" (devigged from other books, marked †) or "earlier"
-      (FV from a previous pull, marked ‡). Omit "pts"/"ast" when there is
-      no FV at all. Prints both opposite-direction combos (Ast U + Pts O,
+      (FV from a previous pull, marked ‡). A leg with "from": {line, over,
+      under} is shifted from an FV posted at another line (e.g. Novig 25+
+      vs DK 23.5) with the player's game-log SD, marked ≈. Omit "pts"/"ast"
+      when there is no FV at all. Prints both opposite-direction combos (Ast U + Pts O,
       Ast O + Pts U): shrunk margin r, the binary corr it implies at those
       lines, and the Gaussian-copula joint / FV. --card writes the Discord
       card; render it with `node render.js card.html card.png`.
@@ -135,8 +137,33 @@ def sides(leg):
     return po, pu, o is None, u is None
 
 
+def stat_sd(p, stat):
+    """Within-season SD of a box stat from the game log (short games excluded)."""
+    seasons = {}
+    for g in p["recent_games"]:
+        if not g.get("short"):
+            seasons.setdefault(g["s"], []).append(g[stat])
+    seasons = [v for v in seasons.values() if len(v) > 1]
+    dev = [x - sum(v) / len(v) for v in seasons for x in v]
+    return math.sqrt(sum(d * d for d in dev) / (len(dev) - len(seasons)))
+
+
+def leg_probs(p, stat, leg):
+    """sides() for a leg, shifting it first when its FV was posted at another
+    line: fit a normal with the player's SD through the posted line, read off
+    the target line."""
+    if "from" not in leg:
+        return sides(leg)
+    fo, fu, _, _ = sides(leg["from"])
+    sd = stat_sd(p, stat)
+    mu = leg["from"]["line"] - sd * nppf(fu / (fo + fu))
+    po = 1 - ncdf((leg["line"] - mu) / sd)
+    return po, 1 - po, False, False
+
+
 def leg_label(side, leg, implied):
-    return f"{side}{leg['line']:g}{'*' if implied else ''}{SRC_MARK.get(leg.get('src'), '')}"
+    return (f"{side}{leg['line']:g}{'*' if implied else ''}{'≈' if 'from' in leg else ''}"
+            f"{SRC_MARK.get(leg.get('src'), '')}")
 
 
 def price(by, legs):
@@ -149,8 +176,8 @@ def price(by, legs):
         r = margin_r(by, name)
         row = {"key": key, "name": name, "r": r, "combos": None, "legs": L}
         if L.get("ast") and L.get("pts"):
-            ao, au, ao_i, au_i = sides(L["ast"])
-            po, pu, po_i, pu_i = sides(L["pts"])
+            ao, au, ao_i, au_i = leg_probs(by[name], "ast", L["ast"])
+            po, pu, po_i, pu_i = leg_probs(by[name], "pts", L["pts"])
             row["combos"] = []
             # Opposite-direction combos: corr(AST, -PTS) = -margin r.
             for code, a, ai, b, bi, asd, psd in (("UO", au, au_i, po, po_i, "U", "O"),
@@ -225,7 +252,7 @@ def card(d, by, rows, meta):
             uo, ou = w["combos"]
             cells.append(f'<td class="r">{uo["binary"]:+.3f}</td>')
             for c, cls, sep in ((uo, "a", ""), (ou, "b", " sep")):
-                used.update(ch for ch in "*†‡" if ch in c["label"])
+                used.update(ch for ch in "*†‡≈" if ch in c["label"])
                 cells.append(f'<td class="l{sep}">{c["label"]}</td><td class="fv {cls}">{c["fv"]:+d}</td>'
                              f'<td class="x">{c["fair"]:.2f}x</td>')
         else:
@@ -262,6 +289,9 @@ def card(d, by, rows, meta):
                                                   "(DK hangs a different number)")))
     if "‡" in used:
         mu.append("‡ " + e(meta.get("earlier_note", "FV from an earlier pull (not in the latest screenshot)")))
+    if "≈" in used:
+        mu.append("≈ " + e(meta.get("shift_note", "line shifted from the FV posted at another number "
+                                                 "(normal with his game-log SD)")))
     if "*" in used:
         mu.append("* side implied from the other side's FV (only one side posted)")
     mu += [e(x) for x in meta.get("notes", [])]
