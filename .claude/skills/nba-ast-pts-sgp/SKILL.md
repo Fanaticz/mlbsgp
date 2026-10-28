@@ -36,16 +36,33 @@ The user pastes a table (columns: bet_name, odds, avg_odds, **avg_fv**, fbc,
 ev ...). Use `avg_fv` for each side. Write a legs JSON in the scratchpad:
 
 ```json
-{"Cade Cunningham": {"ast": {"line": 9.5, "over": 128, "under": -125},
-                     "pts": {"line": 24.5, "over": 104, "under": -104}}}
+{"Cade Cunningham": {"ast": {"line": 8.5, "over": -119, "under": 121},
+                     "pts": {"line": 24.5, "over": 106, "under": -106}},
+ "Cade Cunningham|9.5": {"ast": {"line": 9.5, "over": 129},
+                         "pts": {"line": 24.5, "over": 106, "under": -106, "src": "earlier"}},
+ "Shai Gilgeous-Alexander": {"ast": {"line": 6.5, "over": 119, "under": -117},
+                             "pts": {"line": 31.5, "over": 103, "under": -103, "src": "market"}},
+ "_meta": {"slips": [{"key": "Cade Cunningham|9.5", "combo": "UO", "payout": 4.14, "book": "Novig"}],
+           "market_note": "...", "earlier_note": "...", "notes": ["..."]}}
 ```
 
-Omit a side if the sheet doesn't show it (script uses the complement — say
-so). Then:
+- Omit a side the sheet doesn't show: the script uses the complement and
+  marks it `*`.
+- `"key|anything"` adds an alt-line row for the same player.
+- `"src": "market"` (`†`) = devigged from other books; `"src": "earlier"`
+  (`‡`) = carried over from a previous pull. Leave `pts`/`ast` out entirely
+  when there is no FV at all (the row shows "no Pts FV").
+- `_meta.slips`: `combo` is `UO` (Ast Under + Pts Over) or `OU`; prints EV
+  and puts it on the card. Notes become footnotes.
+
+Then price and render the card:
 
 ```bash
-python3 .claude/skills/nba-ast-pts-sgp/sgp.py fv <legs.json>
+python3 .claude/skills/nba-ast-pts-sgp/sgp.py fv <legs.json> --card <card.html>
+node .claude/skills/nba-ast-pts-sgp/render.js <card.html> <card.png>
 ```
+
+Look at the PNG before sending it (SendUserFile, display render).
 
 Math (`margin_r` / `joint` in sgp.py):
 - **Margin r** = recency-weighted, season-centered Pearson PTS-AST r, shrunk
@@ -67,7 +84,8 @@ Pikkit screenshots and mark it on the card.
 
 ## Output
 
-One table, both directions side by side per player (combo, FV, fair
-multiplier, r). If the user gave a slip (e.g. Novig 4.14x), state its EV.
-List any player missing a points or assists FV so they can send it.
-Show margin r and combo binary corr columns. Deliver as a PNG card (HTML + playwright screenshot) for Discord.
+The PNG card is the deliverable (the user posts it in Discord): rows
+sorted by shrunk r, both directions side by side, margin r and combo binary
+columns, footnotes for every marker used. In chat, say what moved since the
+last pull, any slip's EV, and which FVs are still missing, then give the
+`/run` command that would fill them.
