@@ -1,6 +1,6 @@
 ---
 name: nba-ast-pts-sgp
-description: NBA Assists x Points SGP workflow. Build the Vulture "twa" command for today's high-assist players with negative PTS-AST correlation, then price both opposite-direction combos (Ast Under + Pts Over, Ast Over + Pts Under) from the Vulture avg_fv screenshot. Triggers on "high assist players today", "vulture command", "calc SGP FVs" for NBA assists/points.
+description: NBA Assists x Points SGP workflow. Build the Vulture "twa" command for today's high-assist players with negative PTS-AST correlation, then price both opposite-direction combos (Ast Under + Pts Over, Ast Over + Pts Under) from the Vulture screenshot's fair odds. Triggers on "high assist players today", "vulture command", "calc SGP FVs" for NBA assists/points.
 ---
 
 # NBA Assists x Points SGP
@@ -32,8 +32,13 @@ player list rather than re-running the picker.
 
 ## 2. Price the SGPs from the Vulture screenshot
 
-The user pastes a table (columns: bet_name, odds, avg_odds, **avg_fv**, fbc,
-ev ...). Use `avg_fv` for each side. Write a legs JSON in the scratchpad:
+The user pastes a Vulture table. Current layout (Oct 2026): Date, League,
+Game, Market, **Bet** (player, side, line), Book, Odds, Limit, Sharp
+("Avg (n)" = n books), Sharp odds, **Fair**, Hold, Sharp limit, EV, Units.
+Use **Fair** for each side (the older layout called it `avg_fv`, next to
+bet_name / avg_odds / fbc). A side Vulture didn't list is left out of the
+JSON. Drop players ruled out for the night. Write a legs JSON in the
+scratchpad:
 
 ```json
 {"Cade Cunningham": {"ast": {"line": 8.5, "over": -119, "under": 121},

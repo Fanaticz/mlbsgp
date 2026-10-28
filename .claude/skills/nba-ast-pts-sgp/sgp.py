@@ -12,7 +12,7 @@
                   "_meta": {"slips": [{"key": "Cade Cunningham|9.5", "combo": "UO",
                                        "payout": 4.14, "book": "Novig"}],
                             "market_note": "...", "notes": ["..."]}}
-      Fair values are the avg_fv column from Vulture. A missing side is
+      Fair values are Vulture's Fair column (avg_fv on older sheets). A missing side is
       filled from the other side's complement (marked *). A leg can carry
       "src": "market" (devigged from other books, marked †) or "earlier"
       (FV from a previous pull, marked ‡). A leg with "from": {line, over,
