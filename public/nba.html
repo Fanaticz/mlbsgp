@@ -60,7 +60,7 @@
   .care { display:inline-block; width:12px; color:var(--muted); }
   tbody tr.prow { cursor:pointer; }
   tbody tr.prow:hover .care { color:var(--accent); }
-  tbody tr.drow td { padding:0; background:#10161c; }
+  tbody tr.drow > td { padding:0; background:#10161c; }
   .detail-wrap { padding:10px 16px 14px; text-align:left; white-space:normal; }
   .detail-h { font-size:12px; color:var(--muted); margin-bottom:8px; }
   table.sub { width:auto; min-width:0; border-collapse:collapse; }
@@ -100,6 +100,14 @@
     padding:6px 9px; font-size:11.5px; line-height:1.4; white-space:nowrap;
     box-shadow:0 4px 14px rgba(0,0,0,.45); }
   .pb-tip b { color:var(--accent); }
+
+  /* --- SGP pricer (copula on the shrunk r) --- */
+  .pr { border-top:1px solid var(--line); margin-top:14px; padding-top:12px; }
+  .pr-sub { color:var(--muted); font-size:11.5px; margin-bottom:10px; max-width:900px; }
+  .pr .pb-controls input[type=text] { width:74px; margin-left:6px; background:var(--panel);
+    border:1px solid var(--line); color:var(--txt); border-radius:8px; padding:7px 10px; font-size:13px; }
+  .pr .pb-controls input[type=number] { width:74px; }
+  .pr table.sub td.fv { font-weight:600; color:var(--accent); }
 </style>
 </head>
 <body>
@@ -125,15 +133,18 @@
   </label>
   <label class="muted">Sort:
     <select id="sortsel">
-      <option value="pts_reb.weighted">PTS·REB r (weighted)</option>
-      <option value="pts_ast.weighted">PTS·AST r (weighted)</option>
-      <option value="pts_3pm.weighted">PTS·3PM r (weighted)</option>
+      <option value="pts_reb.shrunk">PTS·REB r (shrunk)</option>
+      <option value="pts_ast.shrunk">PTS·AST r (shrunk)</option>
+      <option value="pts_3pm.shrunk">PTS·3PM r (shrunk)</option>
+      <option value="pts_reb.weighted">PTS·REB r (data, weighted)</option>
+      <option value="pts_ast.weighted">PTS·AST r (data, weighted)</option>
+      <option value="pts_3pm.weighted">PTS·3PM r (data, weighted)</option>
       <option value="pts_reb.unweighted">PTS·REB r (raw)</option>
       <option value="pts_ast.unweighted">PTS·AST r (raw)</option>
       <option value="pts_3pm.unweighted">PTS·3PM r (raw)</option>
-      <option value="tot_reb.weighted">Game total·REB r (weighted)</option>
-      <option value="tm_reb.weighted">Team score·REB r (weighted)</option>
-      <option value="op_reb.weighted">Opp score·REB r (weighted)</option>
+      <option value="tot_reb.shrunk">Game total·REB r (shrunk)</option>
+      <option value="tm_reb.shrunk">Team score·REB r (shrunk)</option>
+      <option value="op_reb.shrunk">Opp score·REB r (shrunk)</option>
     </select>
   </label>
   <span class="count" id="count"></span>
@@ -148,7 +159,7 @@ const SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba
 let DATA = null;        // full payload
 let TODAY_IDS = null;   // Set<string> of team_ids playing today (live)
 let MODE = "today";
-let SORT = { key: "pts_reb.weighted", dir: -1 };
+let SORT = { key: "pts_reb.shrunk", dir: -1 };
 let BLEND = [];         // seasons, oldest first — blended by box stats + prop builder
 let SW = {};            // per-game season weights (recency tilt), from the data file
 const gw = g => SW[g.s] || 0;
@@ -188,6 +199,10 @@ function renderSched(games, live) {
     games.map(g => `<span class="g"><b>${g.matchup}</b>${g.st?` <span class="muted">${g.st}</span>`:""}</span>`).join("");
 }
 
+const SHRUNK_HT = "Big number = shrunk r, the one to price with: the player's own recency-weighted r pulled " +
+  "toward the typical r of rotation players in a similar role, more so the noisier the sample " +
+  "(one player's r carries about 0.10 of noise). Small text = the player's own data r and its p-value.";
+
 // Box-score columns (G..3PM) blend every pulled season (BLEND), each
 // game weighted by its season, via the _g/_min/... fields precomputed in
 // init(). The correlation columns remain pooled + recency-weighted across
@@ -203,23 +218,28 @@ const COLS = [
   { k:"_reb", h:"Reb", v:p=>num(p._reb,1) },
   { k:"_ast", h:"Ast", v:p=>num(p._ast,1) },
   { k:"_tpm", h:"3PM", v:p=>num(p._tpm,1) },
-  { k:"pts_reb.weighted", h:"PTS·REB r", v:p=>rCell(p.pts_reb) },
-  { k:"pts_ast.weighted", h:"PTS·AST r", v:p=>rCell(p.pts_ast) },
-  { k:"pts_3pm.weighted", h:"PTS·3PM r", v:p=>rCell(p.pts_3pm) },
-  { k:"tot_reb.weighted", h:"TOT·REB r", ht:"Final game total (both teams) vs his rebounds. Negative = more boards in low-scoring games (pairs with game Under + REB Over)", v:p=>rCell(p.tot_reb) },
-  { k:"tm_reb.weighted", h:"TM·REB r", ht:"His team's final score vs his rebounds", v:p=>rCell(p.tm_reb) },
-  { k:"op_reb.weighted", h:"OPP·REB r", ht:"Opponent's final score vs his rebounds", v:p=>rCell(p.op_reb) },
+  { k:"pts_reb.shrunk", h:"PTS·REB r", ht:SHRUNK_HT, v:p=>rCell(p.pts_reb) },
+  { k:"pts_ast.shrunk", h:"PTS·AST r", ht:SHRUNK_HT, v:p=>rCell(p.pts_ast) },
+  { k:"pts_3pm.shrunk", h:"PTS·3PM r", ht:SHRUNK_HT, v:p=>rCell(p.pts_3pm) },
+  { k:"tot_reb.shrunk", h:"TOT·REB r", ht:"Final game total (both teams) vs his rebounds. Negative = more boards in low-scoring games (pairs with game Under + REB Over). " + SHRUNK_HT, v:p=>rCell(p.tot_reb) },
+  { k:"tm_reb.shrunk", h:"TM·REB r", ht:"His team's final score vs his rebounds. " + SHRUNK_HT, v:p=>rCell(p.tm_reb) },
+  { k:"op_reb.shrunk", h:"OPP·REB r", ht:"Opponent's final score vs his rebounds. " + SHRUNK_HT, v:p=>rCell(p.op_reb) },
 ];
 const EXPANDED = new Set();
 
-function rCell(pair) {
+// Headline = shrunk r (falls back to the data r on files without one); the
+// small text is the player's own weighted r, underlined when p < 0.05.
+function rCell(pair, full) {
   if (!pair) return "—";
-  const w = pair.weighted, u = pair.unweighted;
+  const w = pair.weighted, u = pair.unweighted, s = pair.shrunk;
   if (w.r===null) return "—";
-  const col = w.r>0 ? "var(--pos)" : "var(--neg)";
+  const v = s ? s.r : w.r;
+  const col = v>0 ? "var(--pos)" : "var(--neg)";
   const sig = (w.p_value!==null && w.p_value<0.05) ? "sig" : "";
-  return `<span class="r ${sig}" style="color:${col}">${num(w.r)}</span>` +
-         ` <span class="raw">p=${num(w.p_value,3)} · raw ${num(u.r)}</span>`;
+  const why = s ? ` title="prior for the role ${num(s.prior,3)}, ${Math.round(100*s.w)}% weight on the player's own r"` : "";
+  return `<span class="r" style="color:${col}"${why}>${num(v)}</span>` +
+         ` <span class="raw">${s?`data <span class="${sig}">${num(w.r)}</span> · `:""}p=${num(w.p_value,3)}` +
+         `${s?(full?` · prior ${num(s.prior)}`:""):` · raw ${num(u.r)}`}</span>`;
 }
 
 // One r value for the per-season sub-table (single season => unweighted).
@@ -255,6 +275,46 @@ function propState(p) {
   return PROPS.get(p.athlete_id);
 }
 
+// ---- SGP pricer: Gaussian copula on the shrunk r ---------------------------
+// The r columns are margin correlations (whole stat lines). A same-game
+// parlay only cares whether each leg clears its line, so the joint price
+// comes from a bivariate normal at the two legs' quantiles: the binary
+// correlation that implies shrinks as the lines move off the median. Plugging
+// a margin r straight into the binary formula overstates it ~1.5x.
+const PAIR_KEY = { "pts|reb":"pts_reb", "pts|ast":"pts_ast", "pts|tpm":"pts_3pm",
+                   "tot|reb":"tot_reb", "tm|reb":"tm_reb", "op|reb":"op_reb" };
+
+// Normal CDF from erf (Abramowitz-Stegun 7.1.26, error < 1.5e-7).
+function ncdf(x) {
+  const t = 1 / (1 + 0.3275911 * Math.abs(x) / Math.SQRT2);
+  const e = t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 +
+            t * (-1.453152027 + t * 1.061405429)))) * Math.exp(-x * x / 2);
+  return x >= 0 ? 1 - e / 2 : e / 2;
+}
+function nppf(pr) {
+  let lo = -10, hi = 10;
+  for (let i = 0; i < 80; i++) { const m = (lo + hi) / 2; if (ncdf(m) < pr) lo = m; else hi = m; }
+  return (lo + hi) / 2;
+}
+// P(U below its a-quantile and V below its b-quantile) for standard normals
+// with correlation r: Plackett's identity, Simpson's rule over rho in [0, r].
+function copulaJoint(r, a, b) {
+  const x = nppf(a), y = nppf(b), n = 200, h = r / n;
+  let tot = 0;
+  for (let i = 0; i <= n; i++) {
+    const rho = i * h, q = 1 - rho * rho;
+    const f = Math.exp(-(x * x - 2 * rho * x * y + y * y) / (2 * q)) / (2 * Math.PI * Math.sqrt(q));
+    tot += f * (i === 0 || i === n ? 1 : i % 2 ? 4 : 2);
+  }
+  return a * b + tot * h / 3;
+}
+// "+117" / "117" / "-133" -> implied probability; null if not American odds.
+function oddsProb(txt) {
+  const o = parseFloat(String(txt || "").replace(/\s/g, ""));
+  if (!Number.isFinite(o) || Math.abs(o) < 100) return null;
+  return o > 0 ? 100 / (o + 100) : -o / (-o + 100);
+}
+
 // p (probability) -> fair American odds string.
 function fairOdds(pr) {
   if (pr <= 0 || pr >= 1) return "—";
@@ -277,6 +337,7 @@ function drawProp(pb, p) {
   const games = logOf(p).filter(g => g[xKey] != null && g[yKey] != null);
   const chartEl = pb.querySelector(".pb-chart");
   const quadEl = pb.querySelector(".quads");
+  drawPricer(pb, p, games);
   if (!games.length) {
     chartEl.innerHTML = `<div class="muted" style="padding:20px 0">No ${BLEND.join(" or ")} games for this player.</div>`;
     quadEl.innerHTML = "";
@@ -426,7 +487,74 @@ function propHTML(p) {
       <label>${STAT_LABEL[st.yStat]} line<input type="number" step="0.5" min="0" value="${st.yLine}" data-f="yLine"></label>
     </div>
     <div class="pb-body"><div class="pb-chart"></div><div class="quads"></div></div>
+    <div class="pr">
+      <div class="pb-title">SGP pricer</div>
+      <div class="pr-sub"></div>
+      <div class="pb-controls">
+        <label><span data-lab="x"></span> fair odds<input type="text" inputmode="numeric" placeholder="e.g. -110" value="${st.xFv||""}" data-f="xFv"></label>
+        <label><span data-lab="y"></span> fair odds<input type="text" inputmode="numeric" placeholder="e.g. +120" value="${st.yFv||""}" data-f="yFv"></label>
+        <label>Payout<input type="number" step="0.01" min="1" placeholder="4.14" value="${st.pay||""}" data-f="pay"> x</label>
+      </div>
+      <div class="pr-out"></div>
+    </div>
   </div>`;
+}
+
+// Price the four over/under combos of the builder's two lines. Leg odds are
+// the Over's fair odds (e.g. Vulture avg_fv; Under = the complement); a leg
+// left blank uses the player's weighted game-log hit rate instead.
+function drawPricer(pb, p, games) {
+  const el = pb.querySelector(".pr");
+  if (!el) return;
+  const st = propState(p);
+  const xL = STAT_LABEL[st.xStat], yL = STAT_LABEL[st.yStat];
+  el.querySelector('[data-lab="x"]').textContent = `${xL} o${st.xLine}`;
+  el.querySelector('[data-lab="y"]').textContent = `${yL} o${st.yLine}`;
+  const sub = el.querySelector(".pr-sub"), out = el.querySelector(".pr-out");
+  const pair = p[PAIR_KEY[`${st.xStat}|${st.yStat}`]];
+  if (!pair || pair.weighted.r === null) {
+    sub.textContent = `No ${xL}·${yL} correlation is computed, so these lines can't be priced together here.`;
+    out.innerHTML = "";
+    return;
+  }
+  const s = pair.shrunk, r = s ? s.r : pair.weighted.r;
+  const leg = (stat, line, txt) => {
+    const fv = oddsProb(txt);
+    if (fv !== null) return { p: fv, fv: true };
+    let w = 0, wo = 0;
+    for (const g of games) {
+      if (g[stat] === line) continue;
+      w += gw(g); if (g[stat] > line) wo += gw(g);
+    }
+    return { p: w ? wo / w : null, fv: false };
+  };
+  const X = leg(st.xStat, st.xLine, st.xFv), Y = leg(st.yStat, st.yLine, st.yFv);
+  const src = X.fv && Y.fv ? "both legs from the fair odds entered"
+    : !X.fv && !Y.fv ? "legs from the game-log hit rates until fair odds are entered"
+    : `${X.fv ? yL : xL} leg from the game-log hit rate until its fair odds are entered`;
+  sub.innerHTML = `Joint priced with a Gaussian copula on the shrunk ${xL}·${yL} r <b>${num(r, 3)}</b>` +
+    (s ? ` (own data ${num(pair.weighted.r, 3)}, prior for the role ${num(s.prior, 3)}, ${Math.round(100 * s.w)}% weight on own data)` : "") +
+    `; ${src}. Corr = the binary correlation that r implies for the combo at these lines.`;
+  if (X.p === null || Y.p === null || X.p <= 0 || X.p >= 1 || Y.p <= 0 || Y.p >= 1) {
+    out.innerHTML = `<div class="pb-note">Not enough games on both sides of a line to price it; enter fair odds.</div>`;
+    return;
+  }
+  const pay = parseFloat(st.pay);
+  const pct = v => `${(100 * v).toFixed(1)}%`;
+  const row = (xo, yo) => {
+    const a = xo ? X.p : 1 - X.p, b = yo ? Y.p : 1 - Y.p;
+    const rr = xo === yo ? r : -r;  // an Over/Under combo flips the sign
+    const j = copulaJoint(rr, a, b);
+    const corr = (j - a * b) / Math.sqrt(a * (1 - a) * b * (1 - b));
+    const ev = pay > 1 ? pay * j - 1 : null;
+    return `<tr><td class="l">${xL} <b>${xo ? "o" : "u"}${st.xLine}</b> &amp; ${yL} <b>${yo ? "o" : "u"}${st.yLine}</b></td>` +
+      `<td>${pct(a)} · ${pct(b)}</td><td>${corr >= 0 ? "+" : ""}${corr.toFixed(3)}</td><td>${pct(j)}</td>` +
+      `<td class="fv">${fairOdds(j)}</td><td>${(1 / j).toFixed(2)}x</td>` +
+      `<td>${ev === null ? "—" : `<span style="color:${ev >= 0 ? "var(--pos)" : "var(--neg)"}">${ev >= 0 ? "+" : ""}${(100 * ev).toFixed(1)}%</span>`}</td></tr>`;
+  };
+  out.innerHTML = `<table class="sub"><thead><tr><th class="l">Combo</th><th>Legs</th><th>Corr</th>` +
+    `<th>Fair %</th><th>Fair odds</th><th>Fair x</th><th>EV @ payout</th></tr></thead><tbody>` +
+    row(true, true) + row(false, false) + row(true, false) + row(false, true) + `</tbody></table>`;
 }
 
 // Bind builder controls + first draw. Input changes redraw only this builder
@@ -438,9 +566,19 @@ function initProp(pb) {
     const f = el.dataset.f;
     const h = () => {
       const st = propState(p);
+      if (f === "xFv" || f === "yFv" || f === "pay") {
+        // Pricer inputs: keep the raw text (odds can be negative), reprice only.
+        st[f] = el.value.trim();
+        drawPricer(pb, p, logOf(p).filter(g => g[st.xStat] != null && g[st.yStat] != null));
+        return;
+      }
+      // A new stat or line makes that leg's entered fair odds stale.
+      const a = f[0];
+      st[a + "Fv"] = "";
+      const fvIn = pb.querySelector(`[data-f="${a}Fv"]`);
+      if (fvIn) fvIn.value = "";
       if (f === "xStat" || f === "yStat") {
         // New stat -> reset its line to the blended mean, relabel the input.
-        const a = f[0];
         st[f] = el.value;
         st[a + "Line"] = halfLine(p["_" + el.value]);
         const inp = pb.querySelector(`[data-f="${a}Line"]`);
@@ -479,8 +617,8 @@ function detailHTML(p) {
   body += `<tr class="pool"><td class="l" title="Each season is centered on its own average before pooling, so a season where his role moved every stat up or down together can't fake a correlation"><b>Pooled</b> <span class="muted">(wtd, within-season)</span></td>`+
           `<td>${p.n_games}</td><td>${num(p.min_mean,1)}</td>`+
           `<td>${num(p.pts_mean,1)}</td><td>${num(p.reb_mean,1)}</td><td>${num(p.ast_mean,1)}</td><td>${num(p.tpm_mean,1)}</td>`+
-          `<td class="l">${rCell(p.pts_reb)}</td><td class="l">${rCell(p.pts_ast)}</td><td class="l">${rCell(p.pts_3pm)}</td>`+
-          `<td class="l">${rCell(p.tot_reb)}</td><td class="l">${rCell(p.tm_reb)}</td><td class="l">${rCell(p.op_reb)}</td></tr>`;
+          `<td class="l">${rCell(p.pts_reb,1)}</td><td class="l">${rCell(p.pts_ast,1)}</td><td class="l">${rCell(p.pts_3pm,1)}</td>`+
+          `<td class="l">${rCell(p.tot_reb,1)}</td><td class="l">${rCell(p.tm_reb,1)}</td><td class="l">${rCell(p.op_reb,1)}</td></tr>`;
   return `<div class="detail-wrap">${propHTML(p)}<div class="detail-h">Per-season history — box stats &amp; within-season correlations`+
          ` <span class="muted">(left columns above blend ${BLEND.join(" + ")}, weighted like the prop builder; r columns pool every season's game-to-game swings around that season's average, recency-weighted)</span></div>`+
          `<table class="sub"><thead><tr><th class="l">Season</th><th>G</th><th>Min</th><th>Pts</th><th>Reb</th><th>Ast</th><th>3PM</th>`+
@@ -590,7 +728,8 @@ async function init() {
   const wtxt = Object.entries(SW).map(([k,v])=>`${k}: ${v}`).join(", ");
   document.getElementById("meta").innerHTML =
     `Seasons ${DATA.seasons.join("–")} · regular season, short-minute games (&lt;60% of usual) excluded from r · recency weights (${wtxt}) · ` +
-    `${DATA.players.length} players · box stats + prop builder = ${BLEND.join(" + ")} weighted · r = all seasons pooled/weighted · ` +
+    `${DATA.players.length} players · box stats + prop builder = ${BLEND.join(" + ")} weighted · r = all seasons pooled/weighted, ` +
+    `${DATA.shrinkage ? "big number shrunk toward players in a similar role (hover a header), small text = the player's own data · " : ""}` +
     `click a player for the prop builder + per-season history · generated ${new Date(DATA.generated_at).toLocaleString()}`;
 
   // Live schedule for the toggle; fall back to the baked snapshot.

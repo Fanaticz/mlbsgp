@@ -77,6 +77,17 @@ DEFAULT_COLS = {"MIN": 0, "PTS": 13, "REB": 7, "AST": 8, "3PT": 3}
 # (both teams, incl. OT), his team's score, and the opponent's score.
 SCORE_KEYS = ("tot", "tm", "op")
 
+# Shrinkage: one player's r carries ~0.10 of sampling noise, about as much as
+# the real spread between players, so the raw r's overstate how players
+# differ. Each r is pulled toward the typical r of rotation players in a
+# similar role, the role set by the box stat below (high-assist guards run a
+# lower PTS-AST r than low-usage wings; PTS-3PM depends on 3PM volume).
+SHRINK_COVARIATE = {"pts_reb": "reb_mean", "pts_ast": "ast_mean", "pts_3pm": "tpm_mean",
+                    "tot_reb": "reb_mean", "tm_reb": "reb_mean", "op_reb": "reb_mean"}
+SHRINK_POOL = {"min_mpg": 20.0, "min_games": 40}
+SHRINK_BINS = 5
+SHRINK_TAU2_FLOOR = 0.02 ** 2
+
 ID_RE = re.compile(r"/athletes/(\d+)")
 
 
@@ -437,6 +448,62 @@ def _score_reb(games: list[dict], key: str) -> tuple[float | None, int]:
     return pearson([g[key] for g in gs], [g["reb"] for g in gs]), len(gs)
 
 
+def _interp(knots: list[tuple[float, float]], x: float) -> float:
+    """Piecewise-linear through (x, y) knots, flat beyond the ends."""
+    if x <= knots[0][0]:
+        return knots[0][1]
+    for (x0, y0), (x1, y1) in zip(knots, knots[1:]):
+        if x <= x1:
+            return y0 if x1 == x0 else y0 + (y1 - y0) * (x - x0) / (x1 - x0)
+    return knots[-1][1]
+
+
+def add_shrinkage(players: list[dict]) -> dict:
+    """Empirical-Bayes shrink of each player's weighted r, written to
+    p[pair]["shrunk"] = {"r", "prior", "w"}.
+
+    Prior: the mean r of rotation players in the same role, from equal-count
+    bins of the pair's covariate (SHRINK_COVARIATE), joined piecewise-linearly.
+    tau^2 (real between-player spread) = variance of the pool's r around that
+    prior minus their average sampling variance (1 - r^2)^2 / nEff. Each
+    player's weight on his own r is tau^2 / (tau^2 + his sampling variance).
+    Returns the per-pair fit for the payload."""
+    fits = {}
+    for pair, cov in SHRINK_COVARIATE.items():
+        def usable(p: dict) -> bool:
+            return p[pair]["weighted"]["r"] is not None and bool(p["effective_n"])
+        pool = sorted((p for p in players if usable(p)
+                       and p["min_mean"] >= SHRINK_POOL["min_mpg"]
+                       and p["n_games"] >= SHRINK_POOL["min_games"]),
+                      key=lambda p: p[cov])
+        if len(pool) < 2 * SHRINK_BINS:
+            continue
+        knots = []
+        for i in range(SHRINK_BINS):
+            b = pool[i * len(pool) // SHRINK_BINS:(i + 1) * len(pool) // SHRINK_BINS]
+            knots.append((statistics.median(p[cov] for p in b),
+                          sum(p[pair]["weighted"]["r"] for p in b) / len(b)))
+
+        def noise(p: dict) -> float:
+            r = p[pair]["weighted"]["r"]
+            return (1 - r * r) ** 2 / p["effective_n"]
+        resid = [p[pair]["weighted"]["r"] - _interp(knots, p[cov]) for p in pool]
+        tau2 = max(sum(x * x for x in resid) / len(resid)
+                   - sum(noise(p) for p in pool) / len(pool), SHRINK_TAU2_FLOOR)
+        for p in players:
+            if not usable(p):
+                continue
+            prior = _interp(knots, p[cov])
+            w = tau2 / (tau2 + noise(p))
+            p[pair]["shrunk"] = {"r": round(w * p[pair]["weighted"]["r"] + (1 - w) * prior, 4),
+                                 "prior": round(prior, 4), "w": round(w, 3)}
+        fits[pair] = {"covariate": cov, "tau": round(math.sqrt(tau2), 4), "pool_n": len(pool),
+                      "knots": [[round(x, 2), round(y, 4)] for x, y in knots]}
+    return {"method": "empirical Bayes: weighted r shrunk toward rotation players "
+                      "with a similar covariate value",
+            "pool": SHRINK_POOL, "pairs": fits}
+
+
 def mark_short_games(games: list[dict], frac: float) -> float:
     """Flag games where the player logged under `frac` x his median minutes for
     that season (injury exits, blowout rest, minutes restrictions). Those games
@@ -610,7 +677,22 @@ def main() -> None:
     ap.add_argument("--out", default=os.path.join("public", "data", "nba_correlations.json"))
     ap.add_argument("--limit", type=int, default=0,
                     help="Cap players processed (0 = all). For quick test runs.")
+    ap.add_argument("--reshrink", action="store_true",
+                    help="Only recompute the shrunk r's in the existing --out file "
+                         "(no fetching).")
     args = ap.parse_args()
+
+    if args.reshrink:
+        with open(args.out, encoding="utf-8") as f:
+            payload = json.load(f)
+        payload["shrinkage"] = add_shrinkage(payload["players"])
+        with open(args.out, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+        for pair, fit in payload["shrinkage"]["pairs"].items():
+            print(f"{pair:8} tau {fit['tau']:.3f}  pool {fit['pool_n']}  prior by "
+                  f"{fit['covariate']}: " + "  ".join(f"{x:g}->{y:+.3f}" for x, y in fit["knots"]))
+        print(f"Wrote {args.out}")
+        return
 
     weights: dict[int, float] = {}
     for tok in args.weights.split(","):
@@ -675,6 +757,7 @@ def main() -> None:
         p["playing_today"] = bool(p["team_id"]) and p["team_id"] in today_ids
 
     players.sort(key=lambda p: p["name"].lower())
+    shrinkage = add_shrinkage(players)
 
     reportable = [p for p in players if p["n_games"] >= args.min_games]
     total_games = sum(p["n_games"] for p in players)
@@ -704,6 +787,7 @@ def main() -> None:
         "n_players": len(players),
         "n_players_reportable": len(reportable),
         "total_game_rows": total_games,
+        "shrinkage": shrinkage,
         "players": players,
     }
 

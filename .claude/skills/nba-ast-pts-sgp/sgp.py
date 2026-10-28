@@ -94,11 +94,16 @@ def pool_stats(by):
 
 
 def margin_r(by, name):
-    """Recency-weighted within-season PTS-AST r, shrunk toward the pool.
-    Per-player r carries ~0.10 of sampling noise vs ~0.08 of real spread,
-    so raw r's overstate differences between players."""
-    prior, tau2, _ = pool_stats(by)
+    """Recency-weighted within-season PTS-AST r, shrunk toward players in a
+    similar role. Per-player r carries ~0.10 of sampling noise vs ~0.08 of
+    real spread, so raw r's overstate differences between players. Uses the
+    data file's role-matched value (scripts/nba_fetch_correlations.py
+    add_shrinkage, also shown on the dashboard); older files fall back to
+    shrinking toward high-assist starters here."""
     p = by[name]
+    if "shrunk" in p["pts_ast"]:
+        return p["pts_ast"]["shrunk"]["r"]
+    prior, tau2, _ = pool_stats(by)
     r = p["pts_ast"]["weighted"]["r"]
     w = tau2 / (tau2 + (1 - r * r) ** 2 / p["effective_n"])
     return w * r + (1 - w) * prior
@@ -242,7 +247,12 @@ tr:nth-child(even) td{background:#151820}
 
 def card(d, by, rows, meta):
     e = html.escape
-    prior, _, n_pool = pool_stats(by)
+    if "shrinkage" in d:
+        pool = (f'rotation players with a similar assist volume '
+                f'(prior {d["shrinkage"]["pairs"]["pts_ast"]["knots"][-1][1]:+.3f} for heavy passers)')
+    else:
+        prior, _, n_pool = pool_stats(by)
+        pool = f"{n_pool} high-assist starters (avg {prior:+.3f})"
     date = d["schedule_today"]["date"]
     used = set()
     body = []
@@ -272,7 +282,7 @@ def card(d, by, rows, meta):
                 cells.append(f'<td class="l{sep}">{lab}</td><td class="miss" colspan="2">no {tag} FV</td>')
         body.append("<tr>" + "".join(cells) + "</tr>")
     foot = [f'<span class="r">PTS/AST r</span> = margin corr (season-centered, recency-weighted), '
-            f'shrunk toward {n_pool} high-assist starters (avg {prior:+.3f})',
+            f'shrunk toward {pool}',
             '<span class="r">combo binary</span> = what that implies for Ast Under + Pts Over at these '
             'lines (Gaussian copula); joint priced off the copula',
             'Bet it if the payout is above the fair multiplier.']

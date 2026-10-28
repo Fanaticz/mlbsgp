@@ -71,10 +71,13 @@ Look at the PNG before sending it (SendUserFile, display render).
 
 Math (`margin_r` / `joint` in sgp.py):
 - **Margin r** = recency-weighted, season-centered Pearson PTS-AST r, shrunk
-  (empirical Bayes) toward high-assist starters (>=4 AST, >=24 MPG, >=60 g;
-  avg ~ +0.075). Per-player sampling noise (~0.10) is larger than the real
-  spread between players (~0.08), so raw r's must not be used directly.
-  Players picked for a negative raw r regress toward zero.
+  (empirical Bayes) toward rotation players with a similar assist volume
+  (prior ~ +0.07 for heavy passers). It is computed by
+  `scripts/nba_fetch_correlations.py` (`add_shrinkage`, stored as
+  `pts_ast.shrunk`), the same number the NBA dashboard shows and prices with.
+  Per-player sampling noise (~0.10) is larger than the real spread between
+  players (~0.08), so raw r's must not be used directly. Players picked for
+  a negative raw r regress toward zero.
 - Opposite-side combos use corr(AST, -PTS) = -margin r.
 - **Joint** = Gaussian copula at the two legs' quantiles (Plackett integral).
   This is line-aware: the implied binary corr shrinks as lines move away
