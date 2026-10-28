@@ -11,6 +11,12 @@ and recency-weighted, where each game carries a per-season weight (default
 significance test uses the Kish effective sample size so leaning on recent
 games is reflected honestly in the p-value.
 
+Pooled correlations are within-season: each stat is centered on that season's
+mean before the seasons are pooled. Otherwise a season where a player's role
+moved every stat together (fewer minutes -> fewer points AND fewer assists)
+shows up as a positive correlation even when every single season is flat or
+negative. Only the game-to-game swings a same-game parlay depends on remain.
+
 Data source (public ESPN endpoints, no key required):
   - Season athlete index:
       https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/seasons/{Y}/athletes?limit=1000
@@ -411,6 +417,19 @@ def _season_stats(games: list[dict]) -> dict:
     }
 
 
+def _centered(vals: list[float], seasons: list[int]) -> list[float]:
+    """Each value minus its own season's mean. Pooling these keeps only the
+    game-to-game swings within a season, so a season where a player's role
+    (minutes, team) moved every stat up or down together can't pass for a
+    same-game correlation (Simpson's paradox)."""
+    tot: dict[int, list[float]] = {}
+    for v, s in zip(vals, seasons):
+        t = tot.setdefault(s, [0.0, 0])
+        t[0] += v
+        t[1] += 1
+    return [v - tot[s][0] / tot[s][1] for v, s in zip(vals, seasons)]
+
+
 def _score_reb(games: list[dict], key: str) -> tuple[float | None, int]:
     """Unweighted r between a game-score stat and the player's REB, over games
     with a known final score."""
@@ -444,8 +463,10 @@ def process_player(
     tpm: list[float] = []
     mins: list[float] = []
     ws: list[float] = []
+    yrs: list[int] = []         # each game's season, for within-season centering
     scored: list[dict] = []     # games with a known final score
     scored_ws: list[float] = []
+    scored_yrs: list[int] = []
     per_season: dict[str, int] = {}
     all_by_year: dict[int, list[dict]] = {}
     n_short = 0
@@ -463,8 +484,9 @@ def process_player(
         for gm in g:
             pts.append(gm["pts"]); reb.append(gm["reb"]); ast.append(gm["ast"])
             tpm.append(gm["tpm"]); mins.append(gm["min"]); ws.append(w)
+            yrs.append(yr)
             if gm["tot"] is not None:
-                scored.append(gm); scored_ws.append(w)
+                scored.append(gm); scored_ws.append(w); scored_yrs.append(yr)
     n = len(pts)
     if n < 3:
         return None
@@ -477,23 +499,32 @@ def process_player(
 
     name, pos = athlete_name(sess, max(seasons), aid)
 
+    # Pooled r's are within-season: every stat is centered on its season mean
+    # first (_centered). Each season mean spends one degree of freedom, so the
+    # significance tests drop one n per extra season.
+    c_pts, c_reb = _centered(pts, yrs), _centered(reb, yrs)
+    c_ast, c_tpm = _centered(ast, yrs), _centered(tpm, yrs)
+    dfx = len(set(yrs)) - 1
     # Unweighted (pooled, every game equal) for reference/comparison.
-    r_pr, r_pa, r_p3 = pearson(pts, reb), pearson(pts, ast), pearson(pts, tpm)
+    r_pr, r_pa, r_p3 = pearson(c_pts, c_reb), pearson(c_pts, c_ast), pearson(c_pts, c_tpm)
     # Recency-weighted: each game carries its season weight.
-    wpr = weighted_pearson(pts, reb, ws)
-    wpa = weighted_pearson(pts, ast, ws)
-    wp3 = weighted_pearson(pts, tpm, ws)
+    wpr = weighted_pearson(c_pts, c_reb, ws)
+    wpa = weighted_pearson(c_pts, c_ast, ws)
+    wp3 = weighted_pearson(c_pts, c_tpm, ws)
     n_eff = wpr[1] if wpr else (wpa[1] if wpa else None)
+    n_test = None if n_eff is None else n_eff - dfx
 
-    # Game scoring vs REB (pooled; unweighted + recency-weighted).
-    s_reb = [g["reb"] for g in scored]
+    # Game scoring vs REB (pooled within-season; unweighted + recency-weighted).
+    s_dfx = len(set(scored_yrs)) - 1
+    s_reb = _centered([g["reb"] for g in scored], scored_yrs)
     score_corr = {}
     for k in SCORE_KEYS:
         xs = [g[k] for g in scored]
-        wk = weighted_pearson(xs, s_reb, scored_ws)
+        cx = _centered(xs, scored_yrs)
+        wk = weighted_pearson(cx, s_reb, scored_ws)
         score_corr[f"{k}_reb"] = {
-            "unweighted": _pair(pearson(xs, s_reb), len(xs)),
-            "weighted": _pair(wk[0] if wk else None, wk[1] if wk else None),
+            "unweighted": _pair(pearson(cx, s_reb), len(xs) - s_dfx),
+            "weighted": _pair(wk[0] if wk else None, wk[1] - s_dfx if wk else None),
         }
         score_corr[f"{k}_mean"] = round(sum(xs) / len(xs), 1) if xs else None
 
@@ -540,16 +571,16 @@ def process_player(
         "tpm_mean": round(sum(tpm) / n, 2),
         "pts_mean_weighted": round(sum(w * x for w, x in zip(ws, pts)) / W, 2),
         "pts_reb": {
-            "unweighted": _pair(r_pr, n),
-            "weighted": _pair(wpr[0] if wpr else None, n_eff),
+            "unweighted": _pair(r_pr, n - dfx),
+            "weighted": _pair(wpr[0] if wpr else None, n_test),
         },
         "pts_ast": {
-            "unweighted": _pair(r_pa, n),
-            "weighted": _pair(wpa[0] if wpa else None, n_eff),
+            "unweighted": _pair(r_pa, n - dfx),
+            "weighted": _pair(wpa[0] if wpa else None, n_test),
         },
         "pts_3pm": {
-            "unweighted": _pair(r_p3, n),
-            "weighted": _pair(wp3[0] if wp3 else None, n_eff),
+            "unweighted": _pair(r_p3, n - dfx),
+            "weighted": _pair(wp3[0] if wp3 else None, n_test),
         },
         **score_corr,
         "by_season": by_season,
@@ -658,6 +689,8 @@ def main() -> None:
             "scheme": "per-game season weights (recency tilt); weighted Pearson, "
                       "Kish effective-N used for significance",
             "per_game_season_weights": {str(k): v for k, v in sorted(weights.items())},
+            "centering": "pooled r's are within-season: each stat is centered on "
+                         "its season mean before pooling",
         },
         "recent_seasons": recent,
         "min_games_reportable": args.min_games,

@@ -197,7 +197,7 @@ const COLS = [
   { k:"team_abbr", h:"Tm", l:true, v:p=>`<span class="team">${p.team_abbr||"—"}</span>` },
   { k:"position", h:"Pos", l:true, v:p=>p.position||"—" },
   { k:"_g", h:"G", ht:"Games across the pulled seasons (short-minute games hidden unless toggled)", v:p=>p._g },
-  { k:"effective_n", h:"nEff", ht:"Effective sample size of the pooled weighted correlation", v:p=>num(p.effective_n,1) },
+  { k:"effective_n", h:"nEff", ht:"Effective sample size of the pooled weighted correlation (r columns are within-season: each season centered on its own average, then pooled)", v:p=>num(p.effective_n,1) },
   { k:"_min", h:"Min", v:p=>num(p._min,1) },
   { k:"_pts", h:"Pts", v:p=>num(p._pts,1) },
   { k:"_reb", h:"Reb", v:p=>num(p._reb,1) },
@@ -476,13 +476,13 @@ function detailHTML(p) {
            `<td class="l">${rMini(s.tot_reb)}</td><td class="l">${rMini(s.tm_reb)}</td><td class="l">${rMini(s.op_reb)}</td></tr>`;
   }).join("");
   // Pooled (all seasons, recency-weighted) reference row.
-  body += `<tr class="pool"><td class="l"><b>Pooled</b> <span class="muted">(wtd)</span></td>`+
+  body += `<tr class="pool"><td class="l" title="Each season is centered on its own average before pooling, so a season where his role moved every stat up or down together can't fake a correlation"><b>Pooled</b> <span class="muted">(wtd, within-season)</span></td>`+
           `<td>${p.n_games}</td><td>${num(p.min_mean,1)}</td>`+
           `<td>${num(p.pts_mean,1)}</td><td>${num(p.reb_mean,1)}</td><td>${num(p.ast_mean,1)}</td><td>${num(p.tpm_mean,1)}</td>`+
           `<td class="l">${rCell(p.pts_reb)}</td><td class="l">${rCell(p.pts_ast)}</td><td class="l">${rCell(p.pts_3pm)}</td>`+
           `<td class="l">${rCell(p.tot_reb)}</td><td class="l">${rCell(p.tm_reb)}</td><td class="l">${rCell(p.op_reb)}</td></tr>`;
   return `<div class="detail-wrap">${propHTML(p)}<div class="detail-h">Per-season history — box stats &amp; within-season correlations`+
-         ` <span class="muted">(left columns above blend ${BLEND.join(" + ")}, weighted like the prop builder; r columns pool every season, recency-weighted)</span></div>`+
+         ` <span class="muted">(left columns above blend ${BLEND.join(" + ")}, weighted like the prop builder; r columns pool every season's game-to-game swings around that season's average, recency-weighted)</span></div>`+
          `<table class="sub"><thead><tr><th class="l">Season</th><th>G</th><th>Min</th><th>Pts</th><th>Reb</th><th>Ast</th><th>3PM</th>`+
          `<th class="l">PTS·REB</th><th class="l">PTS·AST</th><th class="l">PTS·3PM</th>`+
          `<th class="l">TOT·REB</th><th class="l">TM·REB</th><th class="l">OPP·REB</th></tr></thead><tbody>${body}</tbody></table></div>`;
