@@ -108,6 +108,20 @@
     border:1px solid var(--line); color:var(--txt); border-radius:8px; padding:7px 10px; font-size:13px; }
   .pr .pb-controls input[type=number] { width:74px; }
   .pr table.sub td.fv { font-weight:600; color:var(--accent); }
+  .fvw { display:inline-flex; align-items:center; gap:6px; }
+  .sgn { background:var(--panel); border:1px solid var(--line); color:var(--txt); border-radius:8px;
+    min-width:34px; padding:6px 8px; font-size:14px; font-weight:600; cursor:pointer; }
+  .plug { margin-left:auto; border:1px solid var(--accent); color:var(--accent); border-radius:8px;
+    padding:6px 11px; font-size:12.5px; }
+  .plug b { font-size:14px; }
+  .pr-out, .sub-scroll { overflow-x:auto; }
+
+  /* Phones: the player panel sits in a table row as wide as the desktop
+     table; pin it to the screen so it doesn't need sideways scrolling. */
+  @media (max-width: 900px) {
+    .detail-wrap { position:sticky; left:0; width:calc(100vw - 24px); }
+    .pb-chart svg { max-width:100%; height:auto; }
+  }
 </style>
 </head>
 <body>
@@ -120,6 +134,10 @@
   <div class="toggle" id="toggle">
     <button data-mode="today" class="on">Playing today</button>
     <button data-mode="all">All players</button>
+  </div>
+  <div class="toggle" id="rtype" title="Plug-in r = the binary correlation to put in a devig calculator for lines near the median (the player's builder shows it for exact lines). Margin r = correlation of the whole stat lines.">
+    <button data-r="plug" class="on">Plug-in r</button>
+    <button data-r="margin">Margin r</button>
   </div>
   <input type="search" id="search" placeholder="Filter by name…" />
   <label class="muted" title="Set to 0 to show everyone (incl. low-minute players).">Min mpg
@@ -159,6 +177,7 @@ const SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba
 let DATA = null;        // full payload
 let TODAY_IDS = null;   // Set<string> of team_ids playing today (live)
 let MODE = "today";
+let RTYPE = "plug";     // r columns: "plug" = binary at median lines, "margin" = shrunk margin r
 let SORT = { key: "pts_reb.shrunk", dir: -1 };
 let BLEND = [];         // seasons, oldest first — blended by box stats + prop builder
 let SW = {};            // per-game season weights (recency tilt), from the data file
@@ -199,9 +218,16 @@ function renderSched(games, live) {
     games.map(g => `<span class="g"><b>${g.matchup}</b>${g.st?` <span class="muted">${g.st}</span>`:""}</span>`).join("");
 }
 
-const SHRUNK_HT = "Big number = shrunk r, the one to price with: the player's own recency-weighted r pulled " +
-  "toward the typical r of rotation players in a similar role, more so the noisier the sample " +
-  "(one player's r carries about 0.10 of noise). Small text = the player's own data r and its p-value.";
+const SHRUNK_HT = "Plug-in r = the binary correlation to put in a devig calculator " +
+  "(joint = pA·pB + r·√(pA(1−pA)·pB(1−pB))) for an Over+Over or Under+Under on lines near the median; " +
+  "flip its sign for an Over/Under mix. Expand the player for the exact value at any lines. " +
+  "Margin r = correlation of the whole stat lines: the player's own recency-weighted r pulled toward the " +
+  "typical r of rotation players in a similar role, more so the noisier the sample (one player's r " +
+  "carries about 0.10 of noise). Plug-in r comes from it through a Gaussian copula.";
+
+// Binary correlation that a margin r implies when both legs sit at their
+// median (Gaussian copula; the arcsine law). Lines off the median shrink it.
+const plugR = r => 2 / Math.PI * Math.asin(r);
 
 // Box-score columns (G..3PM) blend every pulled season (BLEND), each
 // game weighted by its season, via the _g/_min/... fields precomputed in
@@ -227,19 +253,24 @@ const COLS = [
 ];
 const EXPANDED = new Set();
 
-// Headline = shrunk r (falls back to the data r on files without one); the
-// small text is the player's own weighted r, underlined when p < 0.05.
+// Headline = plug-in r or the shrunk margin r (RTYPE); files without a
+// shrunk r fall back to the data r. Small text = the other number plus the
+// player's own weighted r, underlined when p < 0.05.
 function rCell(pair, full) {
   if (!pair) return "—";
   const w = pair.weighted, u = pair.unweighted, s = pair.shrunk;
   if (w.r===null) return "—";
-  const v = s ? s.r : w.r;
+  const m = s ? s.r : w.r, plug = RTYPE === "plug";
+  const v = plug ? plugR(m) : m;
   const col = v>0 ? "var(--pos)" : "var(--neg)";
   const sig = (w.p_value!==null && w.p_value<0.05) ? "sig" : "";
-  const why = s ? ` title="prior for the role ${num(s.prior,3)}, ${Math.round(100*s.w)}% weight on the player's own r"` : "";
-  return `<span class="r" style="color:${col}"${why}>${num(v)}</span>` +
-         ` <span class="raw">${s?`data <span class="${sig}">${num(w.r)}</span> · `:""}p=${num(w.p_value,3)}` +
-         `${s?(full?` · prior ${num(s.prior)}`:""):` · raw ${num(u.r)}`}</span>`;
+  const why = plug ? ` title="binary correlation at median lines from margin r ${num(m,3)}; flip the sign for an Over/Under mix"`
+    : s ? ` title="prior for the role ${num(s.prior,3)}, ${Math.round(100*s.w)}% weight on the player's own r"` : "";
+  const data = `data <span class="${sig}">${num(w.r)}</span>`;
+  return `<span class="r" style="color:${col}"${why}>${num(v)}</span> <span class="raw">` +
+    (plug ? `margin ${num(m)} · ${data}${full ? ` · p=${num(w.p_value,3)}` : ""}`
+          : `${s ? `${data} · ` : ""}p=${num(w.p_value,3)}${s ? "" : ` · raw ${num(u.r)}`}`) +
+    `${full && s ? ` · prior ${num(s.prior)}` : ""}</span>`;
 }
 
 // One r value for the per-season sub-table (single season => unweighted).
@@ -485,14 +516,15 @@ function propHTML(p) {
       <label>${STAT_LABEL[st.xStat]} line<input type="number" step="0.5" min="0" value="${st.xLine}" data-f="xLine"></label>
       <label>2nd stat<select data-f="yStat">${opts(Y_STATS, st.yStat)}</select></label>
       <label>${STAT_LABEL[st.yStat]} line<input type="number" step="0.5" min="0" value="${st.yLine}" data-f="yLine"></label>
+      <span class="plug" data-plug title="Binary correlation for a devig calculator at these lines (the SGP pricer below). Same size for every over/under combo; positive for Over+Over and Under+Under, negative for an Over/Under mix."></span>
     </div>
     <div class="pb-body"><div class="pb-chart"></div><div class="quads"></div></div>
     <div class="pr">
       <div class="pb-title">SGP pricer</div>
       <div class="pr-sub"></div>
       <div class="pb-controls">
-        <label><span data-lab="x"></span> fair odds<input type="text" inputmode="numeric" placeholder="e.g. -110" value="${st.xFv||""}" data-f="xFv"></label>
-        <label><span data-lab="y"></span> fair odds<input type="text" inputmode="numeric" placeholder="e.g. +120" value="${st.yFv||""}" data-f="yFv"></label>
+        <span class="fvw"><label><span data-lab="x"></span> fair odds<input type="text" inputmode="numeric" placeholder="e.g. -110" value="${st.xFv||""}" data-f="xFv"></label><button type="button" class="sgn" data-sgn="xFv" title="Flip the sign (phone number pads have no minus key)">±</button></span>
+        <span class="fvw"><label><span data-lab="y"></span> fair odds<input type="text" inputmode="numeric" placeholder="e.g. +120" value="${st.yFv||""}" data-f="yFv"></label><button type="button" class="sgn" data-sgn="yFv" title="Flip the sign (phone number pads have no minus key)">±</button></span>
         <label>Payout<input type="number" step="0.01" min="1" placeholder="4.14" value="${st.pay||""}" data-f="pay"> x</label>
       </div>
       <div class="pr-out"></div>
@@ -511,6 +543,8 @@ function drawPricer(pb, p, games) {
   el.querySelector('[data-lab="x"]').textContent = `${xL} o${st.xLine}`;
   el.querySelector('[data-lab="y"]').textContent = `${yL} o${st.yLine}`;
   const sub = el.querySelector(".pr-sub"), out = el.querySelector(".pr-out");
+  const plugEl = pb.querySelector("[data-plug]");
+  plugEl.innerHTML = "Plug-in r: —";
   const pair = p[PAIR_KEY[`${st.xStat}|${st.yStat}`]];
   if (!pair || pair.weighted.r === null) {
     sub.textContent = `No ${xL}·${yL} correlation is computed, so these lines can't be priced together here.`;
@@ -539,6 +573,10 @@ function drawPricer(pb, p, games) {
     out.innerHTML = `<div class="pb-note">Not enough games on both sides of a line to price it; enter fair odds.</div>`;
     return;
   }
+  const jo = copulaJoint(r, X.p, Y.p);
+  const plug = (jo - X.p * Y.p) / Math.sqrt(X.p * (1 - X.p) * Y.p * (1 - Y.p));
+  const sgn = v => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(3)}`;
+  plugEl.innerHTML = `Plug-in r at these lines: <b>${sgn(plug)}</b> <span class="muted">(${sgn(-plug)} for an Over/Under mix)</span>`;
   const pay = parseFloat(st.pay);
   const pct = v => `${(100 * v).toFixed(1)}%`;
   const row = (xo, yo) => {
@@ -548,12 +586,12 @@ function drawPricer(pb, p, games) {
     const corr = (j - a * b) / Math.sqrt(a * (1 - a) * b * (1 - b));
     const ev = pay > 1 ? pay * j - 1 : null;
     return `<tr><td class="l">${xL} <b>${xo ? "o" : "u"}${st.xLine}</b> &amp; ${yL} <b>${yo ? "o" : "u"}${st.yLine}</b></td>` +
-      `<td>${pct(a)} · ${pct(b)}</td><td>${corr >= 0 ? "+" : ""}${corr.toFixed(3)}</td><td>${pct(j)}</td>` +
       `<td class="fv">${fairOdds(j)}</td><td>${(1 / j).toFixed(2)}x</td>` +
-      `<td>${ev === null ? "—" : `<span style="color:${ev >= 0 ? "var(--pos)" : "var(--neg)"}">${ev >= 0 ? "+" : ""}${(100 * ev).toFixed(1)}%</span>`}</td></tr>`;
+      `<td>${ev === null ? "—" : `<span style="color:${ev >= 0 ? "var(--pos)" : "var(--neg)"}">${ev >= 0 ? "+" : ""}${(100 * ev).toFixed(1)}%</span>`}</td>` +
+      `<td>${pct(j)}</td><td>${corr >= 0 ? "+" : ""}${corr.toFixed(3)}</td><td>${pct(a)} · ${pct(b)}</td></tr>`;
   };
-  out.innerHTML = `<table class="sub"><thead><tr><th class="l">Combo</th><th>Legs</th><th>Corr</th>` +
-    `<th>Fair %</th><th>Fair odds</th><th>Fair x</th><th>EV @ payout</th></tr></thead><tbody>` +
+  out.innerHTML = `<table class="sub"><thead><tr><th class="l">Combo</th><th>Fair odds</th><th>Fair x</th>` +
+    `<th>EV @ payout</th><th>Fair %</th><th>Corr</th><th>Legs</th></tr></thead><tbody>` +
     row(true, true) + row(false, false) + row(true, false) + row(false, true) + `</tbody></table>`;
 }
 
@@ -599,6 +637,15 @@ function initProp(pb) {
     };
     el.tagName === "SELECT" ? el.onchange = h : el.oninput = h;
   });
+  // ± flips an odds box between + and −: phone number pads have no minus key.
+  pb.querySelectorAll(".sgn").forEach(btn => btn.onclick = () => {
+    const inp = pb.querySelector(`[data-f="${btn.dataset.sgn}"]`);
+    const v = inp.value.trim().replace(/^\+/, "");
+    inp.value = v.startsWith("-") ? v.slice(1) : "-" + v;
+    inp.dispatchEvent(new Event("input"));
+    inp.focus();
+    inp.setSelectionRange(inp.value.length, inp.value.length);
+  });
   drawProp(pb, p);
 }
 
@@ -621,9 +668,9 @@ function detailHTML(p) {
           `<td class="l">${rCell(p.tot_reb,1)}</td><td class="l">${rCell(p.tm_reb,1)}</td><td class="l">${rCell(p.op_reb,1)}</td></tr>`;
   return `<div class="detail-wrap">${propHTML(p)}<div class="detail-h">Per-season history — box stats &amp; within-season correlations`+
          ` <span class="muted">(left columns above blend ${BLEND.join(" + ")}, weighted like the prop builder; r columns pool every season's game-to-game swings around that season's average, recency-weighted)</span></div>`+
-         `<table class="sub"><thead><tr><th class="l">Season</th><th>G</th><th>Min</th><th>Pts</th><th>Reb</th><th>Ast</th><th>3PM</th>`+
+         `<div class="sub-scroll"><table class="sub"><thead><tr><th class="l">Season</th><th>G</th><th>Min</th><th>Pts</th><th>Reb</th><th>Ast</th><th>3PM</th>`+
          `<th class="l">PTS·REB</th><th class="l">PTS·AST</th><th class="l">PTS·3PM</th>`+
-         `<th class="l">TOT·REB</th><th class="l">TM·REB</th><th class="l">OPP·REB</th></tr></thead><tbody>${body}</tbody></table></div>`;
+         `<th class="l">TOT·REB</th><th class="l">TM·REB</th><th class="l">OPP·REB</th></tr></thead><tbody>${body}</tbody></table></div></div>`;
 }
 
 function sortKey(p, key) {
@@ -684,6 +731,14 @@ function render() {
     `${rows.length} player${rows.length===1?"":"s"}` + (MODE==="today" ? " playing today" : "");
 }
 
+function setRType(t) {
+  RTYPE = t;
+  try { localStorage.setItem("nbaRType", t); } catch (_) {}
+  document.querySelectorAll("#rtype button").forEach(b =>
+    b.classList.toggle("on", b.dataset.r === t));
+  render();
+}
+
 function setMode(m) {
   MODE = m;
   document.querySelectorAll("#toggle button").forEach(b =>
@@ -729,7 +784,7 @@ async function init() {
   document.getElementById("meta").innerHTML =
     `Seasons ${DATA.seasons.join("–")} · regular season, short-minute games (&lt;60% of usual) excluded from r · recency weights (${wtxt}) · ` +
     `${DATA.players.length} players · box stats + prop builder = ${BLEND.join(" + ")} weighted · r = all seasons pooled/weighted, ` +
-    `${DATA.shrinkage ? "big number shrunk toward players in a similar role (hover a header), small text = the player's own data · " : ""}` +
+    `${DATA.shrinkage ? "shrunk toward players in a similar role; Plug-in r = the binary r for a devig calculator (hover a header) · " : ""}` +
     `click a player for the prop builder + per-season history · generated ${new Date(DATA.generated_at).toLocaleString()}`;
 
   // Live schedule for the toggle; fall back to the baked snapshot.
@@ -742,6 +797,14 @@ async function init() {
 
   document.querySelectorAll("#toggle button").forEach(b =>
     b.onclick = () => setMode(b.dataset.mode));
+  document.querySelectorAll("#rtype button").forEach(b =>
+    b.onclick = () => setRType(b.dataset.r));
+  try {
+    const t = localStorage.getItem("nbaRType");
+    if (t === "plug" || t === "margin") RTYPE = t;
+  } catch (_) {}
+  document.querySelectorAll("#rtype button").forEach(b =>
+    b.classList.toggle("on", b.dataset.r === RTYPE));
   document.getElementById("search").oninput = render;
   document.getElementById("minmpg").oninput = render;
   document.getElementById("ming").oninput = render;
