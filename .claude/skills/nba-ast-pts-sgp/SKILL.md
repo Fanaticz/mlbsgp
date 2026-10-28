@@ -13,13 +13,22 @@ python3 .claude/skills/nba-ast-pts-sgp/sgp.py players
 
 Reads `public/data/nba_correlations.json` (refreshed daily; check
 `generated_at` / `schedule_today.date` is today). Keeps players on today's
-slate with >= 5 AST, >= 17 PTS, n >= 20, and weighted PTS-AST r < 0, sorted
-most negative first. Give the user the names comma-separated, and the
-command in exactly this form (user's Vulture command, DraftKings only):
+slate with >= 5 AST, >= 17 PTS, n >= 20, and shrunk PTS-AST margin r < 0,
+sorted most negative first. Give the user two commands, one per market,
+always starting with `/run` so they paste straight into Discord
+(DraftKings only; splitting keeps Vulture's EV cutoff from dropping the
+points lines):
 
 ```
-command_name:twa markets:player assist, player points bet_names:Nikola Jokic, Shai Gilgeous-Alexander, Jalen Brunson, Donovan Mitchell, Jamal Murray, Cade Cunningham, Stephen Curry, Trae Young, James Harden, Luka Doncic, Dejounte Murray books:dk
+/run command_name:twa markets:player assist bet_names:Nikola Jokic, Shai Gilgeous-Alexander, Jalen Brunson books:dk
 ```
+
+```
+/run command_name:twa markets:player points bet_names:Nikola Jokic, Shai Gilgeous-Alexander, Jalen Brunson books:dk
+```
+
+When re-pulling FVs for players already on the card, use the card's full
+player list rather than re-running the picker.
 
 ## 2. Price the SGPs from the Vulture screenshot
 

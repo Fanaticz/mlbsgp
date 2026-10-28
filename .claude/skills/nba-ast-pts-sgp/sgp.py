@@ -101,8 +101,10 @@ def players(args):
         print(f"  {p['name']:26} {p['team_abbr']:5} ast {p['ast_mean']:4.1f} pts {p['pts_mean']:4.1f}"
               f"  raw r {w['r']:+.3f}  shrunk {margin_r(by, p['name']):+.3f} (n {p['n_games']})")
     names = ", ".join(p["name"] for p in rows)
-    print("\nVulture:\ncommand_name:twa markets:player assist, player points bet_names:"
-          f"{names} books:dk")
+    # Split by market so an EV cutoff in Vulture can't crowd out the points lines.
+    print("\nVulture:")
+    for market in ("player assist", "player points"):
+        print(f"/run command_name:twa markets:{market} bet_names:{names} books:dk")
 
 
 def sides(leg):
