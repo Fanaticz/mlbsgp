@@ -803,6 +803,10 @@ async function fetchNovig(pb, p) {
   }
   const st = propState(p);
   const time = new Date().toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
+  // "PTS o17.5: -113 (mid 53.0%, 52.5–53.5, 1.0¢ wide)" for the line in use.
+  const used = (a, r) => `${STAT_LABEL[st[a + "Stat"]]} o${r.line}: <b>${fairOdds(r.mid)}</b> (mid ${(100 * r.mid).toFixed(1)}%, ` +
+    `${(100 * r.bid).toFixed(1)}–${(100 * r.ask).toFixed(1)}, ${(100 * r.spread).toFixed(1)}¢ wide${nvTight(r) ? "" : ", mid is rough"})`;
+  const byChip = {};
   const lines = ["x", "y"].map(a => {
     const stat = st[a + "Stat"], line = st[a + "Line"], lab = `${STAT_LABEL[stat]} o${line}`;
     if (!NV_TYPES[stat]) return `${lab}: Novig doesn't list ${STAT_LABEL[stat].toLowerCase()} props.`;
@@ -810,8 +814,7 @@ async function fetchNovig(pb, p) {
     if (at && nvTight(at)) {
       st[a + "Fv"] = fairOdds(at.mid);
       pb.querySelector(`[data-f="${a}Fv"]`).value = st[a + "Fv"];
-      return `${lab}: <b>${st[a + "Fv"]}</b> (mid ${(100 * at.mid).toFixed(1)}%, ` +
-             `${(100 * at.bid).toFixed(1)}–${(100 * at.ask).toFixed(1)}, ${(100 * at.spread).toFixed(1)}¢ wide)`;
+      return used(a, at);
     }
     const why = !at ? `no Novig line at ${line}`
       : at.mid === null ? `Novig's ${line} is one-sided`
@@ -821,11 +824,12 @@ async function fetchNovig(pb, p) {
     const two = rows.filter(r => r.mid !== null);
     const chips = two.map(r => {
       const w = !nvTight(r), sp = `${(100 * r.spread).toFixed(1)}¢`;
+      byChip[`${a}|${r.line}`] = r;
       return `<button type="button" class="nv-chip${w ? " wide" : ""}" data-nv="${a}|${r.line}|${fairOdds(r.mid)}"` +
         ` title="${(100 * r.bid).toFixed(1)}–${(100 * r.ask).toFixed(1)}, ${sp} wide${w ? " (mid is rough)" : ""} · vol ${r.vol.toLocaleString()}">` +
         `${r.line} ${fairOdds(r.mid)}${w ? ` <small>${sp}</small>` : ""}</button>`;
     }).join("");
-    return `${lab}: ${why}. ${two.length ? `Novig's lines: ${chips}` : "Novig has no two-sided line for this stat."}`;
+    return `<span data-nvh="${a}">${lab}: ${why}.</span> ${two.length ? `Novig's lines: ${chips}` : "Novig has no two-sided line for this stat."}`;
   });
   msg.innerHTML = `Novig · ${time}<br>` + lines.join("<br>");
   msg.querySelectorAll("[data-nv]").forEach(c => c.onclick = () => {
@@ -835,6 +839,8 @@ async function fetchNovig(pb, p) {
     pb.querySelector(`[data-f="${a}Line"]`).value = line;
     pb.querySelector(`[data-f="${a}Fv"]`).value = fv;
     msg.querySelectorAll(`[data-nv^="${a}|"]`).forEach(o => o.classList.toggle("on", o === c));
+    // The note now describes the line the chip moved to.
+    msg.querySelector(`[data-nvh="${a}"]`).innerHTML = used(a, byChip[`${a}|${line}`]) + ".";
     drawProp(pb, p);
   });
   drawPricer(pb, p, logOf(p).filter(g => g[st.xStat] != null && g[st.yStat] != null));

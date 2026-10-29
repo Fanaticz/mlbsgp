@@ -2,6 +2,9 @@
 
 ## 2026-10-29 session
 
+### NBA dashboard: Novig note follows a chip click
+Clicking a Novig chip moved the line and filled the fair odds, but the note above kept describing the old line ("PTS o20.5: no Novig line at 20.5" with 17.5 in use). The clicked leg's line in the note now reads like an auto-filled one: `PTS o11.5: -103 (mid 50.8%, 50.0–51.5, 1.5¢ wide)`, plus "mid is rough" for a wide book. Also checked by hand on a PTS 17.5 (−113) × AST 5.5 (−129), r −0.016 screen: all four combos match an independent `sgp.py` computation (+237 / +394 / +327 / +275), sum to 100%, and O/O + O/U equals the PTS Over.
+
 ### NBA dashboard: OUT players hidden, ESPN injury status on the rest
 The page loads ESPN's league injury report (`site.api.espn.com/.../nba/injuries`, called from the browser like the scoreboard; keyed by the athlete id in each entry's player-card link, the same id as the data file). Status follows ESPN's player page: its label is `details.fantasyStatus` (GTD / OUT / OFS), which is the current one; a player ruled out of last night's game keeps `status: "Out"` but shows GTD for the next game, so `status` is only a fallback. **OUT, OFS (out for the season) and suspended players are always hidden**, in both Playing today and All players; a muted "N OUT hidden" note says how many. Everyone else on the report gets ESPN's dot and label next to the name (yellow GTD), with ESPN's note and estimated return on hover. If the report can't load, nobody is hidden.
 
