@@ -109,6 +109,7 @@
   .pr .pb-controls input[type=number] { width:74px; }
   .pr table.sub td.fv { font-weight:600; color:var(--accent); }
   .fvw { display:inline-flex; align-items:center; gap:6px; }
+  .sortw { display:inline-flex; align-items:center; gap:6px; }
   .sgn { background:var(--panel); border:1px solid var(--line); color:var(--txt); border-radius:8px;
     min-width:34px; padding:6px 8px; font-size:14px; font-weight:600; cursor:pointer; }
   .plug { margin-left:auto; border:1px solid var(--accent); color:var(--accent); border-radius:8px;
@@ -174,10 +175,6 @@
     <button data-mode="today" class="on">Playing today</button>
     <button data-mode="all">All players</button>
   </div>
-  <div class="toggle" id="rtype" title="Plug-in r = the binary correlation to put in a devig calculator for lines near the median (the player's builder shows it for exact lines). Margin r = correlation of the whole stat lines.">
-    <button data-r="plug" class="on">Plug-in r</button>
-    <button data-r="margin">Margin r</button>
-  </div>
   <input type="search" id="search" placeholder="Filter by name…" />
   <label class="muted" title="Set to 0 to show everyone (incl. low-minute players).">Min mpg
     <input type="number" id="minmpg" value="20" min="0" step="1" style="width:56px" />
@@ -188,29 +185,21 @@
   <label class="muted" title="Games under 60% of a player's median minutes that season (injury exits, blowout rest). Always left out of the r values; this only shows them in the box stats and prop builder.">
     <input type="checkbox" id="shortg" /> Show short-min games
   </label>
-  <label class="muted">Sort:
+  <span class="sortw"><label class="muted">Sort:
     <select id="sortsel">
-      <option value="pts_reb.shrunk">PTS·REB r (shrunk)</option>
-      <option value="pts_ast.shrunk">PTS·AST r (shrunk)</option>
-      <option value="pts_3pm.shrunk">PTS·3PM r (shrunk)</option>
-      <option value="pts_reb.weighted">PTS·REB r (data, weighted)</option>
-      <option value="pts_ast.weighted">PTS·AST r (data, weighted)</option>
-      <option value="pts_3pm.weighted">PTS·3PM r (data, weighted)</option>
-      <option value="pts_reb.unweighted">PTS·REB r (raw)</option>
-      <option value="pts_ast.unweighted">PTS·AST r (raw)</option>
-      <option value="pts_3pm.unweighted">PTS·3PM r (raw)</option>
-      <option value="tot_reb.shrunk">Game total·REB r (shrunk)</option>
-      <option value="tm_reb.shrunk">Team score·REB r (shrunk)</option>
-      <option value="op_reb.shrunk">Opp score·REB r (shrunk)</option>
+      <option value="pts_reb.shrunk">PTS·REB r</option>
+      <option value="pts_ast.shrunk">PTS·AST r</option>
+      <option value="pts_3pm.shrunk">PTS·3PM r</option>
+      <option value="tot_reb.shrunk">Game total·REB r</option>
+      <option value="tm_reb.shrunk">Team score·REB r</option>
+      <option value="op_reb.shrunk">Opp score·REB r</option>
       <option value="_pts">Points</option>
       <option value="_reb">Rebounds</option>
       <option value="_ast">Assists</option>
       <option value="_tpm">3PM</option>
       <option value="_min">Minutes</option>
-      <option value="_g">Games</option>
-      <option value="name">Name</option>
     </select>
-  </label>
+  </label><button type="button" class="sgn" id="sortdir" title="Flip the sort order"></button></span>
   <span class="count" id="count"></span>
 </div>
 
@@ -223,8 +212,7 @@ const SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba
 let DATA = null;        // full payload
 let TODAY_IDS = null;   // Set<string> of team_ids playing today (live)
 let MODE = "today";
-let RTYPE = "plug";     // r columns: "plug" = binary at median lines, "margin" = shrunk margin r
-let SORT = { key: "pts_reb.shrunk", dir: -1 };
+let SORT = { key: "pts_reb.shrunk", dir: -1 };  // dir -1 = high first, 1 = low first (A–Z)
 let BLEND = [];         // seasons, oldest first — blended by box stats + prop builder
 let SW = {};            // per-game season weights (recency tilt), from the data file
 const gw = g => SW[g.s] || 0;
@@ -299,23 +287,20 @@ const COLS = [
 ];
 const EXPANDED = new Set();
 
-// Headline = plug-in r or the shrunk margin r (RTYPE); files without a
-// shrunk r fall back to the data r. Small text = the other number plus the
-// player's own weighted r, underlined when p < 0.05.
+// Headline = plug-in r from the shrunk margin r; files without a shrunk r
+// fall back to the data r. Small text = the margin r plus the player's own
+// weighted r, underlined when p < 0.05.
 function rCell(pair, full) {
   if (!pair) return "—";
-  const w = pair.weighted, u = pair.unweighted, s = pair.shrunk;
+  const w = pair.weighted, s = pair.shrunk;
   if (w.r===null) return "—";
-  const m = s ? s.r : w.r, plug = RTYPE === "plug";
-  const v = plug ? plugR(m) : m;
+  const m = s ? s.r : w.r, v = plugR(m);
   const col = v>0 ? "var(--pos)" : "var(--neg)";
   const sig = (w.p_value!==null && w.p_value<0.05) ? "sig" : "";
-  const why = plug ? ` title="binary correlation at median lines from margin r ${num(m,3)}; flip the sign for an Over/Under mix"`
-    : s ? ` title="prior for the role ${num(s.prior,3)}, ${Math.round(100*s.w)}% weight on the player's own r"` : "";
-  const data = `data <span class="${sig}">${num(w.r)}</span>`;
+  const why = ` title="binary correlation at median lines from margin r ${num(m,3)}` +
+    `${s ? ` (role prior ${num(s.prior,3)}, ${Math.round(100*s.w)}% weight on the player's own r)` : ""}; flip the sign for an Over/Under mix"`;
   return `<span class="r" style="color:${col}"${why}>${num(v)}</span> <span class="raw">` +
-    (plug ? `margin ${num(m)} · ${data}${full ? ` · p=${num(w.p_value,3)}` : ""}`
-          : `${s ? `${data} · ` : ""}p=${num(w.p_value,3)}${s ? "" : ` · raw ${num(u.r)}`}`) +
+    `margin ${num(m)} · data <span class="${sig}">${num(w.r)}</span>${full ? ` · p=${num(w.p_value,3)}` : ""}` +
     `${full && s ? ` · prior ${num(s.prior)}` : ""}</span>`;
 }
 
@@ -741,7 +726,8 @@ function render() {
 
   rows.sort((a,b) => {
     const av = sortKey(a, SORT.key), bv = sortKey(b, SORT.key);
-    if (av < bv) return SORT.dir; if (av > bv) return -SORT.dir; return 0;
+    if (av === -Infinity || bv === -Infinity) return (av === -Infinity) - (bv === -Infinity);
+    if (av < bv) return -SORT.dir; if (av > bv) return SORT.dir; return 0;
   });
 
   const thead = document.querySelector("#tbl thead");
@@ -752,7 +738,7 @@ function render() {
   thead.querySelectorAll("th").forEach(th => th.onclick = () => {
     const k = th.dataset.k;
     if (SORT.key === k) SORT.dir *= -1;
-    else SORT = { key:k, dir: k.includes(".")||["_g","effective_n","_min","_pts","_reb","_ast","_tpm"].includes(k) ? -1 : 1 };
+    else SORT = { key:k, dir: ["name","team_abbr","position"].includes(k) ? 1 : -1 };
     const sel = document.getElementById("sortsel");
     if ([...sel.options].some(o => o.value === k)) sel.value = k;
     render();
@@ -777,16 +763,9 @@ function render() {
   });
   tbody.querySelectorAll(".pb").forEach(initProp);
 
+  document.getElementById("sortdir").textContent = SORT.dir < 0 ? "↓ High first" : "↑ Low first";
   document.getElementById("count").textContent =
     `${rows.length} player${rows.length===1?"":"s"}` + (MODE==="today" ? " playing today" : "");
-}
-
-function setRType(t) {
-  RTYPE = t;
-  try { localStorage.setItem("nbaRType", t); } catch (_) {}
-  document.querySelectorAll("#rtype button").forEach(b =>
-    b.classList.toggle("on", b.dataset.r === t));
-  render();
 }
 
 function setMode(m) {
@@ -834,7 +813,7 @@ async function init() {
   document.getElementById("meta").innerHTML =
     `Seasons ${DATA.seasons.join("–")} · regular season, short-minute games (&lt;60% of usual) excluded from r · recency weights (${wtxt}) · ` +
     `${DATA.players.length} players · box stats + prop builder = ${BLEND.join(" + ")} weighted · r = all seasons pooled/weighted, ` +
-    `${DATA.shrinkage ? "shrunk toward players in a similar role; Plug-in r = the binary r for a devig calculator (hover a header) · " : ""}` +
+    `${DATA.shrinkage ? "shrunk toward players in a similar role, shown as the plug-in r for a devig calculator (hover a header) · " : ""}` +
     `click a player for the prop builder + per-season history · generated ${new Date(DATA.generated_at).toLocaleString()}`;
 
   // Live schedule for the toggle; fall back to the baked snapshot.
@@ -847,14 +826,6 @@ async function init() {
 
   document.querySelectorAll("#toggle button").forEach(b =>
     b.onclick = () => setMode(b.dataset.mode));
-  document.querySelectorAll("#rtype button").forEach(b =>
-    b.onclick = () => setRType(b.dataset.r));
-  try {
-    const t = localStorage.getItem("nbaRType");
-    if (t === "plug" || t === "margin") RTYPE = t;
-  } catch (_) {}
-  document.querySelectorAll("#rtype button").forEach(b =>
-    b.classList.toggle("on", b.dataset.r === RTYPE));
   document.getElementById("meta").onclick = e => e.currentTarget.classList.toggle("open");
   document.getElementById("search").oninput = render;
   document.getElementById("minmpg").oninput = render;
@@ -863,8 +834,9 @@ async function init() {
     SHOW_SHORT = e.target.checked; blendBox(); render();
   };
   document.getElementById("sortsel").onchange = e => {
-    SORT = { key: e.target.value, dir: e.target.value === "name" ? 1 : -1 }; render();
+    SORT = { key: e.target.value, dir: -1 }; render();
   };
+  document.getElementById("sortdir").onclick = () => { SORT.dir *= -1; render(); };
   render();
 }
 init();
