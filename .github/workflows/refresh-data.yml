@@ -57,4 +57,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Daily data refresh: MLB pitchers + NBA correlations [skip ci]"
-          git push
+          # The run takes ~25 min, and a commit landing on main in the
+          # meantime rejects a plain push. Rebase onto it (this run's fresh
+          # data wins a conflict) and retry.
+          for i in 1 2 3; do
+            git pull --rebase -X theirs origin main && git push && exit 0
+            sleep 15
+          done
+          exit 1
