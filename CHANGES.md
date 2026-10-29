@@ -2,6 +2,11 @@
 
 ## 2026-10-29 session
 
+### NBA dashboard: the prop builder follows the sort
+Sorted on a correlation (PTS·REB / PTS·AST / PTS·3PM / TOT·REB / TM·REB / OPP·REB r, from the Sort menu or a column header), an expanded player's builder opens on that pair: stat selects, default lines (blended means), scatter, tiles and pricer. Changing the sort to another pair moves every open builder onto it (fresh lines; fair odds and SGP prices cleared, since they belonged to the old pair); a builder already on the new pair, or a sort that isn't a pair (Points, Minutes, name), leaves it alone. Picking stats by hand in a builder still works as before.
+
+Verified in headless Chromium: sort PTS·AST → opens PTS × AST; switch to PTS·3PM → the open builder moves to PTS × 3PM with its fair odds cleared; re-clicking PTS·3PM (direction flip) keeps an entered fair; OPP·REB header → Opp score × REB with the pricer priced; sort by Points leaves it; no page errors.
+
 ### Fair odds: worst-case devig per side, everywhere
 Vulture's Fair column doesn't mirror (CJ McCollum 3PM 2.5: sharp +132/−173 → Fair +153 / −147): each side is the lowest probability of four devigs (multiplicative +147/−147, additive and Shin +151/−151, power +153/−153; Over takes power, Under multiplicative, summing to 99.05%). Every place that turns a two-way price into fair probabilities now does the same:
 

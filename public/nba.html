@@ -388,16 +388,29 @@ const opts = (ks, cur) => ks.map(k => `<option value="${k}"${k===cur?" selected"
 // rounded mean (book-style .5 line, so no pushes out of the box).
 const halfLine = m => Math.max(0.5, Math.round(m || 1) - 0.5);
 
+// Sorted on a correlation column -> the builder opens on that pair.
+const SORT_PAIR = { "pts_reb.shrunk":["pts","reb"], "pts_ast.shrunk":["pts","ast"], "pts_3pm.shrunk":["pts","tpm"],
+                    "tot_reb.shrunk":["tot","reb"], "tm_reb.shrunk":["tm","reb"], "op_reb.shrunk":["op","reb"] };
+
 function propState(p) {
   if (!PROPS.has(p.athlete_id)) {
+    const [x, y] = SORT_PAIR[SORT.key] || ["pts", "reb"];
     PROPS.set(p.athlete_id, {
-      xStat: "pts",
-      xLine: halfLine(p._pts),
-      yStat: "reb",
-      yLine: halfLine(p._reb),
+      xStat: x,
+      xLine: halfLine(p["_" + x]),
+      yStat: y,
+      yLine: halfLine(p["_" + y]),
     });
   }
   return PROPS.get(p.athlete_id);
+}
+
+// A new sort on a pair moves every builder showing another pair onto it
+// (fresh lines, fair odds and prices cleared); one already on it is kept.
+function syncPropsToSort() {
+  const pair = SORT_PAIR[SORT.key];
+  if (!pair) return;
+  for (const [id, st] of PROPS) if (st.xStat !== pair[0] || st.yStat !== pair[1]) PROPS.delete(id);
 }
 
 // ---- SGP pricer: Gaussian copula on the shrunk r ---------------------------
@@ -1002,6 +1015,7 @@ function render() {
     else SORT = { key:k, dir: ["name","team_abbr","position"].includes(k) ? 1 : -1 };
     const sel = document.getElementById("sortsel");
     if ([...sel.options].some(o => o.value === k)) sel.value = k;
+    syncPropsToSort();
     render();
   });
 
@@ -1095,7 +1109,7 @@ async function init() {
     SHOW_SHORT = e.target.checked; blendBox(); render();
   };
   document.getElementById("sortsel").onchange = e => {
-    SORT = { key: e.target.value, dir: -1 }; render();
+    SORT = { key: e.target.value, dir: -1 }; syncPropsToSort(); render();
   };
   document.getElementById("sortdir").onclick = () => { SORT.dir *= -1; render(); };
   render();
