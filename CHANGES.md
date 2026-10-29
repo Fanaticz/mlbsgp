@@ -2,6 +2,11 @@
 
 ## 2026-10-29 session
 
+### NBA dashboard: OUT players hidden, ESPN injury status on the rest
+The page loads ESPN's league injury report (`site.api.espn.com/.../nba/injuries`, called from the browser like the scoreboard; keyed by the athlete id in each entry's player-card link, the same id as the data file). Status follows ESPN's player page: its label is `details.fantasyStatus` (GTD / OUT / OFS), which is the current one; a player ruled out of last night's game keeps `status: "Out"` but shows GTD for the next game, so `status` is only a fallback. **OUT, OFS (out for the season) and suspended players are always hidden**, in both Playing today and All players; a muted "N OUT hidden" note says how many. Everyone else on the report gets ESPN's dot and label next to the name (yellow GTD), with ESPN's note and estimated return on hover. If the report can't load, nobody is hidden.
+
+Verified in headless Chromium with the live report (served from a curl copy: this container's proxy 403s browser requests to ESPN, the same reason the scoreboard fails here): 91 entries, 6 OUT hidden from today's slate and 51 from all players with none of them in the table, GTD rows badged (Jordan Poole: yellow GTD, as on ESPN); no page errors, no horizontal overflow at 390 px.
+
 ### NBA dashboard: SGP pricer beside the tiles
 The SGP pricer moved into the prop builder's chart row: on a wide screen (about 1550px and up) it fills the empty space right of the quadrant tiles; narrower, it wraps under the chart at full width as before. The player panel is now pinned to the visible width on every screen, not only phones: the table is ~1780px wide, so on a laptop the panel (and anything on its right, like the pricer) ran off the edge. `--vw` (page width without the scrollbar) is set from JS on load and resize.
 

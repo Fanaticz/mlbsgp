@@ -48,6 +48,10 @@
   tbody tr { border-bottom:1px solid #20272f; }
   tbody tr:hover { background:#161d24; }
   .name { font-weight:600; }
+  .inj { display:inline-flex; align-items:center; gap:4px; margin-left:7px; font-size:10.5px;
+    font-weight:700; letter-spacing:.03em; cursor:help; color:var(--txt); }
+  .inj i { width:7px; height:7px; border-radius:50%; background:#f4c430; }
+  .inj.out i { background:var(--neg); }
   .team { color:var(--muted); font-size:12px; }
   .dot { display:inline-block; width:7px; height:7px; border-radius:50%;
     background:var(--pos); margin-right:6px; vertical-align:middle; }
@@ -202,6 +206,7 @@
   <label class="muted" title="Optional. 0 = show everyone (small samples included).">Min G
     <input type="number" id="ming" value="0" min="0" step="1" style="width:56px" />
   </label>
+  <span class="muted" id="outn" title="Players ESPN's injury report lists as Out (or suspended) are always left off. Day-to-day / questionable players stay, with a badge."></span>
   <label class="muted" title="Games under 60% of a player's median minutes that season (injury exits, blowout rest). Always left out of the r values; this only shows them in the box stats and prop builder.">
     <input type="checkbox" id="shortg" /> Show short-min games
   </label>
@@ -229,6 +234,8 @@
 
 <script>
 const SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard";
+const INJURIES = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/injuries";
+let INJ = new Map();    // athlete_id -> {status, out, note, ret} from ESPN's injury report
 let DATA = null;        // full payload
 let TODAY_IDS = null;   // Set<string> of team_ids playing today (live)
 let MODE = "today";
@@ -265,6 +272,42 @@ async function liveTodayIds() {
   }
 }
 
+// ESPN's league-wide injury report (CORS open). Keyed by the athlete id in
+// each entry's player-card link, the same id as the data file's athlete_id.
+async function loadInjuries() {
+  try {
+    const r = await fetch(INJURIES);
+    if (!r.ok) return;
+    const m = new Map();
+    for (const t of (await r.json()).injuries || []) {
+      for (const i of t.injuries || []) {
+        const id = (i.athlete?.links?.[0]?.href || "").match(/\/id\/(\d+)/)?.[1];
+        if (!id) continue;
+        // The label on ESPN's player page (GTD / OUT / OFS = out for the
+        // season) is details.fantasyStatus. It's the current one: a player
+        // ruled out of last night's game keeps status "Out" but shows GTD
+        // for the next. The status word is only a fallback.
+        const status = i.status || "";
+        const lab = (i.details?.fantasyStatus?.abbreviation ||
+                     INJ_ABBR[status.toLowerCase()] || status).toUpperCase();
+        m.set(id, { lab, status, out: /^(OUT|OFS|SUSP)/.test(lab), note: i.shortComment || "",
+                    ret: i.details?.returnDate || "" });
+      }
+    }
+    INJ = m;
+  } catch (_) { /* no report: nobody hidden, no badges */ }
+}
+
+const INJ_ABBR = { "day-to-day":"GTD", "questionable":"GTD", "doubtful":"GTD", "probable":"GTD",
+                   "out":"OUT", "suspension":"SUSP" };
+// ESPN-style status: colored dot + ESPN's label (yellow GTD, red OUT).
+function injBadge(p) {
+  const i = INJ.get(p.athlete_id);
+  if (!i) return "";
+  const tip = `${i.lab} (${i.status})${i.ret ? ` · est. return ${i.ret}` : ""}${i.note ? ` — ${i.note}` : ""}`;
+  return `<span class="inj${i.out ? " out" : ""}" title="${tip.replace(/"/g, "&quot;")}"><i></i>${i.lab}</span>`;
+}
+
 function renderSched(games, live) {
   const el = document.getElementById("sched");
   if (!games || !games.length) { el.textContent = "No NBA games today."; return; }
@@ -288,7 +331,7 @@ const plugR = r => 2 / Math.PI * Math.asin(r);
 // init(). The correlation columns remain pooled + recency-weighted across
 // every season; expand a row for the per-season history.
 const COLS = [
-  { k:"name", h:"Player", l:true,  v:p=>`<span class="care" >${EXPANDED.has(p.athlete_id)?"▾":"▸"}</span>${TODAY_IDS&&TODAY_IDS.has(p.team_id)?'<span class="dot"></span>':''}<span class="name">${p.name}</span>` },
+  { k:"name", h:"Player", l:true,  v:p=>`<span class="care" >${EXPANDED.has(p.athlete_id)?"▾":"▸"}</span>${TODAY_IDS&&TODAY_IDS.has(p.team_id)?'<span class="dot"></span>':''}<span class="name">${p.name}</span>${injBadge(p)}` },
   { k:"team_abbr", h:"Tm", l:true, v:p=>`<span class="team">${p.team_abbr||"—"}</span>` },
   { k:"position", h:"Pos", l:true, v:p=>p.position||"—" },
   { k:"_g", h:"G", ht:"Games across the pulled seasons (short-minute games hidden unless toggled)", v:p=>p._g },
@@ -897,6 +940,11 @@ function render() {
     rows = rows.filter(p => p.team_id && ids.has(p.team_id));
   }
   if (q) rows = rows.filter(p => p.name.toLowerCase().includes(q));
+  // Out players are always left off; counted after the other filters, so
+  // the note says how many would otherwise show.
+  const nOut = rows.filter(p => INJ.get(p.athlete_id)?.out).length;
+  document.getElementById("outn").textContent = nOut ? `${nOut} OUT hidden` : "";
+  rows = rows.filter(p => !INJ.get(p.athlete_id)?.out);
 
   rows.sort((a,b) => {
     const av = sortKey(a, SORT.key), bv = sortKey(b, SORT.key);
@@ -1012,6 +1060,8 @@ async function init() {
   };
   document.getElementById("sortdir").onclick = () => { SORT.dir *= -1; render(); };
   render();
+  // The injury report lands after the first paint, then filters and badges.
+  loadInjuries().then(render);
 }
 // The visible page width (no scrollbar), for .detail-wrap.
 const setVw = () => document.documentElement.style.setProperty("--vw", document.documentElement.clientWidth + "px");
