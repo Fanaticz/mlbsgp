@@ -33,7 +33,12 @@ python3 .claude/skills/nba-sgp-fv/price.py "Victor Wembanyama" \
 Leg: `<pts|reb|ast|tpm> <over|under> <line> [from <posted line>] odds <over> [<under>]`.
 Odds are always the posted line's **Over then Under** price, whichever side
 the leg takes; the pair is normalized (strips a book's vig). One side only is
-taken as fair.
+taken as fair: right for a Vulture Fair value (already devigged), wrong for a
+raw one-way book price (alt overs like "4+ threes"). For those, shift from the
+two-way main line with `from`, and use the one-way prices only as a check:
+each book's implied % divided by (1 + that book's margin on the main two-way,
+about 6.5–7.7% on props). Alts usually carry more margin than that, so the
+check runs slightly high.
 
 ## 3. Reply: this block, every time
 
