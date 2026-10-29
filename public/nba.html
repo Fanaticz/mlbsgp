@@ -61,7 +61,9 @@
   tbody tr.prow { cursor:pointer; }
   tbody tr.prow:hover .care { color:var(--accent); }
   tbody tr.drow > td { padding:0; background:#10161c; }
-  .detail-wrap { padding:10px 16px 14px; text-align:left; white-space:normal; }
+  /* contain: the panel's content can't widen the table; its own scroll
+     wrappers (.sub-scroll, .pr-out) take any overflow instead. */
+  .detail-wrap { padding:10px 16px 14px; text-align:left; white-space:normal; contain:inline-size; }
   .detail-h { font-size:12px; color:var(--muted); margin-bottom:8px; }
   table.sub { width:auto; min-width:0; border-collapse:collapse; }
   table.sub th { position:static; top:auto; background:transparent; cursor:default;
