@@ -1,14 +1,15 @@
 ---
 name: nba-sgp-fv
-description: Fair value of an NBA same-player SGP (2+ legs of points, rebounds, assists, threes) from a bet-slip screenshot (Novig, Pikkit, a book) plus Vulture fair odds or a book's two-way price. Triggers on a slip screenshot with "FV?", "fair value", "price this", "calc FV", or "what r should I use". Reply with the FV only.
+description: Fair value of an NBA same-player SGP (2+ legs of points, rebounds, assists, threes) from a bet-slip screenshot (Novig, Pikkit, a book) plus Vulture fair odds or a book's two-way price. Triggers on a slip screenshot with "FV?", "fair value", "price this", "calc FV", or "what r should I use". Reply with the four-line FV / EV% / Kelly Wager / QK block (quarter Kelly, $500 units).
 ---
 
 # NBA same-player SGP fair value
 
 ## 1. Read the inputs
 
-- **Slip:** player and legs. Novig milestones: "26+ Points · Yes" = Over 25.5,
-  "10+ Assists · No" = Under 9.5. The payout on the slip is not needed.
+- **Slip:** player, legs and payout. Novig milestones: "26+ Points · Yes" =
+  Over 25.5, "10+ Assists · No" = Under 9.5. The payout (Novig "3.80x", or
+  American) is the price for EV and Kelly.
 - **Leg odds, in order of preference:**
   1. The user's instruction for a leg ("for 2.5, use DK FV") → that book's
      Over/Under pair at that line (Pikkit shows both sides).
@@ -25,7 +26,8 @@ description: Fair value of an NBA same-player SGP (2+ legs of points, rebounds, 
 python3 .claude/skills/nba-sgp-fv/price.py "Victor Wembanyama" \
   "pts over 25.5 odds +114 -113" \
   "tpm over 2.5 odds +150 -197" \
-  "reb over 9.5 from 11.5 odds +115 -114"
+  "reb over 9.5 from 11.5 odds +115 -114" \
+  --payout 6.58
 ```
 
 Leg: `<pts|reb|ast|tpm> <over|under> <line> [from <posted line>] odds <over> [<under>]`.
@@ -33,16 +35,28 @@ Odds are always the posted line's **Over then Under** price, whichever side
 the leg takes; the pair is normalized (strips a book's vig). One side only is
 taken as fair.
 
-## 3. Reply: the FV only
+## 3. Reply: this block, every time
 
 ```
-FV +375 (4.75x)
+FV = +229
+EV% = 15.5%
+Kelly Wager = $692.03
+QK=1.38u
 ```
 
-- No EV, no book-by-book comparison, no verdict. The user compares prices
-  themselves.
-- Add one short line only when a leg was estimated (`from` used, or one side
-  only), naming the leg, so the user can send the real line.
+- Send it in a code block so the four lines stay separate. Nothing else,
+  except one short trailing line when a leg was estimated (`from` used, or
+  one side only), naming the leg.
+- **EV%** = p × decimal − 1, where p is the probability of the FV as shown,
+  so the block checks by hand.
+- **Kelly:** quarter Kelly at p, f = (p·b − (1−p))/b with b = decimal − 1.
+  QK = max(f, 0)/4 × 100 units (1u = 1% of bankroll); Kelly Wager = QK × $500
+  (Max's unit, same as his MLB skills; `--unit` overrides). Negative EV shows
+  $0.00 and 0.00u.
+- **No payout given:** `FV = +229` only, then ask for the payout.
+- No book-by-book comparison, no verdict: the user does the book part.
+- Check: Lillard O20.5 points (Fair +101/−101) + O3.5 threes from the 2.5
+  Fair (−142) at 3.80x → +229 / 15.5% / $692.03 / 1.38u.
 - If asked "what r?": the plug-in r the script prints (2 legs) is what goes
   in a devig calculator (joint = pA·pB + r·√(pA(1−pA)·pB(1−pB))); the margin r
   is the copula input. Never put a margin r into that formula: it overstates

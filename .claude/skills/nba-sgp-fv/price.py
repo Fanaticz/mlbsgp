@@ -4,7 +4,11 @@
   python3 price.py "Victor Wembanyama" \\
       "pts over 25.5 odds +114 -113" \\
       "tpm over 2.5 odds +150 -197" \\
-      "reb over 9.5 from 11.5 odds +115 -114"
+      "reb over 9.5 from 11.5 odds +115 -114" --payout 6.58
+
+--payout is the slip's price (3.80, 3.80x or +280). It adds EV% and a
+quarter-Kelly stake at the FV as shown: units = f/4 x 100 (1u = 1% of
+bankroll), dollars = units x --unit (default $500, Max's unit).
 
 Each leg: <stat> <over|under> <line> [from <posted line>] odds <over> [<under>]
   stat   pts, reb, ast, tpm (3pm / threes accepted)
@@ -52,6 +56,15 @@ def parse_leg(text):
     nums = [int(x) for x in t[i + 1:i + 3]]
     leg["over"], leg["under"] = nums[0], (nums[1] if len(nums) > 1 else None)
     return leg
+
+
+def decimal_odds(text):
+    """3.80 / 3.80x -> 3.80; +280 / -120 / 280 -> decimal."""
+    t = text.strip().lower().rstrip("x")
+    v = float(t)
+    if t.startswith(("+", "-")) or abs(v) >= 100:
+        return 1 + v / 100 if v > 0 else 1 + 100 / abs(v)
+    return v
 
 
 def over_prob(over, under):
@@ -195,6 +208,9 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("player")
     ap.add_argument("legs", nargs="+")
+    ap.add_argument("--payout", help="slip price: decimal (3.80, 3.80x) or American (+280)")
+    ap.add_argument("--unit", type=float, default=500.0, help="dollars per unit, 1u = 1%% of bankroll")
+    ap.add_argument("--kelly", type=float, default=0.25, help="Kelly fraction (default quarter)")
     args = ap.parse_args()
     d, by = sgp.load()
     hits = [n for n in by if args.player.lower() in n.lower()]
@@ -229,7 +245,16 @@ def main():
     else:
         j = mc_joint(ps, R)
     print(f"  joint {j:.1%} (independent {math.prod(ps):.1%})")
-    print(f"FV {sgp.american(j):+d} ({1 / j:.2f}x)")
+    fv = sgp.american(j)
+    print(f"\nFV = {fv:+d}")
+    if args.payout:
+        # EV and stake use the FV as shown, so the block checks by hand.
+        p, dec = sgp.prob(fv), decimal_odds(args.payout)
+        b = dec - 1
+        units = max(0.0, (p * b - (1 - p)) / b) * args.kelly * 100
+        print(f"EV% = {(p * dec - 1) * 100:.1f}%")
+        print(f"Kelly Wager = ${units * args.unit:,.2f}")
+        print(f"QK={units:.2f}u")
 
 
 if __name__ == "__main__":
