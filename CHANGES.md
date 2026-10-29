@@ -2,6 +2,11 @@
 
 ## 2026-10-29 session
 
+### NBA dashboard: SGP pricer beside the tiles
+The SGP pricer moved into the prop builder's chart row: on a wide screen (about 1550px and up) it fills the empty space right of the quadrant tiles; narrower, it wraps under the chart at full width as before. The player panel is now pinned to the visible width on every screen, not only phones: the table is ~1780px wide, so on a laptop the panel (and anything on its right, like the pricer) ran off the edge. `--vw` (page width without the scrollbar) is set from JS on load and resize.
+
+Verified in headless Chromium at 1880 / 1500 / 1300 / 1000 / 390 px: the pricer sits beside the tiles at 1880 and below the chart otherwise, the panel's right edge stays inside the viewport at every width, no horizontal page scroll, no page errors; Fetch FV and the per-combo SGP odds still work.
+
 ### NBA dashboard: SGP odds per combo
 The pricer's single Payout box is gone: each of the four combo rows (O/O, U/U, O/U, U/O) has its own **SGP odds** input and EV, since a book prices each combo separately (e.g. PTS·REB O/O, PTS·AST O/U and U/O, PTS·3PM O/O). Prices take decimal (`4.14`, `4.14x`) or American (`+314`). Typing updates only that row's EV, so the box keeps focus. A new line or stat clears the prices, like it clears the leg fair odds. SGP odds and EV sit right after Fair odds so they're on screen on a phone.
 

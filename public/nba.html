@@ -104,7 +104,10 @@
   .pb-tip b { color:var(--accent); }
 
   /* --- SGP pricer (copula on the shrunk r) --- */
-  .pr { border-top:1px solid var(--line); margin-top:14px; padding-top:12px; }
+  /* Third item of .pb-body: beside the tiles when the screen has room, below
+     the chart (full width) when it doesn't. min-width:0 lets its table
+     scroll instead of widening the panel. */
+  .pr { flex:1 1 560px; min-width:0; }
   .pr-sub { color:var(--muted); font-size:11.5px; margin-bottom:10px; max-width:900px; }
   .pr .pb-controls input[type=text] { width:74px; margin-left:6px; background:var(--panel);
     border:1px solid var(--line); color:var(--txt); border-radius:8px; padding:7px 10px; font-size:13px; }
@@ -132,10 +135,12 @@
   .nv-chip.wide.on { color:var(--accent); }
   .nv-chip small { font-size:10px; opacity:.8; }
 
-  /* Phones: the player panel sits in a table row as wide as the desktop
-     table; pin it to the screen so it doesn't need sideways scrolling. */
+  /* The player panel sits in a table row as wide as the table (~1780px), so
+     on a narrower screen it ran off the right edge (and the SGP pricer with
+     it). Pin it to the visible width; --vw is the page's width without the
+     scrollbar, set from JS. */
+  .detail-wrap { position:sticky; left:0; width:min(100%, calc(var(--vw, 100vw) - 24px)); }
   @media (max-width: 900px) {
-    .detail-wrap { position:sticky; left:0; width:calc(100vw - 24px); }
     .pb-chart svg { max-width:100%; height:auto; }
   }
 
@@ -564,7 +569,7 @@ function propHTML(p) {
       <label>${STAT_LABEL[st.yStat]} line<input type="number" step="0.5" min="0" value="${st.yLine}" data-f="yLine"></label>
       <span class="plug" data-plug title="Binary correlation for a devig calculator at these lines (the SGP pricer below). Same size for every over/under combo; positive for Over+Over and Under+Under, negative for an Over/Under mix."></span>
     </div>
-    <div class="pb-body"><div class="pb-chart"></div><div class="quads"></div></div>
+    <div class="pb-body"><div class="pb-chart"></div><div class="quads"></div>
     <div class="pr">
       <div class="pb-title">SGP pricer</div>
       <div class="pr-sub"></div>
@@ -575,6 +580,7 @@ function propHTML(p) {
       </div>
       <div class="nv-out"></div>
       <div class="pr-out"></div>
+    </div>
     </div>
   </div>`;
 }
@@ -1007,6 +1013,10 @@ async function init() {
   document.getElementById("sortdir").onclick = () => { SORT.dir *= -1; render(); };
   render();
 }
+// The visible page width (no scrollbar), for .detail-wrap.
+const setVw = () => document.documentElement.style.setProperty("--vw", document.documentElement.clientWidth + "px");
+setVw();
+addEventListener("resize", setVw);
 init();
 </script>
 </body>
