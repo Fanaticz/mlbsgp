@@ -2,6 +2,11 @@
 
 ## 2026-10-29 session
 
+### NBA dashboard: SGP odds per combo
+The pricer's single Payout box is gone: each of the four combo rows (O/O, U/U, O/U, U/O) has its own **SGP odds** input and EV, since a book prices each combo separately (e.g. PTS·REB O/O, PTS·AST O/U and U/O, PTS·3PM O/O). Prices take decimal (`4.14`, `4.14x`) or American (`+314`). Typing updates only that row's EV, so the box keeps focus. A new line or stat clears the prices, like it clears the leg fair odds. SGP odds and EV sit right after Fair odds so they're on screen on a phone.
+
+Verified in headless Chromium: four different prices on Avdija PTS 22.5 × REB 6.5 gave EVs matching an independent computation (+9.8 / −5.2 / −8.6 / −6.5%), focus stayed in the input, a line change cleared them; no page errors, no horizontal overflow at 390 px.
+
 ### NBA dashboard: "Fetch FV" pulls the pricer's fair odds from Novig
 The SGP pricer gets a **Fetch FV** button. It pulls Novig's open pregame NBA props straight from the browser (public catalog, CORS open, one pull cached for a minute across players) and fills each leg's Over fair odds with the exchange mid at the builder's line, same rule as `novig.py`: books wider than 4¢ are not used. When a line is missing, one-sided or too wide, the note under the inputs says so and lists Novig's lines as chips; a chip moves the line there and fills its fair odds. Wide books (over 4¢) are chips too, dashed and dimmed with their spread, since one is sometimes the only line near the slip's (Avdija PTS 14.5, 4.5¢); Fetch FV itself never fills from one. Game total / team / opp score legs say Novig doesn't list them.
 
