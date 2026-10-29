@@ -2,6 +2,11 @@
 
 ## 2026-10-29 session
 
+### NBA dashboard: "Fetch FV" pulls the pricer's fair odds from Novig
+The SGP pricer gets a **Fetch FV** button. It pulls Novig's open pregame NBA props straight from the browser (public catalog, CORS open, one pull cached for a minute across players) and fills each leg's Over fair odds with the exchange mid at the builder's line, same rule as `novig.py`: books wider than 4¢ are not used. When a line is missing, one-sided or too wide, the note under the inputs says so and lists Novig's tight lines as chips; a chip moves the line there and fills its fair odds. Game total / team / opp score legs say Novig doesn't list them.
+
+Verified in headless Chromium against the live slate: Avdija PTS 9.5 (no Novig line) showed chips 19.5 / 22.5 / 23.5 / 24.5, REB o6.5 filled −112; the 22.5 chip set the line and −109 and priced Over/Over at +211, the same as `price.py`. No new page errors; no horizontal overflow at 390 px.
+
 ### nba-sgp-fv: pull leg fair values from Novig
 `price.py` legs can now say `odds novig` (or just `novig`) instead of typing prices: `"pts over 22.5 novig"`. New `.claude/skills/nba-sgp-fv/novig.py` reads Novig's official public catalog (`GET https://api.novig.com/v3/public/catalog/markets`, no key, open pregame NBA POINTS / REBOUNDS / ASSISTS / THREE_POINTERS_MADE), one call per run. The fair value is the exchange mid: Over bid and Over ask (= 1 − Under bid), averaged; no vig to strip, and pregame markets charge no taker fee. Books wider than 4¢ (`--novig-spread`) are never priced from: the leg shifts from the nearest tight line through the existing `from` model, and the note says which line and spread it used. `novig.py "<player>" [stat] [line]` prints the ladder (bid, ask, mid, American both sides, spread, volume) for checking by hand. Novig's app shows asks, not fair values (Avdija O/U 14.5 91% / 15% = 106%); the API matched the app's ladder (lowest points line 14.5). Parlay multipliers still can't be pulled (the API prices parlays only via RFQ for registered market makers).
 

@@ -116,6 +116,14 @@
     padding:6px 11px; font-size:12.5px; }
   .plug b { font-size:14px; }
   .pr-out, .sub-scroll { overflow-x:auto; }
+  .nvbtn { font-size:12.5px; border-color:var(--accent); color:var(--accent); }
+  .nvbtn:disabled { opacity:.5; cursor:wait; }
+  .nv-out { color:var(--muted); font-size:11.5px; margin-top:8px; line-height:1.9; }
+  .nv-out:empty { display:none; }
+  .nv-chip { background:var(--panel); border:1px solid var(--line); color:var(--txt); border-radius:7px;
+    padding:2px 7px; margin:0 3px; font-size:11.5px; cursor:pointer; white-space:nowrap; }
+  .nv-chip:hover { border-color:var(--accent); }
+  .nv-chip.on { border-color:var(--accent); color:var(--accent); }
 
   /* Phones: the player panel sits in a table row as wide as the desktop
      table; pin it to the screen so it doesn't need sideways scrolling. */
@@ -557,7 +565,9 @@ function propHTML(p) {
         <span class="fvw"><label><span data-lab="x"></span> fair odds<input type="text" inputmode="numeric" placeholder="e.g. -110" value="${st.xFv||""}" data-f="xFv"></label><button type="button" class="sgn" data-sgn="xFv" title="Flip the sign (phone number pads have no minus key)">±</button></span>
         <span class="fvw"><label><span data-lab="y"></span> fair odds<input type="text" inputmode="numeric" placeholder="e.g. +120" value="${st.yFv||""}" data-f="yFv"></label><button type="button" class="sgn" data-sgn="yFv" title="Flip the sign (phone number pads have no minus key)">±</button></span>
         <label>Payout<input type="number" step="0.01" min="1" placeholder="4.14" value="${st.pay||""}" data-f="pay"> x</label>
+        <button type="button" class="sgn nvbtn" data-novig title="Fill both legs' fair odds from Novig's exchange: the mid of bid and ask at each line (pregame, books up to ${NV_MAX_SPREAD * 100}¢ wide)">Fetch FV</button>
       </div>
+      <div class="nv-out"></div>
       <div class="pr-out"></div>
     </div>
   </div>`;
@@ -626,6 +636,120 @@ function drawPricer(pb, p, games) {
     row(true, true) + row(false, false) + row(true, false) + row(false, true) + `</tbody></table>`;
 }
 
+// ---- Novig fair values -------------------------------------------------------
+// Novig's public catalog (official API, no key, CORS open): every open pregame
+// NBA prop with each outcome's best bid. An exchange has no vig to strip: the
+// Over ask is 1 - the Under bid and the fair value is the mid. Its app shows
+// asks (O 91% / U 15% = 106%), never fair values. Pregame game markets charge
+// no taker fee. Wide books (thin alts, some out of order with the ladder) are
+// not priced from; same rule as .claude/skills/nba-sgp-fv/novig.py.
+const NV_URL = "https://api.novig.com/v3/public/catalog/markets";
+const NV_TYPES = { pts:"POINTS", reb:"REBOUNDS", ast:"ASSISTS", tpm:"THREE_POINTERS_MADE" };
+const NV_MAX_SPREAD = 0.04;
+let NV_CACHE = null;  // { t, items }: one slate pull serves every player for a minute
+
+async function novigMarkets() {
+  if (NV_CACHE && Date.now() - NV_CACHE.t < 60e3) return NV_CACHE.items;
+  const items = [];
+  let after = null;
+  for (let i = 0; i < 20; i++) {
+    const q = new URLSearchParams({ league:"NBA", marketType:Object.values(NV_TYPES).join(","),
+                                    eventStatus:"OPEN_PREGAME", limit:"5000" });
+    if (after) q.set("after", after);
+    const res = await fetch(`${NV_URL}?${q}`);
+    if (!res.ok) throw new Error(`Novig answered ${res.status}`);
+    const page = await res.json();
+    items.push(...(page.items || []));
+    after = page.next;
+    if (!after) break;
+  }
+  NV_CACHE = { t: Date.now(), items };
+  return items;
+}
+
+// "Darius Acuff Jr." / "Nikola Jokić" -> "darius acuff" / "nikola jokic"
+const nvNorm = s => s.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase()
+  .replace(/'/g, "").replace(/[^a-z0-9 ]/g, " ").split(/\s+/)
+  .filter(w => w && !["jr", "sr", "ii", "iii", "iv", "v"].includes(w)).join(" ");
+
+// { stat: [{line, bid, ask, mid, spread, vol}] } for the player, or null.
+function novigLadder(items, name) {
+  const want = nvNorm(name);
+  const who = m => m.description.split(" ").slice(0, -2).join(" ");
+  const names = [...new Set(items.map(who))];
+  let hit = names.filter(n => nvNorm(n) === want);
+  if (!hit.length) hit = names.filter(n => nvNorm(n).includes(want));
+  if (hit.length !== 1) return null;
+  const stat = Object.fromEntries(Object.entries(NV_TYPES).map(([k, v]) => [v, k]));
+  const out = {};
+  for (const m of items) {
+    if (who(m) !== hit[0] || !stat[m.marketType]) continue;
+    const side = Object.fromEntries(m.outcomes.map(o => [o.name.split(" ")[0].toLowerCase(), o]));
+    const bid = side.over?.bid ? +side.over.bid.price : null;
+    const ask = side.under?.bid ? 1 - side.under.bid.price : null;
+    const two = bid !== null && ask !== null;
+    (out[stat[m.marketType]] ||= []).push({ line: +m.strike, bid, ask, vol: m.volume,
+      mid: two ? (bid + ask) / 2 : null, spread: two ? ask - bid : null });
+  }
+  for (const v of Object.values(out)) v.sort((a, b) => a.line - b.line);
+  return out;
+}
+
+const nvTight = r => r.spread !== null && r.spread <= NV_MAX_SPREAD + 1e-9;
+
+// Fill each leg's Over fair odds from Novig at its line. A leg whose line is
+// missing or too wide is left alone, with Novig's tight lines as chips: a
+// click moves the line there and fills its fair odds.
+async function fetchNovig(pb, p) {
+  const btn = pb.querySelector("[data-novig]"), msg = pb.querySelector(".nv-out");
+  btn.disabled = true;
+  msg.textContent = "Fetching Novig…";
+  let lad;
+  try {
+    lad = novigLadder(await novigMarkets(), p.name);
+  } catch (e) {
+    msg.textContent = `Couldn't reach Novig (${e.message}).`;
+    btn.disabled = false;
+    return;
+  }
+  btn.disabled = false;
+  if (!lad) {
+    msg.textContent = `${p.name} isn't on Novig's open pregame props right now.`;
+    return;
+  }
+  const st = propState(p);
+  const time = new Date().toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
+  const lines = ["x", "y"].map(a => {
+    const stat = st[a + "Stat"], line = st[a + "Line"], lab = `${STAT_LABEL[stat]} o${line}`;
+    if (!NV_TYPES[stat]) return `${lab}: Novig doesn't list ${STAT_LABEL[stat].toLowerCase()} props.`;
+    const rows = lad[stat] || [], at = rows.find(r => r.line === line);
+    if (at && nvTight(at)) {
+      st[a + "Fv"] = fairOdds(at.mid);
+      pb.querySelector(`[data-f="${a}Fv"]`).value = st[a + "Fv"];
+      return `${lab}: <b>${st[a + "Fv"]}</b> (mid ${(100 * at.mid).toFixed(1)}%, ` +
+             `${(100 * at.bid).toFixed(1)}–${(100 * at.ask).toFixed(1)}, ${(100 * at.spread).toFixed(1)}¢ wide)`;
+    }
+    const why = !at ? `no Novig line at ${line}`
+      : at.mid === null ? `Novig's ${line} is one-sided`
+      : `Novig's ${line} is ${(100 * at.spread).toFixed(1)}¢ wide, not used`;
+    const ok = rows.filter(nvTight);
+    const chips = ok.map(r => `<button type="button" class="nv-chip" data-nv="${a}|${r.line}|${fairOdds(r.mid)}"` +
+      ` title="${(100 * r.spread).toFixed(1)}¢ wide · vol ${r.vol.toLocaleString()}">${r.line} ${fairOdds(r.mid)}</button>`).join("");
+    return `${lab}: ${why}. ${ok.length ? `Novig's tight lines: ${chips}` : "No tight Novig line for this stat."}`;
+  });
+  msg.innerHTML = `Novig · ${time}<br>` + lines.join("<br>");
+  msg.querySelectorAll("[data-nv]").forEach(c => c.onclick = () => {
+    const [a, line, fv] = c.dataset.nv.split("|");
+    st[a + "Line"] = +line;
+    st[a + "Fv"] = fv;
+    pb.querySelector(`[data-f="${a}Line"]`).value = line;
+    pb.querySelector(`[data-f="${a}Fv"]`).value = fv;
+    msg.querySelectorAll(`[data-nv^="${a}|"]`).forEach(o => o.classList.toggle("on", o === c));
+    drawProp(pb, p);
+  });
+  drawPricer(pb, p, logOf(p).filter(g => g[st.xStat] != null && g[st.yStat] != null));
+}
+
 // Bind builder controls + first draw. Input changes redraw only this builder
 // (no full table re-render, so typing keeps focus).
 function initProp(pb) {
@@ -677,6 +801,7 @@ function initProp(pb) {
     inp.focus();
     inp.setSelectionRange(inp.value.length, inp.value.length);
   });
+  pb.querySelector("[data-novig]").onclick = () => fetchNovig(pb, p);
   drawProp(pb, p);
 }
 
