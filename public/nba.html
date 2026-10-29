@@ -126,6 +126,9 @@
     padding:2px 7px; margin:0 3px; font-size:11.5px; cursor:pointer; white-space:nowrap; }
   .nv-chip:hover { border-color:var(--accent); }
   .nv-chip.on { border-color:var(--accent); color:var(--accent); }
+  .nv-chip.wide { border-style:dashed; color:var(--muted); }
+  .nv-chip.wide.on { color:var(--accent); }
+  .nv-chip small { font-size:10px; opacity:.8; }
 
   /* Phones: the player panel sits in a table row as wide as the desktop
      table; pin it to the screen so it doesn't need sideways scrolling. */
@@ -734,10 +737,16 @@ async function fetchNovig(pb, p) {
     const why = !at ? `no Novig line at ${line}`
       : at.mid === null ? `Novig's ${line} is one-sided`
       : `Novig's ${line} is ${(100 * at.spread).toFixed(1)}¢ wide, not used`;
-    const ok = rows.filter(nvTight);
-    const chips = ok.map(r => `<button type="button" class="nv-chip" data-nv="${a}|${r.line}|${fairOdds(r.mid)}"` +
-      ` title="${(100 * r.spread).toFixed(1)}¢ wide · vol ${r.vol.toLocaleString()}">${r.line} ${fairOdds(r.mid)}</button>`).join("");
-    return `${lab}: ${why}. ${ok.length ? `Novig's tight lines: ${chips}` : "No tight Novig line for this stat."}`;
+    // Wide books stay pickable, dimmed and with their spread: the mid is shaky
+    // but sometimes it's the only line near the slip's.
+    const two = rows.filter(r => r.mid !== null);
+    const chips = two.map(r => {
+      const w = !nvTight(r), sp = `${(100 * r.spread).toFixed(1)}¢`;
+      return `<button type="button" class="nv-chip${w ? " wide" : ""}" data-nv="${a}|${r.line}|${fairOdds(r.mid)}"` +
+        ` title="${(100 * r.bid).toFixed(1)}–${(100 * r.ask).toFixed(1)}, ${sp} wide${w ? " (mid is rough)" : ""} · vol ${r.vol.toLocaleString()}">` +
+        `${r.line} ${fairOdds(r.mid)}${w ? ` <small>${sp}</small>` : ""}</button>`;
+    }).join("");
+    return `${lab}: ${why}. ${two.length ? `Novig's lines: ${chips}` : "Novig has no two-sided line for this stat."}`;
   });
   msg.innerHTML = `Novig · ${time}<br>` + lines.join("<br>");
   msg.querySelectorAll("[data-nv]").forEach(c => c.onclick = () => {

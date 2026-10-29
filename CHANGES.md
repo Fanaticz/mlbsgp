@@ -3,7 +3,7 @@
 ## 2026-10-29 session
 
 ### NBA dashboard: "Fetch FV" pulls the pricer's fair odds from Novig
-The SGP pricer gets a **Fetch FV** button. It pulls Novig's open pregame NBA props straight from the browser (public catalog, CORS open, one pull cached for a minute across players) and fills each leg's Over fair odds with the exchange mid at the builder's line, same rule as `novig.py`: books wider than 4¢ are not used. When a line is missing, one-sided or too wide, the note under the inputs says so and lists Novig's tight lines as chips; a chip moves the line there and fills its fair odds. Game total / team / opp score legs say Novig doesn't list them.
+The SGP pricer gets a **Fetch FV** button. It pulls Novig's open pregame NBA props straight from the browser (public catalog, CORS open, one pull cached for a minute across players) and fills each leg's Over fair odds with the exchange mid at the builder's line, same rule as `novig.py`: books wider than 4¢ are not used. When a line is missing, one-sided or too wide, the note under the inputs says so and lists Novig's lines as chips; a chip moves the line there and fills its fair odds. Wide books (over 4¢) are chips too, dashed and dimmed with their spread, since one is sometimes the only line near the slip's (Avdija PTS 14.5, 4.5¢); Fetch FV itself never fills from one. Game total / team / opp score legs say Novig doesn't list them.
 
 Verified in headless Chromium against the live slate: Avdija PTS 9.5 (no Novig line) showed chips 19.5 / 22.5 / 23.5 / 24.5, REB o6.5 filled −112; the 22.5 chip set the line and −109 and priced Over/Over at +211, the same as `price.py`. No new page errors; no horizontal overflow at 390 px.
 
