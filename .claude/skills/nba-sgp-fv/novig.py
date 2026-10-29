@@ -6,8 +6,9 @@
 
 Reads Novig's public catalog (GET /v3/public/catalog/markets, no key, throttled
 per IP at the edge): every open pregame market with each outcome's best bid.
-Novig is an exchange, so a two-sided market has no vig to strip: the Over ask
-is 1 - the Under bid, and the fair probability is the mid of bid and ask.
+The Over ask is 1 - the Under bid, so the two sides' asks are a two-way price
+whose vig is the spread. Each side's fair is the worst case of four devigs
+(sgp.devig_worst), as Vulture does; on a tight book that's a hair under the mid.
 Pregame game markets charge no taker fee (fee.charged = WHEN_LIVE), so the mid
 needs no fee adjustment.
 
@@ -23,6 +24,9 @@ import time
 import unicodedata
 import urllib.parse
 import urllib.request
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "nba-ast-pts-sgp"))
+import sgp  # noqa: E402  devig_worst
 
 HOST = os.environ.get("NOVIG_HOST", "https://api.novig.com")
 TYPES = {"pts": "POINTS", "reb": "REBOUNDS", "ast": "ASSISTS", "tpm": "THREE_POINTERS_MADE"}
@@ -69,8 +73,11 @@ def quote(m):
     if row["bid"] is not None and row["ask"] is not None:
         row["mid"] = (row["bid"] + row["ask"]) / 2
         row["spread"] = row["ask"] - row["bid"]
+        # The two asks are a two-way price with the spread as its vig:
+        # each side's fair is its worst-case devig (sgp.devig_worst).
+        row["fo"], row["fu"] = sgp.devig_worst(row["ask"], 1 - row["bid"])
     else:
-        row["mid"] = row["spread"] = None
+        row["mid"] = row["spread"] = row["fo"] = row["fu"] = None
     return row
 
 
@@ -124,7 +131,7 @@ def show(name, rows, stat=None, line=None):
                 continue
             flag = "" if tight(r) else "  wide"
             print(f"  {s} {r['line']:>5g}  bid {r['bid']:.3f} ask {r['ask']:.3f}  mid {r['mid']:.1%}"
-                  f"  O {american(r['mid']):+d} / U {american(1 - r['mid']):+d}"
+                  f"  fair O {american(r['fo']):+d} / U {american(r['fu']):+d}"
                   f"  spread {r['spread'] * 100:.1f}c  vol {r['volume']:,}{flag}")
 
 

@@ -14,11 +14,15 @@ Each leg: <stat> <over|under> <line> [from <posted line>] odds <over> [<under>]
       or: <stat> <over|under> <line> [from <posted line>] odds novig
   stat   pts, reb, ast, tpm (3pm / threes accepted)
   odds   Over and Under prices of the posted line: Vulture's Fair column, or a
-         book's two-way price (normalizing the pair strips its vig). With one
-         side only, that price is taken as fair.
-  novig  pull the fair value from Novig's exchange (novig.py): the mid of the
-         Over bid and ask at the leg's line, or, when that line is missing or
-         wider than --novig-spread, the nearest tight line, shifted.
+         book's two-way price. With both, the leg's side is its worst-case
+         devig (lowest of multiplicative, additive, power, Shin), as Vulture
+         does: +132/-173 prices an Over at +153 and an Under at -147. A pair
+         at or under 100% (Vulture's Fair pair) is used as is. With one side
+         only, that price is taken as fair.
+  novig  pull the fair value from Novig's exchange (novig.py): the worst-case
+         devig of the two sides' asks at the leg's line, or, when that line
+         is missing or wider than --novig-spread, the nearest tight line,
+         shifted.
   from   the odds belong to another line (a Novig milestone like 25+ against
          a posted 23.5): the leg is shifted with the player's game-log spread.
 
@@ -77,9 +81,15 @@ def decimal_odds(text):
     return v
 
 
-def over_prob(over, under):
+def over_prob(over, under, side):
+    """P(over) at the posted line, as seen from the side the leg takes. With
+    both prices each side is its worst-case devig (sgp.devig_worst), so an
+    Under leg reads 1 - (the Under's own fair), not the Over's complement."""
     po = sgp.prob(over)
-    return po if under is None else po / (po + sgp.prob(under))
+    if under is None:
+        return po
+    fo, fu = sgp.devig_worst(po, sgp.prob(under))
+    return fo if side > 0 else 1 - fu
 
 
 def season_games(p):
@@ -114,7 +124,7 @@ def nb_over(p, stat, posted, target, p_posted):
 
 def leg_prob(p, leg):
     """(probability the leg hits, note)"""
-    po = leg["p_over"] if "p_over" in leg else over_prob(leg["over"], leg["under"])
+    po = leg["p_over"] if "p_over" in leg else over_prob(leg["over"], leg["under"], leg["side"])
     note = leg.get("note", "")
     if leg["from"] is not None and leg["from"] != leg["line"]:
         sd = sgp.stat_sd(p, leg["stat"])
@@ -215,7 +225,8 @@ def mc_joint(ps, R, draws=4_000_000):
 
 
 def novig_legs(player, legs, max_spread):
-    """Fill each 'odds novig' leg with Novig's mid: p_over, from, and a note."""
+    """Fill each 'odds novig' leg from Novig: p_over (worst-case devig of the
+    two sides' asks, from the leg's side), from, and a note."""
     name, rows = novig.ladder(novig.fetch(), player)
     if not name:
         raise SystemExit(f"{player}: not on Novig's open pregame NBA props")
@@ -227,8 +238,9 @@ def novig_legs(player, legs, max_spread):
         if r is None:
             raise SystemExit(f"{leg['stat']} {want:g}: no Novig line tighter than {max_spread * 100:g}c; "
                              f"see novig.py \"{name}\" {leg['stat']} and pass odds by hand")
-        leg["p_over"] = r["mid"]
-        leg["note"] = f"Novig {r['line']:g} mid {r['mid']:.1%}, {r['spread'] * 100:.1f}c wide; "
+        leg["p_over"] = r["fo"] if leg["side"] > 0 else 1 - r["fu"]
+        leg["note"] = (f"Novig {r['line']:g} fair O {r['fo']:.1%} / U {r['fu']:.1%} (mid {r['mid']:.1%}), "
+                       f"{r['spread'] * 100:.1f}c wide; ")
         if r["line"] != leg["line"]:
             leg["from"] = r["line"]
         else:

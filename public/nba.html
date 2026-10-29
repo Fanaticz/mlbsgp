@@ -433,6 +433,24 @@ function copulaJoint(r, a, b) {
   }
   return a * b + tot * h / 3;
 }
+// A two-way price (implied po + pu) -> [fair over, fair under], each side the
+// worst (lowest) of the multiplicative, additive, power and Shin devigs, like
+// Vulture's Fair column: +132/-173 -> +153/-147. A pair at or under 100% is
+// already fair and kept. Same as devig_worst in .claude/skills/nba-ast-pts-sgp/sgp.py.
+function devigWorst(po, pu) {
+  const s = po + pu;
+  if (s <= 1 + 1e-9) return [po, pu];
+  const c = [[po / s, pu / s], [po - (s - 1) / 2, pu - (s - 1) / 2]];
+  let lo = 1, hi = 20, k = 1;
+  for (let i = 0; i < 100; i++) { k = (lo + hi) / 2; if (po ** k + pu ** k > 1) lo = k; else hi = k; }
+  c.push([po ** k, pu ** k]);
+  const shin = (z, q) => (Math.sqrt(z * z + 4 * (1 - z) * q * q / s) - z) / (2 * (1 - z));
+  let zl = 0, zh = 0.5, z = 0;
+  for (let i = 0; i < 100; i++) { z = (zl + zh) / 2; if (shin(z, po) + shin(z, pu) > 1) zl = z; else zh = z; }
+  c.push([shin(z, po), shin(z, pu)]);
+  return [Math.min(...c.map(x => x[0])), Math.min(...c.map(x => x[1]))];
+}
+
 // "+117" / "117" / "-133" -> implied probability; null if not American odds.
 function oddsProb(txt) {
   const o = parseFloat(String(txt || "").replace(/\s/g, ""));
@@ -617,9 +635,8 @@ function propHTML(p) {
       <div class="pb-title">SGP pricer</div>
       <div class="pr-sub"></div>
       <div class="pb-controls">
-        <span class="fvw"><label><span data-lab="x"></span> fair odds<input type="text" inputmode="numeric" placeholder="e.g. -110" value="${st.xFv||""}" data-f="xFv"></label><button type="button" class="sgn" data-sgn="xFv" title="Flip the sign (phone number pads have no minus key)">±</button></span>
-        <span class="fvw"><label><span data-lab="y"></span> fair odds<input type="text" inputmode="numeric" placeholder="e.g. +120" value="${st.yFv||""}" data-f="yFv"></label><button type="button" class="sgn" data-sgn="yFv" title="Flip the sign (phone number pads have no minus key)">±</button></span>
-        <button type="button" class="sgn nvbtn" data-novig title="Fill both legs' fair odds from Novig's exchange: the mid of bid and ask at each line (pregame, books up to ${NV_MAX_SPREAD * 100}¢ wide)">Fetch FV</button>
+        ${["x", "y"].map(a => ["", "U"].map(u => `<span class="fvw"><label><span data-lab="${a}${u}"></span> fair<input type="text" inputmode="numeric" placeholder="${u ? "optional" : "e.g. -110"}" value="${st[a + "Fv" + u] || ""}" data-f="${a}Fv${u}"></label><button type="button" class="sgn" data-sgn="${a}Fv${u}" title="Flip the sign (phone number pads have no minus key)">±</button></span>`).join("")).join("")}
+        <button type="button" class="sgn nvbtn" data-novig title="Fill both legs' Over and Under fair odds from Novig's exchange: each side the worst-case devig of the two asks at that line (pregame, books up to ${NV_MAX_SPREAD * 100}¢ wide)">Fetch FV</button>
       </div>
       <div class="nv-out"></div>
       <div class="pr-out"></div>
@@ -636,8 +653,10 @@ function drawPricer(pb, p, games) {
   if (!el) return;
   const st = propState(p);
   const xL = STAT_LABEL[st.xStat], yL = STAT_LABEL[st.yStat];
-  el.querySelector('[data-lab="x"]').textContent = `${xL} o${st.xLine}`;
-  el.querySelector('[data-lab="y"]').textContent = `${yL} o${st.yLine}`;
+  for (const [a, L] of [["x", xL], ["y", yL]]) {
+    el.querySelector(`[data-lab="${a}"]`).textContent = `${L} o${st[a + "Line"]}`;
+    el.querySelector(`[data-lab="${a}U"]`).textContent = `u${st[a + "Line"]}`;
+  }
   const sub = el.querySelector(".pr-sub"), out = el.querySelector(".pr-out");
   const plugEl = pb.querySelector("[data-plug]");
   plugEl.innerHTML = "Plug-in r: —";
@@ -648,17 +667,22 @@ function drawPricer(pb, p, games) {
     return;
   }
   const s = pair.shrunk, r = s ? s.r : pair.weighted.r;
-  const leg = (stat, line, txt) => {
-    const fv = oddsProb(txt);
-    if (fv !== null) return { p: fv, fv: true };
+  // {p: P(over), u: P(under)}. Both fair boxes filled: each side is its
+  // worst-case devig (a Vulture Fair pair at or under 100% is kept as is);
+  // one box: the other side is its complement; none: game-log hit rate.
+  const leg = (stat, line, ot, ut) => {
+    const o = oddsProb(ot), u = oddsProb(ut);
+    if (o !== null && u !== null) { const [fo, fu] = devigWorst(o, u); return { p: fo, u: fu, fv: true }; }
+    if (o !== null) return { p: o, u: 1 - o, fv: true };
+    if (u !== null) return { p: 1 - u, u, fv: true };
     let w = 0, wo = 0;
     for (const g of games) {
       if (g[stat] === line) continue;
       w += gw(g); if (g[stat] > line) wo += gw(g);
     }
-    return { p: w ? wo / w : null, fv: false };
+    return { p: w ? wo / w : null, u: w ? 1 - wo / w : null, fv: false };
   };
-  const X = leg(st.xStat, st.xLine, st.xFv), Y = leg(st.yStat, st.yLine, st.yFv);
+  const X = leg(st.xStat, st.xLine, st.xFv, st.xFvU), Y = leg(st.yStat, st.yLine, st.yFv, st.yFvU);
   const src = X.fv && Y.fv ? "both legs from the fair odds entered"
     : !X.fv && !Y.fv ? "legs from the game-log hit rates until fair odds are entered"
     : `${X.fv ? yL : xL} leg from the game-log hit rate until its fair odds are entered`;
@@ -678,7 +702,7 @@ function drawPricer(pb, p, games) {
   const pct = v => `${(100 * v).toFixed(1)}%`;
   const row = (xo, yo) => {
     const k = (xo ? "o" : "u") + (yo ? "o" : "u");
-    const a = xo ? X.p : 1 - X.p, b = yo ? Y.p : 1 - Y.p;
+    const a = xo ? X.p : X.u, b = yo ? Y.p : Y.u;
     const rr = xo === yo ? r : -r;  // an Over/Under combo flips the sign
     const j = copulaJoint(rr, a, b);
     const corr = (j - a * b) / Math.sqrt(a * (1 - a) * b * (1 - b));
@@ -722,9 +746,10 @@ function evCell(j, txt) {
 
 // ---- Novig fair values -------------------------------------------------------
 // Novig's public catalog (official API, no key, CORS open): every open pregame
-// NBA prop with each outcome's best bid. An exchange has no vig to strip: the
-// Over ask is 1 - the Under bid and the fair value is the mid. Its app shows
-// asks (O 91% / U 15% = 106%), never fair values. Pregame game markets charge
+// NBA prop with each outcome's best bid. The Over ask is 1 - the Under bid, so
+// the two asks are a two-way price whose vig is the spread; each side's fair
+// is its worst-case devig (devigWorst), a hair under the mid on a tight book.
+// The app shows asks (O 91% / U 15% = 106%), never fair values. Pregame game markets charge
 // no taker fee. Wide books (thin alts, some out of order with the ladder) are
 // not priced from; same rule as .claude/skills/nba-sgp-fv/novig.py.
 const NV_URL = "https://api.novig.com/v3/public/catalog/markets";
@@ -773,7 +798,9 @@ function novigLadder(items, name) {
     const ask = side.under?.bid ? 1 - side.under.bid.price : null;
     const two = bid !== null && ask !== null;
     (out[stat[m.marketType]] ||= []).push({ line: +m.strike, bid, ask, vol: m.volume,
-      mid: two ? (bid + ask) / 2 : null, spread: two ? ask - bid : null });
+      mid: two ? (bid + ask) / 2 : null, spread: two ? ask - bid : null,
+      // The two sides' asks are a two-way price whose vig is the spread.
+      fair: two ? devigWorst(ask, 1 - bid) : null });
   }
   for (const v of Object.values(out)) v.sort((a, b) => a.line - b.line);
   return out;
@@ -804,16 +831,21 @@ async function fetchNovig(pb, p) {
   const st = propState(p);
   const time = new Date().toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
   // "PTS o17.5: -113 (mid 53.0%, 52.5–53.5, 1.0¢ wide)" for the line in use.
-  const used = (a, r) => `${STAT_LABEL[st[a + "Stat"]]} o${r.line}: <b>${fairOdds(r.mid)}</b> (mid ${(100 * r.mid).toFixed(1)}%, ` +
-    `${(100 * r.bid).toFixed(1)}–${(100 * r.ask).toFixed(1)}, ${(100 * r.spread).toFixed(1)}¢ wide${nvTight(r) ? "" : ", mid is rough"})`;
+  const used = (a, r) => `${STAT_LABEL[st[a + "Stat"]]} ${r.line}: o <b>${fairOdds(r.fair[0])}</b> / u <b>${fairOdds(r.fair[1])}</b> (worst case; mid ${(100 * r.mid).toFixed(1)}%, ` +
+    `${(100 * r.bid).toFixed(1)}–${(100 * r.ask).toFixed(1)}, ${(100 * r.spread).toFixed(1)}¢ wide${nvTight(r) ? "" : ", rough"})`;
   const byChip = {};
+  const fill = (a, r) => {
+    for (const [u, q] of [["", r.fair[0]], ["U", r.fair[1]]]) {
+      st[a + "Fv" + u] = fairOdds(q);
+      pb.querySelector(`[data-f="${a}Fv${u}"]`).value = st[a + "Fv" + u];
+    }
+  };
   const lines = ["x", "y"].map(a => {
     const stat = st[a + "Stat"], line = st[a + "Line"], lab = `${STAT_LABEL[stat]} o${line}`;
     if (!NV_TYPES[stat]) return `${lab}: Novig doesn't list ${STAT_LABEL[stat].toLowerCase()} props.`;
     const rows = lad[stat] || [], at = rows.find(r => r.line === line);
     if (at && nvTight(at)) {
-      st[a + "Fv"] = fairOdds(at.mid);
-      pb.querySelector(`[data-f="${a}Fv"]`).value = st[a + "Fv"];
+      fill(a, at);
       return used(a, at);
     }
     const why = !at ? `no Novig line at ${line}`
@@ -825,19 +857,18 @@ async function fetchNovig(pb, p) {
     const chips = two.map(r => {
       const w = !nvTight(r), sp = `${(100 * r.spread).toFixed(1)}¢`;
       byChip[`${a}|${r.line}`] = r;
-      return `<button type="button" class="nv-chip${w ? " wide" : ""}" data-nv="${a}|${r.line}|${fairOdds(r.mid)}"` +
-        ` title="${(100 * r.bid).toFixed(1)}–${(100 * r.ask).toFixed(1)}, ${sp} wide${w ? " (mid is rough)" : ""} · vol ${r.vol.toLocaleString()}">` +
-        `${r.line} ${fairOdds(r.mid)}${w ? ` <small>${sp}</small>` : ""}</button>`;
+      return `<button type="button" class="nv-chip${w ? " wide" : ""}" data-nv="${a}|${r.line}"` +
+        ` title="${(100 * r.bid).toFixed(1)}–${(100 * r.ask).toFixed(1)}, ${sp} wide${w ? " (rough)" : ""} · vol ${r.vol.toLocaleString()}">` +
+        `${r.line} ${fairOdds(r.fair[0])}${w ? ` <small>${sp}</small>` : ""}</button>`;
     }).join("");
     return `<span data-nvh="${a}">${lab}: ${why}.</span> ${two.length ? `Novig's lines: ${chips}` : "Novig has no two-sided line for this stat."}`;
   });
   msg.innerHTML = `Novig · ${time}<br>` + lines.join("<br>");
   msg.querySelectorAll("[data-nv]").forEach(c => c.onclick = () => {
-    const [a, line, fv] = c.dataset.nv.split("|");
+    const [a, line] = c.dataset.nv.split("|");
     st[a + "Line"] = +line;
-    st[a + "Fv"] = fv;
     pb.querySelector(`[data-f="${a}Line"]`).value = line;
-    pb.querySelector(`[data-f="${a}Fv"]`).value = fv;
+    fill(a, byChip[`${a}|${line}`]);
     msg.querySelectorAll(`[data-nv^="${a}|"]`).forEach(o => o.classList.toggle("on", o === c));
     // The note now describes the line the chip moved to.
     msg.querySelector(`[data-nvh="${a}"]`).innerHTML = used(a, byChip[`${a}|${line}`]) + ".";
@@ -855,7 +886,7 @@ function initProp(pb) {
     const f = el.dataset.f;
     const h = () => {
       const st = propState(p);
-      if (f === "xFv" || f === "yFv") {
+      if (/^[xy]FvU?$/.test(f)) {
         // Pricer inputs: keep the raw text (odds can be negative), reprice only.
         st[f] = el.value.trim();
         drawPricer(pb, p, logOf(p).filter(g => g[st.xStat] != null && g[st.yStat] != null));
@@ -864,10 +895,12 @@ function initProp(pb) {
       // A new stat or line makes that leg's entered fair odds and the
       // combos' SGP prices stale.
       const a = f[0];
-      st[a + "Fv"] = "";
       st.pays = {};
-      const fvIn = pb.querySelector(`[data-f="${a}Fv"]`);
-      if (fvIn) fvIn.value = "";
+      for (const u of ["", "U"]) {
+        st[a + "Fv" + u] = "";
+        const fvIn = pb.querySelector(`[data-f="${a}Fv${u}"]`);
+        if (fvIn) fvIn.value = "";
+      }
       if (f === "xStat" || f === "yStat") {
         // New stat -> reset its line to the blended mean, relabel the input.
         st[f] = el.value;

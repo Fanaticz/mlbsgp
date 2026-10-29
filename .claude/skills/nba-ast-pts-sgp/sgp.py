@@ -134,9 +134,39 @@ def players(args):
         print(f"/run command_name:twa markets:{market} bet_names:{names} books:dk")
 
 
+def devig_worst(po, pu):
+    """Fair probabilities of a two-way price, each side the worst (lowest)
+    of the multiplicative, additive, power and Shin devigs, like Vulture's
+    Fair column. A pair at or under 100% is already fair (Vulture's own
+    +153/-147 sums to 99%): kept as is."""
+    s = po + pu
+    if s <= 1 + 1e-9:
+        return po, pu
+    cands = [(po / s, pu / s), (po - (s - 1) / 2, pu - (s - 1) / 2)]
+    lo, hi = 1.0, 20.0
+    for _ in range(100):
+        k = (lo + hi) / 2
+        lo, hi = (k, hi) if po ** k + pu ** k > 1 else (lo, k)
+    cands.append((po ** k, pu ** k))
+
+    def shin(z, q):
+        return (math.sqrt(z * z + 4 * (1 - z) * q * q / s) - z) / (2 * (1 - z))
+    lo, hi = 0.0, 0.5
+    for _ in range(100):
+        z = (lo + hi) / 2
+        lo, hi = (z, hi) if shin(z, po) + shin(z, pu) > 1 else (lo, z)
+    cands.append((shin(z, po), shin(z, pu)))
+    return min(c[0] for c in cands), min(c[1] for c in cands)
+
+
 def sides(leg):
-    """(p_over, p_under, over_implied, under_implied)"""
+    """(p_over, p_under, over_implied, under_implied). With both prices, each
+    side is the worst-case devig (devig_worst); with one, the other side is
+    its complement."""
     o, u = leg.get("over"), leg.get("under")
+    if o is not None and u is not None:
+        po, pu = devig_worst(prob(o), prob(u))
+        return po, pu, False, False
     po = prob(o) if o is not None else 1 - prob(u)
     pu = prob(u) if u is not None else 1 - prob(o)
     return po, pu, o is None, u is None

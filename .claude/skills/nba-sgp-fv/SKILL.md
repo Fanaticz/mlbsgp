@@ -18,7 +18,7 @@ description: Fair value of an NBA same-player SGP (2+ legs of points, rebounds, 
      Limit, Sharp "Avg (n)", Sharp odds, **Fair**, Hold, ...; older sheets
      called it `avg_fv`).
   3. No sheet, or the user says "novig" → `odds novig`: the script pulls
-     Novig's exchange mid at the slip's line (see "Novig" below).
+     Novig's exchange price at the slip's line (see "Novig" below).
   4. Slip line not posted → the nearest posted line's pair, shifted (`from`).
      Prefer a posted alt line when one exists. `odds novig` does this by
      itself when Novig's line is missing or too wide.
@@ -42,8 +42,11 @@ python3 .claude/skills/nba-sgp-fv/price.py "Deni Avdija" \
 ```
 
 Odds are always the posted line's **Over then Under** price, whichever side
-the leg takes; the pair is normalized (strips a book's vig). One side only is
-taken as fair: right for a Vulture Fair value (already devigged), wrong for a
+the leg takes. With both, each side is the **worst case** (lowest
+probability) of the multiplicative, additive, power and Shin devigs, as
+Vulture's Fair column does: a book's +132/−173 prices an Over at +153 and an
+Under at −147, so the two don't mirror. A pair already at or under 100%
+(Vulture's own Fair pair) is used as is. One side only is taken as fair: right for a Vulture Fair value (already devigged), wrong for a
 raw one-way book price (alt overs like "4+ threes"). For those, shift from the
 two-way main line with `from`, and use the one-way prices only as a check:
 each book's implied % divided by (1 + that book's margin on the main two-way,
@@ -54,12 +57,13 @@ check runs slightly high.
 
 `novig.py` reads Novig's public catalog (`GET /v3/public/catalog/markets`,
 official API, no key, throttled per IP), open pregame NBA markets only.
-Novig is an exchange, so there is no vig to strip: the Over ask is
-1 − the Under bid, and the fair value is the **mid** of bid and ask. The app
+The Over ask is 1 − the Under bid, so the two sides' asks are a two-way price
+whose vig is the spread; each side's fair is its worst-case devig (above),
+a hair under the mid on a tight book. The app
 shows asks (Avdija O14.5 91% / U14.5 15% = 106%), so never read a fair
 value off the app's percentages. Pregame game markets charge no taker fee.
 
-- The mid is only as good as the book: main lines run 0.5–2¢ wide, alts
+- The price is only as good as the book: main lines run 0.5–2¢ wide, alts
   wider, and some are junk (Sabonis 18.5 pts 0.21/0.48, out of order with
   19.5). A line wider than 4¢ (`--novig-spread 0.04`) is never priced from:
   the leg shifts from the nearest tight line instead, and the script says so.
@@ -67,7 +71,7 @@ value off the app's percentages. Pregame game markets charge no taker fee.
 - No tight line for a stat → the script stops. Look at the ladder and pass
   odds by hand:
   `python3 .claude/skills/nba-sgp-fv/novig.py "Domantas Sabonis" ast 9.5`
-  (one row per line: bid, ask, mid, Over/Under American, spread, volume).
+  (one row per line: bid, ask, mid, fair Over/Under American, spread, volume).
 - Live games (`OPEN_INGAME`) are left out on purpose: those books move
   every possession and do carry a fee.
 

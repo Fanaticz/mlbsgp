@@ -2,6 +2,16 @@
 
 ## 2026-10-29 session
 
+### Fair odds: worst-case devig per side, everywhere
+Vulture's Fair column doesn't mirror (CJ McCollum 3PM 2.5: sharp +132/−173 → Fair +153 / −147): each side is the lowest probability of four devigs (multiplicative +147/−147, additive and Shin +151/−151, power +153/−153; Over takes power, Under multiplicative, summing to 99.05%). Every place that turns a two-way price into fair probabilities now does the same:
+
+- **`sgp.py`** — new `devig_worst(po, pu)`; a pair at or under 100% (Vulture's own Fair pair) is kept. `sides()` uses it when both prices are given (was: each raw implied as is, so a book's pair kept its vig). Reproduces Vulture's +153 / −147 from +132 / −173 exactly.
+- **`price.py`** — a leg with both prices takes its own side's worst case (was: the pair rescaled to 100%, which sits between the two). The SKILL.md check (Lillard, Fair +101/−101, already 100%) is unchanged at +229.
+- **`novig.py` / Novig legs** — the two sides' asks are the two-way price (the spread is its vig): fair O / U is their worst-case devig, a hair under the mid on a tight book.
+- **Dashboard pricer** — each leg gets an optional **Under fair** box. Both boxes → worst case per side; Over only → Under is its complement (as before); game-log fallback unchanged. Fetch FV and the Novig chips fill both boxes; the note reads `PTS 11.5: o -102 / u +102 (worst case; mid 50.5%, …)`.
+
+Verified: the JS `devigWorst` and Python `devig_worst` both give +153 / −147 from +132 / −173 and keep +153 / −147; in headless Chromium an REB pair +132 / −173 put 39.5% on the Over leg and 59.5% on the Under leg of the combos, Fetch FV filled all four boxes; no page errors, no horizontal overflow at 390 px.
+
 ### NBA dashboard: Novig note follows a chip click
 Clicking a Novig chip moved the line and filled the fair odds, but the note above kept describing the old line ("PTS o20.5: no Novig line at 20.5" with 17.5 in use). The clicked leg's line in the note now reads like an auto-filled one: `PTS o11.5: -103 (mid 50.8%, 50.0–51.5, 1.5¢ wide)`, plus "mid is rough" for a wide book. Also checked by hand on a PTS 17.5 (−113) × AST 5.5 (−129), r −0.016 screen: all four combos match an independent `sgp.py` computation (+237 / +394 / +327 / +275), sum to 100%, and O/O + O/U equals the PTS Over.
 
