@@ -11,10 +11,14 @@ quarter-Kelly stake at the FV as shown: units = f/4 x 100 (1u = 1% of
 bankroll), dollars = units x --unit (default $500, Max's unit).
 
 Each leg: <stat> <over|under> <line> [from <posted line>] odds <over> [<under>]
+      or: <stat> <over|under> <line> [from <posted line>] odds novig
   stat   pts, reb, ast, tpm (3pm / threes accepted)
   odds   Over and Under prices of the posted line: Vulture's Fair column, or a
          book's two-way price (normalizing the pair strips its vig). With one
          side only, that price is taken as fair.
+  novig  pull the fair value from Novig's exchange (novig.py): the mid of the
+         Over bid and ask at the leg's line, or, when that line is missing or
+         wider than --novig-spread, the nearest tight line, shifted.
   from   the odds belong to another line (a Novig milestone like 25+ against
          a posted 23.5): the leg is shifted with the player's game-log spread.
 
@@ -31,6 +35,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "nba-ast-pts-sgp"))
 import sgp  # noqa: E402  prob, american, nppf, ncdf, joint, binary, stat_sd, load
+import novig  # noqa: E402
 
 STATS = {"pts": "pts", "points": "pts", "reb": "reb", "rebounds": "reb", "ast": "ast",
          "assists": "ast", "tpm": "tpm", "3pm": "tpm", "threes": "tpm"}
@@ -51,8 +56,13 @@ def parse_leg(text):
     if t[i] == "from":
         leg["from"] = float(t[i + 1])
         i += 2
+    if t[i] == "novig":  # "... novig" short for "... odds novig"
+        t.insert(i, "odds")
     if t[i] != "odds":
         raise SystemExit(f"leg {text!r}: expected 'odds' after the line")
+    if t[i + 1:i + 2] == ["novig"]:
+        leg["novig"], leg["over"], leg["under"] = True, None, None
+        return leg
     nums = [int(x) for x in t[i + 1:i + 3]]
     leg["over"], leg["under"] = nums[0], (nums[1] if len(nums) > 1 else None)
     return leg
@@ -104,18 +114,18 @@ def nb_over(p, stat, posted, target, p_posted):
 
 def leg_prob(p, leg):
     """(probability the leg hits, note)"""
-    po = over_prob(leg["over"], leg["under"])
-    note = ""
+    po = leg["p_over"] if "p_over" in leg else over_prob(leg["over"], leg["under"])
+    note = leg.get("note", "")
     if leg["from"] is not None and leg["from"] != leg["line"]:
         sd = sgp.stat_sd(p, leg["stat"])
         mu = leg["from"] - sd * sgp.nppf(1 - po)
         normal = 1 - sgp.ncdf((leg["line"] - mu) / sd)
         if leg["stat"] == "pts":
-            po, note = normal, f"shifted from {leg['from']:g} (SD {sd:.1f})"
+            po, note = normal, note + f"shifted from {leg['from']:g} (SD {sd:.1f})"
         else:  # small counts: average the normal with a count model
             nb = nb_over(p, leg["stat"], leg["from"], leg["line"], po)
-            po, note = (normal + nb) / 2, f"shifted from {leg['from']:g}: normal {normal:.1%}, count model {nb:.1%}"
-    elif leg["under"] is None:
+            po, note = (normal + nb) / 2, note + f"shifted from {leg['from']:g}: normal {normal:.1%}, count model {nb:.1%}"
+    elif leg["under"] is None and "p_over" not in leg:
         note = "one side only"
     return (po if leg["side"] > 0 else 1 - po), note
 
@@ -204,6 +214,28 @@ def mc_joint(ps, R, draws=4_000_000):
     return float(np.mean(np.all(Z < np.array([sgp.nppf(q) for q in ps]), axis=1)))
 
 
+def novig_legs(player, legs, max_spread):
+    """Fill each 'odds novig' leg with Novig's mid: p_over, from, and a note."""
+    name, rows = novig.ladder(novig.fetch(), player)
+    if not name:
+        raise SystemExit(f"{player}: not on Novig's open pregame NBA props")
+    for leg in legs:
+        if not leg.get("novig"):
+            continue
+        want = leg["from"] if leg["from"] is not None else leg["line"]
+        r = novig.pick(rows.get(leg["stat"], []), want, max_spread)
+        if r is None:
+            raise SystemExit(f"{leg['stat']} {want:g}: no Novig line tighter than {max_spread * 100:g}c; "
+                             f"see novig.py \"{name}\" {leg['stat']} and pass odds by hand")
+        leg["p_over"] = r["mid"]
+        leg["note"] = f"Novig {r['line']:g} mid {r['mid']:.1%}, {r['spread'] * 100:.1f}c wide; "
+        if r["line"] != leg["line"]:
+            leg["from"] = r["line"]
+        else:
+            leg["from"] = None
+            leg["note"] = leg["note"][:-2]
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("player")
@@ -211,6 +243,8 @@ def main():
     ap.add_argument("--payout", help="slip price: decimal (3.80, 3.80x) or American (+280)")
     ap.add_argument("--unit", type=float, default=500.0, help="dollars per unit, 1u = 1%% of bankroll")
     ap.add_argument("--kelly", type=float, default=0.25, help="Kelly fraction (default quarter)")
+    ap.add_argument("--novig-spread", type=float, default=novig.MAX_SPREAD,
+                    help="widest Novig market (ask - bid, probability) to price a novig leg from")
     args = ap.parse_args()
     d, by = sgp.load()
     hits = [n for n in by if args.player.lower() in n.lower()]
@@ -224,6 +258,8 @@ def main():
     if len(legs) < 2:
         raise SystemExit("need at least two legs")
     print(f"{hits[0]} ({p['team_abbr']}) · data {d['generated_at'][:10]}")
+    if any(leg.get("novig") for leg in legs):
+        novig_legs(hits[0], legs, args.novig_spread)
     ps = []
     for leg in legs:
         q, note = leg_prob(p, leg)

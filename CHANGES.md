@@ -1,5 +1,12 @@
 # Changes
 
+## 2026-10-29 session
+
+### nba-sgp-fv: pull leg fair values from Novig
+`price.py` legs can now say `odds novig` (or just `novig`) instead of typing prices: `"pts over 22.5 novig"`. New `.claude/skills/nba-sgp-fv/novig.py` reads Novig's official public catalog (`GET https://api.novig.com/v3/public/catalog/markets`, no key, open pregame NBA POINTS / REBOUNDS / ASSISTS / THREE_POINTERS_MADE), one call per run. The fair value is the exchange mid: Over bid and Over ask (= 1 − Under bid), averaged; no vig to strip, and pregame markets charge no taker fee. Books wider than 4¢ (`--novig-spread`) are never priced from: the leg shifts from the nearest tight line through the existing `from` model, and the note says which line and spread it used. `novig.py "<player>" [stat] [line]` prints the ladder (bid, ask, mid, American both sides, spread, volume) for checking by hand. Novig's app shows asks, not fair values (Avdija O/U 14.5 91% / 15% = 106%); the API matched the app's ladder (lowest points line 14.5). Parlay multipliers still can't be pulled (the API prices parlays only via RFQ for registered market makers).
+
+Verified live on the 10-29 slate: Avdija PTS O22.5 + REB O6.5 both priced at the line (0.5¢ and 1.5¢ wide); Sabonis PTS O16.5 (8¢ wide) fell back to 17.5 and shifted; three-leg Novig combo runs. The SKILL.md check (Lillard, hand odds) still gives +229 / 15.5% / $692.03 / 1.38u.
+
 ## 2026-10-27 session
 
 ### NBA tab: box stats + prop builder use all three seasons
