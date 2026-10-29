@@ -1,0 +1,87 @@
+---
+name: nba-sgp-fv
+description: Fair value of an NBA same-player SGP (2+ legs of points, rebounds, assists, threes) from a bet-slip screenshot (Novig, Pikkit, a book) plus Vulture fair odds or a book's two-way price. Triggers on a slip screenshot with "FV?", "fair value", "price this", "calc FV", or "what r should I use". Reply with the FV only.
+---
+
+# NBA same-player SGP fair value
+
+## 1. Read the inputs
+
+- **Slip:** player and legs. Novig milestones: "26+ Points · Yes" = Over 25.5,
+  "10+ Assists · No" = Under 9.5. The payout on the slip is not needed.
+- **Leg odds, in order of preference:**
+  1. The user's instruction for a leg ("for 2.5, use DK FV") → that book's
+     Over/Under pair at that line (Pikkit shows both sides).
+  2. Vulture sheet: the **Fair** column of the Over row and the Under row at
+     the slip's line (layout: Date, League, Game, Market, Bet, Book, Odds,
+     Limit, Sharp "Avg (n)", Sharp odds, **Fair**, Hold, ...; older sheets
+     called it `avg_fv`).
+  3. Slip line not posted → the nearest posted line's pair, shifted (`from`).
+     Prefer a posted alt line when one exists.
+
+## 2. Price it
+
+```bash
+python3 .claude/skills/nba-sgp-fv/price.py "Victor Wembanyama" \
+  "pts over 25.5 odds +114 -113" \
+  "tpm over 2.5 odds +150 -197" \
+  "reb over 9.5 from 11.5 odds +115 -114"
+```
+
+Leg: `<pts|reb|ast|tpm> <over|under> <line> [from <posted line>] odds <over> [<under>]`.
+Odds are always the posted line's **Over then Under** price, whichever side
+the leg takes; the pair is normalized (strips a book's vig). One side only is
+taken as fair.
+
+## 3. Reply: the FV only
+
+```
+FV +375 (4.75x)
+```
+
+- No EV, no book-by-book comparison, no verdict. The user compares prices
+  themselves.
+- Add one short line only when a leg was estimated (`from` used, or one side
+  only), naming the leg, so the user can send the real line.
+- If asked "what r?": the plug-in r the script prints (2 legs) is what goes
+  in a devig calculator (joint = pA·pB + r·√(pA(1−pA)·pB(1−pB))); the margin r
+  is the copula input. Never put a margin r into that formula: it overstates
+  the correlation by about 1.5x near the median.
+
+## Method (what the script does)
+
+- **Correlation:** margin r between the stat lines, within-season centered
+  and recency-weighted, then shrunk (empirical Bayes) toward rotation players
+  in a similar role. One player's r carries about 0.10 of sampling noise, as
+  much as the real spread between players, so raw r's must not be used.
+  Points pairs (PTS·REB, PTS·AST, PTS·3PM) come from
+  `public/data/nba_correlations.json` (`<pair>.shrunk`); REB·AST, REB·3PM and
+  AST·3PM are computed from the game logs the same way. An Over/Under mix
+  flips the sign.
+- **Joint:** Gaussian copula at each leg's probability. Two legs exact, three
+  by integration (matches a 4M-draw simulation), four or more by Monte Carlo.
+  Checked on PTS·3PM: across 254 player-seasons at book-style lines it
+  predicted both overs 41.1% vs 41.05% actual.
+- **Line shifts (`from`):** a normal fit through the posted line with the
+  player's within-season SD. Rebounds, assists and threes average that with a
+  negative binomial using the player's own dispersion (they diverge on small
+  counts).
+
+## Data freshness
+
+`price.py` prints the data date. The daily GitHub workflow
+(`refresh-data.yml`, 11:00 UTC) rebuilds it and rebases before pushing. This
+session's GitHub access can't trigger workflows (403), so to refresh by hand:
+`python3 scripts/nba_fetch_correlations.py --workers 16` (about 25 minutes,
+ESPN is reachable from the container), check `generated_at` and the player
+count, then commit and push `public/data/nba_correlations.json` to `main`.
+
+## Related
+
+- `nba-ast-pts-sgp`: Vulture `/run` commands and the Assists × Points
+  Discord card. Its `sgp.py` holds the copula math this script imports.
+- Dashboard `public/nba.html`: shows the plug-in r and prices 2-leg combos in
+  each player's builder.
+- Novig SGP multipliers can't be pulled automatically: the official API
+  (docs.novig.com) has no parlays, and reverse-engineering the app is off the
+  table.
