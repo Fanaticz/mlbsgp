@@ -2,6 +2,9 @@
 
 ## 2026-10-29 session
 
+### Novig name matching: "P.J." meets "PJ"
+Fetch FV said "P.J. Washington isn't on Novig's open pregame props" while Novig had him as "PJ Washington": the name key turned each period into a space ("p j washington" vs "pj washington"). The key (`nvNorm` in `nba.html`, `norm` in `novig.py`) now drops periods and apostrophes and ignores spaces, and a small alias table covers Novig's full first names (`Alexandre Sarr` → ESPN's `Alex Sarr`). Against the 10-30 pregame board, 147 of 148 Novig players match the data file (was 145); the one left, AJ Dybantsa, isn't in the data yet. Verified in headless Chromium: PJ Washington's Fetch FV now shows his ladder.
+
 ### NBA dashboard: the prop builder follows the sort
 Sorted on a correlation (PTS·REB / PTS·AST / PTS·3PM / TOT·REB / TM·REB / OPP·REB r, from the Sort menu or a column header), an expanded player's builder opens on that pair: stat selects, default lines (blended means), scatter, tiles and pricer. Changing the sort to another pair moves every open builder onto it (fresh lines; fair odds and SGP prices cleared, since they belonged to the old pair); a builder already on the new pair, or a sort that isn't a pair (Points, Minutes, name), leaves it alone. Picking stats by hand in a builder still works as before.
 

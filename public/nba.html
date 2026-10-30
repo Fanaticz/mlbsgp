@@ -789,10 +789,15 @@ async function novigMarkets() {
   return items;
 }
 
-// "Darius Acuff Jr." / "Nikola Jokić" -> "darius acuff" / "nikola jokic"
+// Match key: "Darius Acuff Jr." / "Nikola Jokić" / "P.J. Washington" ->
+// "dariusacuff" / "nikolajokic" / "pjwashington". Periods and apostrophes
+// drop out and spaces don't count, so "P.J." (ESPN) meets "PJ" (Novig).
 const nvNorm = s => s.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase()
-  .replace(/'/g, "").replace(/[^a-z0-9 ]/g, " ").split(/\s+/)
-  .filter(w => w && !["jr", "sr", "ii", "iii", "iv", "v"].includes(w)).join(" ");
+  .replace(/['.]/g, "").replace(/[^a-z0-9 ]/g, " ").split(/\s+/)
+  .filter(w => w && !["jr", "sr", "ii", "iii", "iv", "v"].includes(w)).join("")
+  .replace(/^.*$/, k => NV_ALIAS[k] || k);
+// Novig's full name -> ESPN's short one, where they differ (same table in novig.py).
+const NV_ALIAS = { alexandresarr: "alexsarr" };
 
 // { stat: [{line, bid, ask, mid, spread, vol}] } for the player, or null.
 function novigLadder(items, name) {

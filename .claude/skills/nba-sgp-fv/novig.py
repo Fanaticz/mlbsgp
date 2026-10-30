@@ -33,13 +33,18 @@ TYPES = {"pts": "POINTS", "reb": "REBOUNDS", "ast": "ASSISTS", "tpm": "THREE_POI
 STAT = {v: k for k, v in TYPES.items()}
 MAX_SPREAD = 0.04  # ask - bid on the Over, in probability
 SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
+# Novig's full name -> ESPN's short one, where they differ (same table in nba.html).
+ALIAS = {"alexandresarr": "alexsarr"}
 
 
 def norm(name):
-    """'Darius Acuff Jr.' / 'Nikola Jokić' -> 'darius acuff' / 'nikola jokic'."""
+    """Match key: 'Darius Acuff Jr.' / 'Nikola Jokić' / 'P.J. Washington' ->
+    'dariusacuff' / 'nikolajokic' / 'pjwashington'. Periods and apostrophes
+    drop out and spaces don't count, so 'P.J.' (ESPN) meets 'PJ' (Novig)."""
     s = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()
-    words = "".join(c if c.isalnum() or c == " " else " " for c in s.replace("'", "")).split()
-    return " ".join(w for w in words if w not in SUFFIXES)
+    words = "".join(c if c.isalnum() or c == " " else " " for c in s.replace("'", "").replace(".", "")).split()
+    key = "".join(w for w in words if w not in SUFFIXES)
+    return ALIAS.get(key, key)
 
 
 def fetch(league="NBA", stats=tuple(TYPES)):
