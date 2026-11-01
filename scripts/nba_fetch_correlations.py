@@ -28,8 +28,12 @@ Data source (public ESPN endpoints, no key required):
 For each athlete we collect (PTS, REB, AST) for every regular-season game in the
 requested seasons, pool the games, and compute the Pearson correlation for the
 prop pairs, plus the game's scoring (game total, the player's team score,
-the opponent's score) vs the player's REB. Short-minute games (under 60% of the player's median minutes
-that season; --short-min-frac) are left out of the correlations. A two-sided p-value is computed from the t-distribution via the
+the opponent's score) vs the player's REB. Every game played counts: a prop on
+a player who takes the floor is action, so a short-minute game (injury exit,
+blowout, foul trouble) is part of what an SGP settles on, and it is where both
+stats drop together. Those games (under 60% of the player's median minutes that
+season; --short-min-frac) are only flagged in the game log for the viewer. A
+two-sided p-value is computed from the t-distribution via the
 regularized incomplete beta function (no scipy dependency).
 
 Outputs:
@@ -80,9 +84,12 @@ SCORE_KEYS = ("tot", "tm", "op")
 # Shrinkage: one player's r carries ~0.10 of sampling noise, about as much as
 # the real spread between players, so the raw r's overstate how players
 # differ. Each r is pulled toward the typical r of rotation players in a
-# similar role, the role set by the box stat below (high-assist guards run a
-# lower PTS-AST r than low-usage wings; PTS-3PM depends on 3PM volume).
-SHRINK_COVARIATE = {"pts_reb": "reb_mean", "pts_ast": "ast_mean", "pts_3pm": "tpm_mean",
+# similar role, the role set by the box stat below. PTS-REB and PTS-AST move
+# together mostly through minutes (blowouts, foul trouble, injury exits), so
+# their role is minutes: a 34-mpg starter runs a PTS-REB r near 0.2, a
+# 21-mpg reserve near 0.35. Binning them on REB or AST volume mixed the two
+# (and fit worse out of sample). PTS-3PM depends on 3PM volume.
+SHRINK_COVARIATE = {"pts_reb": "min_mean", "pts_ast": "min_mean", "pts_3pm": "tpm_mean",
                     "tot_reb": "reb_mean", "tm_reb": "reb_mean", "op_reb": "reb_mean"}
 SHRINK_POOL = {"min_mpg": 20.0, "min_games": 40}
 SHRINK_BINS = 5
@@ -465,8 +472,11 @@ def add_shrinkage(players: list[dict]) -> dict:
     Prior: the mean r of rotation players in the same role, from equal-count
     bins of the pair's covariate (SHRINK_COVARIATE), joined piecewise-linearly.
     tau^2 (real between-player spread) = variance of the pool's r around that
-    prior minus their average sampling variance (1 - r^2)^2 / nEff. Each
+    prior minus their average sampling variance (1 - prior^2)^2 / nEff. Each
     player's weight on his own r is tau^2 / (tau^2 + his sampling variance).
+    The sampling variance is evaluated at the prior, not at the player's own
+    r: at his own r, a player whose small sample ran high (r 0.9 over six
+    games) would get the least noise and the most weight on it.
     Returns the per-pair fit for the payload."""
     fits = {}
     for pair, cov in SHRINK_COVARIATE.items():
@@ -485,8 +495,8 @@ def add_shrinkage(players: list[dict]) -> dict:
                           sum(p[pair]["weighted"]["r"] for p in b) / len(b)))
 
         def noise(p: dict) -> float:
-            r = p[pair]["weighted"]["r"]
-            return (1 - r * r) ** 2 / p["effective_n"]
+            prior = _interp(knots, p[cov])
+            return (1 - prior * prior) ** 2 / p["effective_n"]
         resid = [p[pair]["weighted"]["r"] - _interp(knots, p[cov]) for p in pool]
         tau2 = max(sum(x * x for x in resid) / len(resid)
                    - sum(noise(p) for p in pool) / len(pool), SHRINK_TAU2_FLOOR)
@@ -500,15 +510,18 @@ def add_shrinkage(players: list[dict]) -> dict:
         fits[pair] = {"covariate": cov, "tau": round(math.sqrt(tau2), 4), "pool_n": len(pool),
                       "knots": [[round(x, 2), round(y, 4)] for x, y in knots]}
     return {"method": "empirical Bayes: weighted r shrunk toward rotation players "
-                      "with a similar covariate value",
+                      "with a similar covariate value; noise evaluated at the prior",
             "pool": SHRINK_POOL, "pairs": fits}
 
 
 def mark_short_games(games: list[dict], frac: float) -> float:
     """Flag games where the player logged under `frac` x his median minutes for
-    that season (injury exits, blowout rest, minutes restrictions). Those games
-    drag every stat down together and manufacture positive correlation, so they
-    are left out of the correlations and the box means. Returns the cutoff."""
+    that season (injury exits, blowout rest, foul trouble, minutes limits), so
+    the viewer can pick them out. A flag only: the r values and box means use
+    every game played, because the props are action in those games and they
+    are where both stats drop together. Leaving them out understated the
+    PTS-REB and PTS-AST r's, most for reserves (about 0.05 in plug-in r).
+    Returns the cutoff."""
     if frac <= 0 or not games:
         for gm in games:
             gm["short"] = False
@@ -535,18 +548,15 @@ def process_player(
     scored_ws: list[float] = []
     scored_yrs: list[int] = []
     per_season: dict[str, int] = {}
-    all_by_year: dict[int, list[dict]] = {}
     n_short = 0
     for yr in seasons:
-        g_all = regular_season_games(sess, aid, yr)
-        mark_short_games(g_all, short_frac)
-        g = [gm for gm in g_all if not gm["short"]]
+        g = regular_season_games(sess, aid, yr)
         if not g:
             continue
-        all_by_year[yr] = g_all
+        mark_short_games(g, short_frac)
         by_year[yr] = g
         per_season[str(yr)] = len(g)
-        n_short += len(g_all) - len(g)
+        n_short += sum(gm["short"] for gm in g)
         w = weights.get(yr, 0.0)
         for gm in g:
             pts.append(gm["pts"]); reb.append(gm["reb"]); ast.append(gm["ast"])
@@ -600,15 +610,15 @@ def process_player(
     team = team_map.get(aid, {})
     # Per-season breakdown (only seasons with >=3 games get correlations).
     by_season = {str(yr): {**_season_stats(by_year[yr]),
-                           "short_games": len(all_by_year[yr]) - len(by_year[yr])}
+                           "short_games": sum(gm["short"] for gm in by_year[yr])}
                  for yr in sorted(by_year) if len(by_year[yr]) >= 3}
     latest = max(by_year) if by_year else None
     # Full game-by-game log for every pulled season,
     # date-ordered, each game tagged with its season `s`. Powers the viewer's
     # prop-builder scatter and box-stat columns, which blend these seasons
     # using the per-game recency weights. Ints stored as ints to keep the
-    # JSON compact. Short-minute games stay in the log, flagged `short: 1`, so
-    # the viewer can show them (or not); they never feed the r values.
+    # JSON compact. Short-minute games are flagged `short: 1` so the viewer
+    # can hide them; they count in the r values like any other game.
     def _i(v: float) -> int | float:
         return int(v) if float(v).is_integer() else v
     recent_games = [
@@ -617,7 +627,7 @@ def process_player(
          "reb": _i(gm["reb"]), "ast": _i(gm["ast"]), "tpm": _i(gm["tpm"]),
          **{k: _i(gm[k]) for k in SCORE_KEYS if gm[k] is not None},
          **({"short": 1} if gm["short"] else {})}
-        for yr in recent for gm in all_by_year.get(yr, [])
+        for yr in recent for gm in by_year.get(yr, [])
     ]
     return {
         "athlete_id": aid,
@@ -669,9 +679,10 @@ def main() -> None:
                     help="Optional min average minutes/game to include a player "
                          "(0 = keep everyone; filtering is done in the viewer).")
     ap.add_argument("--short-min-frac", type=float, default=0.6,
-                    help="Drop games where the player played under this fraction "
-                         "of his median minutes that season from correlations and "
-                         "box means (0 = keep every game).")
+                    help="Flag games where the player played under this fraction "
+                         "of his median minutes that season as short, for the "
+                         "viewer (0 = flag none). Flagged games still count in "
+                         "the correlations and box means.")
     ap.add_argument("--workers", type=int, default=8,
                     help="Concurrent HTTP workers.")
     ap.add_argument("--out", default=os.path.join("public", "data", "nba_correlations.json"))
@@ -781,7 +792,8 @@ def main() -> None:
         "short_game_rule": {
             "min_frac_of_season_median": args.short_min_frac,
             "note": "games under this fraction of the player's median minutes "
-                    "that season are excluded from r values and box means",
+                    "that season are flagged short in recent_games; they count "
+                    "in the r values and box means (props are action in them)",
         },
         "schedule_today": sched,
         "n_players": len(players),

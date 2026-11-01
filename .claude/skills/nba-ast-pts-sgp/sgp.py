@@ -86,26 +86,27 @@ def pool_stats(by):
         pool = [p for p in by.values()
                 if p["ast_mean"] >= 4 and p["n_games"] >= 60 and p["min_mean"] >= 24]
         rs = [p["pts_ast"]["weighted"]["r"] for p in pool]
-        noise = [(1 - r * r) ** 2 / p["effective_n"] for r, p in zip(rs, pool)]
         prior = sum(rs) / len(rs)
+        noise = [(1 - prior * prior) ** 2 / p["effective_n"] for p in pool]
         var = sum((r - prior) ** 2 for r in rs) / len(rs)
         _POOL[id(by)] = (prior, max(var - sum(noise) / len(noise), 1e-4), len(pool))
     return _POOL[id(by)]
 
 
 def margin_r(by, name):
-    """Recency-weighted within-season PTS-AST r, shrunk toward players in a
-    similar role. Per-player r carries ~0.10 of sampling noise vs ~0.08 of
-    real spread, so raw r's overstate differences between players. Uses the
-    data file's role-matched value (scripts/nba_fetch_correlations.py
-    add_shrinkage, also shown on the dashboard); older files fall back to
-    shrinking toward high-assist starters here."""
+    """Recency-weighted within-season PTS-AST r over every game played,
+    shrunk toward players in a similar role (minutes). Per-player r carries
+    ~0.10 of sampling noise vs ~0.07 of real spread, so raw r's overstate
+    differences between players. Uses the data file's role-matched value
+    (scripts/nba_fetch_correlations.py add_shrinkage, also shown on the
+    dashboard); older files fall back to shrinking toward high-assist
+    starters here."""
     p = by[name]
     if "shrunk" in p["pts_ast"]:
         return p["pts_ast"]["shrunk"]["r"]
     prior, tau2, _ = pool_stats(by)
     r = p["pts_ast"]["weighted"]["r"]
-    w = tau2 / (tau2 + (1 - r * r) ** 2 / p["effective_n"])
+    w = tau2 / (tau2 + (1 - prior * prior) ** 2 / p["effective_n"])
     return w * r + (1 - w) * prior
 
 
@@ -123,6 +124,10 @@ def players(args):
             and margin_r(by, p["name"]) < args.max_r]
     rows.sort(key=lambda p: margin_r(by, p["name"]))
     print(f"slate {d['schedule_today']['date']}  (data {d['generated_at']})")
+    if not rows:
+        print(f"  no player on the slate with >= {args.min_ast:g} AST and >= {args.min_pts:g} PTS "
+              f"has a shrunk PTS-AST r under {args.max_r:g} (raise --max-r to list near-zero ones)")
+        return
     for p in rows:
         w = p["pts_ast"]["weighted"]
         print(f"  {p['name']:26} {p['team_abbr']:5} ast {p['ast_mean']:4.1f} pts {p['pts_mean']:4.1f}"

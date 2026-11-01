@@ -96,7 +96,8 @@ QK=1.38u
 - **No payout given:** `FV = +229` only, then ask for the payout.
 - No book-by-book comparison, no verdict: the user does the book part.
 - Check: Lillard O20.5 points (Fair +101/−101) + O3.5 threes from the 2.5
-  Fair (−142) at 3.80x → +229 / 15.5% / $692.03 / 1.38u.
+  Fair (−142) at 3.80x → +227 / 16.2% / $723.57 / 1.45u on the 11-01 data
+  (r drifts a little with each daily refresh).
 - If asked "what r?": the plug-in r the script prints (2 legs) is what goes
   in a devig calculator (joint = pA·pB + r·√(pA(1−pA)·pB(1−pB))); the margin r
   is the copula input. Never put a margin r into that formula: it overstates
@@ -104,9 +105,12 @@ QK=1.38u
 
 ## Method (what the script does)
 
-- **Correlation:** margin r between the stat lines, within-season centered
-  and recency-weighted, then shrunk (empirical Bayes) toward rotation players
-  in a similar role. One player's r carries about 0.10 of sampling noise, as
+- **Correlation:** margin r between the stat lines over every game played
+  (short-minute games count: the props are action in them), within-season
+  centered and recency-weighted, then shrunk (empirical Bayes) toward
+  rotation players in a similar role: minutes for PTS·REB, PTS·AST and
+  REB·AST, which move together mostly through minutes; 3PM or REB volume for
+  the threes pairs. One player's r carries about 0.10 of sampling noise, as
   much as the real spread between players, so raw r's must not be used.
   Points pairs (PTS·REB, PTS·AST, PTS·3PM) come from
   `public/data/nba_correlations.json` (`<pair>.shrunk`); REB·AST, REB·3PM and

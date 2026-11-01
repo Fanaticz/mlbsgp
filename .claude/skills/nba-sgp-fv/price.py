@@ -47,8 +47,9 @@ SIDES = {"over": 1, "o": 1, "yes": 1, "under": -1, "u": -1, "no": -1}
 ORDER = ["pts", "reb", "ast", "tpm"]
 DATA_PAIR = {("pts", "reb"): "pts_reb", ("pts", "ast"): "pts_ast", ("pts", "tpm"): "pts_3pm"}
 # Pairs the data file doesn't carry: shrink toward rotation players binned by
-# this box stat, like the data script does for its pairs.
-COVARIATE = {("reb", "ast"): "ast_mean", ("reb", "tpm"): "reb_mean", ("ast", "tpm"): "tpm_mean"}
+# this box stat, like the data script does for its pairs. REB·AST moves with
+# minutes, as PTS·REB and PTS·AST do, so its role is minutes.
+COVARIATE = {("reb", "ast"): "min_mean", ("reb", "tpm"): "reb_mean", ("ast", "tpm"): "tpm_mean"}
 POOL = {"min_mpg": 20.0, "min_games": 40}
 BINS = 5
 
@@ -92,10 +93,13 @@ def over_prob(over, under, side):
     return fo if side > 0 else 1 - fu
 
 
-def season_games(p):
+def season_games(p, keep_short=False):
+    """Game log by season. Short-minute games are left out of the spread used
+    to shift lines (keep_short=False) but count in correlations: the props are
+    action in them, and they are where the stats drop together."""
     by = {}
     for g in p["recent_games"]:
-        if not g.get("short"):
+        if keep_short or not g.get("short"):
             by.setdefault(g["s"], []).append(g)
     return by
 
@@ -141,9 +145,10 @@ def leg_prob(p, leg):
 
 
 def wcorr(p, a, b, weights):
-    """Recency-weighted, within-season r of two box stats and its Kish n."""
+    """Recency-weighted, within-season r of two box stats and its Kish n, over
+    every game played."""
     xs, ys, ws = [], [], []
-    for s, v in season_games(p).items():
+    for s, v in season_games(p, keep_short=True).items():
         if len(v) < 3:
             continue
         ma, mb = sum(g[a] for g in v) / len(v), sum(g[b] for g in v) / len(v)
@@ -187,14 +192,16 @@ def shrunk_r(d, by, p, a, b):
         bin_ = pool[i * len(pool) // BINS:(i + 1) * len(pool) // BINS]
         xs = sorted(x for x, _, _ in bin_)
         knots.append((xs[len(xs) // 2], sum(r for _, r, _ in bin_) / len(bin_)))
+    # Sampling noise evaluated at the prior, as the data script does: at a
+    # player's own r, a small sample that ran high would get the most weight.
     resid = [r - interp(knots, x) for x, r, _ in pool]
     tau2 = max(sum(e * e for e in resid) / len(resid)
-               - sum((1 - r * r) ** 2 / n for _, r, n in pool) / len(pool), 0.02 ** 2)
+               - sum((1 - interp(knots, x) ** 2) ** 2 / n for x, _, n in pool) / len(pool), 0.02 ** 2)
     prior = interp(knots, p[cov])
     r, n = wcorr(p, a, b, weights)
     if r is None:
         return prior, "role prior (too few games)"
-    w = tau2 / (tau2 + (1 - r * r) ** 2 / n)
+    w = tau2 / (tau2 + (1 - prior * prior) ** 2 / n)
     return w * r + (1 - w) * prior, f"game logs, own {r:+.3f} -> prior {prior:+.3f}"
 
 

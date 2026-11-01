@@ -207,8 +207,8 @@
     <input type="number" id="ming" value="0" min="0" step="1" style="width:56px" />
   </label>
   <span class="muted" id="outn" title="Players ESPN's injury report lists as Out (or suspended) are always left off. Day-to-day / questionable players stay, with a badge."></span>
-  <label class="muted" title="Games under 60% of a player's median minutes that season (injury exits, blowout rest). Always left out of the r values; this only shows them in the box stats and prop builder.">
-    <input type="checkbox" id="shortg" /> Show short-min games
+  <label class="muted" title="Games under 60% of a player's median minutes that season (injury exits, blowouts, foul trouble). A prop on a player who plays is action, so they always count in the r values; uncheck to leave them out of the box stats and prop builder.">
+    <input type="checkbox" id="shortg" checked /> Show short-min games
   </label>
   <span class="sortw"><label class="muted">Sort:
     <select id="sortsel">
@@ -244,7 +244,7 @@ let BOX_SEASON = null;  // box-stat columns show this season only
 let BLEND = [];         // seasons, oldest first — blended by box stats + prop builder
 let SW = {};            // per-game season weights (recency tilt), from the data file
 const gw = g => SW[g.s] || 0;
-let SHOW_SHORT = false;  // include games flagged `short` (low minutes) in box stats + prop builder
+let SHOW_SHORT = true;   // include games flagged `short` (low minutes) in box stats + prop builder, as the r values do
 const logOf = p => (p.recent_games || []).filter(g => SHOW_SHORT || !g.short);
 const nShortHidden = p => SHOW_SHORT ? 0 : (p.recent_games || []).filter(g => g.short).length;
 
@@ -319,7 +319,8 @@ function renderSched(games, live) {
 const SHRUNK_HT = "Plug-in r = the binary correlation to put in a devig calculator " +
   "(joint = pA·pB + r·√(pA(1−pA)·pB(1−pB))) for an Over+Over or Under+Under on lines near the median; " +
   "flip its sign for an Over/Under mix. Expand the player for the exact value at any lines. " +
-  "Margin r = correlation of the whole stat lines: the player's own recency-weighted r pulled toward the " +
+  "Margin r = correlation of the whole stat lines over every game played (short-minute games count: the props are action in them): " +
+  "the player's own recency-weighted r pulled toward the " +
   "typical r of rotation players in a similar role, more so the noisier the sample (one player's r " +
   "carries about 0.10 of noise). Plug-in r comes from it through a Gaussian copula.";
 
@@ -334,7 +335,7 @@ const COLS = [
   { k:"name", h:"Player", l:true,  v:p=>`<span class="care" >${EXPANDED.has(p.athlete_id)?"▾":"▸"}</span>${TODAY_IDS&&TODAY_IDS.has(p.team_id)?'<span class="dot"></span>':''}<span class="name">${p.name}</span>${injBadge(p)}` },
   { k:"team_abbr", h:"Tm", l:true, v:p=>`<span class="team">${p.team_abbr||"—"}</span>` },
   { k:"position", h:"Pos", l:true, v:p=>p.position||"—" },
-  { k:"_g", h:"G", ht:"Games this season (short-minute games hidden unless toggled)", v:p=>p._g },
+  { k:"_g", h:"G", ht:"Games this season (short-minute games included unless unchecked)", v:p=>p._g },
   { k:"effective_n", h:"nEff", ht:"Effective sample size of the pooled weighted correlation (r columns are within-season: each season centered on its own average, then pooled)", v:p=>num(p.effective_n,1) },
   { k:"_min", h:"Min", v:p=>num(p._min,1) },
   { k:"_pts", h:"Pts", v:p=>num(p._pts,1) },
@@ -945,7 +946,7 @@ function detailHTML(p) {
   const yrs = Object.keys(p.by_season||{}).sort();
   let body = yrs.map(y => {
     const s = p.by_season[y];
-    const sg = s.short_games ? ` <span class="muted" title="short-minute games left out">(−${s.short_games})</span>` : "";
+    const sg = s.short_games ? ` <span class="muted" title="of which short-minute games (under 60% of his median minutes); they count in the r's">(${s.short_games} short)</span>` : "";
     return `<tr><td class="l"><b>${y}</b></td><td>${s.games}${sg}</td><td>${num(s.min_mean,1)}</td>`+
            `<td>${num(s.pts_mean,1)}</td><td>${num(s.reb_mean,1)}</td><td>${num(s.ast_mean,1)}</td><td>${num(s.tpm_mean,1)}</td>`+
            `<td class="l">${rMini(s.pts_reb)}</td><td class="l">${rMini(s.pts_ast)}</td><td class="l">${rMini(s.pts_3pm)}</td>`+
