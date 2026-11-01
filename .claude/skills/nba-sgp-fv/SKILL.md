@@ -41,6 +41,13 @@ python3 .claude/skills/nba-sgp-fv/price.py "Deni Avdija" \
   "pts over 22.5 novig" "reb over 6.5 novig" --payout 3.20
 ```
 
+A team or game total rides along as a score leg: `op` = the opponent's team
+total (DK's "Team Total - IND" on a BKN player), `tm` = his team's total,
+`tot` = the game total, e.g. `"op under 116.5 odds -107 -109"`. Vulture's
+player sheet doesn't carry them: take Pinnacle's two-way price
+(`python3 dk_api.py pinnacle-nba-props` prints each game's total and team
+totals) and name it in the trailing line.
+
 Odds are always the posted line's **Over then Under** price, whichever side
 the leg takes. With both, each side is the **worst case** (lowest
 probability) of the multiplicative, additive, power and Shin devigs, as
@@ -113,10 +120,11 @@ QK=1.38u
   REB·AST (all three move together mostly through minutes); 3PM or REB
   volume for the threes pairs. One player's r carries about 0.10 of sampling noise, as
   much as the real spread between players, so raw r's must not be used.
-  Points pairs (PTS·REB, PTS·AST, PTS·3PM) come from
-  `public/data/nba_correlations.json` (`<pair>.shrunk`); REB·AST, REB·3PM and
-  AST·3PM are computed from the game logs the same way. An Over/Under mix
-  flips the sign.
+  Points pairs (PTS·REB, PTS·AST, PTS·3PM) and the score-REB pairs
+  (TOT·REB, TM·REB, OPP·REB) come from `public/data/nba_correlations.json`
+  (`<pair>.shrunk`); REB·AST, REB·3PM, AST·3PM and points, assists or threes
+  against a score are computed from the game logs the same way (score pairs
+  binned on minutes). An Over/Under mix flips the sign.
 - **Joint:** Gaussian copula at each leg's probability. Two legs exact, three
   by integration (matches a 4M-draw simulation), four or more by Monte Carlo.
   Checked on PTS·3PM: across 254 player-seasons at book-style lines it

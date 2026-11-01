@@ -181,7 +181,7 @@ def stat_sd(p, stat):
     """Within-season SD of a box stat from the game log (short games excluded)."""
     seasons = {}
     for g in p["recent_games"]:
-        if not g.get("short"):
+        if not g.get("short") and g.get(stat) is not None:  # scores can be missing
             seasons.setdefault(g["s"], []).append(g[stat])
     seasons = [v for v in seasons.values() if len(v) > 1]
     dev = [x - sum(v) / len(v) for v in seasons for x in v]

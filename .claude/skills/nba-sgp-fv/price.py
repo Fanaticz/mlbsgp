@@ -12,7 +12,9 @@ bankroll), dollars = units x --unit (default $500, Max's unit).
 
 Each leg: <stat> <over|under> <line> [from <posted line>] odds <over> [<under>]
       or: <stat> <over|under> <line> [from <posted line>] odds novig
-  stat   pts, reb, ast, tpm (3pm / threes accepted)
+  stat   pts, reb, ast, tpm (3pm / threes accepted), or a score leg: op = the
+         opponent's team total, tm = his team's total, tot = the game total
+         (DK's "Team Total - IND" on a BKN player is op)
   odds   Over and Under prices of the posted line: Vulture's Fair column, or a
          book's two-way price. With both, the leg's side is its worst-case
          devig (lowest of multiplicative, additive, power, Shin), as Vulture
@@ -27,9 +29,9 @@ Each leg: <stat> <over|under> <line> [from <posted line>] odds <over> [<under>]
          a posted 23.5): the leg is shifted with the player's game-log spread.
 
 Correlations are margin r's between the stat lines, shrunk toward rotation
-players in a similar role. Points pairs come from the data file
-(scripts/nba_fetch_correlations.py); the others are computed here the same
-way. The joint is a Gaussian copula: exact for two legs, an integral for
+players in a similar role. Points pairs and the score-REB pairs come from the
+data file (scripts/nba_fetch_correlations.py); the others are computed here
+the same way, from his game logs. The joint is a Gaussian copula: exact for two legs, an integral for
 three, Monte Carlo beyond.
 """
 import argparse
@@ -42,14 +44,18 @@ import sgp  # noqa: E402  prob, american, nppf, ncdf, joint, binary, stat_sd, lo
 import novig  # noqa: E402
 
 STATS = {"pts": "pts", "points": "pts", "reb": "reb", "rebounds": "reb", "ast": "ast",
-         "assists": "ast", "tpm": "tpm", "3pm": "tpm", "threes": "tpm"}
+         "assists": "ast", "tpm": "tpm", "3pm": "tpm", "threes": "tpm",
+         "op": "op", "opp": "op", "tm": "tm", "team": "tm", "tot": "tot", "total": "tot"}
+SCORE = ("tot", "tm", "op")  # game total, his team's score, the opponent's score
 SIDES = {"over": 1, "o": 1, "yes": 1, "under": -1, "u": -1, "no": -1}
-ORDER = ["pts", "reb", "ast", "tpm"]
-DATA_PAIR = {("pts", "reb"): "pts_reb", ("pts", "ast"): "pts_ast", ("pts", "tpm"): "pts_3pm"}
+ORDER = ["pts", "reb", "ast", "tpm", "tot", "tm", "op"]
+DATA_PAIR = {("pts", "reb"): "pts_reb", ("pts", "ast"): "pts_ast", ("pts", "tpm"): "pts_3pm",
+             ("reb", "tot"): "tot_reb", ("reb", "tm"): "tm_reb", ("reb", "op"): "op_reb"}
 # Pairs the data file doesn't carry: shrink toward rotation players binned by
 # this box stat, like the data script does for its pairs. REB·AST moves with
 # minutes, as PTS·REB and PTS·AST do, so its role is minutes.
 COVARIATE = {("reb", "ast"): "min_mean", ("reb", "tpm"): "reb_mean", ("ast", "tpm"): "tpm_mean"}
+# Any other pair (points, assists or threes against a score) bins on minutes.
 POOL = {"min_mpg": 20.0, "min_games": 40}
 BINS = 5
 
@@ -134,7 +140,7 @@ def leg_prob(p, leg):
         sd = sgp.stat_sd(p, leg["stat"])
         mu = leg["from"] - sd * sgp.nppf(1 - po)
         normal = 1 - sgp.ncdf((leg["line"] - mu) / sd)
-        if leg["stat"] == "pts":
+        if leg["stat"] == "pts" or leg["stat"] in SCORE:
             po, note = normal, note + f"shifted from {leg['from']:g} (SD {sd:.1f})"
         else:  # small counts: average the normal with a count model
             nb = nb_over(p, leg["stat"], leg["from"], leg["line"], po)
@@ -149,6 +155,7 @@ def wcorr(p, a, b, weights):
     every game played."""
     xs, ys, ws = [], [], []
     for s, v in season_games(p, keep_short=True).items():
+        v = [g for g in v if g.get(a) is not None and g.get(b) is not None]  # scores can be missing
         if len(v) < 3:
             continue
         ma, mb = sum(g[a] for g in v) / len(v), sum(g[b] for g in v) / len(v)
@@ -179,7 +186,7 @@ def shrunk_r(d, by, p, a, b):
             return pair["shrunk"]["r"], "data file"
         return pair["weighted"]["r"] or 0.0, "data file (unshrunk)"
     weights = {int(k): v for k, v in d["weighting"]["per_game_season_weights"].items()}
-    cov = COVARIATE[key]
+    cov = COVARIATE.get(key, "min_mean")
     pool = []
     for q in by.values():
         if q["min_mean"] >= POOL["min_mpg"] and q["n_games"] >= POOL["min_games"]:
