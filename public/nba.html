@@ -319,7 +319,8 @@ function renderSched(games, live) {
 
 const SHRUNK_HT = "Plug-in r = the binary correlation to put in a devig calculator " +
   "(joint = pA·pB + r·√(pA(1−pA)·pB(1−pB))) for an Over+Over or Under+Under at today's Pinnacle main lines " +
-  "(shown after @, legs at Pinnacle's worst-case devigged prices); without a Pinnacle line for both legs, at lines near the median. " +
+  "(@, legs at Pinnacle's worst-case devigged prices). A leg Pinnacle hasn't posted uses the half-point line at this season's " +
+  "average and how often his games clear it (~). The prop builder opens on the same lines. " +
   "Flip its sign for an Over/Under mix. Expand the player for the exact value at any lines. " +
   "Margin r = correlation of the whole stat lines over every game played (short-minute games count: the props are action in them): " +
   "the player's own recency-weighted r pulled toward the " +
@@ -380,24 +381,47 @@ async function loadPinnacle() {
     }
     const t = new Date(j.fetched_at || Date.now());
     PIN = { byId, n: byId.size, at: t.toLocaleTimeString([], { hour:"numeric", minute:"2-digit" }) };
-    // Plug-in r at the main lines, once per player and pair (sorting and
-    // re-renders reuse it).
-    for (const p of DATA.players) {
-      if (!byId.has(p.athlete_id)) continue;
-      p._pin = {};
-      for (const key of Object.keys(PAIR_STATS)) p._pin[key] = pinPlug(p, key);
-    }
-  } catch (_) { /* no Pinnacle: every r stays at the median */ }
+    for (const p of DATA.players) p._r = null;  // re-price every r at the new lines
+  } catch (_) { /* no Pinnacle: every r stays at this season's averages */ }
 }
 
-// {v, X, Y}: the plug-in r at both legs' Pinnacle lines, or null.
-function pinPlug(p, key) {
-  const [xs, ys] = PAIR_STATS[key], X = pinLeg(p, xs), Y = pinLeg(p, ys), pair = p[key];
-  if (!X || !Y || !pair || pair.weighted.r === null) return null;
-  const m = pair.shrunk ? pair.shrunk.r : pair.weighted.r, a = pinOver(X), b = pinOver(Y);
-  if (!(a > 0 && a < 1 && b > 0 && b < 1)) return null;
-  return { v: (copulaJoint(m, a, b) - a * b) / Math.sqrt(a * (1 - a) * b * (1 - b)), X, Y };
+// Weighted share of his games over a line, pushes left out, over the games
+// that have both stats of the pair: how the pricer takes a leg with no fair
+// odds. Null when no game falls on either side.
+function logOver(p, stat, line, other) {
+  let w = 0, wo = 0;
+  for (const g of logOf(p)) {
+    if (g[stat] == null || g[other] == null || g[stat] === line) continue;
+    w += gw(g); if (g[stat] > line) wo += gw(g);
+  }
+  return w ? wo / w : null;
 }
+
+// One leg of the table's r: Pinnacle's main line (fair Over from its prices),
+// else the half-point line at this season's average with his game-log hit
+// rate. The same leg the prop builder opens on. {line, p, L: Pinnacle line or null}
+function legFor(p, stat, other) {
+  const L = pinLeg(p, stat);
+  if (L) return { line: L.line, p: pinOver(L), L };
+  const line = halfLine(p["_" + stat]);
+  return { line, p: logOver(p, stat, line, other), L: null };
+}
+
+// {v, m, X, Y}: plug-in r of a pair at its two legs (legFor), from the shrunk
+// margin r m; null when the pair has no r. A leg with no usable probability
+// (no line, every game on one side) leaves the median value and X = Y = null.
+function lineR(p, key) {
+  const pair = p[key];
+  if (!pair || pair.weighted.r === null) return null;
+  const m = pair.shrunk ? pair.shrunk.r : pair.weighted.r;
+  const [xs, ys] = PAIR_STATS[key], X = legFor(p, xs, ys), Y = legFor(p, ys, xs);
+  const ok = q => q !== null && q > 0 && q < 1;
+  if (!ok(X.p) || !ok(Y.p)) return { v: plugR(m), m, X: null, Y: null };
+  return { v: (copulaJoint(m, X.p, Y.p) - X.p * Y.p) / Math.sqrt(X.p * (1 - X.p) * Y.p * (1 - Y.p)), m, X, Y };
+}
+// Cached per player and pair; cleared when the lines (Pinnacle) or the games
+// behind them (short-game toggle, via blendBox) change.
+const rAt = (p, key) => ((p._r ||= {})[key] !== undefined ? p._r[key] : (p._r[key] = lineR(p, key)));
 
 // Box-score columns (G..3PM) show BOX_SEASON only, via the _g/_min/... fields precomputed in
 // init(). The correlation columns remain pooled + recency-weighted across
@@ -422,16 +446,16 @@ const COLS = [
 ];
 const EXPANDED = new Set();
 
-// The r a column shows and sorts by: the plug-in at today's Pinnacle main
-// lines when he has both legs there, else at the median. Null = no r.
+// The r a column shows and sorts by: the plug-in at the pair's lines (rAt).
+// Null = no r.
 function rShown(p, key) {
-  const pair = p[key];
-  if (!pair || pair.weighted.r === null) return null;
-  return p._pin?.[key]?.v ?? plugR(pair.shrunk ? pair.shrunk.r : pair.weighted.r);
+  const c = rAt(p, key);
+  return c ? c.v : null;
 }
 
 // Headline = plug-in r from the shrunk margin r (files without a shrunk r
-// fall back to the data r), at Pinnacle's lines (@ line/line) or the median.
+// fall back to the data r) at the pair's lines: "@23.5/2.5" when both are
+// Pinnacle main lines, "~20.5/9.5" when a leg is at this season's average.
 // Small text = the margin r plus the player's own weighted r, underlined
 // when p < 0.05.
 function rCell(p, key, full) {
@@ -439,16 +463,17 @@ function rCell(p, key, full) {
   if (!pair) return "—";
   const w = pair.weighted, s = pair.shrunk;
   if (w.r===null) return "—";
-  const m = s ? s.r : w.r, pin = p._pin?.[key], v = rShown(p, key);
+  const c = rAt(p, key), m = c.m, v = c.v;
   const col = v>0 ? "var(--pos)" : "var(--neg)";
   const sig = (w.p_value!==null && w.p_value<0.05) ? "sig" : "";
   const [xs, ys] = PAIR_STATS[key];
-  const leg = (st, L) => `${STAT_LABEL[st]} ${L.line} (o ${fmtAm(L.over)} / u ${fmtAm(L.under)})`;
-  const where = pin ? `at Pinnacle's main lines ${leg(xs, pin.X)} and ${leg(ys, pin.Y)}` : "at median lines";
+  const leg = (st, X) => X.L ? `${STAT_LABEL[st]} ${X.line} (Pinnacle o ${fmtAm(X.L.over)} / u ${fmtAm(X.L.under)})`
+    : `${STAT_LABEL[st]} ${X.line} (this season's average ${num(p["_" + st], 1)}; over in ${Math.round(100 * X.p)}% of his games)`;
+  const where = c.X ? `at ${leg(xs, c.X)} and ${leg(ys, c.Y)}` : "at median lines";
   const why = ` title="binary correlation ${where}, from margin r ${num(m,3)}` +
     `${s ? ` (role prior ${num(s.prior,3)}, ${Math.round(100*s.w)}% weight on the player's own r)` : ""}; flip the sign for an Over/Under mix"`;
-  return `<span class="r" style="color:${col}"${why}>${num(v)}</span>` +
-    `${pin ? `<span class="at" title="Pinnacle main lines: ${leg(xs, pin.X)} · ${leg(ys, pin.Y)}">@${pin.X.line}/${pin.Y.line}</span>` : ""} <span class="raw">` +
+  const at = c.X ? `<span class="at">${c.X.L && c.Y.L ? "@" : "~"}${c.X.line}/${c.Y.line}</span>` : "";
+  return `<span class="r" style="color:${col}"${why}>${num(v)}</span>${at} <span class="raw">` +
     `margin ${num(m)} · data <span class="${sig}">${num(w.r)}</span>${full ? ` · p=${num(w.p_value,3)}` : ""}` +
     `${full && s ? ` · prior ${num(s.prior)}` : ""}</span>`;
 }
@@ -1173,6 +1198,7 @@ function blendBox() {
     }
     p._g = gs.length;
     for (const f in sum) p["_" + f] = w[f] ? sum[f] / w[f] : null;
+    p._r = null;  // r's at season-average lines move with these means
   });
 }
 
@@ -1194,7 +1220,7 @@ async function init() {
   blendBox();
 
   const wtxt = Object.entries(SW).map(([k,v])=>`${k}: ${v}`).join(", ");
-  document.getElementById("meta").textContent = `Box stats: ${BOX_SEASON} season`;
+  document.getElementById("meta").textContent = `Box stats: ${BOX_SEASON} season · r at this season's averages (~)`;
 
   // Live schedule for the toggle; fall back to the baked snapshot.
   const live = await liveTodayIds();
@@ -1225,7 +1251,7 @@ async function init() {
   loadPinnacle().then(() => {
     if (!PIN) return;
     document.getElementById("meta").textContent =
-      `Box stats: ${BOX_SEASON} season · r at Pinnacle main lines (${PIN.at}, ${PIN.n} players)`;
+      `Box stats: ${BOX_SEASON} season · r at Pinnacle main lines (@, ${PIN.at}, ${PIN.n} players), else this season's averages (~)`;
     for (const [id, st] of PROPS) if (st.auto) PROPS.delete(id);
     render();
   });

@@ -2,6 +2,11 @@
 
 ## 2026-11-01 session
 
+### NBA dashboard: no Pinnacle line → r at this season's average
+A leg Pinnacle hasn't posted now uses the half-point line at this season's average, the same line the prop builder opens on (`halfLine` of the current-season mean). Its probability is the weighted share of his games over that line, as the pricer uses when a fair-odds box is empty. Previously such a leg fell back to the median. The check is per leg: Pinnacle PTS with no Pinnacle REB line prices PTS at Pinnacle and REB at the season average. The cell marks it `~5.5/1.5`, where `@` still means both legs are Pinnacle main lines. The tooltip names each leg's source: `REB 1.5 (this season's average 1.8; over in 61% of his games)`. The r's are cached per player and pair, and cleared when Pinnacle's lines land or the short-game toggle changes the games behind them. Sorting follows the r on screen, as before. The meta line reads `r at Pinnacle main lines (@, …), else this season's averages (~)`.
+
+Verified in headless Chromium at 1600 and 390 px: the table's PTS·REB equals the builder's plug-in box on open in every case. Melton (both legs Pinnacle) 0.20 @12.5/3.5 = +0.203. Keon Ellis (Pinnacle PTS, average REB) 0.18 ~5.5/1.5 = +0.184. Sexton 0.15 ~9.5/1.5 = +0.151. Jokic (no lines; DEN off) 0.13 ~20.5/9.5 = +0.127. Edey 0.26 ~6.5/6.5 = +0.265. With short games unchecked Jokic re-prices and still matches. All players renders in about 0.3 s. No page errors, no horizontal overflow.
+
 ### NBA dashboard: r at today's Pinnacle main lines
 The r columns are priced at each player's main line for the day, from Pinnacle, instead of at lines near his median. The prop builder opens on those lines with Pinnacle's prices in the fair-odds boxes.
 
