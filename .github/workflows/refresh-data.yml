@@ -1,4 +1,4 @@
-# Daily data refresh: MLB pitcher correlation data + NBA correlations.
+# Daily data refresh: MLB pitcher correlation data + NBA and NFL correlations.
 #
 # Pulls new box scores from ESPN's public APIs, rebuilds the derived JSON in
 # public/data/, and commits the result to the default branch. Dedupe against
@@ -7,7 +7,7 @@
 #
 # 11:00 UTC = 6/7am ET, after even the latest West Coast games are final.
 # If nothing changed (off-day, off-season), no commit is made.
-name: Refresh MLB + NBA data
+name: Refresh MLB + NBA + NFL data
 
 on:
   schedule:
@@ -47,6 +47,12 @@ jobs:
       - name: Refresh NBA correlations
         run: python scripts/nba_fetch_correlations.py --workers 16
 
+      # The script exits non-zero rather than overwrite the data file when ESPN
+      # returns nothing; that shouldn't block the MLB/NBA commit below.
+      - name: Refresh NFL receiving correlations
+        continue-on-error: true
+        run: python scripts/nfl_fetch_correlations.py --workers 16
+
       - name: Commit and push if data changed
         run: |
           git add espn-2026-pitcher-supplement.json public/data/*.json
@@ -56,7 +62,7 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Daily data refresh: MLB pitchers + NBA correlations [skip ci]"
+          git commit -m "Daily data refresh: MLB pitchers + NBA/NFL correlations [skip ci]"
           # The run takes ~25 min, and a commit landing on main in the
           # meantime rejects a plain push. Rebase onto it (this run's fresh
           # data wins a conflict) and retry.
