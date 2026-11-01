@@ -84,13 +84,17 @@ SCORE_KEYS = ("tot", "tm", "op")
 # Shrinkage: one player's r carries ~0.10 of sampling noise, about as much as
 # the real spread between players, so the raw r's overstate how players
 # differ. Each r is pulled toward the typical r of rotation players in a
-# similar role, the role set by the box stat below. PTS-REB and PTS-AST move
-# together mostly through minutes (blowouts, foul trouble, injury exits), so
-# their role is minutes: a 34-mpg starter runs a PTS-REB r near 0.2, a
-# 21-mpg reserve near 0.35. Binning them on REB or AST volume mixed the two
-# (and fit worse out of sample). PTS-3PM depends on 3PM volume.
-SHRINK_COVARIATE = {"pts_reb": "min_mean", "pts_ast": "min_mean", "pts_3pm": "tpm_mean",
-                    "tot_reb": "reb_mean", "tm_reb": "reb_mean", "op_reb": "reb_mean"}
+# similar role, the role set by the box stat below (one stat: equal-count
+# bins; a tuple: a least-squares line in those stats). PTS-REB and PTS-AST
+# move together mostly through minutes (blowouts, foul trouble, injury exits),
+# so their role starts with minutes: fewer, less steady minutes, higher r.
+# PTS-REB adds rebound volume: at equal minutes a big's rebounds track his
+# minutes more closely than a guard's, so a 22-mpg big runs near 0.43 and a
+# 22-mpg guard near 0.31 (minutes alone under-priced bigs out of sample).
+# PTS-3PM depends on 3PM volume.
+SHRINK_COVARIATE = {"pts_reb": ("min_mean", "reb_mean"), "pts_ast": "min_mean",
+                    "pts_3pm": "tpm_mean", "tot_reb": "reb_mean", "tm_reb": "reb_mean",
+                    "op_reb": "reb_mean"}
 SHRINK_POOL = {"min_mpg": 20.0, "min_games": 40}
 SHRINK_BINS = 5
 SHRINK_TAU2_FLOOR = 0.02 ** 2
@@ -465,12 +469,53 @@ def _interp(knots: list[tuple[float, float]], x: float) -> float:
     return knots[-1][1]
 
 
+def _bin_prior(pool: list[dict], pair: str, cov: str):
+    """Prior r = mean r of the pool in equal-count bins of one covariate,
+    joined piecewise-linearly (flat beyond the end bins)."""
+    pool = sorted(pool, key=lambda p: p[cov])
+    knots = []
+    for i in range(SHRINK_BINS):
+        b = pool[i * len(pool) // SHRINK_BINS:(i + 1) * len(pool) // SHRINK_BINS]
+        knots.append((statistics.median(p[cov] for p in b),
+                      sum(p[pair]["weighted"]["r"] for p in b) / len(b)))
+    return (lambda p: _interp(knots, p[cov])), {
+        "covariate": cov, "knots": [[round(x, 2), round(y, 4)] for x, y in knots]}
+
+
+def _line_prior(pool: list[dict], pair: str, covs: tuple[str, ...]):
+    """Prior r = least-squares line in several covariates over the pool. Each
+    covariate is clipped to the pool's range first, so players outside it get
+    the edge value (flat beyond the ends, as with the bins)."""
+    rng = [(min(p[c] for p in pool), max(p[c] for p in pool)) for c in covs]
+
+    def row(p: dict) -> list[float]:
+        return [1.0] + [min(max(p[c], lo), hi) for c, (lo, hi) in zip(covs, rng)]
+    X = [row(p) for p in pool]
+    y = [p[pair]["weighted"]["r"] for p in pool]
+    k = len(X[0])
+    # Normal equations (X'X) b = X'y, solved by Gauss-Jordan with pivoting.
+    A = [[sum(r[i] * r[j] for r in X) for j in range(k)] + [sum(r[i] * t for r, t in zip(X, y))]
+         for i in range(k)]
+    for c in range(k):
+        piv = max(range(c, k), key=lambda i: abs(A[i][c]))
+        A[c], A[piv] = A[piv], A[c]
+        for i in range(k):
+            if i != c:
+                f = A[i][c] / A[c][c]
+                A[i] = [a - f * b for a, b in zip(A[i], A[c])]
+    coef = [A[i][k] / A[i][i] for i in range(k)]
+    return (lambda p: sum(b * x for b, x in zip(coef, row(p)))), {
+        "covariates": list(covs), "coef": [round(b, 5) for b in coef],
+        "range": [[round(lo, 2), round(hi, 2)] for lo, hi in rng]}
+
+
 def add_shrinkage(players: list[dict]) -> dict:
     """Empirical-Bayes shrink of each player's weighted r, written to
     p[pair]["shrunk"] = {"r", "prior", "w"}.
 
-    Prior: the mean r of rotation players in the same role, from equal-count
-    bins of the pair's covariate (SHRINK_COVARIATE), joined piecewise-linearly.
+    Prior: the typical r of rotation players in the same role, from the pair's
+    covariate (SHRINK_COVARIATE): equal-count bins of one box stat joined
+    piecewise-linearly, or a least-squares line in several.
     tau^2 (real between-player spread) = variance of the pool's r around that
     prior minus their average sampling variance (1 - prior^2)^2 / nEff. Each
     player's weight on his own r is tau^2 / (tau^2 + his sampling variance).
@@ -482,33 +527,28 @@ def add_shrinkage(players: list[dict]) -> dict:
     for pair, cov in SHRINK_COVARIATE.items():
         def usable(p: dict) -> bool:
             return p[pair]["weighted"]["r"] is not None and bool(p["effective_n"])
-        pool = sorted((p for p in players if usable(p)
-                       and p["min_mean"] >= SHRINK_POOL["min_mpg"]
-                       and p["n_games"] >= SHRINK_POOL["min_games"]),
-                      key=lambda p: p[cov])
+        pool = [p for p in players if usable(p)
+                and p["min_mean"] >= SHRINK_POOL["min_mpg"]
+                and p["n_games"] >= SHRINK_POOL["min_games"]]
         if len(pool) < 2 * SHRINK_BINS:
             continue
-        knots = []
-        for i in range(SHRINK_BINS):
-            b = pool[i * len(pool) // SHRINK_BINS:(i + 1) * len(pool) // SHRINK_BINS]
-            knots.append((statistics.median(p[cov] for p in b),
-                          sum(p[pair]["weighted"]["r"] for p in b) / len(b)))
+        prior_of, fit = (_line_prior(pool, pair, cov) if isinstance(cov, tuple)
+                         else _bin_prior(pool, pair, cov))
 
         def noise(p: dict) -> float:
-            prior = _interp(knots, p[cov])
+            prior = prior_of(p)
             return (1 - prior * prior) ** 2 / p["effective_n"]
-        resid = [p[pair]["weighted"]["r"] - _interp(knots, p[cov]) for p in pool]
+        resid = [p[pair]["weighted"]["r"] - prior_of(p) for p in pool]
         tau2 = max(sum(x * x for x in resid) / len(resid)
                    - sum(noise(p) for p in pool) / len(pool), SHRINK_TAU2_FLOOR)
         for p in players:
             if not usable(p):
                 continue
-            prior = _interp(knots, p[cov])
+            prior = prior_of(p)
             w = tau2 / (tau2 + noise(p))
             p[pair]["shrunk"] = {"r": round(w * p[pair]["weighted"]["r"] + (1 - w) * prior, 4),
                                  "prior": round(prior, 4), "w": round(w, 3)}
-        fits[pair] = {"covariate": cov, "tau": round(math.sqrt(tau2), 4), "pool_n": len(pool),
-                      "knots": [[round(x, 2), round(y, 4)] for x, y in knots]}
+        fits[pair] = {**fit, "tau": round(math.sqrt(tau2), 4), "pool_n": len(pool)}
     return {"method": "empirical Bayes: weighted r shrunk toward rotation players "
                       "with a similar covariate value; noise evaluated at the prior",
             "pool": SHRINK_POOL, "pairs": fits}
@@ -700,8 +740,11 @@ def main() -> None:
         with open(args.out, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2)
         for pair, fit in payload["shrinkage"]["pairs"].items():
-            print(f"{pair:8} tau {fit['tau']:.3f}  pool {fit['pool_n']}  prior by "
-                  f"{fit['covariate']}: " + "  ".join(f"{x:g}->{y:+.3f}" for x, y in fit["knots"]))
+            if "knots" in fit:
+                how = f"{fit['covariate']}: " + "  ".join(f"{x:g}->{y:+.3f}" for x, y in fit["knots"])
+            else:
+                how = " + ".join(fit["covariates"]) + ": " + " ".join(f"{b:+.4f}" for b in fit["coef"])
+            print(f"{pair:8} tau {fit['tau']:.3f}  pool {fit['pool_n']}  prior by {how}")
         print(f"Wrote {args.out}")
         return
 

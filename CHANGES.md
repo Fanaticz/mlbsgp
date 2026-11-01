@@ -2,6 +2,14 @@
 
 ## 2026-11-01 session
 
+### NBA PTS·REB: the role prior adds rebound volume, so bigs aren't under-priced
+Follow-up to the entry below, after Zach Edey's PTS·REB r (0.23) looked low next to his scatter. A minutes-only prior gave a 22-mpg big the same prior as a 22-mpg guard. But a big's rebounds track his minutes more closely, so his PTS·REB r runs higher. Tested on held-out seasons, 20–28-mpg bigs' same-direction combos (O/O + U/U at median lines) hit 3.8 points more often than predicted. The PTS·REB prior is now a least-squares line in minutes and rebounds over rotation players (r ≈ 0.60 − 0.016·mpg + 0.021·reb; each stat clipped to the pool's range, so it is flat beyond it like the bins). PTS·AST keeps minutes bins: adding assist volume there fit worse.
+
+- Out of sample (both folds), the log-loss gain over independence for rotation players goes 12.96 (this morning) → 13.35 (minutes bins) → 13.61. The same-direction gap at median lines goes from +3.8 to +1.7 points for 20–28-mpg bigs and from +1.4 to −0.1 for 28+-mpg bigs. Under-5-REB players move from +0.4 to +0.9.
+- Plug-in r, this morning → first fix → now: Edey 0.18 → 0.23 → 0.28, Jokic 0.13 → 0.10 → 0.15, Sabonis 0.17 → 0.14 → 0.22, Gobert 0.19 → 0.16 → 0.20, Zubac 0.19 → 0.18 → 0.23, SGA 0.18 → 0.16 → 0.14. Bigs (7+ REB) average 0.207 (was 0.184 this morning); the rotation-wide average stays 0.171.
+- Edey at the dashboard's 6.5/6.5 lines: plug-in +0.265 (was +0.217), pricer O/O 51.7% vs 56% in his games. At 8.5/7.5 it is 34.7% vs 34%. The low-line gap is his bad-game tail: 8 of his 9 short-minute games went Under/Under. An extra low-line link like that mostly doesn't repeat. Between seasons, players' Under/Under excess at 30th-percentile lines correlates only 0.12, and the top fifth's +4.9 points became +1.4 the next season. So the model doesn't chase it.
+- `scripts/nba_fetch_correlations.py`: `SHRINK_COVARIATE` takes a tuple for a line prior (`_line_prior`, pure Python normal equations), one stat for bins (`_bin_prior`, unchanged output: every other pair's shrunk r is bit-identical). The payload's fit for `pts_reb` carries `covariates`, `coef` and `range` instead of `knots`; `--reshrink` prints either. Data regenerated (same game logs, 609 players).
+
 ### NBA correlations: short-minute games count again, small samples trusted less, role prior by minutes
 Checked the PTS·REB r end to end after it looked low on the dashboard. The arithmetic is right: the stored r's reproduce from the game logs (to 5e-5), and the copula joint in `nba.html` and `sgp.py` matches scipy's bivariate normal to six decimals, with the plug-in r at median lines equal to (2/π)·asin(r). The problems were in the method:
 
