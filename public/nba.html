@@ -976,7 +976,7 @@ function render() {
   // No baked-in filtering: show everyone (negative correlations included).
   // The two inputs are optional, off by default (0). Filter on the blended
   // blended multi-season figures that the left columns display.
-  let rows = DATA.players.filter(p => p._g >= minG && (p._min||0) >= minMpg);
+  let rows = DATA.players.filter(p => p._g > 0 && p._g >= minG && (p._min||0) >= minMpg);
   if (MODE === "today") {
     const ids = TODAY_IDS || new Set(DATA.schedule_today.team_ids);
     rows = rows.filter(p => p.team_id && ids.has(p.team_id));
@@ -1071,11 +1071,11 @@ async function init() {
 
   SW = DATA.weighting?.per_game_season_weights || {};
   BLEND = DATA.recent_seasons || [];
-  BOX_SEASON = BLEND.find(y => String(y) === "2026") ?? BLEND[BLEND.length - 1];
+  BOX_SEASON = BLEND[BLEND.length - 1];  // current season
   blendBox();
 
   const wtxt = Object.entries(SW).map(([k,v])=>`${k}: ${v}`).join(", ");
-  document.getElementById("meta").textContent = `Box stats: ${BOX_SEASON}`;
+  document.getElementById("meta").textContent = `Box stats: ${BOX_SEASON} season`;
 
   // Live schedule for the toggle; fall back to the baked snapshot.
   const live = await liveTodayIds();
