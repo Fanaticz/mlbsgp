@@ -4368,6 +4368,79 @@ def pinnacle_wc_specials(matchup_id):
     }
 
 
+# ===== Pinnacle NBA main lines (player props + game / team totals) =====
+# Pinnacle hangs one line per player prop ("<Player> Total Points", Over/Under
+# participants, one straight "total" market), which is its main line. The
+# NBA dashboard prices the plug-in r at these lines.
+PIN_NBA_LEAGUE_ID = _os.environ.get("PINNACLE_NBA_LEAGUE_ID", "487")
+_PIN_NBA_STATS = {"Points": "pts", "Rebounds": "reb", "Assists": "ast",
+                  "Threes Made": "tpm", "Pts & Rebs & Asts": "pra"}
+_PIN_NBA_PROP_RE = re.compile(r"^(.+?)\s+Total\s+(.+)$")
+
+
+def pinnacle_nba_props():
+    """Today's NBA main lines from Pinnacle's guest API: every pregame player
+    prop (points, rebounds, assists, threes, PRA) with both prices, and each
+    game's main total and team totals. Two league-wide calls."""
+    lid = PIN_NBA_LEAGUE_ID
+    matchups = _pin_get(f"/leagues/{lid}/matchups")
+    markets = _pin_get(f"/leagues/{lid}/markets/straight")
+    by_mid = {}
+    for mk in markets:
+        if mk.get("period") == 0 and not mk.get("isAlternate"):
+            by_mid.setdefault(mk.get("matchupId"), []).append(mk)
+
+    def two_way(prices, key):
+        """{line, over, under} from a market's two prices; None unless both
+        sides are there at the same line."""
+        sides = {}
+        for pr in prices:
+            side = key(pr)
+            if side in ("over", "under") and isinstance(pr.get("price"), (int, float)) \
+                    and isinstance(pr.get("points"), (int, float)):
+                sides[side] = pr
+        if len(sides) < 2 or sides["over"]["points"] != sides["under"]["points"]:
+            return None
+        return {"line": float(sides["over"]["points"]),
+                "over": int(sides["over"]["price"]), "under": int(sides["under"]["price"])}
+
+    games, props = [], []
+    for m in matchups:
+        if m.get("isLive") or (m.get("status") not in (None, "pending")):
+            continue
+        if m.get("type") == "matchup" and not m.get("parentId") and m.get("units") == "Regular":
+            ps = {p.get("alignment"): p.get("name") for p in m.get("participants", [])}
+            g = {"id": m.get("id"), "start": m.get("startTime", ""),
+                 "home": ps.get("home"), "away": ps.get("away"), "total": None,
+                 "team_total": {}}
+            for mk in by_mid.get(m.get("id"), []):
+                if mk.get("type") == "total":
+                    g["total"] = two_way(mk.get("prices", []), lambda pr: pr.get("designation"))
+                elif mk.get("type") == "team_total" and mk.get("side") in ("home", "away"):
+                    tt = two_way(mk.get("prices", []), lambda pr: pr.get("designation"))
+                    if tt:
+                        g["team_total"][mk["side"]] = tt
+            games.append(g)
+        elif m.get("type") == "special" and (m.get("special") or {}).get("category") == "Player Props":
+            hit = _PIN_NBA_PROP_RE.match((m["special"].get("description") or "").strip())
+            stat = _PIN_NBA_STATS.get(hit.group(2)) if hit else None
+            if not stat:
+                continue
+            side_of = {p.get("id"): (p.get("name") or "").lower() for p in m.get("participants", [])}
+            for mk in by_mid.get(m.get("id"), []):
+                if mk.get("type") != "total":
+                    continue
+                tw = two_way(mk.get("prices", []), lambda pr: side_of.get(pr.get("participantId")))
+                if tw:
+                    props.append({"player": hit.group(1), "stat": stat, **tw,
+                                  "game_id": m.get("parentId"), "start": m.get("startTime", "")})
+                break
+    games.sort(key=lambda g: g["start"])
+    return {"ok": True, "source": "pinnacle-api", "league_id": lid,
+            "fetched_at": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
+            "games": games, "props": props}
+
+
 def find_sgps(legs, enum_size=2):
     """Given OCR'd legs, auto-match them to DK selections, enumerate combos
     of the requested size, and return DK-priced SGPs. Frontend computes FV
@@ -4904,6 +4977,8 @@ if __name__ == "__main__":
                 result = pinnacle_wc_games(league_id=arg)
         elif cmd == "pinnacle-wc-specials" and len(sys.argv) >= 3:
             result = pinnacle_wc_specials(sys.argv[2])
+        elif cmd == "pinnacle-nba-props":
+            result = pinnacle_nba_props()
         elif cmd == "resolve-worldcup-league":
             slug = sys.argv[2] if len(sys.argv) >= 3 else None
             result = resolve_soccer_league_by_slug(slug)

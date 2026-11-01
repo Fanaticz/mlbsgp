@@ -56,6 +56,7 @@
   .dot { display:inline-block; width:7px; height:7px; border-radius:50%;
     background:var(--pos); margin-right:6px; vertical-align:middle; }
   .r { font-weight:600; }
+  .at { color:var(--muted); font-size:10.5px; margin-left:3px; white-space:nowrap; }
   .raw { color:var(--muted); font-size:11.5px; }
   .sig { text-decoration:underline; text-decoration-color:var(--accent);
     text-underline-offset:2px; }
@@ -317,8 +318,9 @@ function renderSched(games, live) {
 }
 
 const SHRUNK_HT = "Plug-in r = the binary correlation to put in a devig calculator " +
-  "(joint = pA·pB + r·√(pA(1−pA)·pB(1−pB))) for an Over+Over or Under+Under on lines near the median; " +
-  "flip its sign for an Over/Under mix. Expand the player for the exact value at any lines. " +
+  "(joint = pA·pB + r·√(pA(1−pA)·pB(1−pB))) for an Over+Over or Under+Under at today's Pinnacle main lines " +
+  "(shown after @, legs at Pinnacle's worst-case devigged prices); without a Pinnacle line for both legs, at lines near the median. " +
+  "Flip its sign for an Over/Under mix. Expand the player for the exact value at any lines. " +
   "Margin r = correlation of the whole stat lines over every game played (short-minute games count: the props are action in them): " +
   "the player's own recency-weighted r pulled toward the " +
   "typical r of rotation players in a similar role, more so the noisier the sample (one player's r " +
@@ -327,6 +329,75 @@ const SHRUNK_HT = "Plug-in r = the binary correlation to put in a devig calculat
 // Binary correlation that a margin r implies when both legs sit at their
 // median (Gaussian copula; the arcsine law). Lines off the median shrink it.
 const plugR = r => 2 / Math.PI * Math.asin(r);
+
+// ---- Pinnacle main lines ------------------------------------------------
+// /api/pinnacle/nba-props: Pinnacle's one line per player prop with both
+// prices, plus each game's total and team totals. The r columns are priced at
+// these lines and the prop builder opens on them; a player without a Pinnacle
+// line for both legs falls back to the median.
+let PIN = null;  // { at: "1:38 PM", n: players matched, byId: Map(athlete_id -> {pts, reb, ..., tot, tm, op}) }
+const PAIR_STATS = { pts_reb:["pts","reb"], pts_ast:["pts","ast"], pts_3pm:["pts","tpm"],
+                     tot_reb:["tot","reb"], tm_reb:["tm","reb"], op_reb:["op","reb"] };
+// "Los Angeles Clippers" (Pinnacle) and "LA Clippers" (ESPN) -> "clippers".
+const teamKey = s => (s || "").trim().split(/\s+/).pop().toLowerCase();
+const fmtAm = o => o > 0 ? `+${o}` : `${o}`;
+// Today's Pinnacle line for one of his stats: {line, over, under} or null.
+const pinLeg = (p, stat) => PIN?.byId.get(p.athlete_id)?.[stat] || null;
+// A leg's fair P(over): the Over's worst-case devig, as the pricer takes it.
+const pinOver = L => devigWorst(oddsProb(L.over), oddsProb(L.under))[0];
+
+async function loadPinnacle() {
+  try {
+    const r = await fetch("/api/pinnacle/nba-props");
+    if (!r.ok) return;
+    const j = await r.json();
+    if (!j.ok || !Array.isArray(j.props)) return;
+    const byName = new Map();
+    for (const p of DATA.players) {
+      const k = nvNorm(p.name);
+      byName.set(k, [...(byName.get(k) || []), p]);
+    }
+    const games = new Map((j.games || []).map(g => [g.id, g]));
+    const byId = new Map();
+    for (const pr of j.props) {
+      const g = games.get(pr.game_id), cands = byName.get(nvNorm(pr.player)) || [];
+      const teams = g ? [teamKey(g.home), teamKey(g.away)] : [];
+      const p = cands.length === 1 ? cands[0] : cands.find(c => teams.includes(teamKey(c.team_name)));
+      if (!p) continue;
+      const e = byId.get(p.athlete_id) || {};
+      e[pr.stat] = { line: pr.line, over: pr.over, under: pr.under };
+      // Game total and the two team totals, from his side of the game.
+      if (g && !e.tot) {
+        e.tot = g.total || undefined;
+        const side = teamKey(p.team_name) === teamKey(g.home) ? "home"
+          : teamKey(p.team_name) === teamKey(g.away) ? "away" : null;
+        if (side) {
+          e.tm = g.team_total?.[side];
+          e.op = g.team_total?.[side === "home" ? "away" : "home"];
+        }
+      }
+      byId.set(p.athlete_id, e);
+    }
+    const t = new Date(j.fetched_at || Date.now());
+    PIN = { byId, n: byId.size, at: t.toLocaleTimeString([], { hour:"numeric", minute:"2-digit" }) };
+    // Plug-in r at the main lines, once per player and pair (sorting and
+    // re-renders reuse it).
+    for (const p of DATA.players) {
+      if (!byId.has(p.athlete_id)) continue;
+      p._pin = {};
+      for (const key of Object.keys(PAIR_STATS)) p._pin[key] = pinPlug(p, key);
+    }
+  } catch (_) { /* no Pinnacle: every r stays at the median */ }
+}
+
+// {v, X, Y}: the plug-in r at both legs' Pinnacle lines, or null.
+function pinPlug(p, key) {
+  const [xs, ys] = PAIR_STATS[key], X = pinLeg(p, xs), Y = pinLeg(p, ys), pair = p[key];
+  if (!X || !Y || !pair || pair.weighted.r === null) return null;
+  const m = pair.shrunk ? pair.shrunk.r : pair.weighted.r, a = pinOver(X), b = pinOver(Y);
+  if (!(a > 0 && a < 1 && b > 0 && b < 1)) return null;
+  return { v: (copulaJoint(m, a, b) - a * b) / Math.sqrt(a * (1 - a) * b * (1 - b)), X, Y };
+}
 
 // Box-score columns (G..3PM) show BOX_SEASON only, via the _g/_min/... fields precomputed in
 // init(). The correlation columns remain pooled + recency-weighted across
@@ -342,28 +413,42 @@ const COLS = [
   { k:"_reb", h:"Reb", v:p=>num(p._reb,1) },
   { k:"_ast", h:"Ast", v:p=>num(p._ast,1) },
   { k:"_tpm", h:"3PM", v:p=>num(p._tpm,1) },
-  { k:"pts_reb.shrunk", h:"PTS·REB r", ht:SHRUNK_HT, v:p=>rCell(p.pts_reb) },
-  { k:"pts_ast.shrunk", h:"PTS·AST r", ht:SHRUNK_HT, v:p=>rCell(p.pts_ast) },
-  { k:"pts_3pm.shrunk", h:"PTS·3PM r", ht:SHRUNK_HT, v:p=>rCell(p.pts_3pm) },
-  { k:"tot_reb.shrunk", h:"TOT·REB r", ht:"Final game total (both teams) vs his rebounds. Negative = more boards in low-scoring games (pairs with game Under + REB Over). " + SHRUNK_HT, v:p=>rCell(p.tot_reb) },
-  { k:"tm_reb.shrunk", h:"TM·REB r", ht:"His team's final score vs his rebounds. " + SHRUNK_HT, v:p=>rCell(p.tm_reb) },
-  { k:"op_reb.shrunk", h:"OPP·REB r", ht:"Opponent's final score vs his rebounds. " + SHRUNK_HT, v:p=>rCell(p.op_reb) },
+  { k:"pts_reb.shrunk", h:"PTS·REB r", ht:SHRUNK_HT, v:p=>rCell(p, "pts_reb") },
+  { k:"pts_ast.shrunk", h:"PTS·AST r", ht:SHRUNK_HT, v:p=>rCell(p, "pts_ast") },
+  { k:"pts_3pm.shrunk", h:"PTS·3PM r", ht:SHRUNK_HT, v:p=>rCell(p, "pts_3pm") },
+  { k:"tot_reb.shrunk", h:"TOT·REB r", ht:"Final game total (both teams) vs his rebounds. Negative = more boards in low-scoring games (pairs with game Under + REB Over). " + SHRUNK_HT, v:p=>rCell(p, "tot_reb") },
+  { k:"tm_reb.shrunk", h:"TM·REB r", ht:"His team's final score vs his rebounds. " + SHRUNK_HT, v:p=>rCell(p, "tm_reb") },
+  { k:"op_reb.shrunk", h:"OPP·REB r", ht:"Opponent's final score vs his rebounds. " + SHRUNK_HT, v:p=>rCell(p, "op_reb") },
 ];
 const EXPANDED = new Set();
 
-// Headline = plug-in r from the shrunk margin r; files without a shrunk r
-// fall back to the data r. Small text = the margin r plus the player's own
-// weighted r, underlined when p < 0.05.
-function rCell(pair, full) {
+// The r a column shows and sorts by: the plug-in at today's Pinnacle main
+// lines when he has both legs there, else at the median. Null = no r.
+function rShown(p, key) {
+  const pair = p[key];
+  if (!pair || pair.weighted.r === null) return null;
+  return p._pin?.[key]?.v ?? plugR(pair.shrunk ? pair.shrunk.r : pair.weighted.r);
+}
+
+// Headline = plug-in r from the shrunk margin r (files without a shrunk r
+// fall back to the data r), at Pinnacle's lines (@ line/line) or the median.
+// Small text = the margin r plus the player's own weighted r, underlined
+// when p < 0.05.
+function rCell(p, key, full) {
+  const pair = p[key];
   if (!pair) return "—";
   const w = pair.weighted, s = pair.shrunk;
   if (w.r===null) return "—";
-  const m = s ? s.r : w.r, v = plugR(m);
+  const m = s ? s.r : w.r, pin = p._pin?.[key], v = rShown(p, key);
   const col = v>0 ? "var(--pos)" : "var(--neg)";
   const sig = (w.p_value!==null && w.p_value<0.05) ? "sig" : "";
-  const why = ` title="binary correlation at median lines from margin r ${num(m,3)}` +
+  const [xs, ys] = PAIR_STATS[key];
+  const leg = (st, L) => `${STAT_LABEL[st]} ${L.line} (o ${fmtAm(L.over)} / u ${fmtAm(L.under)})`;
+  const where = pin ? `at Pinnacle's main lines ${leg(xs, pin.X)} and ${leg(ys, pin.Y)}` : "at median lines";
+  const why = ` title="binary correlation ${where}, from margin r ${num(m,3)}` +
     `${s ? ` (role prior ${num(s.prior,3)}, ${Math.round(100*s.w)}% weight on the player's own r)` : ""}; flip the sign for an Over/Under mix"`;
-  return `<span class="r" style="color:${col}"${why}>${num(v)}</span> <span class="raw">` +
+  return `<span class="r" style="color:${col}"${why}>${num(v)}</span>` +
+    `${pin ? `<span class="at" title="Pinnacle main lines: ${leg(xs, pin.X)} · ${leg(ys, pin.Y)}">@${pin.X.line}/${pin.Y.line}</span>` : ""} <span class="raw">` +
     `margin ${num(m)} · data <span class="${sig}">${num(w.r)}</span>${full ? ` · p=${num(w.p_value,3)}` : ""}` +
     `${full && s ? ` · prior ${num(s.prior)}` : ""}</span>`;
 }
@@ -396,14 +481,25 @@ const SORT_PAIR = { "pts_reb.shrunk":["pts","reb"], "pts_ast.shrunk":["pts","ast
 function propState(p) {
   if (!PROPS.has(p.athlete_id)) {
     const [x, y] = SORT_PAIR[SORT.key] || ["pts", "reb"];
-    PROPS.set(p.athlete_id, {
-      xStat: x,
-      xLine: halfLine(p["_" + x]),
-      yStat: y,
-      yLine: halfLine(p["_" + y]),
-    });
+    // auto: still on its defaults, so Pinnacle lines landing later may
+    // replace it; any edit, Fetch FV or chip makes it the user's.
+    const st = { xStat: x, yStat: y, auto: true };
+    setLeg(st, "x", p, x);
+    setLeg(st, "y", p, y);
+    PROPS.set(p.athlete_id, st);
   }
   return PROPS.get(p.athlete_id);
+}
+
+// A leg's default: Pinnacle's main line with both its prices in the fair
+// boxes (the pricer devigs them worst-case per side), else the half-point
+// line under the blended mean and empty boxes.
+function setLeg(st, a, p, stat) {
+  const L = pinLeg(p, stat);
+  st[a + "Line"] = L ? L.line : halfLine(p["_" + stat]);
+  st[a + "Fv"] = L ? fmtAm(L.over) : "";
+  st[a + "FvU"] = L ? fmtAm(L.under) : "";
+  st[a + "Pin"] = L;
 }
 
 // A new sort on a pair moves every builder showing another pair onto it
@@ -640,11 +736,22 @@ function propHTML(p) {
         ${["x", "y"].map(a => ["", "U"].map(u => `<span class="fvw"><label><span data-lab="${a}${u}"></span> fair<input type="text" inputmode="numeric" placeholder="${u ? "optional" : "e.g. -110"}" value="${st[a + "Fv" + u] || ""}" data-f="${a}Fv${u}"></label><button type="button" class="sgn" data-sgn="${a}Fv${u}" title="Flip the sign (phone number pads have no minus key)">±</button></span>`).join("")).join("")}
         <button type="button" class="sgn nvbtn" data-novig title="Fill both legs' Over and Under fair odds from Novig's exchange: each side the worst-case devig of the two asks at that line (pregame, books up to ${NV_MAX_SPREAD * 100}¢ wide)">Fetch FV</button>
       </div>
-      <div class="nv-out"></div>
+      <div class="nv-out">${pinNote(st)}</div>
       <div class="pr-out"></div>
     </div>
     </div>
   </div>`;
+}
+
+// "Pinnacle main lines · 1:38 PM: PTS 21.5 o −115 / u −105 · REB 8.5 ..." for
+// the legs the builder opened on; empty when neither came from Pinnacle.
+function pinNote(st) {
+  const legs = ["x", "y"].filter(a => st[a + "Pin"]);
+  if (!PIN || !legs.length) return "";
+  const txt = legs.map(a => { const L = st[a + "Pin"];
+    return `${STAT_LABEL[st[a + "Stat"]]} ${L.line} o <b>${fmtAm(L.over)}</b> / u <b>${fmtAm(L.under)}</b>`; });
+  const miss = ["x", "y"].filter(a => !st[a + "Pin"]).map(a => `${STAT_LABEL[st[a + "Stat"]]}: no Pinnacle line`);
+  return `Pinnacle main lines · ${PIN.at}: ${[...txt, ...miss].join(" · ")}`;
 }
 
 // Price the four over/under combos of the builder's two lines. Leg odds are
@@ -840,6 +947,8 @@ async function fetchNovig(pb, p) {
     `${(100 * r.bid).toFixed(1)}–${(100 * r.ask).toFixed(1)}, ${(100 * r.spread).toFixed(1)}¢ wide${nvTight(r) ? "" : ", rough"})`;
   const byChip = {};
   const fill = (a, r) => {
+    st.auto = false;          // the user's now: Pinnacle landing later won't reset it
+    st[a + "Pin"] = null;
     for (const [u, q] of [["", r.fair[0]], ["U", r.fair[1]]]) {
       st[a + "Fv" + u] = fairOdds(q);
       pb.querySelector(`[data-f="${a}Fv${u}"]`).value = st[a + "Fv" + u];
@@ -891,6 +1000,7 @@ function initProp(pb) {
     const f = el.dataset.f;
     const h = () => {
       const st = propState(p);
+      st.auto = false;
       if (/^[xy]FvU?$/.test(f)) {
         // Pricer inputs: keep the raw text (odds can be negative), reprice only.
         st[f] = el.value.trim();
@@ -901,18 +1011,25 @@ function initProp(pb) {
       // combos' SGP prices stale.
       const a = f[0];
       st.pays = {};
+      st[a + "Pin"] = null;
       for (const u of ["", "U"]) {
         st[a + "Fv" + u] = "";
         const fvIn = pb.querySelector(`[data-f="${a}Fv${u}"]`);
         if (fvIn) fvIn.value = "";
       }
       if (f === "xStat" || f === "yStat") {
-        // New stat -> reset its line to the blended mean, relabel the input.
+        // New stat -> its Pinnacle main line and prices, else the line under
+        // the blended mean; relabel the input.
         st[f] = el.value;
-        st[a + "Line"] = halfLine(p["_" + el.value]);
+        setLeg(st, a, p, el.value);
+        for (const u of ["", "U"]) {
+          const fvIn = pb.querySelector(`[data-f="${a}Fv${u}"]`);
+          if (fvIn) fvIn.value = st[a + "Fv" + u];
+        }
         const inp = pb.querySelector(`[data-f="${a}Line"]`);
         inp.value = st[a + "Line"];
         inp.parentElement.firstChild.textContent = STAT_LABEL[el.value] + " line";
+        pb.querySelector(".nv-out").innerHTML = pinNote(st);
         // Game counts in the subtitle depend on which games have a score.
         if (f === "xStat") {
           pb.outerHTML = propHTML(p);
@@ -956,8 +1073,8 @@ function detailHTML(p) {
   body += `<tr class="pool"><td class="l" title="Each season is centered on its own average before pooling, so a season where his role moved every stat up or down together can't fake a correlation"><b>Pooled</b> <span class="muted">(wtd, within-season)</span></td>`+
           `<td>${p.n_games}</td><td>${num(p.min_mean,1)}</td>`+
           `<td>${num(p.pts_mean,1)}</td><td>${num(p.reb_mean,1)}</td><td>${num(p.ast_mean,1)}</td><td>${num(p.tpm_mean,1)}</td>`+
-          `<td class="l">${rCell(p.pts_reb,1)}</td><td class="l">${rCell(p.pts_ast,1)}</td><td class="l">${rCell(p.pts_3pm,1)}</td>`+
-          `<td class="l">${rCell(p.tot_reb,1)}</td><td class="l">${rCell(p.tm_reb,1)}</td><td class="l">${rCell(p.op_reb,1)}</td></tr>`;
+          `<td class="l">${rCell(p, "pts_reb", 1)}</td><td class="l">${rCell(p, "pts_ast", 1)}</td><td class="l">${rCell(p, "pts_3pm", 1)}</td>`+
+          `<td class="l">${rCell(p, "tot_reb", 1)}</td><td class="l">${rCell(p, "tm_reb", 1)}</td><td class="l">${rCell(p, "op_reb", 1)}</td></tr>`;
   return `<div class="detail-wrap">${propHTML(p)}<div class="detail-h">Per-season history</div>`+
          `<div class="sub-scroll"><table class="sub"><thead><tr><th class="l">Season</th><th>G</th><th>Min</th><th>Pts</th><th>Reb</th><th>Ast</th><th>3PM</th>`+
          `<th class="l">PTS·REB</th><th class="l">PTS·AST</th><th class="l">PTS·3PM</th>`+
@@ -965,7 +1082,8 @@ function detailHTML(p) {
 }
 
 function sortKey(p, key) {
-  if (key.includes(".")) { const v = get(p, key)?.r; return v===null||v===undefined?-Infinity:v; }
+  // r columns sort by the r on screen (Pinnacle lines or median).
+  if (key.includes(".")) { const v = rShown(p, key.split(".")[0]); return v===null?-Infinity:v; }
   const v = get(p, key); return (typeof v==="string") ? v.toLowerCase() : (v??-Infinity);
 }
 
@@ -1102,6 +1220,15 @@ async function init() {
   render();
   // The injury report lands after the first paint, then filters and badges.
   loadInjuries().then(render);
+  // Pinnacle's main lines land after the first paint too: the r columns move
+  // to them, and builders still on their defaults reopen on them.
+  loadPinnacle().then(() => {
+    if (!PIN) return;
+    document.getElementById("meta").textContent =
+      `Box stats: ${BOX_SEASON} season · r at Pinnacle main lines (${PIN.at}, ${PIN.n} players)`;
+    for (const [id, st] of PROPS) if (st.auto) PROPS.delete(id);
+    render();
+  });
 }
 // The visible page width (no scrollbar), for .detail-wrap.
 const setVw = () => document.documentElement.style.setProperty("--vw", document.documentElement.clientWidth + "px");

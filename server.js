@@ -1535,6 +1535,26 @@ app.get('/api/pinnacle/worldcup-match/:matchupId', async (req, res) => {
   }
 });
 
+// GET /api/pinnacle/nba-props — today's NBA main lines from Pinnacle (player
+// props with both prices, game and team totals). The NBA dashboard prices its
+// plug-in r at these lines and opens the prop builder on them. Two league-wide
+// calls through dk_api.py's curl_cffi session; cached two minutes.
+let PIN_NBA_CACHE = null;
+const PIN_NBA_TTL_MS = 2 * 60 * 1000;
+
+app.get('/api/pinnacle/nba-props', async (req, res) => {
+  try {
+    if (PIN_NBA_CACHE && Date.now() - PIN_NBA_CACHE.ts < PIN_NBA_TTL_MS) {
+      return res.json(Object.assign({}, PIN_NBA_CACHE.body, { cached: true }));
+    }
+    const result = await dkCall(['pinnacle-nba-props']);
+    if (!result.error) PIN_NBA_CACHE = { ts: Date.now(), body: result };
+    return res.json(result);
+  } catch (e) {
+    return res.status(500).json({ error: 'Pinnacle NBA props failed: ' + e.message });
+  }
+});
+
 // GET /api/dk/worldcup-resolve-league?slug=world-cup-2026
 const WC_LEAGUE_RESOLVE_CACHE = new Map();
 const WC_LEAGUE_RESOLVE_TTL_MS = 30 * 60 * 1000;
