@@ -240,6 +240,7 @@ let DATA = null;        // full payload
 let TODAY_IDS = null;   // Set<string> of team_ids playing today (live)
 let MODE = "today";
 let SORT = { key: "pts_reb.shrunk", dir: -1 };  // dir -1 = high first, 1 = low first (A–Z)
+let BOX_SEASON = null;  // box-stat columns show this season only
 let BLEND = [];         // seasons, oldest first — blended by box stats + prop builder
 let SW = {};            // per-game season weights (recency tilt), from the data file
 const gw = g => SW[g.s] || 0;
@@ -326,15 +327,14 @@ const SHRUNK_HT = "Plug-in r = the binary correlation to put in a devig calculat
 // median (Gaussian copula; the arcsine law). Lines off the median shrink it.
 const plugR = r => 2 / Math.PI * Math.asin(r);
 
-// Box-score columns (G..3PM) blend every pulled season (BLEND), each
-// game weighted by its season, via the _g/_min/... fields precomputed in
+// Box-score columns (G..3PM) show BOX_SEASON only, via the _g/_min/... fields precomputed in
 // init(). The correlation columns remain pooled + recency-weighted across
 // every season; expand a row for the per-season history.
 const COLS = [
   { k:"name", h:"Player", l:true,  v:p=>`<span class="care" >${EXPANDED.has(p.athlete_id)?"▾":"▸"}</span>${TODAY_IDS&&TODAY_IDS.has(p.team_id)?'<span class="dot"></span>':''}<span class="name">${p.name}</span>${injBadge(p)}` },
   { k:"team_abbr", h:"Tm", l:true, v:p=>`<span class="team">${p.team_abbr||"—"}</span>` },
   { k:"position", h:"Pos", l:true, v:p=>p.position||"—" },
-  { k:"_g", h:"G", ht:"Games across the pulled seasons (short-minute games hidden unless toggled)", v:p=>p._g },
+  { k:"_g", h:"G", ht:"Games this season (short-minute games hidden unless toggled)", v:p=>p._g },
   { k:"effective_n", h:"nEff", ht:"Effective sample size of the pooled weighted correlation (r columns are within-season: each season centered on its own average, then pooled)", v:p=>num(p.effective_n,1) },
   { k:"_min", h:"Min", v:p=>num(p._min,1) },
   { k:"_pts", h:"Pts", v:p=>num(p._pts,1) },
@@ -620,20 +620,8 @@ const seasonColor = i => ["var(--accent)", "var(--prev)", "var(--old)"][BLEND.le
 function propHTML(p) {
   const st = propState(p);
   const g = logOf(p).filter(x => x[st.xStat] != null);
-  const hid = nShortHidden(p);
-  const cur = BLEND[BLEND.length - 1];
-  const nBy = BLEND.map(yr => g.filter(x => x.s === yr).length);
-  const wAll = BLEND.reduce((a, yr, i) => a + nBy[i] * SW[yr], 0);
-  const share = wAll ? Math.round(100 * nBy[nBy.length - 1] * SW[cur] / wAll) : 0;
-  const ratios = BLEND.slice(0, -1).map(yr => `${(SW[cur] / SW[yr]).toFixed(1)}× a ${yr} game`).join(", ");
   return `<div class="pb" data-id="${p.athlete_id}">
-    <div class="pb-title">Prop builder — ${BLEND.join(" + ")}, weighted</div>
-    <div class="pb-sub">${g.length} game${g.length===1?"":"s"}: ${BLEND.map((yr, i) => `${nBy[i]} in ${yr}`).join(" + ")}.
-      Every dot is one game (bigger dot = same score in multiple games). Set your
-      lines; the tiles show how often each over/under combo hit, with the fair odds that hit rate
-      implies. Hit rates are weighted: a ${cur} game counts ${ratios}
-      (the same recency weights as the r columns), so this season is ${share}% of the weight for now.${hid ?
-      ` ${hid} short-minute game${hid===1?"":"s"} hidden (under 60% of his usual minutes).` : ""}</div>
+    <div class="pb-title">Prop builder</div>
     <div class="pb-legend">${BLEND.slice().reverse().map((yr, j) =>
       `<span><i style="background:${seasonColor(BLEND.length - 1 - j)}"></i>${yr}${j===0?" · this season":j===1?" · last season":""}</span>`).join("")}</div>
     <div class="pb-controls">
@@ -699,9 +687,7 @@ function drawPricer(pb, p, games) {
   const src = X.fv && Y.fv ? "both legs from the fair odds entered"
     : !X.fv && !Y.fv ? "legs from the game-log hit rates until fair odds are entered"
     : `${X.fv ? yL : xL} leg from the game-log hit rate until its fair odds are entered`;
-  sub.innerHTML = `Joint priced with a Gaussian copula on the shrunk ${xL}·${yL} r <b>${num(r, 3)}</b>` +
-    (s ? ` (own data ${num(pair.weighted.r, 3)}, prior for the role ${num(s.prior, 3)}, ${Math.round(100 * s.w)}% weight on own data)` : "") +
-    `; ${src}. Corr = the binary correlation that r implies for the combo at these lines.`;
+  sub.innerHTML = `r <b>${num(r, 3)}</b>`;
   if (X.p === null || Y.p === null || X.p <= 0 || X.p >= 1 || Y.p <= 0 || Y.p >= 1) {
     out.innerHTML = `<div class="pb-note">Not enough games on both sides of a line to price it; enter fair odds.</div>`;
     return;
@@ -971,8 +957,7 @@ function detailHTML(p) {
           `<td>${num(p.pts_mean,1)}</td><td>${num(p.reb_mean,1)}</td><td>${num(p.ast_mean,1)}</td><td>${num(p.tpm_mean,1)}</td>`+
           `<td class="l">${rCell(p.pts_reb,1)}</td><td class="l">${rCell(p.pts_ast,1)}</td><td class="l">${rCell(p.pts_3pm,1)}</td>`+
           `<td class="l">${rCell(p.tot_reb,1)}</td><td class="l">${rCell(p.tm_reb,1)}</td><td class="l">${rCell(p.op_reb,1)}</td></tr>`;
-  return `<div class="detail-wrap">${propHTML(p)}<div class="detail-h">Per-season history — box stats &amp; within-season correlations`+
-         ` <span class="muted">(left columns above blend ${BLEND.join(" + ")}, weighted like the prop builder; r columns pool every season's game-to-game swings around that season's average, recency-weighted)</span></div>`+
+  return `<div class="detail-wrap">${propHTML(p)}<div class="detail-h">Per-season history</div>`+
          `<div class="sub-scroll"><table class="sub"><thead><tr><th class="l">Season</th><th>G</th><th>Min</th><th>Pts</th><th>Reb</th><th>Ast</th><th>3PM</th>`+
          `<th class="l">PTS·REB</th><th class="l">PTS·AST</th><th class="l">PTS·3PM</th>`+
          `<th class="l">TOT·REB</th><th class="l">TM·REB</th><th class="l">OPP·REB</th></tr></thead><tbody>${body}</tbody></table></div></div>`;
@@ -1055,12 +1040,11 @@ function setMode(m) {
   render();
 }
 
-// Box stats shown in the left columns: every pulled season, each game
-// weighted by its season (the same per-game recency weights as the pooled r).
+// Box stats shown in the left columns: BOX_SEASON games only.
 // Re-run when the short-minute toggle changes. No games -> "—".
 function blendBox() {
   DATA.players.forEach(p => {
-    const gs = logOf(p);
+    const gs = logOf(p).filter(g => g.s === BOX_SEASON);
     // Per-field weight totals: game scores can be missing on a few games.
     const sum = { min:0, pts:0, reb:0, ast:0, tpm:0, tot:0, tm:0, op:0 };
     const w = { ...sum };
@@ -1087,14 +1071,11 @@ async function init() {
 
   SW = DATA.weighting?.per_game_season_weights || {};
   BLEND = DATA.recent_seasons || [];
+  BOX_SEASON = BLEND.find(y => String(y) === "2026") ?? BLEND[BLEND.length - 1];
   blendBox();
 
   const wtxt = Object.entries(SW).map(([k,v])=>`${k}: ${v}`).join(", ");
-  document.getElementById("meta").innerHTML =
-    `Seasons ${DATA.seasons.join("–")} · regular season, short-minute games (&lt;60% of usual) excluded from r · recency weights (${wtxt}) · ` +
-    `${DATA.players.length} players · box stats + prop builder = ${BLEND.join(" + ")} weighted · r = all seasons pooled/weighted, ` +
-    `${DATA.shrinkage ? "shrunk toward players in a similar role, shown as the plug-in r for a devig calculator (hover a header) · " : ""}` +
-    `click a player for the prop builder + per-season history · generated ${new Date(DATA.generated_at).toLocaleString()}`;
+  document.getElementById("meta").textContent = `Box stats: ${BOX_SEASON}`;
 
   // Live schedule for the toggle; fall back to the baked snapshot.
   const live = await liveTodayIds();
