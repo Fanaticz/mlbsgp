@@ -525,6 +525,17 @@ function setLeg(st, a, p, stat) {
   st[a + "Fv"] = L ? fmtAm(L.over) : "";
   st[a + "FvU"] = L ? fmtAm(L.under) : "";
   st[a + "Pin"] = L;
+  clearTyped(st, a);
+}
+
+// Which fair boxes the user typed in (vs filled by Pinnacle or Fetch FV).
+// Typing one side of a leg clears the other side if it was filled, not typed:
+// the side typed (say Vulture's fair Over) is then priced against its
+// complement. Typing both sides devigs them as a pair, as before.
+function clearTyped(st, a) {
+  st.typed = st.typed || {};
+  delete st.typed[a + "Fv"];
+  delete st.typed[a + "FvU"];
 }
 
 // A new sort on a pair moves every builder showing another pair onto it
@@ -974,6 +985,7 @@ async function fetchNovig(pb, p) {
   const fill = (a, r) => {
     st.auto = false;          // the user's now: Pinnacle landing later won't reset it
     st[a + "Pin"] = null;
+    clearTyped(st, a);
     for (const [u, q] of [["", r.fair[0]], ["U", r.fair[1]]]) {
       st[a + "Fv" + u] = fairOdds(q);
       pb.querySelector(`[data-f="${a}Fv${u}"]`).value = st[a + "Fv" + u];
@@ -1029,6 +1041,14 @@ function initProp(pb) {
       if (/^[xy]FvU?$/.test(f)) {
         // Pricer inputs: keep the raw text (odds can be negative), reprice only.
         st[f] = el.value.trim();
+        st.typed = st.typed || {};
+        st.typed[f] = true;
+        const other = f.endsWith("U") ? f.slice(0, -1) : f + "U";
+        if (!st.typed[other] && st[other]) {
+          st[other] = "";
+          const oIn = pb.querySelector(`[data-f="${other}"]`);
+          if (oIn) oIn.value = "";
+        }
         drawPricer(pb, p, logOf(p).filter(g => g[st.xStat] != null && g[st.yStat] != null));
         return;
       }
@@ -1037,6 +1057,7 @@ function initProp(pb) {
       const a = f[0];
       st.pays = {};
       st[a + "Pin"] = null;
+      clearTyped(st, a);
       for (const u of ["", "U"]) {
         st[a + "Fv" + u] = "";
         const fvIn = pb.querySelector(`[data-f="${a}Fv${u}"]`);
