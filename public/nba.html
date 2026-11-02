@@ -769,7 +769,7 @@ function propHTML(p) {
       <div class="pb-title">SGP pricer</div>
       <div class="pr-sub"></div>
       <div class="pb-controls">
-        ${["x", "y"].map(a => ["", "U"].map(u => `<span class="fvw"><label><span data-lab="${a}${u}"></span> fair<input type="text" inputmode="numeric" placeholder="${u ? "optional" : "e.g. -110"}" value="${st[a + "Fv" + u] || ""}" data-f="${a}Fv${u}"></label><button type="button" class="sgn" data-sgn="${a}Fv${u}" title="Flip the sign (phone number pads have no minus key)">±</button></span>`).join("")).join("")}
+        ${["x", "y"].map(a => ["", "U"].map(u => `<span class="fvw"><label title="Odds for this side. Type one side (e.g. Vulture's fair Over) and it's taken as fair, the other side its complement; with both sides filled (Pinnacle's prices, Fetch FV, or a book's two-way you type), the pair is devigged worst-case."><span data-lab="${a}${u}"></span> odds<input type="text" inputmode="numeric" placeholder="${u ? "optional" : "e.g. -110"}" value="${st[a + "Fv" + u] || ""}" data-f="${a}Fv${u}"></label><button type="button" class="sgn" data-sgn="${a}Fv${u}" title="Flip the sign (phone number pads have no minus key)">±</button></span>`).join("")).join("")}
         <button type="button" class="sgn nvbtn" data-novig title="Fill both legs' Over and Under fair odds from Novig's exchange: each side the worst-case devig of the two asks at that line (pregame, books up to ${NV_MAX_SPREAD * 100}¢ wide)">Fetch FV</button>
       </div>
       <div class="nv-out">${pinNote(st)}</div>
