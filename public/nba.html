@@ -866,7 +866,8 @@ function drawPricer(pb, p, games) {
   };
   out.innerHTML = `<table class="sub"><thead><tr><th class="l">Combo</th><th>Fair odds</th>` +
     `<th>SGP odds</th><th>EV</th><th>Fair x</th><th>Fair %</th><th>Corr</th><th>Legs</th></tr></thead><tbody>` +
-    row(true, true) + row(false, false) + row(true, false) + row(false, true) + `</tbody></table>`;
+    // Over+Over only; PTS+AST (its 4 fair boxes) adds the two Over/Under mixes.
+    row(true, true) + (four ? row(true, false) + row(false, true) : "") + `</tbody></table>`;
   // Typing a price updates that row's EV only, so the input keeps focus.
   out.querySelectorAll("[data-pay]").forEach(inp => inp.oninput = () => {
     pays[inp.dataset.pay] = inp.value.trim();
