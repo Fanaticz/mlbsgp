@@ -238,7 +238,7 @@ const SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba
 const INJURIES = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/injuries";
 let INJ = new Map();    // athlete_id -> {status, out, note, ret} from ESPN's injury report
 let DATA = null;        // full payload
-let TODAY_IDS = null;   // Set<string> of team_ids playing today (live)
+let TODAY_IDS = null;   // Set<string> of team_ids whose game today hasn't started (live)
 let MODE = "today";
 let SORT = { key: "pts_reb.shrunk", dir: -1 };  // dir -1 = high first, 1 = low first (A–Z)
 let BOX_SEASON = null;  // box-stat columns show this season only
@@ -264,8 +264,11 @@ async function liveTodayIds() {
     for (const e of (j.events||[])) {
       const comp = e.competitions?.[0]?.competitors || [];
       const pair = comp.map(c => ({id:String(c.team.id), ab:c.team.abbreviation}));
-      pair.forEach(p => ids.add(p.id));
-      const st = e.status?.type?.shortDetail || e.status?.type?.state || "";
+      // Only games that haven't tipped feed the "Playing today" list: once a
+      // game starts its players drop off (the slate bar still shows it).
+      const state = e.status?.type?.state || "";
+      if (state === "pre") pair.forEach(p => ids.add(p.id));
+      const st = e.status?.type?.shortDetail || state;
       games.push({ matchup: pair.map(p=>p.ab).reverse().join(" @ "), st });
     }
     return { ids, games, date: ymd, live:true };
@@ -1153,7 +1156,7 @@ function render() {
   // blended multi-season figures that the left columns display.
   let rows = DATA.players.filter(p => p._g > 0 && p._g >= minG && (p._min||0) >= minMpg);
   if (MODE === "today") {
-    const ids = TODAY_IDS || new Set(DATA.schedule_today.team_ids);
+    const ids = TODAY_IDS || snapshotIds();
     rows = rows.filter(p => p.team_id && ids.has(p.team_id));
   }
   if (q) rows = rows.filter(p => p.name.toLowerCase().includes(q));
@@ -1205,7 +1208,18 @@ function render() {
 
   document.getElementById("sortdir").textContent = SORT.dir < 0 ? "↓ High first" : "↑ Low first";
   document.getElementById("count").textContent =
-    `${rows.length} player${rows.length===1?"":"s"}` + (MODE==="today" ? " playing today" : "");
+    `${rows.length} player${rows.length===1?"":"s"}` + (MODE==="today" ? " playing today (not started)" : "");
+}
+
+// Baked-snapshot fallback: team ids for games whose start time is still
+// ahead. The snapshot lists games by abbreviation, mapped to ids via players.
+function snapshotIds() {
+  const ab2id = new Map(DATA.players.filter(p => p.team_abbr && p.team_id).map(p => [p.team_abbr, p.team_id]));
+  const now = Date.now(), ids = new Set();
+  for (const g of DATA.schedule_today.games || [])
+    if (!g.start || Date.parse(g.start) > now)
+      (g.team_abbrs || []).forEach(a => ab2id.has(a) && ids.add(ab2id.get(a)));
+  return ids;
 }
 
 function setMode(m) {
@@ -1257,9 +1271,16 @@ async function init() {
   const live = await liveTodayIds();
   if (live) { TODAY_IDS = live.ids; renderSched(live.games, true); }
   else {
-    TODAY_IDS = new Set(DATA.schedule_today.team_ids);
+    TODAY_IDS = snapshotIds();
     renderSched(DATA.schedule_today.games.map(g=>({matchup:g.matchup, st:g.state})), false);
   }
+  // Re-check every 2 minutes so players drop off as their games tip.
+  setInterval(async () => {
+    const l = await liveTodayIds();
+    if (l) { TODAY_IDS = l.ids; renderSched(l.games, true); }
+    else TODAY_IDS = snapshotIds();
+    render();
+  }, 120000);
 
   document.querySelectorAll("#toggle button").forEach(b =>
     b.onclick = () => setMode(b.dataset.mode));
