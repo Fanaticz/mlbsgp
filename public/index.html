@@ -271,6 +271,7 @@ h1 em{color:var(--ac);font-style:normal;}
   -->
   <button class="sport-btn active" id="sportBtnNbaCorr" type="button" onclick="setSport('nbacorr')" aria-pressed="true"><span class="sport-dot"></span>NBA</button>
   <button class="sport-btn" id="sportBtnNbaQtr" type="button" onclick="setSport('nbaqtr')" aria-pressed="false"><span class="sport-dot"></span>NBA QTRS</button>
+  <button class="sport-btn" id="sportBtnNbaTm" type="button" onclick="setSport('nbatm')" aria-pressed="false"><span class="sport-dot"></span>NBA TEAMMATES</button>
   <button class="sport-btn" id="sportBtnNfl" type="button" onclick="setSport('nfl')" aria-pressed="false"><span class="sport-dot"></span>NFL</button>
   <!--
   <button class="sport-btn" id="sportBtnWorldcup" type="button" onclick="setSport('worldcup')" aria-pressed="false"><span class="sport-dot"></span>SOCCER</button>
@@ -719,6 +720,14 @@ h1 em{color:var(--ac);font-style:normal;}
      scripts/nba_fetch_quarters.py) in a lazily-sourced iframe. -->
 <div id="page-nbaqtr" class="page" style="padding:0">
   <iframe id="nbaQtrFrame" title="NBA Quarter Splits" data-src="nba_quarters.html"
+    style="width:100%;height:calc(100vh - 132px);min-height:560px;border:0;display:block;background:#0f1419"></iframe>
+</div>
+<!-- NBA teammate correlations tab (?sport=nbatm): AST->PTS, AST->3PM, REB-REB
+     and the play-by-play assist network. Self-contained page
+     (public/nba_teammates.html, data from scripts/nba_fetch_teammates.py)
+     in a lazily-sourced iframe. -->
+<div id="page-nbatm" class="page" style="padding:0">
+  <iframe id="nbaTmFrame" title="NBA Teammate Correlations" data-src="nba_teammates.html"
     style="width:100%;height:calc(100vh - 132px);min-height:560px;border:0;display:block;background:#0f1419"></iframe>
 </div>
 <div id="page-nfl" class="page" style="padding:0">
@@ -3411,11 +3420,11 @@ function getRawCorr(rc,leg1,leg2){if(!rc)return null;var s1=statOf(leg1);var s2=
    keep behaving exactly as before. NBA side is a shell in this phase —
    its page content fills in during Phase 3. */
 function getSportFromUrl(){
-  var m = window.location.search.match(/[?&]sport=(mlb|nba|tennis|worldcup|nbacorr|nbaqtr|nfl)(?:&|$)/i);
+  var m = window.location.search.match(/[?&]sport=(mlb|nba|tennis|worldcup|nbacorr|nbaqtr|nbatm|nfl)(?:&|$)/i);
   return m ? m[1].toLowerCase() : 'nbacorr';
 }
 function setSport(sport){
-  if(sport !== 'nba' && sport !== 'tennis' && sport !== 'worldcup' && sport !== 'nbacorr' && sport !== 'nbaqtr' && sport !== 'nfl') sport = 'mlb';
+  if(sport !== 'nba' && sport !== 'tennis' && sport !== 'worldcup' && sport !== 'nbacorr' && sport !== 'nbaqtr' && sport !== 'nbatm' && sport !== 'nfl') sport = 'mlb';
   document.body.classList.toggle('sport-mlb', sport==='mlb');
   document.body.classList.toggle('sport-nba', sport==='nba');
   document.body.classList.toggle('sport-tennis', sport==='tennis');
@@ -3423,6 +3432,7 @@ function setSport(sport){
   document.body.classList.toggle('sport-nbacorr', sport==='nbacorr');
   document.body.classList.toggle('sport-nfl', sport==='nfl');
   document.body.classList.toggle('sport-nbaqtr', sport==='nbaqtr');
+  document.body.classList.toggle('sport-nbatm', sport==='nbatm');
   var show = function(id, on){var el=document.getElementById(id); if(el) el.style.display = on ? '' : 'none';};
   show('navMlb',       sport==='mlb');
   show('navNba',       sport==='nba');
@@ -3440,6 +3450,8 @@ function setSport(sport){
   if(btnNbaCorr){btnNbaCorr.classList.toggle('active', sport==='nbacorr'); btnNbaCorr.setAttribute('aria-pressed', sport==='nbacorr');}
   var btnNbaQtr=document.getElementById('sportBtnNbaQtr');
   if(btnNbaQtr){btnNbaQtr.classList.toggle('active', sport==='nbaqtr'); btnNbaQtr.setAttribute('aria-pressed', sport==='nbaqtr');}
+  var btnNbaTm=document.getElementById('sportBtnNbaTm');
+  if(btnNbaTm){btnNbaTm.classList.toggle('active', sport==='nbatm'); btnNbaTm.setAttribute('aria-pressed', sport==='nbatm');}
   var btnNfl=document.getElementById('sportBtnNfl');
   if(btnNfl){btnNfl.classList.toggle('active', sport==='nfl'); btnNfl.setAttribute('aria-pressed', sport==='nfl');}
   if(btnMlb){btnMlb.classList.toggle('active', sport==='mlb'); btnMlb.setAttribute('aria-pressed', sport==='mlb');}
@@ -3478,6 +3490,10 @@ function setSport(sport){
     var al = document.getElementById('appLoading'); if(al) al.style.display = 'none';
     var nq=document.getElementById('page-nbaqtr'); if(nq) nq.classList.add('active');
     var fq=document.getElementById('nbaQtrFrame'); if(fq && !fq.getAttribute('src') && fq.dataset.src) fq.setAttribute('src', fq.dataset.src);
+  } else if(sport === 'nbatm'){
+    var al = document.getElementById('appLoading'); if(al) al.style.display = 'none';
+    var nt=document.getElementById('page-nbatm'); if(nt) nt.classList.add('active');
+    var ft=document.getElementById('nbaTmFrame'); if(ft && !ft.getAttribute('src') && ft.dataset.src) ft.setAttribute('src', ft.dataset.src);
   } else if(sport === 'nfl'){
     var al = document.getElementById('appLoading'); if(al) al.style.display = 'none';
     var nf=document.getElementById('page-nfl'); if(nf) nf.classList.add('active');
@@ -3500,6 +3516,7 @@ function setSport(sport){
     else if(sport === 'worldcup') u.searchParams.set('sport','worldcup');
     else if(sport === 'nbacorr') u.searchParams.set('sport','nbacorr');
     else if(sport === 'nbaqtr') u.searchParams.set('sport','nbaqtr');
+    else if(sport === 'nbatm') u.searchParams.set('sport','nbatm');
     else if(sport === 'nfl') u.searchParams.set('sport','nfl');
     else u.searchParams.delete('sport');
     window.history.replaceState({}, '', u.toString());
