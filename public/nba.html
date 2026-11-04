@@ -55,7 +55,7 @@
   .team { color:var(--muted); font-size:12px; }
   .dot { display:inline-block; width:7px; height:7px; border-radius:50%;
     background:var(--pos); margin-right:6px; vertical-align:middle; }
-  .r { font-weight:600; }
+  .r { font-weight:600; border-radius:4px; padding:1px 4px; }
   .at { color:var(--muted); font-size:10.5px; margin-left:3px; white-space:nowrap; }
   .raw { color:var(--muted); font-size:11.5px; }
   .sig { text-decoration:underline; text-decoration-color:var(--accent);
@@ -484,7 +484,8 @@ function rCell(p, key, full) {
   const w = pair.weighted, s = pair.shrunk;
   if (w.r===null) return "—";
   const c = rAt(p, key), m = c.m, v = c.v;
-  const col = v>0 ? "var(--pos)" : "var(--neg)";
+  const heat = full ? null : rHeat(key, v);
+  const col = heat ? heat.fg : v>0 ? "var(--pos)" : "var(--neg)";
   const sig = (w.p_value!==null && w.p_value<0.05) ? "sig" : "";
   const [xs, ys] = PAIR_STATS[key];
   const leg = (st, X) => X.L ? `${STAT_LABEL[st]} ${X.line} (Pinnacle o ${fmtAm(X.L.over)} / u ${fmtAm(X.L.under)})`
@@ -493,9 +494,35 @@ function rCell(p, key, full) {
   const why = ` title="binary correlation ${where}, from margin r ${num(m,3)}` +
     `${s ? ` (role prior ${num(s.prior,3)}, ${Math.round(100*s.w)}% weight on the player's own r)` : ""}; flip the sign for an Over/Under mix"`;
   const at = c.X ? `<span class="at">${c.X.L && c.Y.L ? "@" : "~"}${c.X.line}/${c.Y.line}</span>` : "";
-  return `<span class="r" style="color:${col}"${why}>${num(v)}</span>${at} <span class="raw">` +
+  return `<span class="r" style="color:${col}${heat ? `;background:${heat.bg}` : ""}"${why}>${num(v)}</span>${at} <span class="raw">` +
     `margin ${num(m)} · data <span class="${sig}">${num(w.r)}</span>${full ? ` · p=${num(w.p_value,3)}` : ""}` +
     `${full && s ? ` · prior ${num(s.prior)}` : ""}</span>`;
+}
+
+// Heat map for the table's r: each column is scaled to the players on screen.
+// At the column's average the r is plain white; above it fades to green
+// (full green 2 SD up), below it to red. COL_STATS is set in render().
+let COL_STATS = {};
+const HEAT_MID = [230, 237, 243], HEAT_HI = [63, 185, 80], HEAT_LO = [248, 81, 73];
+function rHeat(key, v) {
+  const st = COL_STATS[key];
+  if (!st || !st.sd || v === null || v === undefined) return null;
+  const t = Math.max(-1, Math.min(1, (v - st.mean) / (2 * st.sd)));
+  const to = t >= 0 ? HEAT_HI : HEAT_LO, a = Math.abs(t);
+  const fg = HEAT_MID.map((c, i) => Math.round(c + (to[i] - c) * a));
+  return { fg: `rgb(${fg})`, bg: `rgba(${to},${(0.22 * a * a).toFixed(3)})` };
+}
+function setColStats(rows) {
+  COL_STATS = {};
+  for (const c of COLS) {
+    if (!c.k.endsWith(".shrunk")) continue;
+    const key = c.k.split(".")[0];
+    const vs = rows.map(p => rShown(p, key)).filter(v => v !== null && Number.isFinite(v));
+    if (vs.length < 3) continue;
+    const mean = vs.reduce((a, b) => a + b, 0) / vs.length;
+    const sd = Math.sqrt(vs.reduce((a, b) => a + (b - mean) ** 2, 0) / vs.length);
+    COL_STATS[key] = { mean, sd };
+  }
 }
 
 // One r value for the per-season sub-table (single season => unweighted).
@@ -1182,6 +1209,7 @@ function render() {
   const nOut = rows.filter(p => INJ.get(p.athlete_id)?.out).length;
   document.getElementById("outn").textContent = nOut ? `${nOut} OUT hidden` : "";
   rows = rows.filter(p => !INJ.get(p.athlete_id)?.out);
+  setColStats(rows);
 
   rows.sort((a,b) => {
     const av = sortKey(a, SORT.key), bv = sortKey(b, SORT.key);
