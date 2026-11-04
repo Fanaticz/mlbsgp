@@ -240,6 +240,7 @@ let INJ = new Map();    // athlete_id -> {status, out, note, ret} from ESPN's in
 let DATA = null;        // full payload
 let TODAY_IDS = null;   // Set<string> of team_ids whose game today hasn't started (live)
 let MODE = "today";
+let DAY = "today";      // "tomorrow" once today has nothing left to tip
 let SORT = { key: "pts_reb.shrunk", dir: -1 };  // dir -1 = high first, 1 = low first (A–Z)
 let BOX_SEASON = null;  // box-stat columns show this season only
 let BLEND = [];         // seasons, oldest first — blended by box stats + prop builder
@@ -252,26 +253,40 @@ const nShortHidden = p => SHOW_SHORT ? 0 : (p.recent_games || []).filter(g => g.
 const num = (v, d=2) => (v===null||v===undefined||Number.isNaN(v)) ? "—" : v.toFixed(d);
 const get = (o, path) => path.split(".").reduce((a,k)=> (a==null?a:a[k]), o);
 
+// One day's slate from ESPN's scoreboard (YYYYMMDD): team ids for games that
+// haven't tipped, plus every game for the slate bar.
+async function slateFor(ymd) {
+  const r = await fetch(`${SCOREBOARD}?dates=${ymd}`);
+  if (!r.ok) throw 0;
+  const j = await r.json();
+  const ids = new Set(), games = [];
+  for (const e of (j.events||[])) {
+    const comp = e.competitions?.[0]?.competitors || [];
+    const pair = comp.map(c => ({id:String(c.team.id), ab:c.team.abbreviation}));
+    // Only games that haven't tipped feed the "Playing today" list: once a
+    // game starts its players drop off (the slate bar still shows it).
+    const state = e.status?.type?.state || "";
+    if (state === "pre") pair.forEach(p => ids.add(p.id));
+    const st = e.status?.type?.shortDetail || state;
+    games.push({ matchup: pair.map(p=>p.ab).reverse().join(" @ "), st });
+  }
+  return { ids, games, date: ymd, live:true, day:"today" };
+}
+
 async function liveTodayIds() {
   // Use the browser's local date so the toggle is correct on any day.
   const d = new Date();
-  const ymd = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}`;
+  const fmt = d => `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}`;
   try {
-    const r = await fetch(`${SCOREBOARD}?dates=${ymd}`);
-    if (!r.ok) throw 0;
-    const j = await r.json();
-    const ids = new Set(), games = [];
-    for (const e of (j.events||[])) {
-      const comp = e.competitions?.[0]?.competitors || [];
-      const pair = comp.map(c => ({id:String(c.team.id), ab:c.team.abbreviation}));
-      // Only games that haven't tipped feed the "Playing today" list: once a
-      // game starts its players drop off (the slate bar still shows it).
-      const state = e.status?.type?.state || "";
-      if (state === "pre") pair.forEach(p => ids.add(p.id));
-      const st = e.status?.type?.shortDetail || state;
-      games.push({ matchup: pair.map(p=>p.ab).reverse().join(" @ "), st });
-    }
-    return { ids, games, date: ymd, live:true };
+    const today = await slateFor(fmt(d));
+    if (today.ids.size) return today;
+    // Nothing left to tip today (no games, or all started/final): roll the
+    // toggle over to tomorrow's slate.
+    const t = new Date(d); t.setDate(t.getDate() + 1);
+    const tom = await slateFor(fmt(t));
+    if (!tom.games.length) return today;
+    tom.day = "tomorrow";
+    return tom;
   } catch (_) {
     return null; // caller falls back to baked snapshot
   }
@@ -313,10 +328,12 @@ function injBadge(p) {
   return `<span class="inj${i.out ? " out" : ""}" title="${tip.replace(/"/g, "&quot;")}"><i></i>${i.lab}</span>`;
 }
 
-function renderSched(games, live) {
+function renderSched(games, live, day = "today") {
   const el = document.getElementById("sched");
-  if (!games || !games.length) { el.textContent = "No NBA games today."; return; }
-  el.innerHTML = `<span class="muted">${live?"Today’s slate (live)":"Today’s slate"}:</span> ` +
+  const Day = day === "tomorrow" ? "Tomorrow" : "Today";
+  document.querySelector('#toggle button[data-mode="today"]').textContent = `Playing ${day}`;
+  if (!games || !games.length) { el.textContent = `No NBA games ${day}.`; return; }
+  el.innerHTML = `<span class="muted">${Day}’s slate${live?" (live)":""}${day==="tomorrow"?" — no games left today":""}:</span> ` +
     games.map(g => `<span class="g"><b>${g.matchup}</b>${g.st?` <span class="muted">${g.st}</span>`:""}</span>`).join("");
 }
 
@@ -1208,7 +1225,7 @@ function render() {
 
   document.getElementById("sortdir").textContent = SORT.dir < 0 ? "↓ High first" : "↑ Low first";
   document.getElementById("count").textContent =
-    `${rows.length} player${rows.length===1?"":"s"}` + (MODE==="today" ? " playing today (not started)" : "");
+    `${rows.length} player${rows.length===1?"":"s"}` + (MODE==="today" ? ` playing ${DAY} (not started)` : "");
 }
 
 // Baked-snapshot fallback: team ids for games whose start time is still
@@ -1269,7 +1286,7 @@ async function init() {
 
   // Live schedule for the toggle; fall back to the baked snapshot.
   const live = await liveTodayIds();
-  if (live) { TODAY_IDS = live.ids; renderSched(live.games, true); }
+  if (live) { TODAY_IDS = live.ids; DAY = live.day; renderSched(live.games, true, DAY); }
   else {
     TODAY_IDS = snapshotIds();
     renderSched(DATA.schedule_today.games.map(g=>({matchup:g.matchup, st:g.state})), false);
@@ -1277,7 +1294,7 @@ async function init() {
   // Re-check every 2 minutes so players drop off as their games tip.
   setInterval(async () => {
     const l = await liveTodayIds();
-    if (l) { TODAY_IDS = l.ids; renderSched(l.games, true); }
+    if (l) { TODAY_IDS = l.ids; DAY = l.day; renderSched(l.games, true, DAY); }
     else TODAY_IDS = snapshotIds();
     render();
   }, 120000);
