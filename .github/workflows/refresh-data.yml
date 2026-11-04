@@ -47,6 +47,10 @@ jobs:
       - name: Refresh NBA correlations
         run: python scripts/nba_fetch_correlations.py --workers 16
 
+      - name: Refresh NBA quarter line scores
+        continue-on-error: true
+        run: python scripts/nba_fetch_quarters.py --workers 16
+
       # The script exits non-zero rather than overwrite the data file when ESPN
       # returns nothing; that shouldn't block the MLB/NBA commit below.
       - name: Refresh NFL receiving correlations

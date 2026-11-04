@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NBA Quarter Splits</title>
+<style>
+  :root {
+    --bg:#0f1419; --panel:#1a2129; --line:#2a333d; --txt:#e6edf3;
+    --muted:#8b98a5; --accent:#f5a623; --pos:#3fb950; --neg:#f85149;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+    font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  header { padding:18px 22px 10px; border-bottom:1px solid var(--line); }
+  h1 { margin:0 0 4px; font-size:19px; }
+  h1 a { color:var(--muted); font-size:12.5px; font-weight:400; margin-left:10px; }
+  .sub { color:var(--muted); font-size:12.5px; }
+  .controls { display:flex; flex-wrap:wrap; gap:10px 14px; align-items:center;
+    padding:12px 22px; border-bottom:1px solid var(--line); position:sticky;
+    top:0; background:var(--bg); z-index:5; }
+  .grp { display:flex; align-items:center; gap:6px; }
+  .grp > span { color:var(--muted); font-size:11.5px; text-transform:uppercase; letter-spacing:.03em; }
+  .toggle { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .toggle button { background:transparent; color:var(--muted); border:0;
+    padding:6px 11px; font-size:13px; cursor:pointer; }
+  .toggle button.on { background:var(--accent); color:#1a1a1a; font-weight:600; }
+  .count { color:var(--muted); font-size:12.5px; margin-left:auto; }
+  .explain { padding:10px 22px; color:var(--muted); font-size:12.5px; max-width:980px; }
+  .explain b { color:var(--txt); }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted);
+    margin:18px 22px 8px; font-weight:600; }
+  .wrap { overflow-x:auto; padding:0 12px 20px; }
+  table { border-collapse:collapse; width:100%; min-width:880px; }
+  th,td { padding:7px 9px; text-align:right; white-space:nowrap; }
+  th { position:sticky; top:0; background:var(--panel); color:var(--muted);
+    font-weight:600; font-size:11.5px; text-transform:uppercase; letter-spacing:.03em;
+    cursor:pointer; border-bottom:1px solid var(--line); user-select:none; }
+  th:hover { color:var(--txt); }
+  th.sorted::after { content:" \25BC"; font-size:9px; }
+  th.sorted.asc::after { content:" \25B2"; }
+  th.focus { color:var(--accent); }
+  td.l, th.l { text-align:left; }
+  tbody tr { border-bottom:1px solid #20272f; }
+  tbody tr:hover { background:#161d24; }
+  tr.lg td { color:var(--muted); font-style:italic; border-top:1px solid var(--line); }
+  .team { font-weight:600; }
+  .v { border-radius:4px; padding:1px 5px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .rk { color:var(--muted); font-size:10.5px; margin-left:3px; }
+  td.sep, th.sep { border-left:1px solid var(--line); }
+  .muted { color:var(--muted); }
+  .err { color:var(--neg); padding:20px 22px; }
+  .games { display:flex; flex-wrap:wrap; gap:10px; padding:0 22px 8px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:8px;
+    padding:9px 12px; font-size:12.5px; min-width:250px; }
+  .card .hd { font-weight:600; margin-bottom:4px; }
+  .card .hd .muted { font-weight:400; font-size:11.5px; }
+  .card table { min-width:0; width:100%; }
+  .card td, .card th { padding:2px 5px; font-size:12px; position:static; background:transparent;
+    cursor:default; border:0; }
+  .card .proj { margin-top:5px; color:var(--muted); }
+  .card .proj b { color:var(--txt); }
+  @media (max-width:640px) {
+    header, .controls, .explain { padding-left:14px; padding-right:14px; }
+    .games { padding:0 14px 8px; }
+    .card { min-width:0; width:100%; }
+    h2 { margin-left:14px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>NBA Quarter Splits <a href="nba.html">&larr; correlations</a></h1>
+  <div class="sub" id="meta">Loading…</div>
+</header>
+
+<div class="controls">
+  <div class="grp"><span>Season</span><div class="toggle" id="tSeason"></div></div>
+  <div class="grp"><span>Games</span><div class="toggle" id="tLast">
+    <button data-v="0" class="on">All</button><button data-v="20">L20</button><button data-v="10">L10</button><button data-v="5">L5</button></div></div>
+  <div class="grp"><span>Where</span><div class="toggle" id="tLoc">
+    <button data-v="all" class="on">All</button><button data-v="home">Home</button><button data-v="away">Away</button></div></div>
+  <div class="grp"><span>Show</span><div class="toggle" id="tView">
+    <button data-v="net" class="on">Net</button><button data-v="for">Scored</button><button data-v="ag">Allowed</button></div></div>
+  <div class="grp"><span>Focus</span><div class="toggle" id="tQ">
+    <button data-v="0">Q1</button><button data-v="1" class="on">Q2</button><button data-v="2">Q3</button><button data-v="3">Q4</button></div></div>
+  <span class="count" id="count"></span>
+</div>
+
+<div class="explain">
+  Points per game in each quarter (overtime excluded). <b>Focus edge</b> is the team's net in the focus
+  quarter minus its average net in the other three, so a team that's +1 every quarter shows 0; a team that's
+  &minus;1 in Q1/Q3/Q4 but +3 in Q2 (the bench quarter) shows +4. <b>Off / Def edge</b> split that into
+  scoring vs. defense. <b>W-L</b> is the team's record in the focus quarter (ties left out). Colors are relative
+  to the league average for that quarter.
+</div>
+
+<h2 id="todayH" style="display:none">Today's games — focus quarter</h2>
+<div class="games" id="today"></div>
+
+<h2>Teams</h2>
+<div class="wrap"><table id="tbl"><thead></thead><tbody></tbody></table></div>
+
+<script>
+const SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard";
+const state = { season: null, last: 0, loc: "all", view: "net", q: 1, sort: "edge", asc: false };
+let DATA = null, TODAY = [];
+
+const fmt = (x, d = 1) => (x == null || isNaN(x)) ? "–" : x.toFixed(d);
+const sgn = (x, d = 1) => (x == null || isNaN(x)) ? "–" : (x > 0 ? "+" : "") + x.toFixed(d);
+const mean = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : NaN;
+
+function heat(delta, scale) {
+  // delta > 0 = good. Clamp to +-scale, map to green/red alpha.
+  if (delta == null || isNaN(delta)) return "";
+  const t = Math.max(-1, Math.min(1, delta / scale));
+  const a = (Math.abs(t) * 0.55).toFixed(2);
+  return t >= 0 ? `background:rgba(63,185,80,${a})` : `background:rgba(248,81,73,${a})`;
+}
+
+function setupToggle(id, key, parse) {
+  const el = document.getElementById(id);
+  el.addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    el.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+    state[key] = parse(b.dataset.v);
+    render();
+  });
+}
+
+// One entry per team-game: the team's points and the opponent's points by quarter.
+function teamGames() {
+  const by = {};
+  for (const g of DATA.games) {
+    if (state.season !== "all" && g.s !== state.season) continue;
+    const push = (t, f, a, home) => (by[t] ||= []).push({ d: g.d, f: f.slice(0, 4), a: a.slice(0, 4), home });
+    push(g.h, g.hq, g.aq, true);
+    push(g.a, g.aq, g.hq, false);
+  }
+  for (const t in by) {
+    let gs = by[t].sort((x, y) => x.d < y.d ? -1 : 1);
+    if (state.loc !== "all") gs = gs.filter(x => x.home === (state.loc === "home"));
+    if (state.last) gs = gs.slice(-state.last);
+    by[t] = gs;
+  }
+  return by;
+}
+
+function stats(gs) {
+  const s = { gp: gs.length, f: [], a: [], n: [], w: 0, l: 0 };
+  for (let q = 0; q < 4; q++) {
+    s.f[q] = mean(gs.map(g => g.f[q]));
+    s.a[q] = mean(gs.map(g => g.a[q]));
+    s.n[q] = s.f[q] - s.a[q];
+  }
+  const q = state.q;
+  for (const g of gs) { if (g.f[q] > g.a[q]) s.w++; else if (g.f[q] < g.a[q]) s.l++; }
+  const others = [0, 1, 2, 3].filter(i => i !== q);
+  s.edge = s.n[q] - mean(others.map(i => s.n[i]));
+  s.oedge = s.f[q] - mean(others.map(i => s.f[i]));
+  s.dedge = mean(others.map(i => s.a[i])) - s.a[q];  // positive = allows fewer in focus quarter
+  return s;
+}
+
+function compute() {
+  const by = teamGames();
+  const rows = Object.entries(by).filter(([, gs]) => gs.length).map(([t, gs]) => ({ t, ...stats(gs) }));
+  // League average per quarter (scored == allowed league-wide; both kept for the "for/ag" views).
+  const lg = { f: [], a: [] };
+  for (let q = 0; q < 4; q++) { lg.f[q] = mean(rows.map(r => r.f[q])); lg.a[q] = lg.f[q]; }
+  // Ranks in the focus quarter.
+  const q = state.q;
+  const rank = (key, desc) => {
+    const s = [...rows].sort((x, y) => desc ? y[key][q] - x[key][q] : x[key][q] - y[key][q]);
+    s.forEach((r, i) => (r["rk_" + key] = i + 1));
+  };
+  rank("f", true); rank("a", false); rank("n", true);
+  return { rows, lg };
+}
+
+function cell(view, r, q, lg) {
+  const v = view === "for" ? r.f[q] : view === "ag" ? r.a[q] : r.n[q];
+  const good = view === "for" ? v - lg.f[q] : view === "ag" ? lg.a[q] - v : v;
+  return `<span class="v" style="${heat(good, view === "net" ? 3.5 : 2.5)}">${view === "net" ? sgn(v) : fmt(v)}</span>`;
+}
+
+function render() {
+  if (!DATA) return;
+  const { rows, lg } = compute();
+  const q = state.q, Q = "Q" + (q + 1), view = state.view;
+  const viewName = { net: "net", for: "scored", ag: "allowed" }[view];
+
+  const cols = [
+    { k: "t", l: "Team", cls: "l", v: r => r.t },
+    { k: "gp", l: "GP", v: r => r.gp },
+    ...[0, 1, 2, 3].map(i => ({ k: "q" + i, l: `Q${i + 1} ${viewName}`, cls: (i === 0 ? "sep" : "") + (i === q ? " focus" : ""),
+      v: r => view === "for" ? r.f[i] : view === "ag" ? -r.a[i] : r.n[i] })),
+    { k: "fq", l: `${Q} scored`, cls: "sep", v: r => r.f[q] },
+    { k: "aq", l: `${Q} allowed`, v: r => -r.a[q] },
+    { k: "edge", l: "Focus edge", cls: "sep focus", v: r => r.edge },
+    { k: "oedge", l: "Off edge", v: r => r.oedge },
+    { k: "dedge", l: "Def edge", v: r => r.dedge },
+    { k: "wl", l: `${Q} W-L`, cls: "sep", v: r => (r.w + r.l) ? r.w / (r.w + r.l) : 0 },
+  ];
+  const col = cols.find(c => c.k === state.sort) || cols.find(c => c.k === "edge");
+  rows.sort((a, b) => {
+    const x = col.v(a), y = col.v(b);
+    const c = typeof x === "string" ? x.localeCompare(y) : x - y;
+    return state.asc ? c : -c;
+  });
+
+  const thead = document.querySelector("#tbl thead");
+  thead.innerHTML = "<tr>" + cols.map(c =>
+    `<th data-k="${c.k}" class="${c.cls || ""} ${c.k === col.k ? "sorted" + (state.asc ? " asc" : "") : ""}">${c.l}</th>`).join("") + "</tr>";
+  thead.querySelectorAll("th").forEach(th => th.onclick = () => {
+    const k = th.dataset.k;
+    if (state.sort === k) state.asc = !state.asc; else { state.sort = k; state.asc = k === "t"; }
+    render();
+  });
+
+  const tr = r => `<tr>
+    <td class="l team">${r.t}</td><td>${r.gp}</td>
+    ${[0, 1, 2, 3].map(i => `<td class="${i === 0 ? "sep" : ""}">${cell(view, r, i, lg)}</td>`).join("")}
+    <td class="sep">${cell("for", r, q, lg)}<span class="rk">#${r.rk_f}</span></td>
+    <td>${cell("ag", r, q, lg)}<span class="rk">#${r.rk_a}</span></td>
+    <td class="sep"><span class="v" style="${heat(r.edge, 4)}">${sgn(r.edge)}</span></td>
+    <td><span class="v" style="${heat(r.oedge, 3)}">${sgn(r.oedge)}</span></td>
+    <td><span class="v" style="${heat(r.dedge, 3)}">${sgn(r.dedge)}</span></td>
+    <td class="sep">${r.w}-${r.l}</td></tr>`;
+  const lgRow = `<tr class="lg"><td class="l">League avg</td><td></td>
+    ${[0, 1, 2, 3].map(i => `<td class="${i === 0 ? "sep" : ""}">${view === "net" ? "0.0" : fmt(lg.f[i])}</td>`).join("")}
+    <td class="sep">${fmt(lg.f[q])}</td><td>${fmt(lg.a[q])}</td><td class="sep"></td><td></td><td></td><td class="sep"></td></tr>`;
+  document.querySelector("#tbl tbody").innerHTML = rows.map(tr).join("") + lgRow;
+
+  const n = rows.reduce((s, r) => s + r.gp, 0) / 2;
+  document.getElementById("count").textContent = `${rows.length} teams · ${Math.round(n)} games`;
+  renderToday(rows);
+}
+
+// Today's slate: each side's focus-quarter scoring vs. the opponent's focus-quarter defense.
+function renderToday(rows) {
+  const box = document.getElementById("today"), h = document.getElementById("todayH");
+  if (!TODAY.length) { box.innerHTML = ""; h.style.display = "none"; return; }
+  const by = Object.fromEntries(rows.map(r => [r.t, r]));
+  const q = state.q, Q = "Q" + (q + 1);
+  const cards = TODAY.map(g => {
+    const H = by[g.h], A = by[g.a];
+    if (!H || !A) return "";
+    const hp = (H.f[q] + A.a[q]) / 2, ap = (A.f[q] + H.a[q]) / 2;
+    const line = r => `<tr><td class="l team">${r.t}</td><td>${fmt(r.f[q])}<span class="rk">#${r.rk_f}</span></td>
+      <td>${fmt(r.a[q])}<span class="rk">#${r.rk_a}</span></td><td><span class="v" style="${heat(r.edge, 4)}">${sgn(r.edge)}</span></td></tr>`;
+    return `<div class="card"><div class="hd">${g.a} @ ${g.h} <span class="muted">${g.time}</span></div>
+      <table><tr><th class="l"></th><th>${Q} for</th><th>${Q} ag</th><th>edge</th></tr>${line(A)}${line(H)}</table>
+      <div class="proj">${Q} proj: <b>${g.a} ${fmt(ap)} – ${g.h} ${fmt(hp)}</b> · total <b>${fmt(ap + hp)}</b> · ${g.h} ${sgn(hp - ap)}</div></div>`;
+  });
+  box.innerHTML = cards.join("");
+  h.textContent = `${TODAY.label} — ${Q} matchups`;
+  h.style.display = "";
+}
+
+async function loadToday() {
+  // ESPN dates are US-Eastern game days; roll to tomorrow when today's slate is all final.
+  const ymd = d => d.toLocaleDateString("en-CA", { timeZone: "America/New_York" }).replace(/-/g, "");
+  const now = new Date();
+  for (const [off, label] of [[0, "Today"], [1, "Tomorrow"]]) {
+    try {
+      const r = await fetch(`${SCOREBOARD}?dates=${ymd(new Date(now.getTime() + off * 864e5))}`);
+      const j = await r.json();
+      const gs = (j.events || []).filter(e => e.competitions[0].status.type.state !== "post").map(e => {
+        const c = e.competitions[0], side = k => c.competitors.find(t => t.homeAway === k).team.abbreviation;
+        return { h: side("home"), a: side("away"),
+          time: c.status.type.state === "in" ? "live" : new Date(e.date).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) };
+      });
+      if (gs.length) { TODAY = gs; TODAY.label = label; return; }
+    } catch (e) { /* schedule is a nice-to-have */ }
+  }
+}
+
+(async function init() {
+  try {
+    const r = await fetch("./data/nba_quarters.json");
+    DATA = await r.json();
+  } catch (e) {
+    document.getElementById("meta").innerHTML = `<span class="err">Couldn't load quarter data: ${e}</span>`;
+    return;
+  }
+  const seasons = [...new Set(DATA.games.map(g => g.s))].sort((a, b) => b - a);
+  state.season = seasons[0];
+  const label = y => `${y - 1}-${String(y).slice(2)}`;
+  document.getElementById("tSeason").innerHTML =
+    seasons.map((y, i) => `<button data-v="${y}" class="${i ? "" : "on"}">${label(y)}</button>`).join("") +
+    `<button data-v="all">Both</button>`;
+  setupToggle("tSeason", "season", v => v === "all" ? "all" : +v);
+  setupToggle("tLast", "last", v => +v);
+  setupToggle("tLoc", "loc", v => v);
+  setupToggle("tView", "view", v => v);
+  setupToggle("tQ", "q", v => +v);
+  const last = DATA.games[DATA.games.length - 1];
+  document.getElementById("meta").textContent =
+    `${DATA.games.length} regular-season games from ESPN line scores · latest ${last ? last.d : "–"} · updated ${DATA.generated.slice(0, 10)}`;
+  render();
+  await loadToday();
+  render();
+})();
+</script>
+</body>
+</html>
