@@ -56,6 +56,7 @@
   .dot { display:inline-block; width:7px; height:7px; border-radius:50%;
     background:var(--pos); margin-right:6px; vertical-align:middle; }
   .r { font-weight:600; border-radius:4px; padding:1px 4px; }
+  .rflag { color:var(--accent); font-weight:700; font-size:11.5px; cursor:help; }
   .at { color:var(--muted); font-size:10.5px; margin-left:3px; white-space:nowrap; }
   .raw { color:var(--muted); font-size:11.5px; }
   .sig { text-decoration:underline; text-decoration-color:var(--accent);
@@ -476,8 +477,8 @@ function rShown(p, key) {
 // Headline = plug-in r from the shrunk margin r (files without a shrunk r
 // fall back to the data r) at the pair's lines: "@23.5/2.5" when both are
 // Pinnacle main lines, "~20.5/9.5" when a leg is at this season's average.
-// Small text = the margin r plus the player's own weighted r, underlined
-// when p < 0.05.
+// The table shows only that; the margin r and the player's own weighted r
+// are in the tooltip and in the expanded row (own r underlined when p < 0.05).
 function rCell(p, key, full) {
   const pair = p[key];
   if (!pair) return "—";
@@ -491,13 +492,27 @@ function rCell(p, key, full) {
   const leg = (st, X) => X.L ? `${STAT_LABEL[st]} ${X.line} (Pinnacle o ${fmtAm(X.L.over)} / u ${fmtAm(X.L.under)})`
     : `${STAT_LABEL[st]} ${X.line} (this season's average ${num(p["_" + st], 1)}; over in ${Math.round(100 * X.p)}% of his games)`;
   const where = c.X ? `at ${leg(xs, c.X)} and ${leg(ys, c.Y)}` : "at median lines";
+  const own = `his own r ${num(w.r,3)}${w.p_value!==null ? ` (p=${num(w.p_value,3)})` : ""}`;
   const why = ` title="binary correlation ${where}, from margin r ${num(m,3)}` +
-    `${s ? ` (role prior ${num(s.prior,3)}, ${Math.round(100*s.w)}% weight on the player's own r)` : ""}; flip the sign for an Over/Under mix"`;
+    `${s ? ` (${own} pulled toward the role prior ${num(s.prior,3)}, ${Math.round(100*s.w)}% weight on his own r)` : `, ${own}`}` +
+    `; flip the sign for an Over/Under mix"`;
   const at = c.X ? `<span class="at">${c.X.L && c.Y.L ? "@" : "~"}${c.X.line}/${c.Y.line}</span>` : "";
-  return `<span class="r" style="color:${col}${heat ? `;background:${heat.bg}` : ""}"${why}>${num(v)}</span>${at} <span class="raw">` +
-    `margin ${num(m)} · data <span class="${sig}">${num(w.r)}</span>${full ? ` · p=${num(w.p_value,3)}` : ""}` +
-    `${full && s ? ` · prior ${num(s.prior)}` : ""}</span>`;
+  const r = `<span class="r" style="color:${col}${heat ? `;background:${heat.bg}` : ""}"${why}>${num(v)}</span>`;
+  if (!full) {
+    // Table cell: just the plug-in r and its lines. A "!" flags a player
+    // whose own r is far from the margin r (thin or noisy sample: the role
+    // prior is doing most of the work).
+    const gap = Math.abs(w.r - m) >= R_GAP_FLAG;
+    const flag = gap ? ` <span class="rflag" title="His own r (${num(w.r)}) is ${num(Math.abs(w.r - m))} from the margin r (${num(m)}): thin or noisy sample, lean on this one less.">!</span>` : "";
+    return r + at + flag;
+  }
+  return r + at + ` <span class="raw">` +
+    `margin ${num(m)} · data <span class="${sig}">${num(w.r)}</span> · p=${num(w.p_value,3)}` +
+    `${s ? ` · prior ${num(s.prior)}` : ""}</span>`;
 }
+
+// Gap between a player's own r and the margin r that earns the "!" flag.
+const R_GAP_FLAG = 0.15;
 
 // Heat map for the table's r: each column is scaled to the players on screen.
 // At the column's average the r is plain white; above it fades to green
