@@ -82,16 +82,22 @@
     <button data-v="all" class="on">All</button><button data-v="home">Home</button><button data-v="away">Away</button></div></div>
   <div class="grp"><span>Show</span><div class="toggle" id="tView">
     <button data-v="net" class="on">Net</button><button data-v="for">Scored</button><button data-v="ag">Allowed</button></div></div>
+  <div class="grp"><span>Opp-adj</span><div class="toggle" id="tAdj">
+    <button data-v="1" class="on">On</button><button data-v="0">Off</button></div></div>
   <div class="grp"><span>Focus</span><div class="toggle" id="tQ">
     <button data-v="0">Q1</button><button data-v="1" class="on">Q2</button><button data-v="2">Q3</button><button data-v="3">Q4</button></div></div>
   <span class="count" id="count"></span>
 </div>
 
 <div class="explain">
-  Points per game in each quarter (overtime excluded). <b>Focus edge</b> is the team's net in the focus
+  Points per game in each quarter (overtime excluded). With <b>Opp-adj</b> on, every game is corrected
+  for who it was against, quarter by quarter: scoring 30 in Q2 against a top Q2 defense counts for more than
+  30 against a bad one. The ratings are solved jointly for each season, so a team's numbers aren't skewed by
+  a schedule full of good (or bad) opponents. Early in a season they're pulled toward average until there
+  are enough games. <b>Focus edge</b> is the team's net in the focus
   quarter minus its average net in the other three, so a team that's +1 every quarter shows 0; a team that's
   &minus;1 in Q1/Q3/Q4 but +3 in Q2 (the bench quarter) shows +4. <b>Off / Def edge</b> split that into
-  scoring vs. defense. <b>W-L</b> is the team's record in the focus quarter (ties left out). Colors are relative
+  scoring vs. defense. <b>W-L</b> is the team's actual record in the focus quarter (ties left out, never adjusted). Colors are relative
   to the league average for that quarter.
 </div>
 
@@ -103,8 +109,41 @@
 
 <script>
 const SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard";
-const state = { season: null, last: 0, loc: "all", view: "net", q: 1, sort: "edge", asc: false };
-let DATA = null, TODAY = [];
+const state = { season: null, last: 0, loc: "all", view: "net", q: 1, sort: "edge", asc: false, adj: true };
+let DATA = null, TODAY = [], RAT = null;
+const SHRINK = 4;  // games' worth of pull toward league average for each rating
+
+// Opponent-adjusted quarter ratings, solved per season over every game of that season:
+//   points(team t vs opp o, quarter q) ~ mu[q] + O[t][q] - D[o][q]
+// O = offense above average, D = defense above average (positive = allows less).
+// Iterative least squares with a light ridge so 5-game samples don't run wild.
+function solveRatings() {
+  RAT = {};
+  const seasons = [...new Set(DATA.games.map(g => g.s))];
+  for (const s of seasons) {
+    const gs = DATA.games.filter(g => g.s === s);
+    const teams = [...new Set(gs.flatMap(g => [g.h, g.a]))];
+    const r = { mu: [], O: {}, D: {} };
+    teams.forEach(t => { r.O[t] = [0, 0, 0, 0]; r.D[t] = [0, 0, 0, 0]; });
+    for (let q = 0; q < 4; q++) {
+      const obs = [];  // [team, opp, pts]
+      for (const g of gs) { obs.push([g.h, g.a, g.hq[q]]); obs.push([g.a, g.h, g.aq[q]]); }
+      const mu = r.mu[q] = mean(obs.map(o => o[2]));
+      for (let it = 0; it < 40; it++) {
+        const sO = {}, sD = {}, n = {};
+        teams.forEach(t => { sO[t] = 0; sD[t] = 0; n[t] = 0; });
+        for (const [t, o, p] of obs) {
+          sO[t] += p - mu + r.D[o][q]; n[t]++;
+          sD[o] += mu + r.O[t][q] - p;
+        }
+        teams.forEach(t => { r.O[t][q] = sO[t] / (n[t] + SHRINK); r.D[t][q] = sD[t] / (n[t] + SHRINK); });
+        const cO = mean(teams.map(t => r.O[t][q])), cD = mean(teams.map(t => r.D[t][q]));
+        teams.forEach(t => { r.O[t][q] -= cO; r.D[t][q] -= cD; });
+      }
+    }
+    RAT[s] = r;
+  }
+}
 
 const fmt = (x, d = 1) => (x == null || isNaN(x)) ? "–" : x.toFixed(d);
 const sgn = (x, d = 1) => (x == null || isNaN(x)) ? "–" : (x > 0 ? "+" : "") + x.toFixed(d);
@@ -133,9 +172,13 @@ function teamGames() {
   const by = {};
   for (const g of DATA.games) {
     if (state.season !== "all" && g.s !== state.season) continue;
-    const push = (t, f, a, home) => (by[t] ||= []).push({ d: g.d, f: f.slice(0, 4), a: a.slice(0, 4), home });
-    push(g.h, g.hq, g.aq, true);
-    push(g.a, g.aq, g.hq, false);
+    const r = RAT[g.s];
+    // Adjusted: add back the opponent's defense to points scored, take its offense out of points allowed.
+    const push = (t, o, f, a, home) => (by[t] ||= []).push({ d: g.d, home, rf: f, ra: a,
+      f: f.slice(0, 4).map((x, q) => state.adj ? x + r.D[o][q] : x),
+      a: a.slice(0, 4).map((x, q) => state.adj ? x - r.O[o][q] : x) });
+    push(g.h, g.a, g.hq, g.aq, true);
+    push(g.a, g.h, g.aq, g.hq, false);
   }
   for (const t in by) {
     let gs = by[t].sort((x, y) => x.d < y.d ? -1 : 1);
@@ -154,7 +197,7 @@ function stats(gs) {
     s.n[q] = s.f[q] - s.a[q];
   }
   const q = state.q;
-  for (const g of gs) { if (g.f[q] > g.a[q]) s.w++; else if (g.f[q] < g.a[q]) s.l++; }
+  for (const g of gs) { if (g.rf[q] > g.ra[q]) s.w++; else if (g.rf[q] < g.ra[q]) s.l++; }  // actual results
   const others = [0, 1, 2, 3].filter(i => i !== q);
   s.edge = s.n[q] - mean(others.map(i => s.n[i]));
   s.oedge = s.f[q] - mean(others.map(i => s.f[i]));
@@ -246,7 +289,9 @@ function renderToday(rows) {
   const cards = TODAY.map(g => {
     const H = by[g.h], A = by[g.a];
     if (!H || !A) return "";
-    const hp = (H.f[q] + A.a[q]) / 2, ap = (A.f[q] + H.a[q]) / 2;
+    const lgq = mean(rows.map(r => r.f[q]));
+    const hp = state.adj ? H.f[q] + A.a[q] - lgq : (H.f[q] + A.a[q]) / 2;
+    const ap = state.adj ? A.f[q] + H.a[q] - lgq : (A.f[q] + H.a[q]) / 2;
     const line = r => `<tr><td class="l team">${r.t}</td><td>${fmt(r.f[q])}<span class="rk">#${r.rk_f}</span></td>
       <td>${fmt(r.a[q])}<span class="rk">#${r.rk_a}</span></td><td><span class="v" style="${heat(r.edge, 4)}">${sgn(r.edge)}</span></td></tr>`;
     return `<div class="card"><div class="hd">${g.a} @ ${g.h} <span class="muted">${g.time}</span></div>
@@ -295,6 +340,8 @@ async function loadToday() {
   setupToggle("tLoc", "loc", v => v);
   setupToggle("tView", "view", v => v);
   setupToggle("tQ", "q", v => +v);
+  setupToggle("tAdj", "adj", v => v === "1");
+  solveRatings();
   const last = DATA.games[DATA.games.length - 1];
   document.getElementById("meta").textContent =
     `${DATA.games.length} regular-season games from ESPN line scores · latest ${last ? last.d : "–"} · updated ${DATA.generated.slice(0, 10)}`;
