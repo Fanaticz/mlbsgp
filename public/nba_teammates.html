@@ -14,50 +14,53 @@
     font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
   header { padding:18px 22px 10px; border-bottom:1px solid var(--line); }
   h1 { margin:0 0 4px; font-size:19px; }
-  h1 a { color:var(--muted); font-size:12.5px; font-weight:400; margin-left:10px; text-decoration:none; }
-  h1 a:hover { color:var(--accent); }
   .sub { color:var(--muted); font-size:12.5px; }
-  .controls { display:flex; flex-wrap:wrap; gap:12px 14px; align-items:center;
-    padding:12px 22px; border-bottom:1px solid var(--line); position:sticky;
-    top:0; background:var(--bg); z-index:5; }
-  .toggle { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; flex-wrap:wrap; }
-  .toggle button { background:transparent; color:var(--muted); border:0;
-    padding:7px 13px; font-size:13px; cursor:pointer; }
+  .controls { display:flex; flex-wrap:wrap; gap:10px 14px; align-items:center;
+    padding:10px 22px; border-bottom:1px solid var(--line); background:var(--bg); }
+  .controls.sticky { position:sticky; top:0; z-index:5; }
+  .toggle { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .toggle button { background:transparent; color:var(--muted); border:0; padding:7px 13px; font-size:13px; cursor:pointer; }
   .toggle button.on { background:var(--accent); color:#1a1a1a; font-weight:600; }
   input[type=search], input[type=number], select { background:var(--panel); border:1px solid var(--line);
     color:var(--txt); border-radius:8px; padding:7px 10px; font-size:13px; }
   input[type=search] { width:170px; }
-  label.muted input { margin-left:4px; }
+  label.muted input[type=number] { margin-left:4px; }
   .muted { color:var(--muted); }
+  .chips { display:inline-flex; gap:6px; }
+  .chips label { border:1px solid var(--line); border-radius:7px; padding:5px 9px; font-size:12.5px; cursor:pointer; color:var(--muted); user-select:none; }
+  .chips input { display:none; }
+  .chips label:has(input:checked) { border-color:var(--accent); color:var(--txt); background:#2a2416; }
   .count { color:var(--muted); font-size:12.5px; margin-left:auto; }
-  .note { padding:10px 22px; border-bottom:1px solid var(--line); color:var(--muted); font-size:12.5px; }
+  .note { padding:9px 22px; border-bottom:1px solid var(--line); color:var(--muted); font-size:12.5px; }
   .note b { color:var(--txt); font-weight:600; }
-  .priors { display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:6px; font-size:12px; }
-  .priors span b { font-weight:600; }
   .wrap { overflow-x:auto; padding:0 12px 60px; }
-  table { border-collapse:collapse; width:100%; min-width:1060px; }
-  th,td { padding:7px 9px; text-align:right; white-space:nowrap; }
-  th { position:sticky; top:0; background:var(--panel); color:var(--muted);
-    font-weight:600; font-size:11.5px; text-transform:uppercase; letter-spacing:.03em;
-    cursor:pointer; border-bottom:1px solid var(--line); user-select:none; }
+  table { border-collapse:collapse; width:100%; min-width:1280px; }
+  th,td { padding:6px 8px; text-align:right; white-space:nowrap; }
+  th { position:sticky; top:0; background:var(--panel); color:var(--muted); font-weight:600; font-size:11px;
+    text-transform:uppercase; letter-spacing:.03em; cursor:pointer; border-bottom:1px solid var(--line); user-select:none; }
   th:hover { color:var(--txt); }
   th.sorted::after { content:" \25BC"; font-size:9px; }
   th.sorted.asc::after { content:" \25B2"; }
   td.l, th.l { text-align:left; }
   tbody tr { border-bottom:1px solid #20272f; }
   tbody tr:hover { background:#161d24; }
+  tbody tr.grp { border-top:1px solid #39434f; }
   .name { font-weight:600; }
-  .role { display:inline-block; min-width:16px; text-align:center; font-size:10px; font-weight:700;
-    border:1px solid var(--line); border-radius:4px; color:var(--muted); margin-left:6px; padding:0 3px; }
-  .ln { color:var(--muted); font-size:11.5px; margin-left:5px; }
-  .moved { color:var(--accent); font-size:10.5px; margin-left:5px; cursor:help; }
+  .leg { color:var(--muted); font-size:12px; margin-left:5px; }
+  .leg b { color:var(--txt); font-weight:600; }
+  .side-o { color:var(--pos); } .side-u { color:var(--neg); }
+  .combo { font-weight:700; font-size:12px; }
   .r { font-weight:600; border-radius:4px; padding:1px 5px; }
   .raw { color:var(--muted); font-size:12px; }
+  .fair { font-weight:600; }
+  .betif { color:var(--accent); font-weight:700; }
+  .assist { color:var(--muted); font-size:12px; white-space:normal; min-width:220px; max-width:300px; text-align:left; }
+  .chg { color:var(--accent); }
   .bar { display:inline-block; height:7px; border-radius:3px; background:var(--accent); vertical-align:middle; margin-right:6px; opacity:.8; }
   .err { color:var(--neg); padding:20px 22px; }
   @media (max-width:640px) {
     header, .controls, .note { padding-left:14px; padding-right:14px; }
-    input[type=search] { width:130px; }
+    input[type=search] { width:140px; }
     .count { margin-left:0; }
   }
 </style>
@@ -68,26 +71,35 @@
   <div class="sub" id="meta">Loading…</div>
 </header>
 
-<div class="controls">
-  <div class="toggle" id="mode">
-    <button data-mode="ast_pts" class="on">AST → PTS</button>
-    <button data-mode="ast_3pm">AST → 3PM</button>
-    <button data-mode="reb_reb">REB · REB</button>
-    <button data-mode="net">Assist network</button>
+<div class="controls sticky">
+  <div class="toggle" id="view">
+    <button data-view="corr" class="on">Correlations</button>
+    <button data-view="net">Assist network</button>
   </div>
-  <select id="team"><option value="">All teams</option></select>
-  <input type="search" id="qa" placeholder="Player A / passer…" />
-  <input type="search" id="qb" placeholder="Player B / scorer…" />
-  <label class="muted" title="Both players must average at least this many minutes. Set to 0 to include deep bench.">Min mpg
-    <input type="number" id="minmpg" value="20" min="0" step="1" style="width:56px" />
-  </label>
-  <label class="muted" title="Minimum games the two played together.">Min G
-    <input type="number" id="ming" value="25" min="0" step="1" style="width:56px" />
-  </label>
-  <label class="muted" title="Hide pairs where either player is no longer on that team (ESPN's current rosters).">
-    <input type="checkbox" id="cur" checked /> Still teammates
-  </label>
+  <select id="game"><option value="">All teams</option></select>
+  <input type="search" id="qa" placeholder="Player…" />
+  <input type="search" id="qb" placeholder="…with teammate" />
   <span class="count" id="count"></span>
+</div>
+<div class="controls" id="corrControls">
+  <select id="stats"><option value="">All stat pairings</option></select>
+  <span class="chips" id="combos" title="Which directions to show">
+    <label><input type="checkbox" value="O+O" checked />O+O</label>
+    <label><input type="checkbox" value="O+U" checked />O+U</label>
+    <label><input type="checkbox" value="U+O" checked />U+O</label>
+    <label><input type="checkbox" value="U+U" />U+U</label>
+  </span>
+  <label class="muted" title="Minimum games the two played together (both seasons, current team)">Min G
+    <input type="number" id="ming" value="30" min="0" step="5" style="width:58px" /></label>
+  <label class="muted" title="Minimum |r|">Min |r|
+    <input type="number" id="minr" value="0.20" min="0" max="1" step="0.05" style="width:64px" /></label>
+  <label class="muted"><input type="checkbox" id="direct" /> Direct assist-to only</label>
+  <label class="muted" title="Only players with a Pinnacle line tonight; off adds everyone at this season's average lines (~)"><input type="checkbox" id="tonight" checked /> Tonight's lines only</label>
+  <span class="muted">Price with</span>
+  <div class="toggle" id="rmode" title="Which r the fair price uses">
+    <button data-r="raw" class="on">raw r</button>
+    <button data-r="shrunk">shrunk r</button>
+  </div>
 </div>
 
 <div class="note" id="note"></div>
@@ -95,178 +107,387 @@
 <div class="err" id="err" style="display:none"></div>
 
 <script>
-let DATA = null, P = new Map(), MODE = "ast_pts";
-let SORT = { key: "shrunk", dir: -1 };
-const ROLE_TXT = { S: "starter (28+ mpg)", R: "rotation (18–28 mpg)", B: "bench (<18 mpg)" };
-const STAT_TXT = { pts: "PTS", ast: "AST", tpm: "3PM", reb: "REB" };
-const MODE_STATS = { ast_pts: ["ast", "pts"], ast_3pm: ["ast", "tpm"], reb_reb: ["reb", "reb"] };
-const num = (v, d = 2) => (v === null || v === undefined || Number.isNaN(v)) ? "—" : v.toFixed(d);
-const sgn = (v, d = 3) => (v === null || v === undefined) ? "—" : (v > 0 ? "+" : "") + v.toFixed(d);
-const pct = v => (v === null || v === undefined) ? "—" : (100 * v).toFixed(0) + "%";
+const STATS = ["pts", "reb", "ast", "tpm"];
+const SN = { pts: "PTS", reb: "REB", ast: "AST", tpm: "3PM" };
+const F = { season: 1, min: 2, pts: 3, reb: 4, ast: 5, tpm: 6, fgm: 7 };
+let D = null, P = new Map(), PAIRS = [], PIN = null, GAMES = [], PRIOR = {};
+let VIEW = "corr", RMODE = "raw", SORT = { key: "r", dir: -1 };
+
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const pl = (pr, k) => P.get(pr.team_id + ":" + pr[k]);
+const num = (v, d = 2) => v === null || v === undefined || Number.isNaN(v) ? "—" : v.toFixed(d);
+const sgn = (v, d = 2) => v === null || v === undefined ? "—" : (v > 0 ? "+" : "") + v.toFixed(d);
+const pct = v => v === null || v === undefined ? "—" : Math.round(100 * v) + "%";
+const am = p => p >= 0.5 ? -Math.round(100 * p / (1 - p)) : Math.round(100 * (1 - p) / p);
+const fmtAm = o => o > 0 ? `+${o}` : `${o}`;
+const nvNorm = s => s.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase()
+  .replace(/['.]/g, "").replace(/[^a-z0-9 ]/g, " ").split(/\s+/)
+  .filter(w => w && !["jr", "sr", "ii", "iii", "iv", "v"].includes(w)).join("");
+const teamKey = s => (s || "").trim().split(/\s+/).pop().toLowerCase();
+const oddsProb = o => o > 0 ? 100 / (o + 100) : -o / (-o + 100);
 
-// Heat around zero: full colour at 2 SD of the visible column.
-let SD = {};
-function heat(col, v) {
-  const sd = SD[col];
-  if (!sd || v === null || v === undefined) return "";
-  const t = Math.max(-1, Math.min(1, v / (2 * sd))), a = Math.abs(t);
-  const to = t >= 0 ? [63, 185, 80] : [248, 81, 73], mid = [230, 237, 243];
-  const fg = mid.map((c, i) => Math.round(c + (to[i] - c) * a));
-  return `color:rgb(${fg});background:rgba(${to},${(0.22 * a * a).toFixed(3)})`;
+// ---- pricing (same as the NBA page and the FV skill) ----
+function ncdf(x) {
+  const t = 1 / (1 + 0.3275911 * Math.abs(x) / Math.SQRT2);
+  const e = t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429)))) * Math.exp(-x * x / 2);
+  return x >= 0 ? 1 - e / 2 : e / 2;
 }
-
-function playerCell(p, stat) {
-  const moved = p.current_team && p.current_team !== p.team_abbr
-    ? `<span class="moved" title="Now on ${esc(p.current_team)}">→${esc(p.current_team)}</span>` : "";
-  const ln = stat ? `<span class="ln">${STAT_TXT[stat]} ${num(p[stat + "_mean"], 1)} · line ${p.lines[stat]}</span>` : "";
-  return `<span class="name">${esc(p.name)}</span><span class="role" title="${ROLE_TXT[p.role]}, ${p.mpg} mpg">${p.role}</span>${moved}${ln}`;
-}
-
-// Column definitions per mode. v(pr) gives the sort/display value.
-function cols() {
-  const teamCol = { k: "team", t: "Team", l: 1, v: pr => pl(pr, "a").team_abbr };
-  if (MODE === "net") {
-    return [
-      teamCol,
-      { k: "a", t: "Passer", l: 1, v: pr => pl(pr, "a").name, h: pr => playerCell(pl(pr, "a"), "ast") },
-      { k: "b", t: "Scorer", l: 1, v: pr => pl(pr, "b").name, h: pr => playerCell(pl(pr, "b"), "pts") },
-      { k: "n", t: "G", v: pr => pr.n },
-      { k: "pg", t: "Ast→B /g", v: pr => pr.assists.per_game,
-        h: pr => `<span class="bar" style="width:${Math.min(60, pr.assists.per_game * 20)}px"></span>${num(pr.assists.per_game)}` },
-      { k: "tpg", t: "3PT ast /g", v: pr => pr.assists.threes_per_game, h: pr => num(pr.assists.threes_per_game) },
-      { k: "sa", t: "% of A's ast", v: pr => pr.assists.share_of_a_ast, h: pr => pct(pr.assists.share_of_a_ast) },
-      { k: "sb", t: "% of B's FGM", v: pr => pr.assists.share_of_b_fgm, h: pr => pct(pr.assists.share_of_b_fgm) },
-      { k: "s3", t: "% of B's 3PM", v: pr => pr.assists.share_of_b_3pm, h: pr => pct(pr.assists.share_of_b_3pm) },
-      { k: "mx", t: "Max /g", v: pr => pr.assists.max_game },
-      { k: "ap", t: "AST·PTS", heat: 1, v: pr => pr.ast_pts?.shrunk ?? null, h: pr => rcell("ap", pr.ast_pts) },
-      { k: "a3", t: "AST·3PM", heat: 1, v: pr => pr.ast_3pm?.shrunk ?? null, h: pr => rcell("a3", pr.ast_3pm) },
-    ];
+function nppf(pr) { let lo = -10, hi = 10; for (let i = 0; i < 80; i++) { const m = (lo + hi) / 2; if (ncdf(m) < pr) lo = m; else hi = m; } return (lo + hi) / 2; }
+function copulaJoint(r, a, b) {   // P(both hit) when the two hit-latents correlate at r (r may be negative)
+  const x = nppf(a), y = nppf(b), n = 200, h = r / n;
+  let tot = 0;
+  for (let i = 0; i <= n; i++) {
+    const rho = i * h, q = 1 - rho * rho;
+    tot += Math.exp(-(x * x - 2 * rho * x * y + y * y) / (2 * q)) / (2 * Math.PI * Math.sqrt(q)) * (i === 0 || i === n ? 1 : i % 2 ? 4 : 2);
   }
-  const [sa, sb] = MODE_STATS[MODE];
-  const c = [
-    teamCol,
-    { k: "a", t: "Player A · " + STAT_TXT[sa], l: 1, v: pr => pl(pr, "a").name, h: pr => playerCell(pl(pr, "a"), sa) },
-    { k: "b", t: "Player B · " + STAT_TXT[sb], l: 1, v: pr => pl(pr, "b").name, h: pr => playerCell(pl(pr, "b"), sb) },
-    { k: "n", t: "G", v: pr => pr.n },
-    { k: "shrunk", t: "Shrunk φ", heat: 1, v: pr => pr[MODE].shrunk ?? null, h: pr => rcell("shrunk", pr[MODE]) },
-    { k: "phi", t: "Raw φ", heat: 1, v: pr => pr[MODE].phi, h: pr => `<span class="r" style="${heat("phi", pr[MODE].phi)}">${sgn(pr[MODE].phi, 2)}</span>` },
-    { k: "r", t: "Raw r", v: pr => pr[MODE].r, h: pr => `<span class="raw">${sgn(pr[MODE].r, 2)}</span>` },
-    { k: "rc", t: "r close", v: pr => pr[MODE].r_close, h: pr => `<span class="raw" title="${pr[MODE].n_close} games within 12 pts">${sgn(pr[MODE].r_close, 2)}</span>` },
-    { k: "prior", t: "Role prior", v: pr => pr[MODE].prior ?? null, h: pr => `<span class="raw">${sgn(pr[MODE].prior ?? null, 3)}</span>` },
-    { k: "both", t: "Both over", v: pr => pr[MODE].hit_both - pr[MODE].hit_a * pr[MODE].hit_b,
-      h: pr => { const s = pr[MODE]; const ind = s.hit_a * s.hit_b;
-        return `${pct(s.hit_both)} <span class="raw" title="If independent: ${pct(s.hit_a)} × ${pct(s.hit_b)}">vs ${pct(ind)}</span>`; } },
-  ];
-  if (MODE !== "reb_reb") {
-    c.push({ k: "pg", t: "A→B ast /g", v: pr => pr.assists.per_game,
-      h: pr => `${num(pr.assists.per_game)} <span class="raw">(${pct(pr.assists.share_of_a_ast)})</span>` });
-  }
-  return c;
+  return a * b + tot * h / 3;
 }
-function rcell(col, s) {
-  if (!s || s.shrunk === undefined) return '<span class="raw">—</span>';
-  return `<span class="r" style="${heat(col, s.shrunk)}" title="raw φ ${sgn(s.phi, 2)} · r ${sgn(s.r, 2)} · prior ${sgn(s.prior, 3)} · weight ${num(s.w, 2)}">${sgn(s.shrunk)}</span>`;
+function devigWorst(po, pu) {
+  const s = po + pu;
+  if (s <= 1 + 1e-9) return [po, pu];
+  const c = [[po / s, pu / s], [po - (s - 1) / 2, pu - (s - 1) / 2]];
+  let lo = 1, hi = 20, k = 1;
+  for (let i = 0; i < 100; i++) { k = (lo + hi) / 2; if (po ** k + pu ** k > 1) lo = k; else hi = k; }
+  c.push([po ** k, pu ** k]);
+  const shin = (z, q) => (Math.sqrt(z * z + 4 * (1 - z) * q * q / s) - z) / (2 * (1 - z));
+  let zl = 0, zh = 0.5, z = 0;
+  for (let i = 0; i < 100; i++) { z = (zl + zh) / 2; if (shin(z, po) + shin(z, pu) > 1) zl = z; else zh = z; }
+  c.push([shin(z, po), shin(z, pu)]);
+  return [Math.min(...c.map(x => x[0])), Math.min(...c.map(x => x[1]))];
+}
+function pearson(x, y) {
+  const n = x.length; if (n < 3) return null;
+  let mx = 0, my = 0; for (let i = 0; i < n; i++) { mx += x[i]; my += y[i]; } mx /= n; my /= n;
+  let sxy = 0, sxx = 0, syy = 0;
+  for (let i = 0; i < n; i++) { const a = x[i] - mx, b = y[i] - my; sxy += a * b; sxx += a * a; syy += b * b; }
+  return sxx > 0 && syy > 0 ? sxy / Math.sqrt(sxx * syy) : null;
+}
+const fz = r => Math.atanh(Math.max(-0.999, Math.min(0.999, r)));
+
+// ---- data prep ----
+function prepPlayers() {
+  const cur = Math.max(...D.seasons), last = Math.min(...D.seasons);
+  for (const p of D.players) {
+    const log = D.logs[p.id] || [];
+    const by = new Map(log.map(r => [r[0], r]));
+    const mpg = {}, avg = {};
+    for (const s of D.seasons) {
+      const g = log.filter(r => r[F.season] === s);
+      mpg[s] = g.length ? g.reduce((a, r) => a + r[F.min], 0) / g.length : null;
+      avg[s] = {};
+      for (const st of STATS) avg[s][st] = g.length ? g.reduce((a, r) => a + r[F[st]], 0) / g.length : null;
+      avg[s].n = g.length;
+    }
+    // proxy line where Pinnacle has none: this season's average (last season's if under 3 games), floor + .5
+    const base = avg[cur].n >= 3 ? avg[cur] : avg[last];
+    const proxy = {};
+    for (const st of STATS) proxy[st] = base[st] === null ? null : Math.floor(base[st]) + 0.5;
+    P.set(p.id, { ...p, log, by, mpg, cur, last, proxy, pin: {} });
+  }
+}
+function buildPairs() {
+  const byTeam = new Map();
+  for (const p of P.values()) if (p.log.length >= 10) {
+    if (!byTeam.has(p.team)) byTeam.set(p.team, []);
+    byTeam.get(p.team).push(p);
+  }
+  for (const [team, ps] of byTeam) {
+    ps.sort((a, b) => a.id < b.id ? -1 : 1);
+    for (let i = 0; i < ps.length; i++) for (let j = i + 1; j < ps.length; j++) {
+      const A = ps[i], B = ps[j];
+      const shared = A.log.filter(r => B.by.has(r[0])).map(r => r[0]);
+      if (shared.length < 10) continue;
+      const seasons = shared.map(g => A.by.get(g)[F.season]);
+      const vals = (pl, st) => {   // within-season centered
+        const v = shared.map(g => pl.by.get(g)[F[st]]);
+        const m = {}, c = {};
+        seasons.forEach((s, k) => { m[s] = (m[s] || 0) + v[k]; c[s] = (c[s] || 0) + 1; });
+        return { raw: v, cen: v.map((x, k) => x - m[seasons[k]] / c[seasons[k]]) };
+      };
+      const va = {}, vb = {};
+      for (const st of STATS) { va[st] = vals(A, st); vb[st] = vals(B, st); }
+      const r = {};
+      for (const sa of STATS) for (const sb of STATS) r[sa + "_" + sb] = pearson(va[sa].cen, vb[sb].cen);
+      PAIRS.push({ team, A, B, n: shared.length, shared, va, vb, r });
+    }
+  }
+  // empirical-Bayes prior per unordered stat pairing
+  const groups = {};
+  for (const pr of PAIRS) if (pr.n >= 25) for (const sa of STATS) for (const sb of STATS) {
+    const v = pr.r[sa + "_" + sb]; if (v === null) continue;
+    const k = [sa, sb].sort().join("_");
+    (groups[k] = groups[k] || []).push([fz(v), 1 / (pr.n - 3)]);
+  }
+  for (const [k, g] of Object.entries(groups)) {
+    const mu = g.reduce((a, x) => a + x[0], 0) / g.length;
+    const varz = g.reduce((a, x) => a + (x[0] - mu) ** 2, 0) / g.length;
+    const se2 = g.reduce((a, x) => a + x[1], 0) / g.length;
+    PRIOR[k] = { mu, tau2: Math.max(varz - se2, 0.04 ** 2) };
+  }
+}
+const shrink = (r, n, sa, sb) => {
+  const pr = PRIOR[[sa, sb].sort().join("_")]; if (!pr || r === null) return r;
+  const w = pr.tau2 / (pr.tau2 + 1 / Math.max(n - 3, 1));
+  return Math.tanh(w * fz(r) + (1 - w) * pr.mu);
+};
+
+async function loadPinnacle() {
+  try {
+    const res = await fetch("/api/pinnacle/nba-props");
+    if (!res.ok) return;
+    const j = await res.json();
+    if (!j.ok || !Array.isArray(j.props)) return;
+    const byName = new Map();
+    for (const p of P.values()) { const k = nvNorm(p.name); byName.set(k, [...(byName.get(k) || []), p]); }
+    const games = new Map((j.games || []).map(g => [g.id, g]));
+    let n = 0;
+    for (const pr of j.props) {
+      if (!STATS.includes(pr.stat) || !pr.over || !pr.under) continue;
+      const g = games.get(pr.game_id), cands = byName.get(nvNorm(pr.player)) || [];
+      const teams = g ? [teamKey(g.home), teamKey(g.away)] : [];
+      const p = cands.length === 1 ? cands[0] : cands.find(c => teams.includes(teamKey(c.team_name)));
+      if (!p) continue;
+      p.pin[pr.stat] = { line: pr.line, over: pr.over, under: pr.under };
+      p.game = pr.game_id; n++;
+    }
+    const abbrOf = new Map([...P.values()].map(p => [teamKey(p.team_name), p.team]));
+    GAMES = (j.games || []).map(g => ({ id: g.id, start: g.start,
+      away: abbrOf.get(teamKey(g.away)) || g.away, home: abbrOf.get(teamKey(g.home)) || g.home }))
+      .sort((a, b) => a.start < b.start ? -1 : 1);
+    PIN = { n, at: new Date(j.fetched_at || Date.now()).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) };
+  } catch (_) { /* no Pinnacle: lines fall back to this season's averages */ }
 }
 
-function rows() {
-  const team = document.getElementById("team").value;
+// ---- correlations view ----
+function legLine(p, st) {
+  const L = p.pin[st];
+  return L ? { line: L.line, pin: L } : p.proxy[st] === null ? null : { line: p.proxy[st], pin: null };
+}
+function assistLink(pr, sa, sb) {
+  // one side assists, the other points or threes: the passer's direct feed
+  for (const [pas, rec, ps, rs] of [[pr.A, pr.B, sa, sb], [pr.B, pr.A, sb, sa]]) {
+    if (ps !== "ast" || !(rs === "pts" || rs === "tpm")) continue;
+    const e = D.assists[pas.id + ">" + rec.id]; if (!e) return null;
+    const [two, three] = e, n = pr.n;
+    const recTot = (rec === pr.B ? pr.vb : pr.va)[rs].raw.reduce((a, b) => a + b, 0);
+    const per = rs === "pts" ? (2 * two + 3 * three) / n : three / n;
+    const share = recTot ? (rs === "pts" ? 2 * two + 3 * three : three) / recTot : 0;
+    return { per, share, apg: (two + three) / n, direct: per >= 0.5,
+      text: `${per.toFixed(2)} ${rs === "pts" ? "pts" : "3PM"}/gm from ${pas.name} → ${Math.round(100 * share)}% of ${rec.name}'s ${rs === "pts" ? "points" : "3PM"}` };
+  }
+  return null;
+}
+function corrRows() {
+  const game = document.getElementById("game").value;
   const qa = document.getElementById("qa").value.trim().toLowerCase();
   const qb = document.getElementById("qb").value.trim().toLowerCase();
+  const stats = document.getElementById("stats").value;
   const ming = +document.getElementById("ming").value || 0;
-  const cur = document.getElementById("cur").checked;
-  const minmpg = +document.getElementById("minmpg").value || 0;
-  return DATA.pairs.filter(pr => {
-    if (MODE !== "net" && !pr[MODE]) return false;  // REB·REB stored once per unordered pair
-    if (MODE === "net" && pr.assists.per_game <= 0) return false;
-    if (pr.n < ming || (team && pr.team_id !== team)) return false;
-    const a = pl(pr, "a"), b = pl(pr, "b");
-    if (a.mpg < minmpg || b.mpg < minmpg) return false;
-    if (cur && (a.current_team !== a.team_abbr || b.current_team !== b.team_abbr)) return false;
-    if (MODE === "reb_reb" && (qa || qb)) {   // symmetric: either name in either slot
-      const na = a.name.toLowerCase(), nb = b.name.toLowerCase();
+  const minr = +document.getElementById("minr").value || 0;
+  const direct = document.getElementById("direct").checked;
+  const tonight = document.getElementById("tonight").checked && PIN;
+  const combos = new Set([...document.querySelectorAll("#combos input:checked")].map(x => x.value));
+  const out = [];
+  for (const pr of PAIRS) {
+    if (pr.n < ming) continue;
+    if (game) { const g = GAMES.find(x => String(x.id) === game); if (!g || (pr.team !== g.away && pr.team !== g.home)) continue; }
+    const na = pr.A.name.toLowerCase(), nb = pr.B.name.toLowerCase();
+    if (qa || qb) {
       const ok = (x, y) => (!qa || x.includes(qa)) && (!qb || y.includes(qb));
-      return ok(na, nb) || ok(nb, na);
+      if (!ok(na, nb) && !ok(nb, na)) continue;
     }
-    if (qa && !a.name.toLowerCase().includes(qa)) return false;
-    if (qb && !b.name.toLowerCase().includes(qb)) return false;
-    return true;
-  });
+    for (const sa of STATS) for (const sb of STATS) {
+      if (stats && stats !== sa + "_" + sb && stats !== sb + "_" + sa) continue;
+      const r = pr.r[sa + "_" + sb];
+      if (r === null || Math.abs(r) < minr) continue;
+      const la = legLine(pr.A, sa), lb = legLine(pr.B, sb);
+      if (!la || !lb) continue;
+      if (tonight && (!la.pin || !lb.pin)) continue;
+      const link = assistLink(pr, sa, sb);
+      if (direct && !(link && link.direct)) continue;
+      const rs = shrink(r, pr.n, sa, sb);
+      const xa = pr.va[sa].raw, xb = pr.vb[sb].raw;
+      for (const [s1, s2] of [["O", "O"], ["O", "U"], ["U", "O"], ["U", "U"]]) {
+        const combo = s1 + "+" + s2;
+        if (!combos.has(combo)) continue;
+        const sign = s1 === s2 ? 1 : -1;
+        let h1 = 0, h2 = 0, hb = 0;
+        for (let k = 0; k < xa.length; k++) {
+          const a = (xa[k] > la.line) === (s1 === "O"), b = (xb[k] > lb.line) === (s2 === "O");
+          h1 += a; h2 += b; hb += a && b;
+        }
+        out.push({ pr, sa, sb, la, lb, s1, s2, combo, r: sign * r, rs: sign * rs, link,
+          hit: hb / xa.length, ind: (h1 / xa.length) * (h2 / xa.length) });
+      }
+    }
+  }
+  return out;
+}
+function price(row) {
+  if (row._p !== undefined) return row._p;
+  if (!row.la.pin || !row.lb.pin) return (row._p = null);
+  const [poa, pua] = devigWorst(oddsProb(row.la.pin.over), oddsProb(row.la.pin.under));
+  const [pob, pub] = devigWorst(oddsProb(row.lb.pin.over), oddsProb(row.lb.pin.under));
+  const pa = row.s1 === "O" ? poa : pua, pb = row.s2 === "O" ? pob : pub;
+  const r = RMODE === "raw" ? row.r : row.rs;
+  const j = copulaJoint(r, pa, pb);
+  return (row._p = { pa, pb, j, fair: am(j), indep: am(pa * pb), betif: am(j / 1.03) });
+}
+let SD = 0.25;
+function heat(v) {
+  if (v === null || v === undefined) return "";
+  const t = Math.max(-1, Math.min(1, v / (2 * SD))), a = Math.abs(t);
+  const to = t >= 0 ? [63, 185, 80] : [248, 81, 73], mid = [230, 237, 243];
+  return `color:rgb(${mid.map((c, i) => Math.round(c + (to[i] - c) * a))});background:rgba(${to},${(0.22 * a * a).toFixed(3)})`;
+}
+const CORR_COLS = [
+  { k: "team", t: "Team", l: 1, v: x => x.pr.team },
+  { k: "p1", t: "Player 1", l: 1, v: x => x.pr.A.name, h: x => leg(x.pr.A, x.sa, x.s1, x.la) },
+  { k: "p2", t: "Player 2", l: 1, v: x => x.pr.B.name, h: x => leg(x.pr.B, x.sb, x.s2, x.lb) },
+  { k: "combo", t: "Combo", v: x => x.combo, h: x => `<span class="combo">${x.combo}</span>` },
+  { k: "r", t: "r", v: x => x.r, h: x => `<span class="r" style="${heat(x.r)}" title="Pearson r over their games together, within-season centered; sign flips for mixed directions">${sgn(x.r)}</span>` },
+  { k: "rs", t: "Shrunk r", v: x => x.rs, h: x => `<span class="raw" title="r pulled toward the league average for this stat pairing by sample size">${sgn(x.rs)}</span>` },
+  { k: "n", t: "G", v: x => x.pr.n },
+  { k: "hit", t: "Hit rate", v: x => x.hit, h: x => `${pct(x.hit)} <span class="raw" title="If the legs were unrelated">vs ${pct(x.ind)}</span>` },
+  { k: "legs", t: "Leg fairs", v: x => price(x)?.pa ?? -1, h: x => { const p = price(x); return p ? `<span class="raw">${fmtAm(am(p.pa))} / ${fmtAm(am(p.pb))}</span>` : '<span class="raw">—</span>'; } },
+  { k: "fair", t: "Fair", v: x => price(x)?.j ?? -1, h: x => { const p = price(x); return p ? `<span class="fair">${fmtAm(p.fair)}</span>` : "—"; } },
+  { k: "indep", t: "No-corr", v: x => price(x) ? price(x).pa * price(x).pb : -1, h: x => { const p = price(x); return p ? `<span class="raw">${fmtAm(p.indep)}</span>` : "—"; } },
+  { k: "betif", t: "Bet if", v: x => price(x)?.j ?? -1, h: x => { const p = price(x); return p ? `<span class="betif">${fmtAm(p.betif)}</span>` : "—"; } },
+  { k: "assist", t: "Assist-to", l: 1, v: x => x.link ? x.link.per : -1, h: x => `<div class="assist">${x.link ? esc(x.link.text) : ""}</div>` },
+  { k: "mpg", t: "MPG last → now", v: x => x.pr.A.mpg[x.pr.A.cur] ?? 0, h: x => `${mpgCell(x.pr.A)}<br>${mpgCell(x.pr.B)}` },
+];
+function leg(p, st, side, L) {
+  const cls = side === "O" ? "side-o" : "side-u";
+  const tilde = L.pin ? "" : `<span title="No Pinnacle line: this season's average">~</span>`;
+  return `<span class="name">${esc(p.name)}</span><span class="leg"><b class="${cls}">${side === "O" ? "Over" : "Under"}</b> ${tilde}${L.line} ${SN[st]}</span>`;
+}
+function mpgCell(p) {
+  const a = p.mpg[p.last], b = p.mpg[p.cur];
+  const chg = a !== null && b !== null && Math.abs(a - b) >= 5;
+  return `<span class="${chg ? "chg" : "raw"}" title="${esc(p.name)}: ${a === null ? "—" : a.toFixed(1)} mpg last season, ${b === null ? "—" : b.toFixed(1)} this season${chg ? " (role changed: last season's games are a weak guide)" : ""}">${a === null ? "—" : a.toFixed(0)} → ${b === null ? "—" : b.toFixed(0)}</span>`;
 }
 
-function render() {
-  const C = cols();
-  let R = rows();
-  SD = {};
-  for (const c of C) if (c.heat) {
-    const vs = R.map(c.v).filter(v => v !== null && Number.isFinite(v));
-    if (vs.length > 2) SD[c.k] = Math.sqrt(vs.reduce((a, v) => a + v * v, 0) / vs.length);
+// ---- assist network view ----
+function netRows() {
+  const game = document.getElementById("game").value;
+  const qa = document.getElementById("qa").value.trim().toLowerCase();
+  const qb = document.getElementById("qb").value.trim().toLowerCase();
+  const out = [];
+  for (const pr of PAIRS) {
+    if (game) { const g = GAMES.find(x => String(x.id) === game); if (!g || (pr.team !== g.away && pr.team !== g.home)) continue; }
+    for (const [A, B, va, vb] of [[pr.A, pr.B, pr.va, pr.vb], [pr.B, pr.A, pr.vb, pr.va]]) {
+      const e = D.assists[A.id + ">" + B.id]; if (!e) continue;
+      if (qa && !A.name.toLowerCase().includes(qa)) continue;
+      if (qb && !B.name.toLowerCase().includes(qb)) continue;
+      const n = pr.n, sum = a => a.reduce((x, y) => x + y, 0);
+      const bF = pr.shared.reduce((t, g) => t + B.by.get(g)[F.fgm], 0);
+      out.push({ pr, A, B, n, pg: (e[0] + e[1]) / n, tpg: e[1] / n, sa: sum(va.ast.raw) ? (e[0] + e[1]) / sum(va.ast.raw) : null,
+        sb: bF ? (e[0] + e[1]) / bF : null, s3: sum(vb.tpm.raw) ? e[1] / sum(vb.tpm.raw) : null,
+        rap: pr.r[(A === pr.A ? "ast_pts" : "pts_ast")], ra3: A === pr.A ? pr.r.ast_tpm : pr.r.tpm_ast });
+    }
   }
-  if (MODE !== "net") { SD.phi = SD.phi || 0.2; }
+  return out;
+}
+const NET_COLS = [
+  { k: "team", t: "Team", l: 1, v: x => x.pr.team },
+  { k: "a", t: "Passer", l: 1, v: x => x.A.name, h: x => `<span class="name">${esc(x.A.name)}</span>` },
+  { k: "b", t: "Scorer", l: 1, v: x => x.B.name, h: x => `<span class="name">${esc(x.B.name)}</span>` },
+  { k: "n", t: "G", v: x => x.n },
+  { k: "pg", t: "Ast → B /g", v: x => x.pg, h: x => `<span class="bar" style="width:${Math.min(60, x.pg * 20)}px"></span>${num(x.pg)}` },
+  { k: "tpg", t: "3PT ast /g", v: x => x.tpg, h: x => num(x.tpg) },
+  { k: "sa", t: "% of A's ast", v: x => x.sa, h: x => pct(x.sa) },
+  { k: "sb", t: "% of B's FGM", v: x => x.sb, h: x => pct(x.sb) },
+  { k: "s3", t: "% of B's 3PM", v: x => x.s3, h: x => pct(x.s3) },
+  { k: "rap", t: "AST·PTS r", v: x => x.rap, h: x => `<span class="r" style="${heat(x.rap)}">${sgn(x.rap)}</span>` },
+  { k: "ra3", t: "AST·3PM r", v: x => x.ra3, h: x => `<span class="r" style="${heat(x.ra3)}">${sgn(x.ra3)}</span>` },
+  { k: "mpg", t: "MPG last → now", v: x => x.A.mpg[x.A.cur] ?? 0, h: x => `${mpgCell(x.A)}<br>${mpgCell(x.B)}` },
+];
+
+// ---- render ----
+function render() {
+  const C = VIEW === "corr" ? CORR_COLS : NET_COLS;
+  let R = VIEW === "corr" ? corrRows() : netRows();
   const sc = C.find(c => c.k === SORT.key) || C[4];
   const nil = v => v === null || v === undefined || Number.isNaN(v);
+  // price only what can show: sort by a non-price key first, then price the top slice
+  const priceKey = ["legs", "fair", "indep", "betif"].includes(sc.k);
+  if (priceKey && R.length > 3000) R = R.sort((a, b) => Math.abs(b.r) - Math.abs(a.r)).slice(0, 3000);
   R.sort((x, y) => {
     const a = sc.v(x), b = sc.v(y);
-    if (nil(a) || nil(b)) return nil(a) - nil(b);   // blanks last either way
+    if (nil(a) || nil(b)) return nil(a) - nil(b);
     return (typeof a === "string" ? a.localeCompare(b) : a - b) * SORT.dir;
   });
-  const shown = R.slice(0, 400);
-  const thead = document.querySelector("#tbl thead");
-  thead.innerHTML = "<tr>" + C.map(c =>
+  const shown = R.slice(0, 300);
+  document.querySelector("#tbl thead").innerHTML = "<tr>" + C.map(c =>
     `<th data-k="${c.k}" class="${c.l ? "l " : ""}${c.k === sc.k ? "sorted" + (SORT.dir === 1 ? " asc" : "") : ""}">${c.t}</th>`).join("") + "</tr>";
-  document.querySelector("#tbl tbody").innerHTML = shown.map(pr =>
-    "<tr>" + C.map(c => `<td class="${c.l ? "l" : ""}">${c.h ? c.h(pr) : esc(c.v(pr))}</td>`).join("") + "</tr>").join("");
-  document.getElementById("count").textContent =
-    `${R.length} pair${R.length === 1 ? "" : "s"}` + (R.length > shown.length ? ` · top ${shown.length} shown` : "");
+  let prev = null;
+  document.querySelector("#tbl tbody").innerHTML = shown.map(x => {
+    const key = VIEW === "corr" ? x.pr.A.id + x.pr.B.id + x.sa + x.sb : null;
+    const cls = key && key !== prev ? "grp" : ""; prev = key;
+    return `<tr class="${cls}">` + C.map(c => `<td class="${c.l ? "l" : ""}">${c.h ? c.h(x) : esc(c.v(x))}</td>`).join("") + "</tr>";
+  }).join("");
+  document.getElementById("count").textContent = `${R.length.toLocaleString()} row${R.length === 1 ? "" : "s"}` + (R.length > shown.length ? ` · top ${shown.length} shown` : "");
+  document.getElementById("corrControls").style.display = VIEW === "corr" ? "" : "none";
   renderNote();
 }
-
 function renderNote() {
   const el = document.getElementById("note");
-  if (MODE === "net") {
-    el.innerHTML = `Who sets up whom, from play-by-play. <b>Ast→B /g</b>: baskets by B that A assisted, per game together.
-      <b>% of A's ast</b>: share of A's assists that went to B. <b>% of B's FGM / 3PM</b>: share of B's makes that came off A's passes.
-      Shrunk AST·PTS / AST·3PM correlations alongside. Type a passer in the first box to see where his assists go, or a scorer in the second to see who feeds him.`;
+  if (VIEW === "net") {
+    el.innerHTML = `Who sets up whom, from play-by-play, over the games both played for their current team. Type a passer in the first box to see where his assists go, or a scorer in the second to see who feeds him.`;
     return;
   }
-  const pr = DATA.priors[MODE], [sa, sb] = MODE_STATS[MODE];
-  const what = MODE === "reb_reb" ? "two teammates' rebounds" : `A's ${STAT_TXT[sa]} and B's ${STAT_TXT[sb]}`;
-  const cells = Object.entries(pr.by_role).map(([c, d]) =>
-    `<span title="${ROLE_TXT[c[0]]} × ${ROLE_TXT[c[1]]}, ${d.pairs} pairs"><b>${c[0]}·${c[1]}</b> ${sgn(d.phi)}</span>`).join("");
-  el.innerHTML = `Correlation between ${what} over the games both played. <b>φ</b> uses Over/Under hits at a proxy line
-    (season mean rounded down + 0.5), the number the SGP math uses. <b>Shrunk φ</b> pulls each pair toward its role pairing's
-    league average; one season of pairs is noisy (league spread τ ${pr.tau.toFixed(3)}), so the shrunk value is the one to price with.
-    <b>Both over</b> is how often both went over, vs. what independence predicts.
-    <div class="priors">League φ ${sgn(pr.league_phi)} · by role (A·B, S/R/B = starter/rotation/bench): ${cells}</div>`;
+  el.innerHTML = `Every teammate stat pairing at tonight's lines, in all four directions. <b>r</b> is the Pearson correlation of the two stat lines over their games together
+    (sign flipped for mixed directions: a positive r means the combo's two legs tend to hit together, which is what you want in a parlay; negative means they fight). <b>Hit rate</b> is how often that exact combo hit, vs. what it would be if the legs were unrelated.
+    <b>Fair</b> uses Pinnacle's devigged legs and the ${RMODE === "raw" ? "raw" : "shrunk"} r; <b>Bet if</b> is fair plus 3%. Check <b>MPG last → now</b>: orange means a role changed by 5+ minutes.`;
 }
 
-function init() {
-  fetch("./data/nba_teammates.json").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(d => {
-    DATA = d;
-    for (const p of d.players) P.set(p.team_id + ":" + p.athlete_id, p);
-    const teams = [...new Map(d.players.map(p => [p.team_id, p.team_abbr]))].sort((a, b) => a[1].localeCompare(b[1]));
-    document.getElementById("team").innerHTML += teams.map(([id, ab]) => `<option value="${id}">${esc(ab)}</option>`).join("");
-    document.getElementById("meta").textContent =
-      `${d.season_label} regular season · ${d.n_games} games · ${d.n_assists_linked.toLocaleString()} assists linked from play-by-play · pairs with ${d.min_games_together}+ games together · updated ${d.generated_at.slice(0, 10)}`;
-    render();
-  }).catch(e => {
-    const el = document.getElementById("err"); el.style.display = ""; el.textContent = "Couldn't load teammate data: " + e.message;
-  });
-  document.getElementById("mode").addEventListener("click", e => {
+async function init() {
+  try {
+    const r = await fetch("./data/nba_teammate_logs.json");
+    if (!r.ok) throw new Error(r.status);
+    D = await r.json();
+  } catch (e) {
+    const el = document.getElementById("err"); el.style.display = ""; el.textContent = "Couldn't load teammate data: " + e.message; return;
+  }
+  prepPlayers();
+  buildPairs();
+  await loadPinnacle();
+  const sel = document.getElementById("game");
+  if (GAMES.length) sel.innerHTML = `<option value="">All tonight's games</option>` + GAMES.map(g =>
+    `<option value="${g.id}">${esc(g.away)} @ ${esc(g.home)} · ${new Date(g.start).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</option>`).join("");
+  if (!PIN) { document.getElementById("tonight").checked = false; document.getElementById("tonight").disabled = true; }
+  const st = document.getElementById("stats");
+  const seen = new Set();
+  for (const a of STATS) for (const b of STATS) {
+    const k = [a, b].sort().join("_"); if (seen.has(k)) continue; seen.add(k);
+    st.innerHTML += `<option value="${a}_${b}">${SN[a]} · ${SN[b]}</option>`;
+  }
+  const labels = D.seasons.map(s => D.season_labels[s]).join(" + ");
+  document.getElementById("meta").textContent = `${labels} · ${PAIRS.length.toLocaleString()} current teammate pairs · ` +
+    (PIN ? `lines: Pinnacle ${PIN.at} (${PIN.n} props)` : `no Pinnacle lines: this season's averages (~)`) + ` · data ${D.generated_at.slice(0, 10)}`;
+  render();
+  document.getElementById("view").addEventListener("click", e => {
     const b = e.target.closest("button"); if (!b) return;
-    MODE = b.dataset.mode;
-    document.querySelectorAll("#mode button").forEach(x => x.classList.toggle("on", x === b));
-    SORT = { key: MODE === "net" ? "pg" : "shrunk", dir: -1 };
+    VIEW = b.dataset.view;
+    document.querySelectorAll("#view button").forEach(x => x.classList.toggle("on", x === b));
+    SORT = { key: VIEW === "corr" ? "r" : "pg", dir: -1 };
+    render();
+  });
+  document.getElementById("rmode").addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    RMODE = b.dataset.r;
+    document.querySelectorAll("#rmode button").forEach(x => x.classList.toggle("on", x === b));
     render();
   });
   document.querySelector("#tbl thead").addEventListener("click", e => {
     const th = e.target.closest("th"); if (!th) return;
     if (SORT.key === th.dataset.k) SORT.dir *= -1;
-    else SORT = { key: th.dataset.k, dir: ["team", "a", "b"].includes(th.dataset.k) ? 1 : -1 };
+    else SORT = { key: th.dataset.k, dir: ["team", "p1", "p2", "a", "b", "combo"].includes(th.dataset.k) ? 1 : -1 };
     render();
   });
-  for (const id of ["team", "qa", "qb", "minmpg", "ming", "cur"]) document.getElementById(id).addEventListener("input", () => DATA && render());
+  let t = null;
+  for (const id of ["game", "qa", "qb", "stats", "ming", "minr", "direct", "tonight"])
+    document.getElementById(id).addEventListener("input", () => { clearTimeout(t); t = setTimeout(render, 150); });
+  document.getElementById("combos").addEventListener("change", render);
 }
 init();
 </script>

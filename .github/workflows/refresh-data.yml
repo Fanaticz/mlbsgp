@@ -51,6 +51,13 @@ jobs:
         continue-on-error: true
         run: python scripts/nba_fetch_quarters.py --workers 16
 
+      # Game logs + play-by-play assist links for the NBA TEAMMATES tab (last
+      # season + this one, current rosters). Exits non-zero and leaves the file
+      # alone if ESPN returns nothing.
+      - name: Refresh NBA teammate logs
+        continue-on-error: true
+        run: python scripts/nba_teammate_logs.py --workers 16
+
       # The script exits non-zero rather than overwrite the data file when ESPN
       # returns nothing; that shouldn't block the MLB/NBA commit below.
       - name: Refresh NFL receiving correlations

@@ -1,5 +1,18 @@
 # Changes
 
+## 2026-11-04 session (evening)
+
+### NBA TEAMMATES tab: every stat pairing at tonight's lines, like last season's sheet
+The tab is rebuilt around last season's `teammate_correlations` sheet: one row per teammate pair × stat pairing (PTS/REB/AST/3PM, all 16) × direction (O+O, O+U, U+O, U+U), at tonight's Pinnacle main lines (live from `/api/pinnacle/nba-props`; `~` marks this season's average where Pinnacle has no line).
+
+- **Columns**: r (Pearson over their games together, within-season centered; sign flipped for mixed directions so positive means the legs hit together), shrunk r, games together, the combo's hit rate vs. independence, Pinnacle's devigged leg fairs, the combo's fair (Gaussian copula), no-correlation price, bet-if (fair + 3%), the direct assist-to note from play-by-play ("0.57 3PM/gm from Brunson → 24% of Anunoby's 3PM"), and both players' mpg last season → this season (orange when a role moved 5+ minutes).
+- **Controls**: tonight's game, player and teammate search, stat pairing, directions (U+U off by default), min games (30), min |r| (0.20), direct assist-to only, tonight's lines only, and a raw/shrunk toggle for the r the fair price uses (raw by default, as last season's sheet was used). Sorted by r, high to low.
+- **Assist network** view stays, now over both seasons and current rosters.
+- **Data**: `scripts/nba_teammate_logs.py` writes `public/data/nba_teammate_logs.json` (628 KB, 163 KB gzipped): each current player's box line in every game for his current team, last season and this one, plus assist totals between current teammates. The page computes all correlations in the browser (about 0.8 s for 1,326 pairs). Added to the daily refresh workflow.
+- Removed the xlsx sheet and `scripts/nba_teammate_sheet.py` from earlier today; the tab replaces them.
+
+Verified in headless Chromium at 1500 and 390 px against the local server with live Pinnacle lines (523 props): 1,014 rows at the defaults, the Brunson filter gives 18 rows, the raw/shrunk toggle reprices (Brunson o7.5 AST + Anunoby o2.5 3PM: +330 raw, +422 shrunk), the assist network shows 6 Jokic links, the tab loads inside the dashboard iframe, no page errors, no horizontal overflow on a phone.
+
 ## 2026-11-04 session
 
 ### NBA teammate correlations + assist network (2025-26)
