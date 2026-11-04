@@ -1,5 +1,17 @@
 # Changes
 
+## 2026-11-04 session
+
+### NBA teammate correlations + assist network (2025-26)
+New page `public/nba_teammates.html` (linked as "Teammates →" from the NBA correlations header). Data comes from `scripts/nba_fetch_teammates.py`, which writes `public/data/nba_teammates.json` from ESPN game summaries: one request per game gives the box score and play-by-play. An assisted basket reads "X makes … (Y assists)" with participants [scorer, assister]. 2025-26: 1,235 games, 65,879 assists linked to a passer and scorer, 472 players, 5,400 ordered pairs with 20+ games together.
+
+- **Views**: AST(A) → PTS(B), AST(A) → 3PM(B), REB·REB, and an assist network. The network shows A→B assists per game, 3PT assists per game, the share of A's assists going to B, and the share of B's FGM and 3PM that A set up. Filters: team, player A / passer, player B / scorer, min mpg (default 20), min games together, and "still teammates" (ESPN's current rosters).
+- **Method**: raw r on the stats, plus φ on Over hits at a proxy line (floor(season mean) + 0.5). φ is shrunk in Fisher-z toward the league mean for the stat pair and role pairing (S/R/B by mpg; the role cell's mean is itself partially pooled toward the league). τ comes from the method of moments. r over games decided by 12 or fewer is shown so blowout-driven pairs can be spotted.
+- **League φ**: AST→PTS +0.041, AST→3PM +0.036, REB·REB +0.005. Bench–bench pairs run highest everywhere (+0.08, +0.08, +0.06): garbage-time minutes move together. The between-pair spread is small (τ ≈ 0.04–0.055), so a single season shrinks individual pairs hard. The top rotation AST→PTS pairs land around +0.10–0.11 (raw φ 0.3–0.5).
+- Not yet in the daily refresh: the 2025-26 season is final. Run `--season 2027` once the current season has enough games; a slim per-game cache goes to `.cache/` (gitignored), so reruns only fetch new games.
+
+Verified in headless Chromium at 1400 and 390 px: all four views render with no page errors and no horizontal overflow. Jokic's network reads Braun 2.59/g (53% of Braun's FGM), Murray 2.33/g. Spot checks against known passing duos: Murray→Jokic 2.71/g, Maxey→Embiid 2.86/g, Draymond→Curry 2.33/g (1.23 of them threes).
+
 ## 2026-11-01 session
 
 ### NBA dashboard: no Pinnacle line → r at this season's average
