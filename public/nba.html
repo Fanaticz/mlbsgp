@@ -438,7 +438,7 @@ function lineR(p, key) {
   const [xs, ys] = PAIR_STATS[key], X = legFor(p, xs, ys), Y = legFor(p, ys, xs);
   const ok = q => q !== null && q > 0 && q < 1;
   if (!ok(X.p) || !ok(Y.p)) return { v: plugR(m), m, X: null, Y: null };
-  return { v: (copulaJoint(m, X.p, Y.p) - X.p * Y.p) / Math.sqrt(X.p * (1 - X.p) * Y.p * (1 - Y.p)), m, X, Y };
+  return { v: (pairJoint(xs, X.line, ys, Y.line, m, X.p, Y.p, true) - X.p * Y.p) / Math.sqrt(X.p * (1 - X.p) * Y.p * (1 - Y.p)), m, X, Y };
 }
 // Cached per player and pair; cleared when the lines (Pinnacle) or the games
 // behind them (short-game toggle, via blendBox) change.
@@ -646,6 +646,19 @@ function copulaJoint(r, a, b) {
     tot += f * (i === 0 || i === n ? 1 : i % 2 ? 4 : 2);
   }
   return a * b + tot * h / 3;
+}
+// Points and threes: k made threes are 3k points, so a 3PM Over line can force
+// the PTS Over (4 threes clear PTS 11.5). The copula doesn't know that and
+// leaves a PTS-under/3PM-over chance; forced, the joint sits on the bound
+// (O/O = the smaller leg, PTS-under/3PM-over = 0). a, b: the two sides' probs;
+// same: both Over or both Under.
+const tpmForcesPts = (xs, xl, ys, yl) => {
+  const [P, T] = xs === "pts" && ys === "tpm" ? [xl, yl] : xs === "tpm" && ys === "pts" ? [yl, xl] : [null, null];
+  return P !== null && T !== null && 3 * (Math.floor(T) + 1) > P;
+};
+function pairJoint(xs, xl, ys, yl, r, a, b, same) {
+  if (tpmForcesPts(xs, xl, ys, yl)) return same ? Math.min(a, b) : Math.max(0, a + b - 1);
+  return copulaJoint(same ? r : -r, a, b);
 }
 // A two-way price (implied po + pu) -> [fair over, fair under], each side the
 // worst (lowest) of the multiplicative, additive, power and Shin devigs, like
@@ -907,7 +920,7 @@ function drawPricer(pb, p, games) {
     out.innerHTML = `<div class="pb-note">Not enough games on both sides of a line to price it; enter fair odds.</div>`;
     return;
   }
-  const jo = copulaJoint(r, X.p, Y.p);
+  const jo = pairJoint(st.xStat, st.xLine, st.yStat, st.yLine, r, X.p, Y.p, true);
   const plug = (jo - X.p * Y.p) / Math.sqrt(X.p * (1 - X.p) * Y.p * (1 - Y.p));
   const sgn = v => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(3)}`;
   plugEl.innerHTML = `Plug-in r at these lines: <b>${sgn(plug)}</b> <span class="muted">(${sgn(-plug)} for an Over/Under mix)</span>`;
@@ -917,8 +930,8 @@ function drawPricer(pb, p, games) {
   const row = (xo, yo) => {
     const k = (xo ? "o" : "u") + (yo ? "o" : "u");
     const a = xo ? X.p : X.u, b = yo ? Y.p : Y.u;
-    const rr = xo === yo ? r : -r;  // an Over/Under combo flips the sign
-    const j = copulaJoint(rr, a, b);
+    // An Over/Under combo flips the sign of r.
+    const j = pairJoint(st.xStat, st.xLine, st.yStat, st.yLine, r, a, b, xo === yo);
     const corr = (j - a * b) / Math.sqrt(a * (1 - a) * b * (1 - b));
     return `<tr data-j="${j}"><td class="l">${xL} <b>${xo ? "o" : "u"}${st.xLine}</b> &amp; ${yL} <b>${yo ? "o" : "u"}${st.yLine}</b></td>` +
       `<td class="fv">${fairOdds(j)}</td>` +
