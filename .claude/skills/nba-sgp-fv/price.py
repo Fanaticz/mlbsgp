@@ -302,6 +302,7 @@ def main():
     if n == 2:
         j = sgp.joint(R[0][1], ps[0], ps[1])
         print(f"  plug-in r at these lines {sgp.binary(R[0][1], ps[0], ps[1]):+.3f}")
+        print(f"  devig r (devig tool's Correlation box) {sgp.devig_r(j, ps[0], ps[1]):+.3f}")
     elif n == 3:
         j = tri_joint(ps, R)
     else:

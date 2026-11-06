@@ -77,6 +77,15 @@ def binary(r, a, b):
     return (j - a * b) / math.sqrt(a * (1 - a) * b * (1 - b))
 
 
+def devig_r(j, a, b):
+    """The r to type into the devig tool's Correlation box so it returns joint
+    j. That tool scales r to the Frechet bound, joint = ab + r(min(a, b) - ab),
+    not the phi formula, so the plug-in r understates it there. Negative r is
+    scaled to the lower bound, ab - max(0, a + b - 1)."""
+    room = (min(a, b) - a * b) if j >= a * b else (a * b - max(0.0, a + b - 1))
+    return (j - a * b) / room if room > 0 else 0.0
+
+
 _POOL = {}
 
 

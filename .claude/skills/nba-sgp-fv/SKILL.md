@@ -105,10 +105,13 @@ QK=1.38u
 - Check: Lillard O20.5 points (Fair +101/−101) + O3.5 threes from the 2.5
   Fair (−142) at 3.80x → +227 / 16.2% / $723.57 / 1.45u on the 11-01 data
   (r drifts a little with each daily refresh).
-- If asked "what r?": the plug-in r the script prints (2 legs) is what goes
-  in a devig calculator (joint = pA·pB + r·√(pA(1−pA)·pB(1−pB))); the margin r
-  is the copula input. Never put a margin r into that formula: it overstates
-  the correlation by about 1.5x near the median.
+- If asked "what r?": give the **devig r** the script prints (2 legs). It is
+  what goes in the devig tool's Correlation box, which scales r to the most
+  overlap the legs allow: joint = pA·pB + r·(min(pA, pB) − pA·pB). The
+  plug-in r is for the phi formula, joint = pA·pB + r·√(pA(1−pA)·pB(1−pB));
+  typed into the devig tool it understates the joint (e.g. 0.443 there gives
+  28.8% where the copula says 30.4%). The margin r is the copula input and
+  goes in neither formula.
 
 ## Method (what the script does)
 
@@ -147,8 +150,8 @@ count, then commit and push `public/data/nba_correlations.json` to `main`.
 
 - `nba-ast-pts-sgp`: Vulture `/run` commands and the Assists × Points
   Discord card. Its `sgp.py` holds the copula math this script imports.
-- Dashboard `public/nba.html`: shows the plug-in r and prices 2-leg combos in
-  each player's builder.
+- Dashboard `public/nba.html`: shows the plug-in r and devig r and prices
+  2-leg combos in each player's builder.
 - Novig's SGP *multipliers* (the slip payout) still can't be pulled: the
   official API (docs.novig.com) prices parlays only through its RFQ program
   for registered liquidity providers, and reverse-engineering the app is off
