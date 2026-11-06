@@ -338,15 +338,15 @@ function renderSched(games, live, day = "today") {
     games.map(g => `<span class="g"><b>${g.matchup}</b>${g.st?` <span class="muted">${g.st}</span>`:""}</span>`).join("");
 }
 
-const SHRUNK_HT = "Plug-in r = the binary correlation for " +
-  "joint = pA·pB + r·√(pA(1−pA)·pB(1−pB)) (the devig tool scales r differently: use the builder's Devig r there) for an Over+Over or Under+Under at today's Pinnacle main lines " +
+const SHRUNK_HT = "Devig r = what to type into the devig tool's Correlation box " +
+  "(joint = pA·pB + r·(min(pA, pB) − pA·pB)) for an Over+Over or Under+Under at today's Pinnacle main lines " +
   "(@, legs at Pinnacle's worst-case devigged prices). A leg Pinnacle hasn't posted uses the half-point line at this season's " +
   "average and how often his games clear it (~). The prop builder opens on the same lines. " +
   "Flip its sign for an Over/Under mix. Expand the player for the exact value at any lines. " +
   "Margin r = correlation of the whole stat lines over every game played (short-minute games count: the props are action in them): " +
   "the player's own recency-weighted r pulled toward the " +
   "typical r of rotation players in a similar role, more so the noisier the sample (one player's r " +
-  "carries about 0.10 of noise). Plug-in r comes from it through a Gaussian copula.";
+  "carries about 0.10 of noise). Devig r comes from it through a Gaussian copula.";
 
 // Binary correlation that a margin r implies when both legs sit at their
 // median (Gaussian copula; the arcsine law). Lines off the median shrink it.
@@ -428,7 +428,7 @@ function legFor(p, stat, other) {
   return { line, p: logOver(p, stat, line, other), L: null };
 }
 
-// {v, m, X, Y}: plug-in r of a pair at its two legs (legFor), from the shrunk
+// {v, m, X, Y}: devig r of a pair at its two legs (legFor), from the shrunk
 // margin r m; null when the pair has no r. A leg with no usable probability
 // (no line, every game on one side) leaves the median value and X = Y = null.
 function lineR(p, key) {
@@ -437,8 +437,9 @@ function lineR(p, key) {
   const m = pair.shrunk ? pair.shrunk.r : pair.weighted.r;
   const [xs, ys] = PAIR_STATS[key], X = legFor(p, xs, ys), Y = legFor(p, ys, xs);
   const ok = q => q !== null && q > 0 && q < 1;
+  // At the median (50/50 legs) the devig r equals the phi r, the arcsine law.
   if (!ok(X.p) || !ok(Y.p)) return { v: plugR(m), m, X: null, Y: null };
-  return { v: (pairJoint(xs, X.line, ys, Y.line, m, X.p, Y.p, true) - X.p * Y.p) / Math.sqrt(X.p * (1 - X.p) * Y.p * (1 - Y.p)), m, X, Y };
+  return { v: devigR(pairJoint(xs, X.line, ys, Y.line, m, X.p, Y.p, true), X.p, Y.p), m, X, Y };
 }
 // Cached per player and pair; cleared when the lines (Pinnacle) or the games
 // behind them (short-game toggle, via blendBox) change.
@@ -467,14 +468,14 @@ const COLS = [
 ];
 const EXPANDED = new Set();
 
-// The r a column shows and sorts by: the plug-in at the pair's lines (rAt).
+// The r a column shows and sorts by: the devig r at the pair's lines (rAt).
 // Null = no r.
 function rShown(p, key) {
   const c = rAt(p, key);
   return c ? c.v : null;
 }
 
-// Headline = plug-in r from the shrunk margin r (files without a shrunk r
+// Headline = devig r from the shrunk margin r (files without a shrunk r
 // fall back to the data r) at the pair's lines: "@23.5/2.5" when both are
 // Pinnacle main lines, "~20.5/9.5" when a leg is at this season's average.
 // The table shows only that; the margin r and the player's own weighted r
@@ -493,13 +494,13 @@ function rCell(p, key, full) {
     : `${STAT_LABEL[st]} ${X.line} (this season's average ${num(p["_" + st], 1)}; over in ${Math.round(100 * X.p)}% of his games)`;
   const where = c.X ? `at ${leg(xs, c.X)} and ${leg(ys, c.Y)}` : "at median lines";
   const own = `his own r ${num(w.r,3)}${w.p_value!==null ? ` (p=${num(w.p_value,3)})` : ""}`;
-  const why = ` title="binary correlation ${where}, from margin r ${num(m,3)}` +
+  const why = ` title="devig r ${where}, from margin r ${num(m,3)}` +
     `${s ? ` (${own} pulled toward the role prior ${num(s.prior,3)}, ${Math.round(100*s.w)}% weight on his own r)` : `, ${own}`}` +
-    `; flip the sign for an Over/Under mix"`;
+    `; an Over/Under mix is negative (the builder shows its exact value)"`;
   const at = c.X ? `<span class="at">${c.X.L && c.Y.L ? "@" : "~"}${c.X.line}/${c.Y.line}</span>` : "";
   const r = `<span class="r" style="color:${col}${heat ? `;background:${heat.bg}` : ""}"${why}>${num(v)}</span>`;
   if (!full) {
-    // Table cell: just the plug-in r and its lines. A "!" flags a player
+    // Table cell: just the devig r and its lines. A "!" flags a player
     // whose own r is far from the margin r (thin or noisy sample: the role
     // prior is doing most of the work).
     const gap = Math.abs(w.r - m) >= R_GAP_FLAG;
@@ -561,8 +562,9 @@ const opts = (ks, cur) => ks.map(k => `<option value="${k}"${k===cur?" selected"
 // rounded mean (book-style .5 line, so no pushes out of the box).
 const halfLine = m => Math.max(0.5, Math.round(m || 1) - 0.5);
 
-// Sorted on a correlation column -> the builder opens on that pair.
+// Sorted on a correlation column (or 3PM) -> the builder opens on that pair.
 const SORT_PAIR = { "pts_reb.shrunk":["pts","reb"], "pts_ast.shrunk":["pts","ast"], "pts_3pm.shrunk":["pts","tpm"],
+                    "_tpm":["pts","tpm"],  // sorted by 3PM a game -> PTS o / 3PM o
                     "tot_reb.shrunk":["tot","reb"], "tm_reb.shrunk":["tm","reb"], "op_reb.shrunk":["op","reb"] };
 
 function propState(p) {
