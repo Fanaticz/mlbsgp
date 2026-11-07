@@ -86,6 +86,7 @@
     font-size:11.5px; margin-bottom:10px; }
   .pb-legend i { display:inline-block; width:9px; height:9px; border-radius:50%;
     margin-right:6px; vertical-align:-1px; }
+  .pb-row { display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center; flex-basis:100%; }
   .pb-controls { display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center;
     margin-bottom:12px; }
   .pb-controls label { color:var(--muted); font-size:12px; }
@@ -853,10 +854,8 @@ function propHTML(p) {
     <div class="pb-legend">${BLEND.slice().reverse().map((yr, j) =>
       `<span><i style="background:${seasonColor(BLEND.length - 1 - j)}"></i>${yr}${j===0?" · this season":j===1?" · last season":""}</span>`).join("")}</div>
     <div class="pb-controls">
-      <label>1st stat<select data-f="xStat">${opts(X_STATS, st.xStat)}</select></label>
-      <label>${STAT_LABEL[st.xStat]} line<input type="number" step="0.5" min="0" value="${st.xLine}" data-f="xLine"></label>
-      <label>2nd stat<select data-f="yStat">${opts(Y_STATS, st.yStat)}</select></label>
-      <label>${STAT_LABEL[st.yStat]} line<input type="number" step="0.5" min="0" value="${st.yLine}" data-f="yLine"></label>
+      <div class="pb-row"><label>1st stat<select data-f="xStat">${opts(X_STATS, st.xStat)}</select></label><label>${STAT_LABEL[st.xStat]} line<input type="number" step="0.5" min="0" value="${st.xLine}" data-f="xLine"></label></div>
+      <div class="pb-row"><label>2nd stat<select data-f="yStat">${opts(Y_STATS, st.yStat)}</select></label><label>${STAT_LABEL[st.yStat]} line<input type="number" step="0.5" min="0" value="${st.yLine}" data-f="yLine"></label></div>
       <span class="plug" data-plug></span>
     </div>
     <div class="pb-body"><div class="pb-chart"></div><div class="quads"></div>
