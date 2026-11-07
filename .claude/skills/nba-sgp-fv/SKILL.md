@@ -105,6 +105,10 @@ QK=1.38u
 - Check: Lillard O20.5 points (Fair +101/−101) + O3.5 threes from the 2.5
   Fair (−142) at 3.80x → +227 / 16.2% / $723.57 / 1.45u on the 11-01 data
   (r drifts a little with each daily refresh).
+- For any number of legs (3-leg PTS·3PM·REB included), the script prints a
+  `devig tool:` line: paste its Leg Odds into Leg Odds and its
+  `<FV>=<legs>` string into the Correlation box. The tool derives its own r
+  from that and returns our FV exactly. Give this when asked for a 3-leg r.
 - If asked "what r?": give the **devig r** the script prints (2 legs). It is
   what goes in the devig tool's Correlation box, which scales r to the most
   overlap the legs allow: joint = pA·pB + r·(min(pA, pB) − pA·pB). The

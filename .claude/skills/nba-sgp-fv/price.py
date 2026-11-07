@@ -308,6 +308,10 @@ def main():
     else:
         j = mc_joint(ps, R)
     print(f"  joint {j:.1%} (independent {math.prod(ps):.1%})")
+    # Any number of legs: the devig tool's Correlation box takes "<joint>=<legs>"
+    # and derives its own r from it, so it reproduces this joint exactly.
+    legs_am = ",".join(f"{sgp.american(q):+d}" for q in ps)
+    print(f"  devig tool: Leg Odds {legs_am} · Correlation {sgp.american(j):+d}={legs_am}")
     fv = sgp.american(j)
     print(f"\nFV = {fv:+d}")
     if args.payout:
