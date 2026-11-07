@@ -102,6 +102,8 @@ QK=1.38u
   $0.00 and 0.00u.
 - **No payout given:** `FV = +229` only, then ask for the payout.
 - No book-by-book comparison, no verdict: the user does the book part.
+- Always quote leg prices, fair values and comparisons as American odds
+  (+113, -108), never as percentages. EV% is the only percentage.
 - Check: Lillard O20.5 points (Fair +101/−101) + O3.5 threes from the 2.5
   Fair (−142) at 3.80x → +227 / 16.2% / $723.57 / 1.45u on the 11-01 data
   (r drifts a little with each daily refresh).
