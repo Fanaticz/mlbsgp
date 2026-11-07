@@ -12,7 +12,9 @@ Never place a bet or type an amount. Only build slips and read multipliers.
 Use the dummy the user names (default: a heavy college-basketball ML such
 as Gonzaga or Alabama). On Novig's game page read both moneyline asks
 (e.g. 97% / 4%). pD = Fav / (Fav + Dog). Re-read every 15 minutes.
-Add the dummy to the slip once and keep it there for every combo.
+Add the dummy to the slip once and keep it there for every combo. It must
+stay in every slip: the Fair x / +5% x columns already include it, so a slip
+without it would be compared against the wrong breakeven.
 
 ## 2. Fair table
 
@@ -20,7 +22,11 @@ From the kit folder:
 
     python3 scan.py --min-tpm 2 --dummy <pD>
 
-It writes `fair_table.md`. Each row: Player, Legs (e.g. 21+ PTS / 3+ 3PM),
+It writes `fair_table.md`. Players can have two rows: threes at the
+milestone just under even money (3+ at -130) and the next one up (4+ at +140).
+Check both. A "~6c" after the legs means that threes line comes from a wider
+Novig book: still a play if it clears +5% x, but say "rough" in the report.
+Each row: Player, Legs (e.g. 21+ PTS / 3+ 3PM),
 leg fairs, Fair odds (NBA legs only), Fair x and +5% x (already divided by pD,
 so compare straight to the slip's multiplier), Devig r.
 

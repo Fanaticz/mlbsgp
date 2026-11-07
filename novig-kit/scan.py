@@ -6,6 +6,10 @@
   python3 scan.py --min-tpm 2.0   # only shooters averaging 2+ threes
   python3 scan.py --dummy 0.979   # divide breakevens by a dummy leg's fair win prob
 
+Threes always get both milestones around even money (3+ at -130 AND 4+ at
++140), each paired with the main Points line. The second milestone may come
+from a book up to --alt-spread (8c) wide; those rows are flagged "~6c".
+
 For each player it takes Novig's main Points and Threes lines (the tightest,
 busiest two-sided book), devigs each leg worst-case from the two asks, and
 prices "PTS Over + 3PM Over" with a Gaussian copula on the player's PTS-3PM
@@ -128,7 +132,7 @@ def ladders(markets, max_spread):
             continue
         bid, ask = float(bo["price"]), 1 - float(bu["price"])
         if ask - bid > max_spread + 1e-9 or not 0 < bid < ask < 1:
-            continue
+            continue  # max_spread here is the loosest any leg may use
         fo, _ = devig_worst(ask, 1 - bid)
         name = m["description"].rsplit(" ", 2)[0]
         out.setdefault(name, {}).setdefault(stat, []).append(
@@ -144,19 +148,36 @@ def main_line(rows):
     return min(rows, key=lambda r: (abs(r["p"] - 0.5) + r["spread"], -r["vol"]))
 
 
+def bracket(rows):
+    """The milestone lines around even money: the last line with Over >= 50%
+    (e.g. 3+ threes at -130) and the next line up (4+ at +140), when both are
+    priced. A line far from 50/50 on its own is still used if it's all there is."""
+    fav = [r for r in rows if r["p"] >= 0.5]
+    dog = [r for r in rows if r["p"] < 0.5]
+    out = []
+    if fav:
+        out.append(max(fav, key=lambda r: r["line"]))
+    if dog:
+        out.append(min(dog, key=lambda r: r["line"]))
+    return out or [main_line(rows)]
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--alts", action="store_true", help="also price one line up on each leg")
     ap.add_argument("--min-tpm", type=float, default=1.5, help="season 3PM average floor (default 1.5)")
     ap.add_argument("--min-r", type=float, default=0.0, help="PTS-3PM margin r floor")
     ap.add_argument("--max-spread", type=float, default=0.04, help="widest Novig book to price from (prob)")
+    ap.add_argument("--alt-spread", type=float, default=0.08,
+                    help="widest book for the second threes milestone (default 8c); flagged ~Nc")
     ap.add_argument("--dummy", type=float, default=1.0, help="dummy leg fair win prob, e.g. 0.979")
     ap.add_argument("--out", default=os.path.join(HERE, "fair_table.md"))
     a = ap.parse_args()
 
     rdata = json.load(open(os.path.join(HERE, "pts3_r.json")))
     rmap = {norm(k): (k, v) for k, v in rdata["players"].items()}
-    lad = ladders(fetch(), a.max_spread)
+    lad = ladders(fetch(), max(a.max_spread, a.alt_spread))
+    tight = lambda r: r["spread"] <= a.max_spread + 1e-9
 
     rows = []
     for nv_name, st in lad.items():
@@ -166,8 +187,18 @@ def main():
         name, info = hit
         if info["tpm"] < a.min_tpm or info["r"] < a.min_r:
             continue
-        P, T = main_line(st["pts"]), main_line(st["tpm"])
+        pts_t = [r for r in st["pts"] if tight(r)]
+        tpm_t = [r for r in st["tpm"] if tight(r)]
+        if not pts_t or not tpm_t:
+            continue
+        P = main_line(pts_t)
+        # Threes: both milestones around even money (e.g. 3+ at -130 and 4+ at
+        # +140). The second one may sit on a book up to --alt-spread wide.
+        T = main_line(tpm_t)
         combos = [(P, T)]
+        for B in bracket(st["tpm"]):
+            if B["line"] != T["line"] and abs(B["line"] - T["line"]) == 1:
+                combos.append((P, B))
         if a.alts:
             up = lambda rs, L: next((r for r in rs if r["line"] == L["line"] + 1), None)
             for pp, tt in ((up(st["pts"], P), T), (P, up(st["tpm"], T))):
@@ -180,8 +211,9 @@ def main():
             forced = 3 * (math.floor(tt["line"]) + 1) > pp["line"]
             j = min(pa, pb) if forced else joint(info["r"], pa, pb)
             fx = 1 / j / a.dummy
+            rough = "" if tight(pp) and tight(tt) else f" ~{max(pp['spread'], tt['spread']) * 100:.0f}c"
             rows.append({"name": name, "team": info["team"], "r": info["r"],
-                         "legs": f"{int(pp['line'] + 0.5)}+ PTS / {int(tt['line'] + 0.5)}+ 3PM",
+                         "legs": f"{int(pp['line'] + 0.5)}+ PTS / {int(tt['line'] + 0.5)}+ 3PM{rough}",
                          "pf": american(pa), "tf": american(pb), "fair": american(j),
                          "fx": fx, "fx5": fx * 1.05, "dv": devig_r(j, pa, pb), "j": j})
     rows.sort(key=lambda r: r["fx"])
