@@ -556,6 +556,11 @@ const PROPS = new Map();
 const STAT_LABEL = { pts:"PTS", reb:"REB", ast:"AST", tpm:"3PM", tot:"Game total", tm:"Team score", op:"Opp score" };
 const STAT_NAME = { pts:"Points", reb:"Rebounds", ast:"Assists", tpm:"3PM", tot:"Game total", tm:"Team score", op:"Opp score" };
 const X_STATS = ["pts", "tot", "tm", "op"], Y_STATS = ["reb", "ast", "tpm", "pts"];
+// 3rd leg: any box stat not already on the builder, or none.
+const Z_STATS = ["pts", "reb", "ast", "tpm"];
+const zOpts = st => `<option value="">None</option>` +
+  Z_STATS.filter(k => k !== st.xStat && k !== st.yStat)
+    .map(k => `<option value="${k}"${k === st.zStat ? " selected" : ""}>${STAT_NAME[k]}</option>`).join("");
 const opts = (ks, cur) => ks.map(k => `<option value="${k}"${k===cur?" selected":""}>${STAT_NAME[k]}</option>`).join("");
 
 // Default line = blended average pushed to the nearest half-point below the
@@ -860,6 +865,10 @@ function propHTML(p) {
       <div class="pr-sub"></div>
       <div class="pb-controls">
         ${["x", "y"].map(a => ["", "U"].map(u => `<span class="fvw"><label title="Fair odds (already devigged, e.g. Vulture's Fair column). Pre-filled with Pinnacle's main line devigged worst-case; Fetch FV fills Novig's."><span data-lab="${a}${u}"></span> fair<input type="text" inputmode="numeric" placeholder="e.g. -110" value="${st[a + "Fv" + u] || ""}" data-f="${a}Fv${u}"></label><button type="button" class="sgn" data-sgn="${a}Fv${u}" title="Flip the sign (phone number pads have no minus key)">±</button></span>`).join("")).join("")}
+        <span class="zleg"><label>3rd leg<select data-f="zStat">${zOpts(st)}</select></label>
+          <label class="zon"${st.zStat ? "" : ' style="display:none"'}>${STAT_LABEL[st.zStat] || ""} line<input type="number" step="0.5" min="0" value="${st.zLine ?? ""}" data-f="zLine"></label>
+          <span class="fvw zon"${st.zStat ? "" : ' style="display:none"'}><label title="Fair Over odds for the 3rd leg (Vulture's Fair column). Fetch FV fills Novig's."><span data-lab="z"></span> fair<input type="text" inputmode="numeric" placeholder="e.g. -110" value="${st.zFv || ""}" data-f="zFv"></label><button type="button" class="sgn" data-sgn="zFv" title="Flip the sign">±</button></span>
+          <input type="hidden" data-f="zFvU" value="${st.zFvU || ""}"></span>
         <button type="button" class="sgn nvbtn" data-novig title="Fill both legs' Over and Under fair odds from Novig's exchange: each side the worst-case devig of the two asks at that line (pregame, books up to ${NV_MAX_SPREAD * 100}¢ wide)">Fetch FV</button>
       </div>
       <div class="nv-out">${pinNote(st)}</div>
@@ -883,13 +892,96 @@ function pinNote(st) {
 // Price the four over/under combos of the builder's two lines. Leg odds are
 // the Over's fair odds (e.g. Vulture's Fair column; Under = the complement); a leg
 // left blank uses the player's weighted game-log hit rate instead.
+// ---- 3rd leg -----------------------------------------------------------------
+// Margin r of any two stats, oriented as corr(a, b). Pairs the data file
+// carries use its shrunk r; the rest (REB·3PM, REB·AST, AST·3PM, ...) are
+// computed here like price.py's shrunk_r: the player's recency-weighted,
+// within-season r over every game, pulled toward rotation players in a
+// similar role (binned on minutes, or REB / 3PM volume for the threes pairs).
+const R_ORDER = ["pts", "reb", "ast", "tpm", "tot", "tm", "op"];
+const R_COV = { "reb|ast":"min_mean", "reb|tpm":"reb_mean", "ast|tpm":"tpm_mean" };
+const R_POOL = {};
+function wcorrJS(q, a, b) {
+  const by = {};
+  for (const g of q.recent_games || []) if (g[a] != null && g[b] != null) (by[g.s] ||= []).push(g);
+  let n = 0, sw = 0, sw2 = 0, sxy = 0, sxx = 0, syy = 0;
+  for (const [season, v] of Object.entries(by)) {
+    if (v.length < 3) continue;
+    const ma = v.reduce((t, g) => t + g[a], 0) / v.length, mb = v.reduce((t, g) => t + g[b], 0) / v.length;
+    const w = SW[season] || 0;
+    for (const g of v) {
+      const x = g[a] - ma, y = g[b] - mb;
+      sxy += w * x * y; sxx += w * x * x; syy += w * y * y; sw += w; sw2 += w * w; n++;
+    }
+  }
+  if (n < 10 || !sw || !sxx || !syy) return null;
+  return { r: sxy / Math.sqrt(sxx * syy), n: sw * sw / sw2 };
+}
+function interpK(k, x) {
+  if (x <= k[0][0]) return k[0][1];
+  for (let i = 1; i < k.length; i++) if (x <= k[i][0]) {
+    const [x0, y0] = k[i - 1], [x1, y1] = k[i];
+    return x1 === x0 ? y0 : y0 + (y1 - y0) * (x - x0) / (x1 - x0);
+  }
+  return k[k.length - 1][1];
+}
+function pairR(p, a, b) {
+  const [u, v] = [a, b].sort((s, t) => R_ORDER.indexOf(s) - R_ORDER.indexOf(t));
+  const key = PAIR_KEY[`${u}|${v}`];
+  if (key && p[key] && p[key].weighted.r !== null) return p[key].shrunk ? p[key].shrunk.r : p[key].weighted.r;
+  const ck = `${u}|${v}`, cov = R_COV[ck] || "min_mean";
+  if (!R_POOL[ck]) {
+    const pool = [];
+    for (const q of DATA.players) {
+      if ((q.min_mean || 0) < 20 || (q.n_games || 0) < 40) continue;
+      const c = wcorrJS(q, u, v);
+      if (c) pool.push([q[cov] || 0, c.r, c.n]);
+    }
+    pool.sort((s, t) => s[0] - t[0]);
+    const knots = [];
+    for (let i = 0; i < 5; i++) {
+      const bin = pool.slice(Math.floor(i * pool.length / 5), Math.floor((i + 1) * pool.length / 5));
+      if (!bin.length) continue;
+      const xs = bin.map(z => z[0]);
+      knots.push([xs[Math.floor(xs.length / 2)], bin.reduce((t, z) => t + z[1], 0) / bin.length]);
+    }
+    const resid = pool.map(([x, r]) => r - interpK(knots, x));
+    const noise = pool.reduce((t, [x, , n]) => t + (1 - interpK(knots, x) ** 2) ** 2 / n, 0) / pool.length;
+    const tau2 = Math.max(resid.reduce((t, e) => t + e * e, 0) / resid.length - noise, 0.02 ** 2);
+    R_POOL[ck] = { knots, tau2 };
+  }
+  const { knots, tau2 } = R_POOL[ck];
+  if (!knots.length) return 0;
+  const prior = interpK(knots, p[cov] || 0), c = wcorrJS(p, u, v);
+  if (!c) return prior;
+  const w = tau2 / (tau2 + (1 - prior * prior) ** 2 / c.n);
+  return w * c.r + (1 - w) * prior;
+}
+// P(all three legs hit): ps are each leg's hit probability, R the margin
+// correlations oriented the same way (an Under leg flips its signs). Same
+// integral as price.py's tri_joint.
+function triJoint(ps, R) {
+  const [a, b, c] = ps.map(q => nppf(1 - q));
+  const rab = R[0][1], rac = R[0][2], rbc = R[1][2];
+  const sy = Math.sqrt(1 - rab * rab), sz = Math.sqrt(1 - rac * rac);
+  const rc = Math.max(-0.999, Math.min(0.999, (rbc - rab * rac) / (sy * sz)));
+  const n = 400, hi = Math.max(a, 0) + 9, step = (hi - a) / n;
+  let tot = 0;
+  for (let i = 0; i <= n; i++) {
+    const x = a + i * step, h = (b - rab * x) / sy, k = (c - rac * x) / sz;
+    const up = copulaJoint(rc, ncdf(-h), ncdf(-k));
+    tot += Math.exp(-x * x / 2) / Math.sqrt(2 * Math.PI) * up * (i === 0 || i === n ? 1 : i % 2 ? 4 : 2);
+  }
+  return tot * step / 3;
+}
+
 function drawPricer(pb, p, games) {
   const el = pb.querySelector(".pr");
   if (!el) return;
   const st = propState(p);
   const xL = STAT_LABEL[st.xStat], yL = STAT_LABEL[st.yStat];
   const four = fourBoxes(st);
-  el.querySelectorAll('[data-f$="FvU"]').forEach(i => { i.closest(".fvw").style.display = four ? "" : "none"; });
+  el.querySelectorAll('[data-f="xFvU"],[data-f="yFvU"]').forEach(i => { i.closest(".fvw").style.display = four ? "" : "none"; });
   for (const [a, L] of [["x", xL], ["y", yL]]) {
     el.querySelector(`[data-lab="${a}"]`).textContent = `${L} o${st[a + "Line"]}`;
     el.querySelector(`[data-lab="${a}U"]`).textContent = `u${st[a + "Line"]}`;
@@ -940,11 +1032,45 @@ function drawPricer(pb, p, games) {
   const mixPlug = (mixJ - X.p * Y.u) / Math.sqrt(X.p * (1 - X.p) * Y.u * (1 - Y.u));
   plugEl.innerHTML = `Devig r: <b>${sgn(devigR(jo, X.p, Y.p))}</b>` +
     ` <span class="muted">(Over/Under mix ${sgn(devigR(mixJ, X.p, Y.u))})</span>`;
+  plugEl.dataset.two = "1";
   plugEl.title = "Type this into the devig tool's Correlation box with the two legs' fair odds; " +
     "it returns the same fair odds as the pricer below. " +
     `For a calculator using joint = pA·pB + r·√(pA(1−pA)·pB(1−pB)) instead, use ${sgn(plug)} (mix ${sgn(mixPlug)}).`;
   // Each combo has its own SGP price (a book prices O/O and O/U separately).
   const pays = st.pays ||= {};
+  // 3rd leg (Over only): a three-leg row under the pairs, and the devig
+  // tool's "<FV>=<legs>" Correlation string, which makes it return this FV.
+  const zLab = el.querySelector('[data-lab="z"]');
+  if (zLab) zLab.textContent = st.zStat ? `${STAT_LABEL[st.zStat]} o${st.zLine}` : "";
+  let tri = null;
+  if (st.zStat && st.zStat !== st.xStat && st.zStat !== st.yStat) {
+    const Z = leg(st.zStat, st.zLine, st.zFv, "");
+    if (Z.p !== null && Z.p > 0 && Z.p < 1) {
+      const L = [[st.xStat, st.xLine, X.p], [st.yStat, st.yLine, Y.p], [st.zStat, st.zLine, Z.p]];
+      // A 3PM Over that forces the PTS Over (3 x threes > PTS line) drops the
+      // PTS leg: the parlay is just 3PM and the other leg.
+      const ti = L.findIndex(l => l[0] === "tpm"), pi = L.findIndex(l => l[0] === "pts");
+      let j;
+      if (ti >= 0 && pi >= 0 && tpmForcesPts("pts", L[pi][1], "tpm", L[ti][1])) {
+        const o = [0, 1, 2].find(i => i !== ti && i !== pi);
+        j = copulaJoint(pairR(p, L[ti][0], L[o][0]), L[ti][2], L[o][2]);
+      } else {
+        const R = L.map((u, i) => L.map((v, k) => i === k ? 1 : pairR(p, u[0], v[0])));
+        j = triJoint(L.map(l => l[2]), R);
+      }
+      tri = { j, L, Z };
+    }
+  }
+  const triRow = () => {
+    if (!tri) return "";
+    const { j, L } = tri, legsAm = L.map(l => fairOdds(l[2])).join(",");
+    return `<tr data-j="${j}"><td class="l">${L.map(l => `${STAT_LABEL[l[0]]} <b>o${l[1]}</b>`).join(" &amp; ")}</td>` +
+      `<td class="fv">${fairOdds(j)}</td>` +
+      `<td><input type="text" inputmode="decimal" class="payin" placeholder="5.66x" value="${pays.tri || ""}" data-pay="tri"></td>` +
+      `<td data-ev>${evCell(j, pays.tri)}</td><td>${(1 / j).toFixed(2)}x</td>` +
+      `<td>${pct(j)}</td><td class="dvr" title="Devig tool: Leg Odds ${legsAm} and Correlation ${fairOdds(j)}=${legsAm}">3-leg</td>` +
+      `<td>${L.map(l => pct(l[2])).join(" · ")}</td></tr>`;
+  };
   const pct = v => `${(100 * v).toFixed(1)}%`;
   const row = (xo, yo) => {
     const k = (xo ? "o" : "u") + (yo ? "o" : "u");
@@ -962,7 +1088,11 @@ function drawPricer(pb, p, games) {
   out.innerHTML = `<table class="sub"><thead><tr><th class="l">Combo</th><th>Fair odds</th>` +
     `<th>SGP odds</th><th>EV</th><th>Fair x</th><th>Fair %</th><th title="The r to type into the devig tool's Correlation box; it returns this row's fair odds. Hover a cell for the phi-formula r other calculators use.">Devig r</th><th>Legs</th></tr></thead><tbody>` +
     // Over+Over only; PTS+AST (its 4 fair boxes) adds the two Over/Under mixes.
-    row(true, true) + (four ? row(true, false) + row(false, true) : "") + `</tbody></table>`;
+    row(true, true) + (four ? row(true, false) + row(false, true) : "") + triRow() + `</tbody></table>`;
+  if (tri) {
+    const legsAm = tri.L.map(l => fairOdds(l[2])).join(",");
+    plugEl.innerHTML += `<br>3-leg devig tool: Leg Odds <b>${legsAm}</b> · Correlation <b>${fairOdds(tri.j)}=${legsAm}</b>`;
+  }
   // Typing a price updates that row's EV only, so the input keeps focus.
   out.querySelectorAll("[data-pay]").forEach(inp => inp.oninput = () => {
     pays[inp.dataset.pay] = inp.value.trim();
@@ -1096,7 +1226,7 @@ async function fetchNovig(pb, p) {
       pb.querySelector(`[data-f="${a}Fv${u}"]`).value = st[a + "Fv" + u];
     }
   };
-  const lines = ["x", "y"].map(a => {
+  const lines = ["x", "y", ...(st.zStat ? ["z"] : [])].map(a => {
     const stat = st[a + "Stat"], line = st[a + "Line"], lab = `${STAT_LABEL[stat]} o${line}`;
     if (!NV_TYPES[stat]) return `${lab}: Novig doesn't list ${STAT_LABEL[stat].toLowerCase()} props.`;
     const rows = lad[stat] || [], at = rows.find(r => r.line === line);
@@ -1143,7 +1273,7 @@ function initProp(pb) {
     const h = () => {
       const st = propState(p);
       st.auto = false;
-      if (/^[xy]FvU?$/.test(f)) {
+      if (/^[xyz]FvU?$/.test(f)) {
         // Pricer inputs: keep the raw text (odds can be negative), reprice only.
         st[f] = el.value.trim();
         st.typed = st.typed || {};
@@ -1168,7 +1298,16 @@ function initProp(pb) {
         const fvIn = pb.querySelector(`[data-f="${a}Fv${u}"]`);
         if (fvIn) fvIn.value = "";
       }
+      if (f === "zStat") {
+        st.zStat = el.value;
+        if (st.zStat) setLeg(st, "z", p, st.zStat);
+        pb.outerHTML = propHTML(p);
+        initProp(document.querySelector(`.pb[data-id="${p.athlete_id}"]`));
+        return;
+      }
       if (f === "xStat" || f === "yStat") {
+        // The 3rd leg can't repeat a stat now on the builder.
+        if (st.zStat === el.value) st.zStat = "";
         // New stat -> its Pinnacle main line and prices, else the line under
         // the blended mean; relabel the input.
         st[f] = el.value;
@@ -1181,6 +1320,8 @@ function initProp(pb) {
         inp.value = st[a + "Line"];
         inp.parentElement.firstChild.textContent = STAT_LABEL[el.value] + " line";
         pb.querySelector(".nv-out").innerHTML = pinNote(st);
+        pb.querySelector('[data-f="zStat"]').innerHTML = zOpts(st);
+        if (!st.zStat) pb.querySelectorAll(".zon").forEach(e => e.style.display = "none");
         // Game counts in the subtitle depend on which games have a score.
         if (f === "xStat") {
           pb.outerHTML = propHTML(p);
