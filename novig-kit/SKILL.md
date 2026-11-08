@@ -46,8 +46,8 @@ Skip games that have started.
     P   = 1 / Fair x                       (win prob of the whole slip incl. dummy)
     EV% = (M x P - 1) x 100
     b   = M - 1
-    QK  = max(0, (P*b - (1-P)) / b) / 4 x 100   units
-    $   = QK x 500
+    QK  = min(1, max(0, (P*b - (1-P)) / b) / 8 x 100)   units (eighth Kelly, 1u cap)
+    $   = QK x 500   (never above $500: Novig liquidity runs out there)
     FV  = fair American odds of P
 
 ## 5. Report

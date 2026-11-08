@@ -100,6 +100,8 @@ QK=1.38u
   QK = max(f, 0)/4 × 100 units (1u = 1% of bankroll); Kelly Wager = QK × $500
   (Max's unit, same as his MLB skills; `--unit` overrides). Negative EV shows
   $0.00 and 0.00u.
+- **Novig SGP scans (many plays at once):** size at eighth Kelly (QK/2),
+  capped at 1u = $500 per player: Novig liquidity runs out around $500.
 - **No payout given:** `FV = +229` only, then ask for the payout.
 - No book-by-book comparison, no verdict: the user does the book part.
 - Always quote leg prices, fair values and comparisons as American odds
