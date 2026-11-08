@@ -33,8 +33,9 @@ so compare straight to the slip's multiplier), Devig r.
 ## 3. Build and compare (top to bottom)
 
 For each row:
-1. Add "<N>+ Points · Yes" and "<M>+ Three Pointers Made · Yes" for that player.
-   Click milestone buttons; don't type into search unless clicking fails.
+1. Type the player's name into Novig's search bar (much faster than opening
+   the game page), then add "<N>+ Points · Yes" and "<M>+ Three Pointers
+   Made · Yes" from his props.
 2. Read the multiplier M on the Order Slip, Parlays tab (it includes the dummy).
 3. M >= +5% x -> play. Fair x <= M < +5% x -> thin, list it. Below Fair x -> pass.
 4. Remove only the two NBA legs (keep the dummy) and go to the next row.
@@ -67,6 +68,6 @@ Then list anything new you learned about Novig's UI, and add it to the
 
 ## UI notes
 
-- NBA > game > Player Props; Points and Three Pointers Made are separate sections.
+- Fastest route: search bar > player name > his props. Fallback: NBA > game > Player Props; Points and Three Pointers Made are separate sections.
 - "25+ Points · Yes" = Over 24.5; "3+ Three Pointers Made · Yes" = Over 2.5.
 - The multiplier ("3.83x") is top right of the Parlays tab.
