@@ -8,7 +8,7 @@
 
 --payout is the slip's price (3.80, 3.80x or +280). It adds EV% and a
 quarter-Kelly stake at the FV as shown: units = f/4 x 100 (1u = 1% of
-bankroll), dollars = units x --unit (default $500, Max's unit).
+bankroll), dollars = units x --unit (default $250, Max's unit).
 
 Each leg: <stat> <over|under> <line> [from <posted line>] odds <over> [<under>]
       or: <stat> <over|under> <line> [from <posted line>] odds novig
@@ -267,7 +267,7 @@ def main():
     ap.add_argument("player")
     ap.add_argument("legs", nargs="+")
     ap.add_argument("--payout", help="slip price: decimal (3.80, 3.80x) or American (+280)")
-    ap.add_argument("--unit", type=float, default=500.0, help="dollars per unit, 1u = 1%% of bankroll")
+    ap.add_argument("--unit", type=float, default=250.0, help="dollars per unit, 1u = 1%% of bankroll")
     ap.add_argument("--kelly", type=float, default=0.25, help="Kelly fraction (default quarter)")
     ap.add_argument("--novig-spread", type=float, default=novig.MAX_SPREAD,
                     help="widest Novig market (ask - bid, probability) to price a novig leg from")

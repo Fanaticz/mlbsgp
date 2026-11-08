@@ -1,6 +1,6 @@
 ---
 name: nba-sgp-fv
-description: Fair value of an NBA same-player SGP (2+ legs of points, rebounds, assists, threes) from a bet-slip screenshot (Novig, Pikkit, a book), with leg fair values pulled live from Novig's exchange, or taken from Vulture fair odds or a book's two-way price. Triggers on a slip screenshot with "FV?", "fair value", "price this", "calc FV", or "what r should I use". Reply with the four-line FV / EV% / Kelly Wager / QK block (quarter Kelly, $500 units).
+description: Fair value of an NBA same-player SGP (2+ legs of points, rebounds, assists, threes) from a bet-slip screenshot (Novig, Pikkit, a book), with leg fair values pulled live from Novig's exchange, or taken from Vulture fair odds or a book's two-way price. Triggers on a slip screenshot with "FV?", "fair value", "price this", "calc FV", or "what r should I use". Reply with the four-line FV / EV% / Kelly Wager / QK block (quarter Kelly, $250 units).
 ---
 
 # NBA same-player SGP fair value
@@ -97,11 +97,9 @@ QK=1.38u
 - **EV%** = p × decimal − 1, where p is the probability of the FV as shown,
   so the block checks by hand.
 - **Kelly:** quarter Kelly at p, f = (p·b − (1−p))/b with b = decimal − 1.
-  QK = max(f, 0)/4 × 100 units (1u = 1% of bankroll); Kelly Wager = QK × $500
+  QK = max(f, 0)/4 × 100 units (1u = 1% of bankroll); Kelly Wager = QK × $250
   (Max's unit, same as his MLB skills; `--unit` overrides). Negative EV shows
   $0.00 and 0.00u.
-- **Novig SGP scans (many plays at once):** size at eighth Kelly (QK/2),
-  capped at 1u = $500 per player: Novig liquidity runs out around $500.
 - **No payout given:** `FV = +229` only, then ask for the payout.
 - No book-by-book comparison, no verdict: the user does the book part.
 - Always quote leg prices, fair values and comparisons as American odds
