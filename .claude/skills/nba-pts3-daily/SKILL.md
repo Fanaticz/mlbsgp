@@ -28,9 +28,10 @@ Novig, e.g. St. John's 99% / Iona 2%).
 ## Step 2: Vulture screenshots -> Chrome handoff
 
 From each sheet, for every player take the **main line** of each market
-(the line marked M nearest even money; when a player has two, the one whose
-Fair is nearest +100) and its **Sharp odds** pair, Over then Under. Never
-shift lines. If a market is missing from the sheet, use Novig's own main
+(the line marked M by DK/FD) and its **Sharp odds** pair, Over then Under.
+When a player has two main lines in a market (DK and FD mark different
+lines), use both: one legs-file row per line, same player name repeated.
+Never shift lines. If a market is missing from the sheet, use Novig's own main
 line for it: `python3 .claude/skills/nba-sgp-fv/novig.py "<player>" <pts|tpm> <line>`
 shows the ladder; pick the tight line (<= 4c) nearest 50/50 and write it with
 `novig`. Skip a player if neither the sheet nor a tight Novig line has the leg.
@@ -73,7 +74,7 @@ any skipped players.
 
 - Prices are American odds or x multipliers, never percentages; EV% is the
   only percentage.
-- Main lines only; no shifted lines.
+- Main lines only (both when DK and FD differ); no shifted lines.
 - A slip without the dummy leg is compared to Fair x times pD.
 - A heavier NBA moneyline is not a better dummy: Novig's vig on it costs more
   than the boost (Celtics -541 turned a 29.6% EV slip into 22.7%).
