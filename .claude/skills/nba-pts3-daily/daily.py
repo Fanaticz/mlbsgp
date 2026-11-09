@@ -90,11 +90,10 @@ def slate(a):
 
 
 def pair_joint(r, pts_line, tpm_line, pa, pb):
-    """P(points over and threes over). k threes are 3k points: a threes line
-    that forces the points line makes the parlay the less likely leg."""
+    """P(points over and threes over): the copula, leaned toward the bound as
+    the threes come to cover the points line (sgp.pts3_joint)."""
     import sgp
-    forced = 3 * (math.floor(tpm_line) + 1) > pts_line
-    return min(pa, pb) if forced else sgp.joint(r, pa, pb)
+    return sgp.pts3_joint(r, pts_line, tpm_line, pa, pb)
 
 
 def novig_check(markets, name, pts, tpm, r, max_spread):

@@ -144,6 +144,14 @@ QK=1.38u
   is then priced on its bound, as the dashboard does: same side = the less
   likely leg alone (the other drops out of a 3-leg slip), PTS over + 3PM
   under = P(pts over) − P(3PM over), PTS under + 3PM over = impossible.
+- **Threes that nearly force the points:** short of forced, points over +
+  threes over still leans on that bound. Where 3 × the threes milestone is
+  60–100% of the points line the plain copula ran 3.7–4.6% under the actual
+  both-over rate (2024-26 game logs, unbiased below 40%), so the 2-leg joint
+  moves 0.3 × (ratio − 0.4) / 0.6 of the way to the less likely leg
+  (`sgp.pts3_joint`; 0.3 leaves it about 1% conservative). Fair x drops about
+  2–4% on specialists (Robinson 16+ / 4+), nothing changes for stars. Overs
+  only, two legs only; `price.py` prints the before and after.
 - **Line shifts (`from`):** a normal fit through the posted line with the
   player's within-season SD. Rebounds, assists and threes average that with a
   negative binomial using the player's own dispersion (they diverge on small

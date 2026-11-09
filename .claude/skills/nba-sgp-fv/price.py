@@ -340,6 +340,14 @@ def main():
             print(f"  r {legs[i]['stat']}-{legs[j]['stat']} {r:+.3f} ({how})")
     if n == 2:
         j = bound if bound is not None else sgp.joint(R[0][1], ps[0], ps[1])
+        # Points over + threes over short of forced: lean toward the bound.
+        by_stat = {l["stat"]: (l, q) for l, q in zip(legs, ps)}
+        if bound is None and set(by_stat) == {"pts", "tpm"} and all(l["side"] > 0 for l in legs):
+            j2 = sgp.pts3_joint(R[0][1], by_stat["pts"][0]["line"], by_stat["tpm"][0]["line"], ps[0], ps[1])
+            if j2 != j:
+                print(f"  threes cover {3 * (math.floor(by_stat['tpm'][0]['line']) + 1) / by_stat['pts'][0]['line']:.0%} "
+                      f"of the points line: joint {j:.1%} -> {j2:.1%}")
+                j = j2
         print(f"  plug-in r at these lines {(j - ps[0] * ps[1]) / math.sqrt(ps[0] * (1 - ps[0]) * ps[1] * (1 - ps[1])):+.3f}")
         print(f"  devig r (devig tool's Correlation box) {sgp.devig_r(j, ps[0], ps[1]):+.3f}")
     elif n == 3:

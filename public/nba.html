@@ -673,9 +673,24 @@ const tpmForcesPts = (xs, xl, ys, yl) => {
   const [P, T] = xs === "pts" && ys === "tpm" ? [xl, yl] : xs === "tpm" && ys === "pts" ? [yl, xl] : [null, null];
   return P !== null && T !== null && 3 * (Math.floor(T) + 1) > P;
 };
-function pairJoint(xs, xl, ys, yl, r, a, b, same) {
+// Short of forced, PTS Over + 3PM Over still leans on that bound as the
+// threes come to cover the points line: at season-median lines the plain
+// copula ran 3.7% under the actual both-over rate where 3 x the threes
+// milestone is 60-80% of the PTS line and 4.6% under at 80-100% (unbiased
+// below 40%). The joint moves PTS3_LAMBDA x (ratio - PTS3_START) / (1 -
+// PTS3_START) of the way to the bound; 0.3 leaves it about 1% conservative.
+// Same as pts3_joint in .claude/skills/nba-ast-pts-sgp/sgp.py. overs: both
+// legs Over (the only combo this was measured on).
+const PTS3_LAMBDA = 0.3, PTS3_START = 0.4;
+function pairJoint(xs, xl, ys, yl, r, a, b, same, overs = same) {
   if (tpmForcesPts(xs, xl, ys, yl)) return same ? Math.min(a, b) : Math.max(0, a + b - 1);
-  return copulaJoint(same ? r : -r, a, b);
+  let j = copulaJoint(same ? r : -r, a, b);
+  const pt = xs === "pts" && ys === "tpm" ? [xl, yl] : xs === "tpm" && ys === "pts" ? [yl, xl] : null;
+  if (overs && pt) {
+    const ratio = 3 * (Math.floor(pt[1]) + 1) / pt[0];
+    if (ratio > PTS3_START) j += PTS3_LAMBDA * (ratio - PTS3_START) / (1 - PTS3_START) * (Math.min(a, b) - j);
+  }
+  return j;
 }
 // A two-way price (implied po + pu) -> [fair over, fair under], each side the
 // worst (lowest) of the multiplicative, additive, power and Shin devigs, like
@@ -1077,7 +1092,7 @@ function drawPricer(pb, p, games) {
     const k = (xo ? "o" : "u") + (yo ? "o" : "u");
     const a = xo ? X.p : X.u, b = yo ? Y.p : Y.u;
     // An Over/Under combo flips the sign of r.
-    const j = pairJoint(st.xStat, st.xLine, st.yStat, st.yLine, r, a, b, xo === yo);
+    const j = pairJoint(st.xStat, st.xLine, st.yStat, st.yLine, r, a, b, xo === yo, xo && yo);
     const corr = (j - a * b) / Math.sqrt(a * (1 - a) * b * (1 - b));
     const dv = devigR(j, a, b);
     return `<tr data-j="${j}"><td class="l">${xL} <b>${xo ? "o" : "u"}${st.xLine}</b> &amp; ${yL} <b>${yo ? "o" : "u"}${st.yLine}</b></td>` +

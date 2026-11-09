@@ -72,6 +72,30 @@ def joint(r, a, b):
     return a * b + tot * h / 3
 
 
+# Points Over + Threes Over. k made threes are 3k points already banked, so as
+# 3 x the threes milestone nears the points line the pair leans on its upper
+# bound (the less likely leg) more than any margin r says. At season-median
+# lines over 2024-26 the plain copula ran 3.7% under the actual both-over rate
+# where that ratio is 0.6-0.8 and 4.6% under at 0.8-1.0 (unbiased below 0.4).
+# The joint moves PTS3_LAMBDA x (ratio - PTS3_START) / (1 - PTS3_START) of the
+# way to the bound. 0.5 fits 2024-25 but overshoots later games by about 1%;
+# 0.3 leaves the price about 1% conservative. Past ratio 1 the threes force
+# the points and the joint is the bound itself. Same constants in
+# public/nba.html and novig-kit/scan.py.
+PTS3_LAMBDA, PTS3_START = 0.3, 0.4
+
+
+def pts3_joint(r, pts_line, tpm_line, pa, pb):
+    """P(points over and threes over) for one player."""
+    ratio = 3 * (math.floor(tpm_line) + 1) / pts_line
+    if ratio > 1:
+        return min(pa, pb)
+    j = joint(r, pa, pb)
+    if ratio > PTS3_START:
+        j += PTS3_LAMBDA * (ratio - PTS3_START) / (1 - PTS3_START) * (min(pa, pb) - j)
+    return j
+
+
 def binary(r, a, b):
     j = joint(r, a, b)
     return (j - a * b) / math.sqrt(a * (1 - a) * b * (1 - b))

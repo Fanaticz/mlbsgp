@@ -36,6 +36,7 @@ import urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOST = "https://api.novig.com"
 TYPES = {"POINTS": "pts", "THREE_POINTERS_MADE": "tpm"}
+PTS3_LAMBDA, PTS3_START = 0.3, 0.4  # see the combos loop in main()
 SUFFIX = {"jr", "sr", "ii", "iii", "iv", "v"}
 
 
@@ -208,8 +209,16 @@ def main():
             pa, pb = pp["p"], tt["p"]
             # k threes are 3k points: a 3PM line that forces the PTS line makes
             # the parlay just the 3PM leg.
-            forced = 3 * (math.floor(tt["line"]) + 1) > pp["line"]
-            j = min(pa, pb) if forced else joint(info["r"], pa, pb)
+            # Short of that, the joint leans toward the bound as the threes
+            # come to cover the points line: the plain copula ran 3.7-4.6%
+            # under the actual both-over rate at ratios of 0.6-1.0.
+            ratio = 3 * (math.floor(tt["line"]) + 1) / pp["line"]
+            if ratio > 1:
+                j = min(pa, pb)
+            else:
+                j = joint(info["r"], pa, pb)
+                if ratio > PTS3_START:
+                    j += PTS3_LAMBDA * (ratio - PTS3_START) / (1 - PTS3_START) * (min(pa, pb) - j)
             fx = 1 / j / a.dummy
             rough = "" if tight(pp) and tight(tt) else f" ~{max(pp['spread'], tt['spread']) * 100:.0f}c"
             rows.append({"name": name, "team": info["team"], "r": info["r"],

@@ -43,5 +43,8 @@ weekly: download the latest from the `mlbsgp` repo (`novig-kit/pts3_r.json` on
 - `--alts` also prices one line up on each leg (PTS +1, 3PM +1).
 - A 3PM line that forces the PTS line (3 threes = 9 points vs PTS 8.5) prices
   as just the 3PM leg; the table shows Devig r +1.000 for those.
+- When the threes cover most of the points line without forcing it (4+ threes
+  = 12 of a 15.5 line), the fair price leans toward the threes leg alone:
+  those slips hit about 4% more often than the plain correlation says.
 - Devig r is what to type into the devig tool's Correlation box if you check
   one by hand.
