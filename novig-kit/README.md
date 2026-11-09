@@ -33,7 +33,8 @@ Say: **"run novig-sgp-scan"** (or paste SKILL.md). It will:
 
 `pts3_r.json` moves slowly (a few games change it a little). Refresh it about
 weekly: download the latest from the `mlbsgp` repo (`novig-kit/pts3_r.json` on
-`main`), or ask the cloud session to rebuild it.
+`main`). The repo's daily data refresh rebuilds it
+(`scripts/nba_build_novig_kit.py`); `scan.py` prints the r data date.
 
 ## Notes
 

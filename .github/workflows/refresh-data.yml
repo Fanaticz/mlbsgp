@@ -47,6 +47,11 @@ jobs:
       - name: Refresh NBA correlations
         run: python scripts/nba_fetch_correlations.py --workers 16
 
+      # Standalone copy of the PTS-3PM r's for the local Novig scanner.
+      - name: Rebuild novig-kit r file
+        continue-on-error: true
+        run: python scripts/nba_build_novig_kit.py
+
       - name: Refresh NBA quarter line scores
         continue-on-error: true
         run: python scripts/nba_fetch_quarters.py --workers 16
@@ -66,7 +71,7 @@ jobs:
 
       - name: Commit and push if data changed
         run: |
-          git add espn-2026-pitcher-supplement.json public/data/*.json
+          git add espn-2026-pitcher-supplement.json public/data/*.json novig-kit/pts3_r.json
           if git diff --cached --quiet; then
             echo "No data changes — skipping commit."
             exit 0

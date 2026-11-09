@@ -20,6 +20,9 @@ handoff: one player per line, legs from the Vulture sheet's Sharp odds
 Prints the full handoff (dummy, build steps, Fair x / +5% x table sorted by
 Fair x, grading, quarter-Kelly math at $250 units, report format).
 Fair x = 1 / (joint x pD), so it compares straight to a slip with the dummy.
+Each row is also priced from Novig's own legs at the same lines (one catalog
+pull); the table carries the higher Fair x of the two, and the Notes say
+where Novig's legs lowered a row. --no-novig turns that off.
 """
 import argparse
 import json
@@ -86,12 +89,41 @@ def slate(a):
         print(f"| {i} | {x[1]} | {x[2]} | {x[3]:.1f} | {x[0]:.3f} |")
 
 
+def pair_joint(r, pts_line, tpm_line, pa, pb):
+    """P(points over and threes over). k threes are 3k points: a threes line
+    that forces the points line makes the parlay the less likely leg."""
+    import sgp
+    forced = 3 * (math.floor(tpm_line) + 1) > pts_line
+    return min(pa, pb) if forced else sgp.joint(r, pa, pb)
+
+
+def novig_check(markets, name, pts, tpm, r, max_spread):
+    """The same combo priced from Novig's own legs at the same lines, or None
+    when either line isn't a tight two-sided book there."""
+    import novig
+    _, rows = novig.ladder(markets, name)
+    ps = []
+    for leg in (pts, tpm):
+        row = next((x for x in rows.get(leg["stat"], []) if x["line"] == leg["line"] and novig.tight(x, max_spread)), None)
+        if row is None:
+            return None
+        ps.append(row["fo"])
+    return pair_joint(r, pts["line"], tpm["line"], *ps)
+
+
 def handoff(a):
+    import novig
     import price  # nba-sgp-fv/price.py
     import sgp
     d, by = sgp.load()
     lines = [l for l in (open(a.file) if a.file else sys.stdin).read().splitlines() if l.strip() and not l.startswith("#")]
     rows, notes = [], []
+    markets = None  # one catalog pull serves every row
+    if not a.no_novig or any("novig" in l.lower() for l in lines):
+        try:
+            markets = novig.fetch(stats=("pts", "tpm"))
+        except Exception as e:  # network down: the table still prints, unchecked
+            notes.append(f"Novig catalog unreachable ({e}): no row was checked against Novig's legs")
     for line in lines:
         name, *legs = [x.strip() for x in line.split("|")]
         hits = [n for n in by if norm(n) == norm(name)] or [n for n in by if name.lower() in n.lower()]
@@ -99,30 +131,47 @@ def handoff(a):
             notes.append(f"{name}: not in the data ({'no match' if not hits else 'ambiguous'})")
             continue
         p = by[hits[0]]
-        parsed = []
-        for t in legs:
-            w = t.split()
-            stat, line_ = w[0], w[1]
-            parsed.append(price.parse_leg(f"{stat} over {line_} " + ("novig" if w[2] == "novig" else "odds " + " ".join(w[2:]))))
+        # One bad row (a leg missing, an unreadable price) is skipped with a
+        # note; it must not take the rest of the table down with it.
         try:
+            parsed = []
+            for t in legs:
+                w = t.split()
+                parsed.append(price.parse_leg(f"{w[0]} over {w[1]} " + ("novig" if w[2].lower() == "novig" else "odds " + " ".join(w[2:]))))
+            pts = next((l for l in parsed if l["stat"] == "pts"), None)
+            tpm = next((l for l in parsed if l["stat"] == "tpm"), None)
+            if pts is None or tpm is None:
+                raise ValueError(f"needs a pts leg and a tpm leg, got {line.split('|', 1)[-1].strip()!r}")
             if any(l.get("novig") for l in parsed):
-                price.novig_legs(hits[0], parsed, a.novig_spread)
-        except SystemExit as e:
-            notes.append(str(e) if hits[0] in str(e) else f"{hits[0]}: {e}")
+                if markets is None:
+                    raise ValueError("has a novig leg and Novig's catalog is unreachable")
+                price.novig_legs(hits[0], parsed, a.novig_spread, markets)
+        except (ValueError, IndexError, KeyError, SystemExit) as e:
+            notes.append(f"{hits[0]}: skipped, {str(e).strip().removeprefix(hits[0] + ': ')}")
             continue
-        ps = []
-        for leg in parsed:
-            q, note = price.leg_prob(p, leg)
-            ps.append(q)
-            if note and "from" in note:
+        label = f"{int(pts['line'] + .5)}+ PTS / {int(tpm['line'] + .5)}+ 3PM"
+        ps = {}
+        for leg in (pts, tpm):
+            ps[leg["stat"]], note = price.leg_prob(p, leg)
+            if "shifted" in note:
                 notes.append(f"{hits[0]}: {leg['stat']} {leg['line']:g} was shifted ({note}); use Novig's own main line instead")
-        pts = next(l for l in parsed if l["stat"] == "pts")
-        tpm = next(l for l in parsed if l["stat"] == "tpm")
+            elif note == "one side only":
+                notes.append(f"{hits[0]} {label}: {leg['stat']} {leg['line']:g} has one price only ({leg['over']:+d}), "
+                             "taken as fair. Right for a Vulture Fair value, too short for a raw book price: add the Under")
         r, _ = price.shrunk_r(d, by, p, "pts", "tpm")
-        forced = 3 * (math.floor(tpm["line"]) + 1) > pts["line"]
-        j = min(ps) if forced else sgp.joint(r, ps[0], ps[1])
-        fx = 1 / (j * a.dummy)
-        rows.append((fx, hits[0], f"{int(pts['line'] + .5)}+ PTS / {int(tpm['line'] + .5)}+ 3PM", sgp.american(j)))
+        j = pair_joint(r, pts["line"], tpm["line"], ps["pts"], ps["tpm"])
+        # Second opinion: the same combo from Novig's own legs. The table
+        # carries the lower joint, so a leg the sheet has too rich can't make
+        # a play on its own (the best-looking rows are where that happens).
+        if markets is not None and not a.no_novig and not all(l.get("novig") for l in (pts, tpm)):
+            jn = novig_check(markets, hits[0], pts, tpm, r, a.novig_spread)
+            if jn is None:
+                notes.append(f"{hits[0]} {label}: no tight Novig book at these lines, priced from the sheet alone")
+            elif jn < j:
+                notes.append(f"{hits[0]} {label}: Novig's legs price it lower ({1 / (jn * a.dummy):.2f}x vs "
+                             f"{1 / (j * a.dummy):.2f}x from the sheet); the table uses {1 / (jn * a.dummy):.2f}x")
+                j = jn
+        rows.append((1 / (j * a.dummy), hits[0], label, sgp.american(j)))
     rows.sort()
     tbl = "\n".join(f"| {n} | {legs} | {fx:.2f}x | {fx * 1.05:.2f}x |" for fx, n, legs, _ in rows)
     print(f"""```
@@ -137,6 +186,8 @@ BUILD: type each player's name into Novig's search bar (do NOT go through the ga
 {tbl}
 
 GRADE: M >= +5% x -> PLAY. Fair x <= M < +5% x -> THIN. Below Fair x -> PASS.
+
+ONE PLAY PER PLAYER: a player can have two rows (two points lines or two threes lines). They win and lose together, so if both grade PLAY, keep only the one with the higher EV% and list the other under THIN.
 
 MATH FOR PLAYS:
 P = 1 / Fair x
@@ -165,6 +216,8 @@ def main():
     h.add_argument("--dummy", type=float, required=True, help="dummy leg fair win prob, e.g. 0.980")
     h.add_argument("--dummy-name", default="the dummy leg", help='e.g. "St. John\'s ML (vs Iona, CBB)"')
     h.add_argument("--novig-spread", type=float, default=0.04)
+    h.add_argument("--no-novig", action="store_true",
+                   help="skip the check of each row against Novig's own legs (the table then uses the sheet alone)")
     a = ap.parse_args()
     slate(a) if a.cmd == "slate" else handoff(a)
 

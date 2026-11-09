@@ -105,8 +105,9 @@ QK=1.38u
 - Always quote leg prices, fair values and comparisons as American odds
   (+113, -108), never as percentages. EV% is the only percentage.
 - Check: Lillard O20.5 points (Fair +101/−101) + O3.5 threes from the 2.5
-  Fair (−142) at 3.80x → +227 / 16.2% / $723.57 / 1.45u on the 11-01 data
-  (r drifts a little with each daily refresh).
+  Fair (−142) at 3.80x → +236 / 13.1% / $292.30 / 1.17u on the 11-08 data
+  (r 0.670; it was +227 / 16.2% on the 11-01 data, so r can move a slip's EV
+  by a few points in a week).
 - For any number of legs (3-leg PTS·3PM·REB included), the script prints a
   `devig tool:` line: paste its Leg Odds into Leg Odds and its
   `<FV>=<legs>` string into the Correlation box. The tool derives its own r
@@ -138,6 +139,11 @@ QK=1.38u
   by integration (matches a 4M-draw simulation), four or more by Monte Carlo.
   Checked on PTS·3PM: across 254 player-seasons at book-style lines it
   predicted both overs 41.1% vs 41.05% actual.
+- **Threes that force the points:** k made threes are 3k points, so a threes
+  line can clear the points line by itself (4+ threes vs PTS 11.5). The pair
+  is then priced on its bound, as the dashboard does: same side = the less
+  likely leg alone (the other drops out of a 3-leg slip), PTS over + 3PM
+  under = P(pts over) − P(3PM over), PTS under + 3PM over = impossible.
 - **Line shifts (`from`):** a normal fit through the posted line with the
   player's within-season SD. Rebounds, assists and threes average that with a
   negative binomial using the player's own dispersion (they diverge on small

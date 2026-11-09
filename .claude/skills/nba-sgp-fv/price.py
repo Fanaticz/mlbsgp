@@ -61,7 +61,10 @@ BINS = 5
 
 
 def parse_leg(text):
-    t = text.lower().replace(",", " ").split()
+    # Odds copied from a screenshot can carry a typographic minus or "even".
+    for ch in "\u2212\u2013\u2014":
+        text = text.replace(ch, "-")
+    t = ["+100" if w in ("even", "ev") else w for w in text.lower().replace(",", " ").split()]
     leg = {"stat": STATS[t[0]], "side": SIDES[t[1]], "line": float(t[2]), "from": None}
     i = 3
     if t[i] == "from":
@@ -217,7 +220,7 @@ def tri_joint(ps, R):
     a, b, c = (sgp.nppf(1 - q) for q in ps)  # same as the upper orthant at 1-p
     rab, rac, rbc = R[0][1], R[0][2], R[1][2]
     sy, sz = math.sqrt(1 - rab ** 2), math.sqrt(1 - rac ** 2)
-    rc = (rbc - rab * rac) / (sy * sz)
+    rc = max(-0.999, min(0.999, (rbc - rab * rac) / (sy * sz)))
     n, hi = 400, max(a, 0) + 9
     step, tot = (hi - a) / n, 0.0
     for i in range(n + 1):
@@ -238,10 +241,22 @@ def mc_joint(ps, R, draws=4_000_000):
     return float(np.mean(np.all(Z < np.array([sgp.nppf(q) for q in ps]), axis=1)))
 
 
-def novig_legs(player, legs, max_spread):
+def forced_pair(legs):
+    """(pts index, tpm index) when the threes line forces the points line: k
+    made threes are 3k points, so 4+ threes clears PTS 11.5. The copula doesn't
+    know that. None when no such pair is on the slip."""
+    pi = next((i for i, l in enumerate(legs) if l["stat"] == "pts"), None)
+    ti = next((i for i, l in enumerate(legs) if l["stat"] == "tpm"), None)
+    if pi is None or ti is None or 3 * (math.floor(legs[ti]["line"]) + 1) <= legs[pi]["line"]:
+        return None
+    return pi, ti
+
+
+def novig_legs(player, legs, max_spread, markets=None):
     """Fill each 'odds novig' leg from Novig: p_over (worst-case devig of the
-    two sides' asks, from the leg's side), from, and a note."""
-    name, rows = novig.ladder(novig.fetch(), player)
+    two sides' asks, from the leg's side), from, and a note. Pass `markets`
+    (novig.fetch()) to price several players off one catalog pull."""
+    name, rows = novig.ladder(markets if markets is not None else novig.fetch(), player)
     if not name:
         raise SystemExit(f"{player}: not on Novig's open pregame NBA props")
     for leg in legs:
@@ -292,6 +307,30 @@ def main():
         ps.append(q)
         side = "over" if leg["side"] > 0 else "under"
         print(f"  {leg['stat']} {side} {leg['line']:g}: {q:.1%}" + (f"  ({note})" if note else ""))
+    # A threes line that forces the points line puts the pair on its bound.
+    # Same side: the two legs are one event, the less likely of them (min),
+    # so the likelier leg drops out. Opposite sides: PTS over + 3PM under is
+    # P(pts over) - P(3PM over); PTS under + 3PM over can't happen.
+    fp = forced_pair(legs)
+    bound = None
+    if fp:
+        pi, ti = fp
+        if legs[pi]["side"] == legs[ti]["side"]:
+            drop = pi if ps[pi] >= ps[ti] else ti
+            print(f"  {legs[ti]['line']:g} threes forces {legs[pi]['line']:g} points: "
+                  f"the {legs[drop]['stat']} leg adds nothing and is dropped")
+            if len(legs) == 2:
+                bound = min(ps)
+            else:
+                legs, ps = [l for i, l in enumerate(legs) if i != drop], [q for i, q in enumerate(ps) if i != drop]
+        elif len(legs) == 2 or legs[ti]["side"] > 0:
+            bound = max(0.0, ps[pi] + ps[ti] - 1) if len(legs) == 2 else 0.0
+            if bound <= 0:
+                raise SystemExit(f"  {legs[ti]['line']:g} threes forces {legs[pi]['line']:g} points: these legs can't both hit")
+            print(f"  {legs[ti]['line']:g} threes forces {legs[pi]['line']:g} points: priced on the bound")
+        else:
+            print(f"  note: {legs[ti]['line']:g} threes forces {legs[pi]['line']:g} points; "
+                  "the copula ignores that with three or more legs on opposite sides")
     n = len(legs)
     R = [[1.0] * n for _ in range(n)]
     for i in range(n):
@@ -300,8 +339,8 @@ def main():
             R[i][j] = R[j][i] = legs[i]["side"] * legs[j]["side"] * r
             print(f"  r {legs[i]['stat']}-{legs[j]['stat']} {r:+.3f} ({how})")
     if n == 2:
-        j = sgp.joint(R[0][1], ps[0], ps[1])
-        print(f"  plug-in r at these lines {sgp.binary(R[0][1], ps[0], ps[1]):+.3f}")
+        j = bound if bound is not None else sgp.joint(R[0][1], ps[0], ps[1])
+        print(f"  plug-in r at these lines {(j - ps[0] * ps[1]) / math.sqrt(ps[0] * (1 - ps[0]) * ps[1] * (1 - ps[1])):+.3f}")
         print(f"  devig r (devig tool's Correlation box) {sgp.devig_r(j, ps[0], ps[1]):+.3f}")
     elif n == 3:
         j = tri_joint(ps, R)

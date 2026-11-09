@@ -52,18 +52,27 @@ python3 .claude/skills/nba-pts3-daily/daily.py handoff legs.txt \
 ```
 
 Send the printed code block as is: it is the full handoff for Claude in
-Chrome (search players by name, keep the dummy, table, grading, quarter-Kelly
-math at $250 units, report format). Under it, list the script's Notes and
-any skipped players.
+Chrome (search players by name, keep the dummy, table, grading, one play per
+player, quarter-Kelly math at $250 units, report format). Under it, list the
+script's Notes and any skipped players.
+
+The script also prices every row from Novig's own legs at the same lines (one
+catalog pull) and puts the higher Fair x of the two in the table, so a leg the
+sheet has too rich can't make a play by itself. The Notes name each row Novig
+lowered, each row with no tight Novig book to check against, each leg given
+one price only (taken as fair: add the Under if it is a raw book price), and
+each row skipped for a missing leg or an unreadable price. `--no-novig` turns
+the check off.
 
 ## Step 3: Chrome's report
 
 - For each PLAY, give the four-line block (FV / EV% / Kelly Wager / QK) in a
   code block. FV includes the dummy: P = 1 / Fair x.
-- Recheck the biggest edges (EV > 20%) against Novig's own leg prices
-  (`novig.py`). If a tight Novig leg differs from Vulture by more than a few
-  cents, reprice with `price.py ... novig` and use the lower EV (pass the
-  slip multiplier times pD as `--payout`, then rescale FV by pD).
+- The table already carries the lower of the sheet's and Novig's fair, as of
+  the handoff. If a play comes back above 20% EV long after the handoff, run
+  the handoff again first: Novig's legs move, and the multiplier follows them.
+- One play per player: two rows of one player win and lose together, so only
+  the higher-EV one is bet.
 - Sizing: quarter Kelly, 1u = $250, no cap.
 - Round 2 (if round 1 hit often): `daily.py slate --round 2`, then step 2
   again.

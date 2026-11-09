@@ -41,6 +41,10 @@ For each row:
 4. Remove only the two NBA legs (keep the dummy) and go to the next row.
 Skip games that have started.
 
+One play per player: a player's two rows (3+ and 4+ threes) win and lose
+together. If both clear +5% x, keep only the one with the higher EV% and list
+the other as thin.
+
 ## 4. Math for plays
 
     P   = 1 / Fair x                       (win prob of the whole slip incl. dummy)
