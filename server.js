@@ -2423,6 +2423,26 @@ app.post('/api/nba/correlations/rollback', async (_req, res) => {
   }
 });
 
+// GET /api/nba/scoreboard?dates=YYYYMMDD — ESPN's NBA scoreboard, relayed for
+// browsers that can't reach ESPN themselves (nba.html tries ESPN first).
+const NBA_SB_CACHE = new Map();  // dates -> { ts, body }
+app.get('/api/nba/scoreboard', async (req, res) => {
+  const dates = String(req.query.dates || '');
+  if (!/^\d{8}$/.test(dates)) return res.status(400).json({ error: 'dates=YYYYMMDD' });
+  const hit = NBA_SB_CACHE.get(dates);
+  if (hit && Date.now() - hit.ts < 60 * 1000) return res.json(hit.body);
+  try {
+    const r = await fetch(`https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=${dates}`);
+    if (!r.ok) return res.status(502).json({ error: `ESPN answered ${r.status}` });
+    const body = await r.json();
+    if (NBA_SB_CACHE.size > 20) NBA_SB_CACHE.clear();
+    NBA_SB_CACHE.set(dates, { ts: Date.now(), body });
+    return res.json(body);
+  } catch (e) {
+    return res.status(502).json({ error: 'ESPN scoreboard failed: ' + e.message });
+  }
+});
+
 app.get('/healthz', (_req, res) => res.send('ok'));
 
 app.listen(PORT, '0.0.0.0', () => console.log('Listening on 0.0.0.0:' + PORT));

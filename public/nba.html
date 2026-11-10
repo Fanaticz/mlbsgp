@@ -35,6 +35,9 @@
     font-size:12px; display:flex; flex-wrap:wrap; gap:8px 14px; }
   .sched .g { white-space:nowrap; }
   .sched b { color:var(--txt); }
+  .sched .flip { margin-left:10px; background:none; border:1px solid var(--accent); color:var(--accent);
+                 border-radius:7px; padding:2px 9px; font-size:12px; cursor:pointer; white-space:nowrap; }
+  .sched .flip:disabled { opacity:.5; cursor:wait; }
   .wrap { overflow-x:auto; padding:0 12px 60px; }
   table { border-collapse:collapse; width:100%; min-width:1240px; }
   th,td { padding:7px 9px; text-align:right; white-space:nowrap; }
@@ -244,7 +247,12 @@ let INJ = new Map();    // athlete_id -> {status, out, note, ret} from ESPN's in
 let DATA = null;        // full payload
 let TODAY_IDS = null;   // Set<string> of team_ids whose game today hasn't started (live)
 let MODE = "today";
-let DAY = "today";      // "tomorrow" once today has nothing left to tip
+let DAY = "today";      // "tomorrow" once today has nothing left to tip, or when picked
+const ymdOf = d => `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}`;
+// The slate bar's switch: show tomorrow's slate while today still has games
+// to tip. Remembered for the rest of the (local) day.
+let PICK_TOM = false;
+try { PICK_TOM = localStorage.getItem("nbaSlateTomorrow") === ymdOf(new Date()); } catch (_) {}
 let SORT = { key: "pts_reb.shrunk", dir: -1 };  // dir -1 = high first, 1 = low first (A–Z)
 let BOX_SEASON = null;  // box-stat columns show this season only
 let BLEND = [];         // seasons, oldest first — blended by box stats + prop builder
@@ -260,9 +268,18 @@ const get = (o, path) => path.split(".").reduce((a,k)=> (a==null?a:a[k]), o);
 // One day's slate from ESPN's scoreboard (YYYYMMDD): team ids for games that
 // haven't tipped, plus every game for the slate bar.
 async function slateFor(ymd) {
-  const r = await fetch(`${SCOREBOARD}?dates=${ymd}`);
-  if (!r.ok) throw 0;
-  const j = await r.json();
+  // ESPN directly; if the browser can't reach it (blocker, network), the
+  // same scoreboard through this site's server.
+  let j;
+  try {
+    const r = await fetch(`${SCOREBOARD}?dates=${ymd}`);
+    if (!r.ok) throw 0;
+    j = await r.json();
+  } catch (_) {
+    const r = await fetch(`/api/nba/scoreboard?dates=${ymd}`);
+    if (!r.ok) throw 0;
+    j = await r.json();
+  }
   const ids = new Set(), games = [];
   for (const e of (j.events||[])) {
     const comp = e.competitions?.[0]?.competitors || [];
@@ -280,16 +297,18 @@ async function slateFor(ymd) {
 async function liveTodayIds() {
   // Use the browser's local date so the toggle is correct on any day.
   const d = new Date();
-  const fmt = d => `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}`;
+  const fmt = ymdOf;
   try {
     const today = await slateFor(fmt(d));
-    if (today.ids.size) return today;
-    // Nothing left to tip today (no games, or all started/final): roll the
-    // toggle over to tomorrow's slate.
+    today.flip = today.ids.size > 0;   // games left today: the switch is offered
+    if (today.ids.size && !PICK_TOM) return today;
+    // Nothing left to tip today (no games, or all started/final), or the
+    // switch is on: roll the toggle over to tomorrow's slate.
     const t = new Date(d); t.setDate(t.getDate() + 1);
     const tom = await slateFor(fmt(t));
     if (!tom.games.length) return today;
     tom.day = "tomorrow";
+    tom.flip = today.flip;
     return tom;
   } catch (_) {
     return null; // caller falls back to baked snapshot
@@ -332,13 +351,33 @@ function injBadge(p) {
   return `<span class="inj${i.out ? " out" : ""}" title="${tip.replace(/"/g, "&quot;")}"><i></i>${i.lab}</span>`;
 }
 
-function renderSched(games, live, day = "today") {
+function renderSched(games, live, day = "today", flip = false) {
   const el = document.getElementById("sched");
   const Day = day === "tomorrow" ? "Tomorrow" : "Today";
   document.querySelector('#toggle button[data-mode="today"]').textContent = `Playing ${day}`;
   if (!games || !games.length) { el.textContent = `No NBA games ${day}.`; return; }
-  el.innerHTML = `<span class="muted">${Day}’s slate${live?" (live)":""}${day==="tomorrow"?" — no games left today":""}:</span> ` +
-    games.map(g => `<span class="g"><b>${g.matchup}</b>${g.st?` <span class="muted">${g.st}</span>`:""}</span>`).join("");
+  // flip: today still has games to tip, so either day can be shown.
+  const sw = !flip ? "" : `<button type="button" class="flip" data-flip title="${day === "tomorrow"
+    ? "Back to the games still to tip today" : "Done with today? Show tomorrow's slate and players now"}">${
+    day === "tomorrow" ? "← Today’s slate" : "Tomorrow’s slate →"}</button>`;
+  el.innerHTML = `<span class="muted">${Day}’s slate${live?" (live)":""}${day==="tomorrow"&&!flip?" — no games left today":""}:</span> ` +
+    games.map(g => `<span class="g"><b>${g.matchup}</b>${g.st?` <span class="muted">${g.st}</span>`:""}</span>`).join("") + sw;
+  const b = el.querySelector("[data-flip]");
+  if (b) b.onclick = async () => {
+    PICK_TOM = day !== "tomorrow";
+    try { PICK_TOM ? localStorage.setItem("nbaSlateTomorrow", ymdOf(new Date())) : localStorage.removeItem("nbaSlateTomorrow"); } catch (_) {}
+    b.disabled = true;
+    await refreshSlate();
+    render();
+  };
+}
+
+// Live schedule for the toggle; fall back to the baked snapshot.
+async function refreshSlate() {
+  const l = await liveTodayIds();
+  if (l) { TODAY_IDS = l.ids; DAY = l.day; renderSched(l.games, true, DAY, l.flip); return true; }
+  TODAY_IDS = snapshotIds();
+  return false;
 }
 
 const SHRUNK_HT = "Devig r = what to type into the devig tool's Correlation box " +
@@ -1591,20 +1630,10 @@ async function init() {
   const wtxt = Object.entries(SW).map(([k,v])=>`${k}: ${v}`).join(", ");
   document.getElementById("meta").textContent = `Box stats: ${BOX_SEASON} season · r at this season's averages (~)`;
 
-  // Live schedule for the toggle; fall back to the baked snapshot.
-  const live = await liveTodayIds();
-  if (live) { TODAY_IDS = live.ids; DAY = live.day; renderSched(live.games, true, DAY); }
-  else {
-    TODAY_IDS = snapshotIds();
+  if (!await refreshSlate())
     renderSched(DATA.schedule_today.games.map(g=>({matchup:g.matchup, st:g.state})), false);
-  }
   // Re-check every 2 minutes so players drop off as their games tip.
-  setInterval(async () => {
-    const l = await liveTodayIds();
-    if (l) { TODAY_IDS = l.ids; DAY = l.day; renderSched(l.games, true, DAY); }
-    else TODAY_IDS = snapshotIds();
-    render();
-  }, 120000);
+  setInterval(async () => { await refreshSlate(); render(); }, 120000);
 
   document.querySelectorAll("#toggle button").forEach(b =>
     b.onclick = () => setMode(b.dataset.mode));
