@@ -871,8 +871,10 @@ function propHTML(p) {
           <span class="fvw zon"${st.zStat ? "" : ' style="display:none"'}><label title="Fair Over odds for the 3rd leg (Vulture's Fair column). Fetch FV fills Novig's."><span data-lab="z"></span> fair<input type="text" inputmode="numeric" placeholder="e.g. -110" value="${st.zFv || ""}" data-f="zFv"></label><button type="button" class="sgn" data-sgn="zFv" title="Flip the sign">±</button></span>
           <input type="hidden" data-f="zFvU" value="${st.zFvU || ""}"></span>
         <button type="button" class="sgn nvbtn" data-novig title="Fill both legs' Over and Under fair odds from Novig's exchange: each side the worst-case devig of the two asks at that line (pregame, books up to ${NV_MAX_SPREAD * 100}¢ wide)">Fetch FV</button>
+        <button type="button" class="sgn nvbtn" data-nvsgp title="Fill each combo's SGP odds with Novig's own parlay price for these lines (its public quote, good for about 30 seconds). Pregame, lines Novig has posted.">Novig SGP</button>
       </div>
       <div class="nv-out">${pinNote(st)}</div>
+      <div class="nv-out nvp-out"></div>
       <div class="pr-out"></div>
     </div>
     </div>
@@ -1182,6 +1184,7 @@ function novigLadder(items, name) {
     const ask = side.under?.bid ? 1 - side.under.bid.price : null;
     const two = bid !== null && ask !== null;
     (out[stat[m.marketType]] ||= []).push({ line: +m.strike, bid, ask, vol: m.volume,
+      ids: { o: side.over?.outcomeId, u: side.under?.outcomeId },
       mid: two ? (bid + ask) / 2 : null, spread: two ? ask - bid : null,
       // The two sides' asks are a two-way price whose vig is the spread.
       fair: two ? devigWorst(ask, 1 - bid) : null });
@@ -1254,6 +1257,8 @@ async function fetchNovig(pb, p) {
   msg.querySelectorAll("[data-nv]").forEach(c => c.onclick = () => {
     const [a, line] = c.dataset.nv.split("|");
     st[a + "Line"] = +line;
+    st.pays = {};             // SGP prices belonged to the old line
+    pb.querySelector(".nvp-out").textContent = "";
     pb.querySelector(`[data-f="${a}Line"]`).value = line;
     fill(a, byChip[`${a}|${line}`]);
     msg.querySelectorAll(`[data-nv^="${a}|"]`).forEach(o => o.classList.toggle("on", o === c));
@@ -1261,6 +1266,88 @@ async function fetchNovig(pb, p) {
     msg.querySelector(`[data-nvh="${a}"]`).innerHTML = used(a, byChip[`${a}|${line}`]) + ".";
     drawProp(pb, p);
   });
+  drawPricer(pb, p, logOf(p).filter(g => g[st.xStat] != null && g[st.yStat] != null));
+}
+
+// ---- Novig SGP prices --------------------------------------------------------
+// Novig's keyless parlay quote (docs.novig.com/affiliates/parlay-pricing, CORS
+// open): outcome IDs in, one implied probability out, "a price a user could
+// get on Novig right now". 10-request burst per IP, then 1 a second; a quote
+// is reused until it expires (about 30 s). Same call as novig.py's parlay().
+const NV_RFQ = "https://api.novig.com/rfq/v2/quote/unauthenticated";
+const NV_QUOTES = {};  // ids joined -> { price, until }
+
+// { price } (decimal odds) or { why }.
+async function novigQuote(ids) {
+  const key = ids.join(","), hit = NV_QUOTES[key];
+  if (hit && Date.now() < hit.until) return { price: hit.price };
+  for (let i = 0; i < 3; i++) {
+    const res = await fetch(NV_RFQ, { method:"POST", headers:{ "Content-Type":"application/json" },
+                                      body: JSON.stringify({ outcomeIds: ids }) });
+    if (res.status === 429) {
+      await new Promise(r => setTimeout(r, 1000 * (+res.headers.get("Retry-After") || 2)));
+      continue;
+    }
+    if (res.status === 404) return { why: "no price right now" };
+    if (!res.ok) return { why: res.status === 400 ? "legs can't be combined" : `Novig answered ${res.status}` };
+    const q = await res.json(), prob = +q.price;
+    if (!(prob > 0 && prob < 1)) return { why: "no price right now" };
+    NV_QUOTES[key] = { price: 1 / prob, until: Date.now() + (q.expiresAt - q.serverNow) };
+    return { price: 1 / prob };
+  }
+  return { why: "rate limited, try again" };
+}
+
+// Fill the SGP odds box of every combo on the pricer with Novig's parlay
+// price at the builder's lines; EV follows from the row's fair value.
+async function fetchNovigSgp(pb, p) {
+  const btn = pb.querySelector("[data-nvsgp]"), msg = pb.querySelector(".nvp-out");
+  const st = propState(p);
+  const snap = JSON.stringify(["x", "y", "z"].map(a => [st[a + "Stat"], st[a + "Line"]]));
+  btn.disabled = true;
+  msg.textContent = "Asking Novig…";
+  const done = t => { msg.innerHTML = t; btn.disabled = false; };
+  let lad;
+  try {
+    lad = novigLadder(await novigMarkets(), p.name);
+  } catch (e) {
+    return done(`Couldn't reach Novig (${e.message}).`);
+  }
+  if (!lad) return done(`${p.name} isn't on Novig's open pregame props right now.`);
+  const legs = ["x", "y", ...(st.zStat ? ["z"] : [])];
+  const at = {}, miss = [];
+  for (const a of legs) {
+    at[a] = (lad[st[a + "Stat"]] || []).find(r => r.line === st[a + "Line"]);
+    if (!at[a]) miss.push(`${STAT_LABEL[st[a + "Stat"]]} ${st[a + "Line"]}`);
+  }
+  const combos = [["oo", "xo yo"], ...(fourBoxes(st) ? [["ou", "xo yu"], ["uo", "xu yo"]] : []),
+                  ...(st.zStat ? [["tri", "xo yo zo"]] : [])];
+  const parts = [];
+  const pays = st.pays ||= {};
+  try {
+    for (const [k, spec] of combos) {
+      const picks = spec.split(" ").map(t => [t[0], t[1]]);
+      const lab = picks.map(([a, o]) => `${STAT_LABEL[st[a + "Stat"]]} ${o}${st[a + "Line"]}`).join(" & ");
+      if (picks.some(([a]) => !at[a])) continue;   // named once, below
+      const ids = picks.map(([a, o]) => at[a].ids[o]);
+      if (ids.some(id => !id)) { parts.push(`${lab}: not offered`); continue; }
+      const q = await novigQuote(ids);
+      if (q.price) {
+        pays[k] = `${q.price.toFixed(2)}x`;
+        parts.push(`${lab} <b>${q.price.toFixed(2)}x</b> (${fairOdds(1 / q.price)})`);
+      } else parts.push(`${lab}: ${q.why}`);
+    }
+  } catch (e) {
+    return done(`Couldn't reach Novig (${e.message}).`);
+  }
+  // Lines or stats changed while Novig was answering: the prices aren't theirs.
+  if (snap !== JSON.stringify(["x", "y", "z"].map(a => [st[a + "Stat"], st[a + "Line"]]))) {
+    st.pays = {};
+    return done("");
+  }
+  if (miss.length) parts.push(`no Novig line at ${miss.join(", ")}`);
+  const time = new Date().toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
+  done(`Novig SGP · ${time}: ${parts.join(" · ")}`);
   drawPricer(pb, p, logOf(p).filter(g => g[st.xStat] != null && g[st.yStat] != null));
 }
 
@@ -1292,6 +1379,7 @@ function initProp(pb) {
       // combos' SGP prices stale.
       const a = f[0];
       st.pays = {};
+      pb.querySelector(".nvp-out").textContent = "";
       st[a + "Pin"] = null;
       clearTyped(st, a);
       for (const u of ["", "U"]) {
@@ -1348,6 +1436,7 @@ function initProp(pb) {
     inp.setSelectionRange(inp.value.length, inp.value.length);
   });
   pb.querySelector("[data-novig]").onclick = () => fetchNovig(pb, p);
+  pb.querySelector("[data-nvsgp]").onclick = () => fetchNovigSgp(pb, p);
   drawProp(pb, p);
 }
 

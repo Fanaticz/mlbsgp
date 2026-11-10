@@ -158,7 +158,8 @@ count, then commit and push `public/data/nba_correlations.json` to `main`.
 - `nba-ast-pts-sgp`: Vulture `/run` commands and the Assists × Points
   Discord card. Its `sgp.py` holds the copula math this script imports.
 - Dashboard `public/nba.html`: shows the plug-in r and devig r and prices
-  2-leg combos in each player's builder.
+  2-leg combos in each player's builder. Its **Novig SGP** button fills each
+  combo's SGP odds with the same Novig parlay quote as `--payout novig`.
 - Novig's SGP price (the slip payout) can be pulled: `--payout novig` asks
   Novig's keyless parlay quote (`POST /rfq/v2/quote/unauthenticated`,
   docs.novig.com/affiliates/parlay-pricing) for the legs' own lines and
