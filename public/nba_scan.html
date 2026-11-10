@@ -107,6 +107,7 @@
     <input type="number" id="minev" value="0" step="1" /></label>
   <label class="muted" title="Also price legs on Novig books up to 8¢ wide (10¢ for the second threes milestone). Their fair values are rough: marked ~.">
     <input type="checkbox" id="wide" /> Wide books</label>
+  <button type="button" id="now" title="Run a pass now. Each pass sends every combo to Novig's pricers as a live auction, so the board refreshes itself only every 15 minutes." style="background:none;border:1px solid var(--accent);color:var(--accent);border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;white-space:nowrap">Scan now</button>
   <a class="back" href="nba.html">Correlations →</a>
 </div>
 <div class="bar"><i id="bar"></i></div>
@@ -130,6 +131,7 @@
 // has priced so far. Polling is what keeps it scanning, so this page only
 // polls while it is actually on screen.
 let S = null;              // last response
+let NOW = false;           // Scan now was pressed: ask for a pass on the next poll
 let GOT = 0;               // when it arrived (ms, this clock)
 let MODE = "plays", WIDE = false, MINEV = 0, LEAGUE = "nba";
 const PAIR_OPTS = {
@@ -239,7 +241,7 @@ function render() {
   } else if (S.finished) {
     const next = Math.max(0, Math.ceil((S.restMs - (S.now + (Date.now() - GOT) - S.finished)) / 1000));
     st.innerHTML = `Last pass ${clock(Date.now() - (S.now + (Date.now() - GOT) - S.finished))} · ${S.total} combos in ` +
-      `${Math.floor(S.seconds / 60)}:${String(Math.round(S.seconds % 60)).padStart(2, "0")} · ${n} · next pass in ${next}s`;
+      `${Math.floor(S.seconds / 60)}:${String(Math.round(S.seconds % 60)).padStart(2, "0")} · ${n} · next pass in ${next >= 90 ? Math.round(next / 60) + " min" : next + "s"}`;
   }
   document.getElementById("bar").style.width = S.scanning && S.total ? `${Math.round(100 * S.done / S.total)}%` : "0";
 
@@ -288,7 +290,7 @@ async function poll() {
     return;
   }
   try {
-    const r = await fetch(`/api/nba/novig-scan?league=${LEAGUE}${WIDE ? "&wide=1" : ""}`, { cache: "no-store", headers: { "X-Scan-Key": KEY } });
+    const r = await fetch(`/api/nba/novig-scan?league=${LEAGUE}${WIDE ? "&wide=1" : ""}${NOW ? "&now=1" : ""}`, { cache: "no-store", headers: { "X-Scan-Key": KEY } });
     if (r.status === 403) {
       KEY = "";
       try { localStorage.removeItem(KEYLS); } catch (_) {}
@@ -301,6 +303,8 @@ async function poll() {
     document.querySelector(".controls").style.display = "";
     S = await r.json();
     GOT = Date.now();
+    if (S.scanning) NOW = false;
+    document.getElementById("now").disabled = S.scanning;
     render();
   } catch (e) {
     const st = document.getElementById("status");
@@ -318,6 +322,7 @@ document.querySelectorAll("#mode button").forEach(b => {
   };
 });
 document.getElementById("search").oninput = render;
+document.getElementById("now").onclick = () => { NOW = true; poll(); };
 pairOpts();
 document.querySelectorAll("#league button").forEach(b => {
   b.classList.toggle("on", b.dataset.league === LEAGUE);

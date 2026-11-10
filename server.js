@@ -2451,7 +2451,12 @@ app.get('/api/nba/scoreboard', async (req, res) => {
 // cold or rested board starts a pass, and passes repeat while polls keep
 // coming. Close the page and the current pass is the last.
 const NV_SCAN_PY = path.join(__dirname, '.claude', 'skills', 'nba-sgp-fv', 'scan.py');
-const NV_SCAN_REST_MS = 45 * 1000;       // pause between passes while watched
+// Every quote is a live auction sent to all of Novig's parlay pricers, so a
+// board refreshed every minute is a loud, repeating footprint on exactly the
+// combos worth betting. Passes are spaced out; the page's Scan now button
+// (?now=1) asks for one sooner, at most once a minute.
+const NV_SCAN_REST_MS = 15 * 60 * 1000;  // pause between automatic passes while watched
+const NV_SCAN_NOW_MS = 60 * 1000;        // soonest a requested pass may follow the last
 const NV_SCAN_MAX_MS = 20 * 60 * 1000;   // a pass stuck this long is killed
 const NV_SCAN = { proc: null, league: 'nba', wide: false, started: 0, finished: 0, total: 0, done: 0, players: 0,
                   data: null, seconds: 0, error: null, rows: new Map(), seen: new Set() };
@@ -2520,7 +2525,8 @@ app.get('/api/nba/novig-scan', (req, res) => {
   // One board at a time: asking for another league or other books waits for
   // the running pass, then starts over on what was asked.
   const other = league !== NV_SCAN.league || wide !== NV_SCAN.wide;
-  if (!NV_SCAN.proc && (!NV_SCAN.finished || other || now - NV_SCAN.finished > NV_SCAN_REST_MS)) {
+  const asked = req.query.now === '1' && now - NV_SCAN.finished > NV_SCAN_NOW_MS;
+  if (!NV_SCAN.proc && (!NV_SCAN.finished || other || asked || now - NV_SCAN.finished > NV_SCAN_REST_MS)) {
     if (other) NV_SCAN.rows.clear();
     startNovigScan(league, wide);
   }
