@@ -89,6 +89,10 @@
     <button data-mode="all">All combos</button>
   </div>
   <input type="search" id="search" placeholder="Filter by name…" />
+  <select id="pair" title="Show one kind of combo" style="background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:7px 10px;font-size:13px">
+    <option value="">All pairs</option><option value="pts,tpm">PTS + 3PM</option><option value="pts,reb">PTS + REB</option>
+    <option value="pts,ast">PTS + AST</option><option value="reb,ast">REB + AST</option><option value="reb,tpm">REB + 3PM</option><option value="ast,tpm">AST + 3PM</option>
+  </select>
   <label class="muted" title="Plays shows combos at this EV or better.">Min EV %
     <input type="number" id="minev" value="0" step="1" /></label>
   <label class="muted" title="Also price legs on Novig books up to 8¢ wide (10¢ for the second threes milestone). Their fair values are rough: marked ~.">
@@ -96,6 +100,11 @@
   <a class="back" href="nba.html">Correlations →</a>
 </div>
 <div class="bar"><i id="bar"></i></div>
+<form class="empty" id="lock" style="display:none">
+  <div id="lockmsg">Private. Enter the passcode.</div>
+  <input type="password" id="pass" autocomplete="current-password" style="margin-top:10px;background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:9px 12px;font-size:16px;width:220px" />
+  <button type="submit" style="margin-left:6px;background:var(--accent);border:0;border-radius:8px;padding:10px 16px;font-weight:600;font-size:14px">Open</button>
+</form>
 <div class="board">
   <div class="head">
     <div>Player</div><div>Legs</div><div class="num">Fair</div><div class="num">Novig</div>
@@ -114,6 +123,18 @@ let S = null;              // last response
 let GOT = 0;               // when it arrived (ms, this clock)
 let MODE = "plays", WIDE = false, MINEV = 0;
 const OPEN = new Set();    // expanded rows, by key
+// The passcode (the server's NOVIG_SCAN_KEY), kept on this device once entered.
+const KEYLS = "nbaScanKey";
+let KEY = "";
+try { KEY = localStorage.getItem(KEYLS) || ""; } catch (_) {}
+function lock(msg) {
+  S = null;
+  document.getElementById("lock").style.display = "";
+  document.getElementById("lockmsg").textContent = msg;
+  document.querySelector(".board").style.display = "none";
+  document.querySelector(".controls").style.display = "none";
+  document.getElementById("status").textContent = "";
+}
 const LS = "nbaNovigScan";
 try {
   const v = JSON.parse(localStorage.getItem(LS) || "{}");
@@ -169,6 +190,8 @@ function render() {
   const q = document.getElementById("search").value.trim().toLowerCase();
   let rows = MODE === "plays" ? plays : all;
   if (q) rows = rows.filter(c => c.player.toLowerCase().includes(q));
+  const pair = document.getElementById("pair").value;
+  if (pair) rows = rows.filter(c => c.legs.map(L => L.stat).join() === pair);
 
   // Status line.
   st.classList.toggle("err", !!S.error && !S.scanning);
@@ -221,9 +244,22 @@ function render() {
 
 async function poll() {
   if (!shown()) return;
+  if (!KEY) {   // keep a "Wrong passcode" message up until the next try
+    if (document.getElementById("lock").style.display === "none") lock("Private. Enter the passcode.");
+    return;
+  }
   try {
-    const r = await fetch(`/api/nba/novig-scan${WIDE ? "?wide=1" : ""}`, { cache: "no-store" });
+    const r = await fetch(`/api/nba/novig-scan${WIDE ? "?wide=1" : ""}`, { cache: "no-store", headers: { "X-Scan-Key": KEY } });
+    if (r.status === 403) {
+      KEY = "";
+      try { localStorage.removeItem(KEYLS); } catch (_) {}
+      return lock("Wrong passcode.");
+    }
+    if (r.status === 503) return lock("The scanner is switched off on the server (no NOVIG_SCAN_KEY set).");
     if (!r.ok) throw new Error(`server answered ${r.status}`);
+    document.getElementById("lock").style.display = "none";
+    document.querySelector(".board").style.display = "";
+    document.querySelector(".controls").style.display = "";
     S = await r.json();
     GOT = Date.now();
     render();
@@ -243,6 +279,15 @@ document.querySelectorAll("#mode button").forEach(b => {
   };
 });
 document.getElementById("search").oninput = render;
+document.getElementById("pair").onchange = render;
+document.getElementById("lock").onsubmit = e => {
+  e.preventDefault();
+  KEY = document.getElementById("pass").value.trim();
+  document.getElementById("pass").value = "";
+  try { localStorage.setItem(KEYLS, KEY); } catch (_) {}
+  document.getElementById("lockmsg").textContent = "Checking…";
+  poll();
+};
 const minev = document.getElementById("minev");
 minev.value = MINEV;
 minev.oninput = () => { const v = parseFloat(minev.value); MINEV = Number.isFinite(v) ? v : 0; save(); render(); };

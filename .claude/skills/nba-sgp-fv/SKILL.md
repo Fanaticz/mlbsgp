@@ -171,6 +171,9 @@ Novig rejects it for one player. A row is a lead: quotes move a few percent
 between asks, so reprice the slip (and check sharp odds) before a bet.
 The dashboard's Scanner page (`public/nba_scan.html`, `/api/nba/novig-scan`
 in `server.js`) runs the same script on the server while the page is open.
+It is private: the route needs the passcode in the server's `NOVIG_SCAN_KEY`
+(no key set = scanner off), and the NOVIG SCAN tab only shows on a device
+that has entered it (five taps on the SPORT label opens the passcode box).
 
 ## Related
 

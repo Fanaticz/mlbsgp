@@ -255,7 +255,7 @@ h1 em{color:var(--ac);font-style:normal;}
      ?sport=nba so deep links and refreshes stay on the user's chosen sport.
      Phase 2 only: NBA side is a placeholder shell; Phase 3 populates it. -->
 <div class="sport-bar" id="sportBar">
-  <span class="sport-label">SPORT</span>
+  <span class="sport-label" id="sportLabel">SPORT</span>
   <!-- MLB and Soccer tabs hidden per product decision; NBA is the default.
        Their pages and JS are kept, and ?sport=mlb / ?sport=worldcup still
        open them. Uncomment to re-enable. -->
@@ -272,7 +272,7 @@ h1 em{color:var(--ac);font-style:normal;}
   <button class="sport-btn active" id="sportBtnNbaCorr" type="button" onclick="setSport('nbacorr')" aria-pressed="true"><span class="sport-dot"></span>NBA</button>
   <button class="sport-btn" id="sportBtnNbaQtr" type="button" onclick="setSport('nbaqtr')" aria-pressed="false"><span class="sport-dot"></span>NBA QTRS</button>
   <button class="sport-btn" id="sportBtnNbaTm" type="button" onclick="setSport('nbatm')" aria-pressed="false"><span class="sport-dot"></span>NBA TEAMMATES</button>
-  <button class="sport-btn" id="sportBtnNbaScan" type="button" onclick="setSport('nbascan')" aria-pressed="false"><span class="sport-dot"></span>NOVIG SCAN</button>
+  <button class="sport-btn" id="sportBtnNbaScan" style="display:none" type="button" onclick="setSport('nbascan')" aria-pressed="false"><span class="sport-dot"></span>NOVIG SCAN</button>
   <button class="sport-btn" id="sportBtnNfl" type="button" onclick="setSport('nfl')" aria-pressed="false"><span class="sport-dot"></span>NFL</button>
   <!--
   <button class="sport-btn" id="sportBtnWorldcup" type="button" onclick="setSport('worldcup')" aria-pressed="false"><span class="sport-dot"></span>SOCCER</button>
@@ -3676,5 +3676,24 @@ function applyPF(){
 <script src="/utils/nbaEvTab.js"></script>
 <script src="/utils/tennisEvTab.js"></script>
 <script src="/utils/worldcupEvTab.js"></script>
+<script>
+/* The Novig scanner tab is private: it shows only on a device that has
+   unlocked it. Tap the SPORT label five times to open the scanner page, which
+   asks for the passcode once (the server checks it) and remembers it here. */
+(function(){
+  var btn = document.getElementById('sportBtnNbaScan'), lab = document.getElementById('sportLabel');
+  var has = function(){ try { return !!localStorage.getItem('nbaScanKey'); } catch(_) { return false; } };
+  var sync = function(){ if(btn) btn.style.display = (has() || document.body.classList.contains('sport-nbascan')) ? '' : 'none'; };
+  sync();
+  window.addEventListener('storage', sync);
+  setInterval(sync, 3000);
+  var taps = [];
+  if(lab) lab.addEventListener('click', function(){
+    var t = Date.now();
+    taps = taps.filter(function(x){ return t - x < 3000; }); taps.push(t);
+    if(taps.length >= 5){ taps = []; if(btn) btn.style.display = ''; setSport('nbascan'); }
+  });
+})();
+</script>
 </body>
 </html>

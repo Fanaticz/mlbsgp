@@ -2503,7 +2503,16 @@ function startNovigScan(wide) {
 
 // GET /api/nba/novig-scan[?wide=1] — the board so far, and whether a pass is
 // running. Polling it is what keeps the scanner going.
+// Private: the scanner answers only to the passcode in NOVIG_SCAN_KEY (sent
+// as X-Scan-Key; the page asks for it once and keeps it on that device).
+// With no NOVIG_SCAN_KEY set, the scanner is off for everyone.
+const NV_SCAN_KEY = (process.env.NOVIG_SCAN_KEY || '').trim();
 app.get('/api/nba/novig-scan', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  if (!NV_SCAN_KEY) return res.status(503).json({ error: 'scanner off' });
+  if ((req.get('X-Scan-Key') || '') !== NV_SCAN_KEY) {
+    return setTimeout(() => res.status(403).json({ error: 'wrong passcode' }), 800);  // slows guessing
+  }
   const wide = req.query.wide === '1';
   const now = Date.now();
   if (!NV_SCAN.proc && (!NV_SCAN.finished || wide !== NV_SCAN.wide || now - NV_SCAN.finished > NV_SCAN_REST_MS)) {
