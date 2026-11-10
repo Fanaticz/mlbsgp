@@ -2,6 +2,13 @@
 
 ## 2026-11-10 session
 
+### NBA dashboard: higher-contrast colors
+The page was hard to read, mostly on a phone: grey labels on a near-black panel, boxes barely lighter than their background, and r values as tinted text on a faint tint.
+
+- Secondary text is brighter (`--muted` #8b98a5 → #b3bfcc), borders are visible (#2a333d → #3d4a59), and input boxes, selects and buttons have their own lighter fill. Box stats and the builder's labels are full white. Placeholders are a clear step dimmer than real values.
+- The table's r values are white numbers on a solid green or red pill (strength still relative to the players on screen, up to 85% solid at 2 SD) instead of colored text.
+- Green, red and amber are brighter; the smallest type (10–11.5 px) is up about a point.
+
 ### NBA dashboard: scatter chart removed; − / + on the line boxes
 - The prop builder's scatter chart (and its season legend and hover tooltip) is gone, after the hit-rate tiles. The panel is now the two stats and lines, the devig r, and the SGP pricer.
 - Each line box (both legs and the 3rd leg) has − and + buttons that move the line a full point (17.5 → 18.5), and tapping the box selects its value so typing replaces it. Retyping a line on a phone meant clearing the box first, and each keystroke repriced on a half-typed number.

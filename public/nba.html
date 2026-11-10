@@ -6,9 +6,11 @@
 <title>NBA PTS Correlations</title>
 <style>
   :root {
-    --bg:#0f1419; --panel:#1a2129; --line:#2a333d; --txt:#e6edf3;
-    --muted:#8b98a5; --accent:#f5a623; --pos:#3fb950; --neg:#f85149;
-    --prev:#6f9fd0; --old:#4e5965;
+    /* Secondary text and borders sit well clear of the background: the
+       page is mostly read on a phone, small and dim. */
+    --bg:#0d1117; --panel:#1c2530; --line:#3d4a59; --txt:#f2f6fa;
+    --muted:#b3bfcc; --accent:#ffb84d; --pos:#4ade80; --neg:#ff7b72;
+    --prev:#6f9fd0; --old:#7d8a99; --field:#263341;
   }
   * { box-sizing:border-box; }
   /* iOS inflates small text inside the dashboard's iframe; keep sizes as set. */
@@ -40,11 +42,12 @@
   .toggle button { background:transparent; color:var(--muted); border:0;
     padding:7px 14px; font-size:13px; cursor:pointer; }
   .toggle button.on { background:var(--accent); color:#1a1a1a; font-weight:600; }
-  input[type=search], input[type=number] { background:var(--panel); border:1px solid var(--line);
+  ::placeholder { color:#8593a3; opacity:1; }
+  input[type=search], input[type=number] { background:var(--field); border:1px solid var(--line);
     color:var(--txt); border-radius:8px; padding:7px 10px; font-size:13px; }
   input[type=search] { width:180px; }
   label.muted input { margin-left:4px; }
-  select { background:var(--panel); border:1px solid var(--line); color:var(--txt);
+  select { background:var(--field); border:1px solid var(--line); color:var(--txt);
     border-radius:8px; padding:7px 8px; font-size:13px; }
   .count { color:var(--muted); font-size:12.5px; margin-left:auto; }
   .sched { padding:8px 22px; color:var(--muted);
@@ -59,19 +62,19 @@
   th,td { padding:8px 10px; text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
   /* First correlation column: a rule and some air between box stats and r's. */
   #tbl th.grp, #tbl td.grp { border-left:1px solid var(--line); padding-left:18px; }
-  #tbl td.c-stat { color:#c3ccd5; }
+  #tbl td.c-stat { color:var(--txt); }
   /* Three r columns don't need the full width of a wide monitor. */
   #tbl.narrow { max-width:1180px; }
   #tbl td.c-r { min-width:92px; }
   th { position:sticky; top:0; background:var(--panel); color:var(--muted);
-    font-weight:600; font-size:11.5px; text-transform:uppercase; letter-spacing:.03em;
+    font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.03em;
     cursor:pointer; border-bottom:1px solid var(--line); user-select:none; }
   th:hover { color:var(--txt); }
   th.sorted::after { content:" \25BC"; font-size:9px; }
   th.sorted.asc::after { content:" \25B2"; }
   td.l, th.l { text-align:left; }
-  tbody tr { border-bottom:1px solid #20272f; }
-  tbody tr:hover { background:#161d24; }
+  tbody tr { border-bottom:1px solid #2a3441; }
+  tbody tr:hover { background:#18212b; }
   .name { font-weight:600; }
   .inj { display:inline-flex; align-items:center; gap:4px; margin-left:7px; font-size:10.5px;
     font-weight:700; letter-spacing:.03em; cursor:help; color:var(--txt); }
@@ -80,28 +83,29 @@
   .team { color:var(--muted); font-size:12px; }
   .dot { display:inline-block; width:7px; height:7px; border-radius:50%;
     background:var(--pos); margin-right:6px; vertical-align:middle; }
-  .r { font-weight:600; border-radius:4px; padding:1px 4px; }
+  .r { font-weight:600; border-radius:4px; padding:1px 5px; }
+  #tbl td.c-r .r { display:inline-block; min-width:44px; text-align:center; font-weight:700; }
   .rflag { color:var(--accent); font-weight:700; font-size:11.5px; cursor:help; }
   #tbl td.c-r .rflag { display:inline-block; width:9px; text-align:right; }
-  .at { color:var(--muted); font-size:10.5px; margin-left:5px; white-space:nowrap; }
+  .at { color:var(--muted); font-size:11.5px; margin-left:5px; white-space:nowrap; }
   #tbl td.c-r .at { display:inline-block; min-width:64px; text-align:left; }
-  .raw { color:var(--muted); font-size:11.5px; }
+  .raw { color:var(--muted); font-size:12px; }
   .sig { text-decoration:underline; text-decoration-color:var(--accent);
     text-underline-offset:2px; }
   .muted { color:var(--muted); }
   .err { color:var(--neg); padding:20px 22px; }
-  .care { display:inline-block; width:14px; color:var(--old); font-size:11px; }
+  .care { display:inline-block; width:14px; color:var(--muted); font-size:11px; }
   tbody tr.prow { cursor:pointer; }
   tbody tr.prow:hover .care { color:var(--accent); }
-  tbody tr.drow > td { padding:0; background:#10161c; }
+  tbody tr.drow > td { padding:0; background:#131a22; }
   /* contain: the panel's content can't widen the table; its own scroll
      wrappers (.sub-scroll, .pr-out) take any overflow instead. */
   .detail-wrap { padding:10px 16px 14px; text-align:left; white-space:normal; contain:inline-size; }
-  .detail-h { font-size:12px; color:var(--muted); margin-bottom:8px; }
+  .detail-h { font-size:12.5px; color:var(--muted); margin-bottom:8px; }
   table.sub { width:auto; min-width:0; border-collapse:collapse; }
   table.sub th { position:static; top:auto; background:transparent; cursor:default;
-    border-bottom:1px solid var(--line); font-size:10.5px; padding:4px 12px; }
-  table.sub td { padding:4px 12px; border-bottom:1px solid #20272f; white-space:nowrap; }
+    border-bottom:1px solid var(--line); font-size:11.5px; padding:4px 12px; }
+  table.sub td { padding:4px 12px; border-bottom:1px solid #2a3441; white-space:nowrap; }
   table.sub tr.pool td { border-top:1px solid var(--line); }
 
   /* --- prop builder: two stats, their lines, and the SGP pricer --- */
@@ -115,30 +119,30 @@
   .pb-row select { min-width:0; max-width:42vw; }
   .pb-controls { display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center;
     margin-bottom:12px; }
-  .pb-controls label { color:var(--muted); font-size:12px; }
+  .pb-controls label { color:var(--txt); font-size:13px; }
   .pb-controls input[type=number] { width:64px; margin:0 4px; text-align:center; -moz-appearance:textfield; }
   .pb-controls input[type=number]::-webkit-inner-spin-button { -webkit-appearance:none; }
-  .stp { background:var(--panel); border:1px solid var(--line); color:var(--txt); border-radius:8px;
+  .stp { background:var(--field); border:1px solid var(--line); color:var(--txt); border-radius:8px;
     width:32px; padding:6px 0; font-size:15px; font-weight:600; cursor:pointer; margin-left:6px; }
   .stp + input + .stp { margin-left:0; }
   .stp:active { border-color:var(--accent); color:var(--accent); }
   .pb-controls select { margin-left:6px; }
   .pb-body { display:flex; flex-wrap:wrap; gap:18px; align-items:flex-start; }
-  .pb-note { color:var(--muted); font-size:11px; margin-top:8px; grid-column:1/-1; }
+  .pb-note { color:var(--muted); font-size:12px; margin-top:8px; grid-column:1/-1; }
   /* --- SGP pricer (copula on the shrunk r) --- */
   /* Beside the chart when the screen has room, below it (full width) when
      it doesn't. min-width:0 lets its table scroll instead of widening the panel. */
   .pr { flex:1 1 480px; min-width:0; }
-  .pr-sub { color:var(--muted); font-size:11.5px; margin-bottom:10px; max-width:900px; }
-  .pr .pb-controls input[type=text] { width:74px; margin-left:6px; background:var(--panel);
+  .pr-sub { color:var(--muted); font-size:12.5px; margin-bottom:10px; max-width:900px; }
+  .pr .pb-controls input[type=text] { width:74px; margin-left:6px; background:var(--field);
     border:1px solid var(--line); color:var(--txt); border-radius:8px; padding:7px 10px; font-size:13px; }
   .pr .pb-controls input[type=number] { width:74px; }
-  .payin { width:92px; background:var(--panel); border:1px solid var(--line); color:var(--txt);
+  .payin { width:92px; background:var(--field); border:1px solid var(--line); color:var(--txt);
     border-radius:7px; padding:4px 7px; font-size:12.5px; text-align:right; }
   .pr table.sub td.fv { font-weight:600; color:var(--accent); }
   .fvw { display:inline-flex; align-items:center; gap:6px; }
   .sortw { display:inline-flex; align-items:center; gap:6px; }
-  .sgn { background:var(--panel); border:1px solid var(--line); color:var(--txt); border-radius:8px;
+  .sgn { background:var(--field); border:1px solid var(--line); color:var(--txt); border-radius:8px;
     min-width:34px; padding:6px 8px; font-size:14px; font-weight:600; cursor:pointer; }
   .plug { margin-left:auto; border:1px solid var(--accent); color:var(--accent); border-radius:8px;
     padding:6px 11px; font-size:12.5px; }
@@ -151,7 +155,7 @@
   .nv-out:empty { display:none; }
   /* Result of a Fetch FV press: a boxed report, one line per leg
      or combo, each opening with a green check (filled) or amber ! (not). */
-  .nv-out.rep { border:1px solid var(--line); border-radius:8px; background:#10161c; padding:9px 11px; max-width:760px; }
+  .nv-out.rep { border:1px solid var(--line); border-radius:8px; background:#131a22; padding:9px 11px; max-width:760px; }
   .nv-h { font-size:11px; text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px; }
   .nv-h b { color:var(--txt); }
   .nv-leg + .nv-leg { margin-top:8px; padding-top:8px; border-top:1px solid var(--line); }
@@ -166,13 +170,13 @@
   .nv-pick { padding-left:22px; margin-top:5px; line-height:2.1; }
   /* A box Novig just filled: green edge until it's edited. */
   input.got { border-color:var(--pos) !important; box-shadow:0 0 0 1px rgba(63,185,80,.35); }
-  .nv-chip { background:var(--panel); border:1px solid var(--line); color:var(--txt); border-radius:7px;
+  .nv-chip { background:var(--field); border:1px solid var(--line); color:var(--txt); border-radius:7px;
     padding:2px 7px; margin:0 3px; font-size:11.5px; cursor:pointer; white-space:nowrap; }
   .nv-chip:hover { border-color:var(--accent); }
   .nv-chip.on { border-color:var(--pos); color:var(--pos); border-style:solid; }
   .nv-chip.wide { border-style:dashed; color:var(--muted); }
   .nv-chip.wide.on { color:var(--pos); }
-  .nv-chip small { font-size:10px; opacity:.8; }
+  .nv-chip small { font-size:11px; }
 
   /* The player panel sits in a table row as wide as the table (~1780px), so
      on a narrower screen it ran off the right edge (and the SGP pricer with
@@ -221,7 +225,7 @@
     #tbl td.c-tag { grid-column:span 6; text-align:right; color:var(--muted); font-size:12px; align-self:center; }
     #tbl td.c-stat { grid-column:span 7; text-align:center; }
     #tbl td.c-r { grid-column:span 14; text-align:center; font-size:15px; }
-    #tbl td[data-label]::before { content:attr(data-label); display:block; font-size:10px;
+    #tbl td[data-label]::before { content:attr(data-label); display:block; font-size:11px;
       color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
     #tbl td.srt::before { color:var(--accent) !important; font-weight:700; }
     #tbl tr.prow .raw { display:none; }
@@ -613,14 +617,14 @@ const R_GAP_FLAG = 0.15;
 // At the column's average the r is plain white; above it fades to green
 // (full green 2 SD up), below it to red. COL_STATS is set in render().
 let COL_STATS = {};
-const HEAT_MID = [230, 237, 243], HEAT_HI = [63, 185, 80], HEAT_LO = [248, 81, 73];
+const HEAT_HI = [34, 160, 80], HEAT_LO = [218, 62, 56];
 function rHeat(key, v) {
   const st = COL_STATS[key];
   if (!st || !st.sd || v === null || v === undefined) return null;
   const t = Math.max(-1, Math.min(1, (v - st.mean) / (2 * st.sd)));
-  const to = t >= 0 ? HEAT_HI : HEAT_LO, a = Math.abs(t);
-  const fg = HEAT_MID.map((c, i) => Math.round(c + (to[i] - c) * a));
-  return { fg: `rgb(${fg})`, bg: `rgba(${to},${(0.22 * a * a).toFixed(3)})` };
+  // The number stays white (readable at any strength); the fill carries the
+  // heat, up to 85% solid at 2 SD.
+  return { fg: "#fff", bg: `rgba(${t >= 0 ? HEAT_HI : HEAT_LO},${(0.85 * Math.abs(t)).toFixed(3)})` };
 }
 function setColStats(rows) {
   COL_STATS = {};
