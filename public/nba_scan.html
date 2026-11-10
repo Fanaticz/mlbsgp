@@ -169,7 +169,6 @@ const pct = v => `${v >= 0 ? "+" : "−"}${Math.abs(100 * v).toFixed(1)}%`;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
 const clock = ms => new Date(ms).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
 const LABEL = { pts:"PTS", reb:"REB", ast:"AST", tpm:"3PM", rec:"REC", yds:"YDS", td:"TD" };
-// Soccer rows have no fair value: "fair" there is the price of the same legs if unrelated.
 const SOC = () => LEAGUE === "soccer";
 
 // Shown on screen: the tab is visible and, inside the site's tab frame, that
@@ -199,7 +198,7 @@ function detail(c) {
     `<span class="lg">${L.text ? esc(L.text) : `${LABEL[L.stat]} ${L.side === "over" ? "o" : "u"}${L.line}`} <b>${am(L.fair)}</b></span>`).join("");
   const sg = v => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
   const tech = [
-    c.r === null ? `unrelated-legs price ${c.fair_x.toFixed(2)}x` : c.legs.length === 3 ? `lowest pair r ${sg(c.r)}` : `r ${sg(c.r)} · devig r ${sg(c.devig_r)}`,
+    c.r === null ? `unrelated legs ${c.unrelated_x.toFixed(2)}x, hits ×${c.lift.toFixed(2)} as often` : c.legs.length === 3 ? `lowest pair r ${sg(c.r)}` : `r ${sg(c.r)} · devig r ${sg(c.devig_r)}`,
     `books ${c.legs.map(L => (100 * L.width).toFixed(1)).join(" / ")}¢`,
     `quote ${c.raw_x.toFixed(2)}x before fee`,
     c.qk > 0 ? `${c.qk.toFixed(2)}u` : null,
@@ -255,7 +254,7 @@ function render() {
       `<div class="row${isOld(c) ? " old" : ""}" data-k="${c.key}">` +
       `<div class="who"><b>${esc(c.player)}</b><small>${esc(c.team)}${c.starts ? " · " + tip(c.starts) : ""}</small></div>` +
       `<div class="legs">${esc(c.label)}${c.rough ? `<span class="rough" title="A leg sits on a Novig book wider than 4¢: rough fair value. Check sharp odds.">~</span>` : ""}</div>` +
-      `<div class="num fair"><span class="lab">${SOC() ? "Unrelated" : "Fair"}</span>${SOC() ? c.fair_x.toFixed(2) + "x" : am(c.fair)}</div>` +
+      `<div class="num fair"><span class="lab">Fair</span>${am(c.fair)}</div>` +
       `<div class="num"><span class="lab">Novig</span>${c.slip_x.toFixed(2)}x</div>` +
       `<div class="num ev ${c.ev >= 0 ? "pos" : "neg"}">${pct(c.ev)}</div>` +
       `<div class="num qk">${c.qk > 0 ? c.qk.toFixed(2) + "u" : "—"}</div>` +
@@ -271,7 +270,7 @@ function render() {
     });
   }
   document.getElementById("foot").innerHTML =
-    (SOC() ? `Soccer: favourite to win + favourite’s corners Under + underdog’s corners Over, with and without a goals Over. There is no fair value here: the % is Novig’s slip against the price of the same legs if they were unrelated. The legs help each other, so anything near or above 0% is worth a look. No stake is suggested. ` : "") +
+    (SOC() ? `Soccer: favourite to win + favourite’s corners Under + underdog’s corners Over, with and without a goals Over. Fair value is the legs’ unrelated price adjusted for how much more often the whole slip hits (×1.25 to ×1.61, from 17,934 top-five-league matches). Those are league averages and corner books are often wide, so treat rows as leads. ` : "") +
     (LEAGUE === "nfl" ? `NFL: receptions, receiving yards and anytime touchdown for WRs, TEs and RBs (no rushing props). ` : "") +
     `Fair value: each leg is Novig’s own exchange book at that line, devigged worst case, joined with the player’s shrunk correlation` +
     `${S.data ? ` (data ${S.data})` : ""}. Novig: the multiplier on its slip, its public quote after the 10% parlay fee. ` +

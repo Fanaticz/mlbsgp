@@ -39,15 +39,16 @@ on Receptions·Yards, Receptions·TD and Yards·TD (TD = Novig's TOUCHDOWNS 0.5,
 any touchdown, as the data counts receiving + rushing), then the three
 together. Rushing props aren't priced: the data has no r for them.
 
-Soccer (--league soccer): no correlations here, so no fair value. For every
-open match with team-corners books it asks Max's shape, favourite to win
-(3-way) + goals Over + favourite's corners Under + underdog's corners Over
-(with Over 1.5, with Over 2.5, and without the goals leg), and compares
-Novig's slip price with the price of the same legs if they were unrelated.
-The legs help each other (a leading favourite sits back, the underdog
-chases), so a slip near or above the unrelated price is the signal: on
-11-06 Novig paid 17.24x on Venezia where DK, FD, Fanatics and BetRivers
-paid 8.2x to 9.9x. "EV" on these rows is slip / unrelated - 1; no stake.
+Soccer (--league soccer): for every open match with team-corners books it
+asks Max's shape, favourite to win (3-way) + favourite's corners Under +
+underdog's corners Over, alone and with goals Over 1.5 or Over 2.5. A
+leading favourite sits back and the underdog chases, so the legs hit
+together more often than unrelated legs would. Fair value = the legs'
+product times SOCCER_LIFT, measured on 17,934 top-five-league matches
+(2015-16 on, football-data.co.uk: results, corners, closing odds) with
+corner lines nearest 50/50: x1.25 to x1.33 with no goals leg, x1.31 to
+x1.38 with Over 1.5, x1.40 to x1.61 with Over 2.5, larger for weaker
+favourites. League averages, not match-specific: rows are leads.
 
 EV and the stake use the fair value as shown (American odds), like price.py:
 quarter Kelly, 1u = 1% of bankroll = --unit dollars.
@@ -142,6 +143,11 @@ def nfl_candidates(markets, by, a):
     return (out[:a.max] if a.max else out), ctx
 
 
+# (favourite's win probability up to, lift over unrelated legs) by goals leg:
+# how much more often the whole slip hits than the product of its legs.
+SOCCER_LIFT = {None: [(0.50, 1.33), (0.60, 1.29), (0.70, 1.26), (1.0, 1.25)],
+               "1.5": [(0.50, 1.38), (0.60, 1.32), (0.70, 1.31), (1.0, 1.31)],
+               "2.5": [(0.50, 1.61), (0.60, 1.51), (0.70, 1.40), (1.0, 1.42)]}
 SOCCER_LEAGUES = ("EPL", "Serie A", "La Liga", "Bundesliga", "Ligue 1", "Champions League", "Europa League",
                   "MLS", "Liga MX", "UEFA Nations League", "FIFA World Cup", "FIFA Club World Cup")
 
@@ -193,16 +199,18 @@ def soccer_candidates(a):
                         "fair": sgp.american(m["p"][i]), "width": m["width"], "id": m["ids"][i], "text": text}
             base = [L(wins[0], 0, "ml", f"{fav} win"), L(fc, 1, "crn", f"{fav} U{fc['strike']} corners"),
                     L(dc, 0, "crn", f"{dog} O{dc['strike']} corners")]
-            shapes = [base]
+            shapes = [(None, base)]
             for line in ("1.5", "2.5"):
                 t = next((m for m in ms if m["type"] == "TOTAL" and m["strike"] == line and m["width"] <= 0.30), None)
                 if t:
-                    shapes.append([base[0], L(t, 0, "tot", f"Over {line}")] + base[1:])
-            for legs in shapes:
+                    shapes.append((line, [base[0], L(t, 0, "tot", f"Over {line}")] + base[1:]))
+            for goals, legs in shapes:
+                unrelated = math.prod(x["p"] for x in legs)
+                lift = next(v for top, v in SOCCER_LIFT[goals] if base[0]["p"] <= top)
                 out.append({"key": ",".join(x["id"] for x in legs), "tier": 5, "player": f"{fav} v {dog}", "id": eid,
                             "team": lg, "starts": wins[0]["starts"], "legs": legs, "label": " · ".join(x["text"] for x in legs),
-                            "r": None, "j": math.prod(x["p"] for x in legs), "forced": False, "devig_r": None,
-                            "basis": "unrelated", "rough": max(x["width"] for x in legs) > novig.MAX_SPREAD + 1e-9})
+                            "r": None, "j": min(unrelated * lift, 0.99), "forced": False, "devig_r": None,
+                            "lift": lift, "unrelated_x": 1 / unrelated, "rough": max(x["width"] for x in legs) > novig.MAX_SPREAD + 1e-9})
     return (out[:a.max] if a.max else out), {}
 
 
@@ -312,8 +320,6 @@ def finish(c, quote, unit, kelly):
     p, slip = sgp.prob(fair), novig.slip_multiplier(quote)   # EV at the FV as shown
     b = slip - 1
     qk = max(0.0, (p * b - (1 - p)) / b) * kelly * 100
-    if c.get("basis"):   # no true fair value: a price comparison, not a bet size
-        qk = 0.0
     c.update(fair=fair, fair_x=1 / p, quote=quote, raw_x=1 / quote, slip_x=slip, slip=sgp.american(1 / slip),
              ev=p * slip - 1, qk=qk, wager=qk * unit, at=time.time())
     return c
