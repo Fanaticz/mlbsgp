@@ -258,7 +258,7 @@ h1 em{color:var(--ac);font-style:normal;}
      ?sport=nba so deep links and refreshes stay on the user's chosen sport.
      Phase 2 only: NBA side is a placeholder shell; Phase 3 populates it. -->
 <div class="sport-bar" id="sportBar">
-  <span class="sport-label" id="sportLabel">SPORT</span>
+  <span class="sport-label" id="sportLabel">EVC</span>
   <!-- MLB and Soccer tabs hidden per product decision; NBA is the default.
        Their pages and JS are kept, and ?sport=mlb / ?sport=worldcup still
        open them. Uncomment to re-enable. -->
@@ -3681,7 +3681,7 @@ function applyPF(){
 <script src="/utils/worldcupEvTab.js"></script>
 <script>
 /* The Novig scanner tab is private: it shows only on a device that has
-   unlocked it. Tap the SPORT label five times to open the scanner page, which
+   unlocked it. Tap the EVC label five times to open the scanner page, which
    asks for the passcode once (the server checks it) and remembers it here. */
 (function(){
   var btn = document.getElementById('sportBtnNbaScan'), lab = document.getElementById('sportLabel');
