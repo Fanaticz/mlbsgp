@@ -2,6 +2,9 @@
 
 ## 2026-11-10 session
 
+### NBA dashboard: hit-rate tiles removed from the prop builder
+The four over/under tiles under the chart (share of games in each quadrant, with a game-log fair price) are gone; they weren't used and crowded the panel. The scatter still shows the same games against the two lines. On a wide screen the SGP pricer now sits beside the chart.
+
 ### NBA dashboard: Fetch FV and Novig SGP say what they did
 Pressing either button used to print a paragraph of muted text, which on an iPhone inside the dashboard's iframe was also blown up by iOS text inflation.
 

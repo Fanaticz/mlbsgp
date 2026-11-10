@@ -125,14 +125,6 @@
   .pb-body { display:flex; flex-wrap:wrap; gap:18px; align-items:flex-start; }
   .pb-chart { position:relative; }
   .pb-chart svg { display:block; }
-  .quads { display:grid; grid-template-columns:repeat(2, minmax(150px, 1fr));
-    gap:8px; min-width:310px; flex:1; max-width:420px; }
-  .quad { border:1px solid var(--line); border-radius:8px; padding:9px 11px;
-    background:#10161c; }
-  .quad .q-h { color:var(--muted); font-size:11px; line-height:1.35; }
-  .quad .q-h b { color:var(--txt); }
-  .quad .q-v { font-size:20px; font-weight:600; margin:3px 0 1px; }
-  .quad .q-s { color:var(--muted); font-size:11px; }
   .pb-note { color:var(--muted); font-size:11px; margin-top:8px; grid-column:1/-1; }
   .pb-tip { position:absolute; pointer-events:none; display:none; z-index:10;
     background:#0b0f14; border:1px solid var(--line); border-radius:7px;
@@ -141,10 +133,9 @@
   .pb-tip b { color:var(--accent); }
 
   /* --- SGP pricer (copula on the shrunk r) --- */
-  /* Third item of .pb-body: beside the tiles when the screen has room, below
-     the chart (full width) when it doesn't. min-width:0 lets its table
-     scroll instead of widening the panel. */
-  .pr { flex:1 1 560px; min-width:0; }
+  /* Beside the chart when the screen has room, below it (full width) when
+     it doesn't. min-width:0 lets its table scroll instead of widening the panel. */
+  .pr { flex:1 1 480px; min-width:0; }
   .pr-sub { color:var(--muted); font-size:11.5px; margin-bottom:10px; max-width:900px; }
   .pr .pb-controls input[type=text] { width:74px; margin-left:6px; background:var(--panel);
     border:1px solid var(--line); color:var(--txt); border-radius:8px; padding:7px 10px; font-size:13px; }
@@ -247,7 +238,6 @@
     #tbl > tbody > tr.drow, #tbl > tbody > tr.drow > td { display:block; }
     .detail-wrap { position:static; width:auto; padding:6px 2px 14px; }
     .pb { padding:10px 10px 12px; }
-    .quads { min-width:0; grid-template-columns:repeat(2, minmax(0, 1fr)); }
     .pr .pb-controls input[type=text] { width:84px; }
   }
 </style>
@@ -825,7 +815,7 @@ function niceStep(span, target = 7) {
   return 50;
 }
 
-// Build the SVG scatter + quadrant tiles inside the given .pb container.
+// Build the SVG scatter inside the given .pb container.
 function drawProp(pb, p) {
   const st = propState(p);
   const yKey = st.yStat, yLab = STAT_LABEL[yKey];
@@ -833,40 +823,11 @@ function drawProp(pb, p) {
   // Score stats can be missing on a game ESPN didn't score; skip those.
   const games = logOf(p).filter(g => g[xKey] != null && g[yKey] != null);
   const chartEl = pb.querySelector(".pb-chart");
-  const quadEl = pb.querySelector(".quads");
   drawPricer(pb, p, games);
   if (!games.length) {
     chartEl.innerHTML = `<div class="muted" style="padding:20px 0">No ${BLEND.join(" or ")} games for this player.</div>`;
-    quadEl.innerHTML = "";
     return;
   }
-
-  // Quadrant hit rates, each game weighted by its season (gw). Over = strictly
-  // greater; a game landing exactly on an integer line is a push and is
-  // excluded from all four buckets. Each bucket holds [games, weight].
-  const q = { oo:[0,0], ou:[0,0], uo:[0,0], uu:[0,0] };
-  let push = 0, wn = 0;
-  for (const g of games) {
-    const x = g[xKey], y = g[yKey];
-    if (x === st.xLine || y === st.yLine) { push++; continue; }
-    const b = q[(x > st.xLine ? "o" : "u") + (y > st.yLine ? "o" : "u")];
-    b[0]++; b[1] += gw(g); wn += gw(g);
-  }
-  const n = games.length - push;
-  const tile = (label, [c, w]) => {
-    const pr = wn ? w / wn : 0;
-    return `<div class="quad"><div class="q-h">${label}</div>` +
-      `<div class="q-v">${wn ? Math.round(pr * 100) : "—"}%</div>` +
-      `<div class="q-s">${c}/${n} games · fair ${wn ? fairOdds(pr) : "—"}</div></div>`;
-  };
-  // Tiles mirror the chart's quadrants: over/over top-right, under/over
-  // top-left, under/under bottom-left, over/under bottom-right.
-  const oP = `${xLab} <b>o${st.xLine}</b>`, uP = `${xLab} <b>u${st.xLine}</b>`;
-  const oY = `${yLab} <b>o${st.yLine}</b>`, uY = `${yLab} <b>u${st.yLine}</b>`;
-  quadEl.innerHTML =
-    tile(`${uP} &amp; ${oY}`, q.uo) + tile(`${oP} &amp; ${oY}`, q.oo) +
-    tile(`${uP} &amp; ${uY}`, q.uu) + tile(`${oP} &amp; ${uY}`, q.ou) +
-    (push ? `<div class="pb-note">${push} push${push>1?"es":""} (exactly on a line) excluded.</div>` : "");
 
   // Scales — pad the domain so the red lines and edge dots never clip.
   const W = 520, H = 400, ML = 46, MR = 16, MT = 14, MB = 42;
@@ -954,7 +915,7 @@ function drawProp(pb, p) {
   });
 }
 
-// Static shell for the builder; drawProp fills in the chart + tiles.
+// Static shell for the builder; drawProp fills in the chart.
 // Dot color per BLEND index: newest = accent, then progressively dimmer.
 const seasonColor = i => ["var(--accent)", "var(--prev)", "var(--old)"][BLEND.length - 1 - i] || "var(--old)";
 
@@ -970,7 +931,7 @@ function propHTML(p) {
       <div class="pb-row"><label>2nd stat<select data-f="yStat">${opts(Y_STATS, st.yStat)}</select></label><label>${STAT_LABEL[st.yStat]} line<input type="number" step="0.5" min="0" value="${st.yLine}" data-f="yLine"></label></div>
       <span class="plug" data-plug></span>
     </div>
-    <div class="pb-body"><div class="pb-chart"></div><div class="quads"></div>
+    <div class="pb-body"><div class="pb-chart"></div>
     <div class="pr">
       <div class="pb-title">SGP pricer</div>
       <div class="pr-sub"></div>
