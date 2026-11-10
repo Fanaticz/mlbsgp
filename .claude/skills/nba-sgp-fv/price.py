@@ -7,7 +7,10 @@
       "reb over 9.5 from 11.5 odds +115 -114" --payout 6.58
 
 --payout is the slip's price (3.80, 3.80x or +280), or "novig" to ask Novig
-for its parlay price at the legs' lines (player-stat legs only). It adds EV% and a
+for its parlay price at the legs' lines (player-stat legs only): its quote
+after the 10% parlay fee, which is what the slip shows. --before-fee takes
+that fee off a payout given by hand (Pikkit's Novig price is the raw quote:
++359 there is 4.25x on the slip). The payout adds EV% and a
 quarter-Kelly stake at the FV as shown: units = f/4 x 100 (1u = 1% of
 bankroll), dollars = units x --unit (default $250, Max's unit).
 
@@ -240,8 +243,8 @@ def mc_joint(ps, R, draws=4_000_000):
 
 
 def novig_payout(rows, legs):
-    """Novig's parlay price for the slip as decimal odds text, from its quote
-    endpoint. Every leg must be a player stat posted on Novig at its own line."""
+    """Novig's parlay quote for the slip as decimal odds text, before its
+    parlay fee. Every leg must be a player stat posted on Novig at its own line."""
     ids = []
     for leg in legs:
         row = next((r for r in rows.get(leg["stat"], []) if r["line"] == leg["line"]), None)
@@ -281,6 +284,8 @@ def main():
     ap.add_argument("player")
     ap.add_argument("legs", nargs="+")
     ap.add_argument("--payout", help="slip price: decimal (3.80, 3.80x) or American (+280), or 'novig' for Novig's parlay quote")
+    ap.add_argument("--before-fee", action="store_true",
+                    help="--payout is Novig's raw quote (Pikkit's Novig price): take its 10%% parlay fee off")
     ap.add_argument("--unit", type=float, default=250.0, help="dollars per unit, 1u = 1%% of bankroll")
     ap.add_argument("--kelly", type=float, default=0.25, help="Kelly fraction (default quarter)")
     ap.add_argument("--novig-spread", type=float, default=novig.MAX_SPREAD,
@@ -304,7 +309,7 @@ def main():
         if not name:
             raise SystemExit(f"{hits[0]}: not on Novig's open pregame NBA props")
         if ask_novig:
-            args.payout = novig_payout(rows, legs)
+            args.payout, args.before_fee = novig_payout(rows, legs), True
         novig_legs(name, rows, legs, args.novig_spread)
     ps = []
     for leg in legs:
@@ -337,8 +342,9 @@ def main():
     if args.payout:
         # EV and stake use the FV as shown, so the block checks by hand.
         p, dec = sgp.prob(fv), decimal_odds(args.payout)
-        if ask_novig:
-            print(f"Novig pays {dec:.2f}x ({sgp.american(1 / dec):+d})")
+        if args.before_fee:
+            raw, dec = dec, novig.slip_multiplier(round(1 / dec, 3))  # Novig quotes to 0.001
+            print(f"Novig pays {dec:.2f}x ({sgp.american(1 / dec):+d}): its {raw:.2f}x quote after the 10% parlay fee")
         b = dec - 1
         units = max(0.0, (p * b - (1 - p)) / b) * args.kelly * 100
         print(f"EV% = {(p * dec - 1) * 100:.1f}%")

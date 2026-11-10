@@ -961,7 +961,7 @@ function propHTML(p) {
           <span class="fvw zon"${st.zStat ? "" : ' style="display:none"'}><label title="Fair Over odds for the 3rd leg (Vulture's Fair column). Fetch FV fills Novig's."><span data-lab="z"></span> fair<input type="text" inputmode="numeric" placeholder="e.g. -110" value="${st.zFv || ""}" data-f="zFv"></label><button type="button" class="sgn" data-sgn="zFv" title="Flip the sign">±</button></span>
           <input type="hidden" data-f="zFvU" value="${st.zFvU || ""}"></span>
         <button type="button" class="sgn nvbtn" data-novig title="Fill both legs' Over and Under fair odds from Novig's exchange: each side the worst-case devig of the two asks at that line (pregame, books up to ${NV_MAX_SPREAD * 100}¢ wide)">Fetch FV</button>
-        <button type="button" class="sgn nvbtn" data-nvsgp title="Fill each combo's SGP odds with Novig's own parlay price for these lines (its public quote, good for about 30 seconds). Pregame, lines Novig has posted.">Novig SGP</button>
+        <button type="button" class="sgn nvbtn" data-nvsgp title="Fill each combo's SGP odds with what Novig's slip pays for these lines: its public parlay quote after the 10% parlay fee (good for about 30 seconds). Pregame, lines Novig has posted.">Novig SGP</button>
       </div>
       <div class="nv-out">${pinNote(st)}</div>
       <div class="nv-out nvp-out"></div>
@@ -1361,13 +1361,19 @@ async function fetchNovig(pb, p) {
 
 // ---- Novig SGP prices --------------------------------------------------------
 // Novig's keyless parlay quote (docs.novig.com/affiliates/parlay-pricing, CORS
-// open): outcome IDs in, one implied probability out, "a price a user could
-// get on Novig right now". 10-request burst per IP, then 1 a second; a quote
-// is reused until it expires (about 30 s). Same call as novig.py's parlay().
+// open): outcome IDs in, one implied probability out. 10-request burst per
+// IP, then 1 a second; a quote is reused until it expires (about 30 s). Same
+// call as novig.py's parlay().
+// The quote is before Novig's parlay taker fee, 0.10 x stake x (1 - price) on
+// top of the stake (docs.novig.com/fees, "RFQ trades"). The order slip shows
+// the multiplier after it, and that is the price used here: quote 0.218 is
+// 4.59x raw (what Pikkit shows, +359) and 4.25x on the slip.
 const NV_RFQ = "https://api.novig.com/rfq/v2/quote/unauthenticated";
+const NV_RFQ_FEE = 0.10;
+const nvSlipX = prob => 1 / (prob * (1 + NV_RFQ_FEE * (1 - prob)));
 const NV_QUOTES = {};  // ids joined -> { price, until }
 
-// { price } (decimal odds) or { why }.
+// { price } (the slip's multiplier, after the fee) or { why }.
 async function novigQuote(ids) {
   const key = ids.join(","), hit = NV_QUOTES[key];
   if (hit && Date.now() < hit.until) return { price: hit.price };
@@ -1382,8 +1388,8 @@ async function novigQuote(ids) {
     if (!res.ok) return { why: res.status === 400 ? "legs can't be combined" : `Novig answered ${res.status}` };
     const q = await res.json(), prob = +q.price;
     if (!(prob > 0 && prob < 1)) return { why: "no price right now" };
-    NV_QUOTES[key] = { price: 1 / prob, until: Date.now() + (q.expiresAt - q.serverNow) };
-    return { price: 1 / prob };
+    NV_QUOTES[key] = { price: nvSlipX(prob), until: Date.now() + (q.expiresAt - q.serverNow) };
+    return { price: nvSlipX(prob) };
   }
   return { why: "rate limited, try again" };
 }
@@ -1437,7 +1443,7 @@ async function fetchNovigSgp(pb, p) {
   }
   if (miss.length) parts.push(`no Novig line at ${miss.join(", ")}`);
   const time = new Date().toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
-  done(`Novig SGP · ${time}: ${parts.join(" · ")}`);
+  done(`Novig SGP · ${time}, after its 10% parlay fee: ${parts.join(" · ")}`);
   drawPricer(pb, p, logOf(p).filter(g => g[st.xStat] != null && g[st.yStat] != null));
 }
 

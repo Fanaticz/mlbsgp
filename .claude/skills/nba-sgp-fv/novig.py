@@ -88,11 +88,24 @@ def quote(m):
     return row
 
 
+RFQ_FEE = 0.10  # Novig's taker fee on a parlay, charged on top of the stake
+
+
+def slip_multiplier(price):
+    """What Novig's order slip pays for a parlay quoted at `price`: the quote
+    after the parlay taker fee, fee = RFQ_FEE x stake x (1 - price)
+    (docs.novig.com/fees, "RFQ trades"). The raw quote is what Pikkit shows as
+    Novig's odds: +359 (0.218) is 4.25x on the slip. Checked on Tatum U26.5
+    points + O7.5 assists, 11-09: quote 0.218, Pikkit +359, slip 4.25x."""
+    return 1 / (price * (1 + RFQ_FEE * (1 - price)))
+
+
 def parlay(outcome_ids):
-    """Novig's price for a parlay of these outcomes, as (probability, None), or
+    """Novig's quote for a parlay of these outcomes, as (probability, None), or
     (None, why). POST /rfq/v2/quote/unauthenticated: the documented keyless
-    quote (docs.novig.com/affiliates/parlay-pricing), "a price a user could
-    get on Novig right now". 10-request burst per IP, then 1 a second."""
+    quote (docs.novig.com/affiliates/parlay-pricing). It is the price before
+    the parlay fee: slip_multiplier() turns it into what the slip pays.
+    10-request burst per IP, then 1 a second."""
     req = urllib.request.Request(
         f"{HOST}/rfq/v2/quote/unauthenticated", data=json.dumps({"outcomeIds": outcome_ids}).encode(),
         headers={"Content-Type": "application/json", "Accept": "application/json", "User-Agent": "nba-sgp-fv"})
