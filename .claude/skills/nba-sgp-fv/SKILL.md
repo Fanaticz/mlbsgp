@@ -160,6 +160,13 @@ count, then commit and push `public/data/nba_correlations.json` to `main`.
 
 ## Slate scan
 
+**Default scope is main lines only** (Max, 11-10): NBA asks one slip a
+player, his main-line Points + Threes, and NFL asks no three-leg slips. Every
+quote is an auction every Novig pricer sees, and plays were being repriced
+while the wider scans ran. Everything below about higher lines, other pairs,
+double- and triple-doubles and three legs needs `--scope all`, which Max has
+asked not to run on his board; use it only if he asks.
+
 `python3 .claude/skills/nba-sgp-fv/scan.py` prices every open pregame
 player's same-player 2-leg combos (fair from Novig's legs, as `odds novig`)
 against Novig's slip price and prints them best EV first: Points + Threes

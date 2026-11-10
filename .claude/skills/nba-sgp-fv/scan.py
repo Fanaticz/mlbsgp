@@ -2,7 +2,8 @@
 """Novig SGP scanner: same-player 2-leg parlays for every open pregame NBA
 player, ranked by EV at what Novig's slip pays.
 
-  python3 scan.py                 # whole slate, best prospects first
+  python3 scan.py                 # main-line Points + Threes, one slip a player
+  python3 scan.py --scope all     # everything listed below (many more quotes)
   python3 scan.py --tier 1        # Points + Threes only (about 2 minutes)
   python3 scan.py --max 120       # stop after 120 quotes
   python3 scan.py --min-ev 3      # print only rows at +3% or better
@@ -286,7 +287,8 @@ def candidates(markets, d, by, a):
             if r > 0:
                 P, T = main["pts"], main["tpm"]
                 threes = [T] + beside([x for x in rows.get("tpm", []) if usable(x, a.alt_spread)], T)
-                t1 += [dict(combo(1, r, leg("pts", P, 1), leg("tpm", t, 1)), main=t is T) for t in threes]
+                t1 += [dict(combo(1, r, leg("pts", P, 1), leg("tpm", t, 1)), main=t is T) for t in threes
+                       if t is T or a.scope == "all"]
                 have = {c["key"] for c in t1}
                 if r >= a.ladder_r and a.ladder:
                     for pr in rows["pts"]:
@@ -493,6 +495,10 @@ def scan(a, emit):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--league", default="nba", choices=("nba", "nfl", "soccer"))
+    ap.add_argument("--scope", default="main", choices=("main", "all"),
+                    help="main (default): NBA asks one slip a player, his main-line Points + Threes, and NFL asks no "
+                         "three-leg slips. all: also the second threes milestone, higher lines, other pairs, "
+                         "double- and triple-doubles and three legs")
     ap.add_argument("--tier", type=int, default=0, choices=(0, 1, 2, 3), help="one two-leg group only (default: all, then three legs)")
     ap.add_argument("--tri", type=int, default=12, help="two-leg rows to extend to three legs (0 = none)")
     ap.add_argument("--tri-min-ev", type=float, default=-6.0, help="only extend two-leg rows at this EV%% or better")
@@ -513,6 +519,12 @@ def main():
     ap.add_argument("--top", type=int, default=25, help="rows to print (default 25; 0 = all)")
     ap.add_argument("--json", action="store_true", help="stream events as JSON lines instead of a table")
     a = ap.parse_args()
+    if a.scope == "main":
+        # Max, 11-10: every quote is an auction the pricers see, and plays were
+        # being repriced while the wider scans ran. One ask per player.
+        a.tri, a.ladder, a.dd = 0, False, False
+        if a.league == "nba":
+            a.tier = 1
 
     if a.json:
         out = threading.Lock()

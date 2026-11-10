@@ -146,12 +146,12 @@ let NOW = false;           // Fetch was pressed: ask for a pass on the next poll
 let GOT = 0;               // when it arrived (ms, this clock)
 let MODE = "plays", WIDE = false, MINEV = 0, LEAGUE = "nba";
 const PAIR_OPTS = {
-  nba: [["pts,tpm", "PTS + 3PM"], ["ladder", "PTS + 3PM higher lines"], ["dd", "Double-doubles (10+ / 10+)"], ["td", "Triple-doubles"], ["pts,reb", "PTS + REB (bigs)"],
-        ["reb,tpm", "REB + 3PM"], ["ast,tpm", "AST + 3PM"], ["3", "3 legs"]],
-  nfl: [["rec,yds", "REC + YDS"], ["rec,td", "REC + TD"], ["yds,td", "YDS + TD"], ["3", "3 legs"]],
+  nba: [],   // one slip a player now: main-line Points + Threes
+  nfl: [["rec,yds", "REC + YDS"], ["rec,td", "REC + TD"], ["yds,td", "YDS + TD"]],
   soccer: [["n3", "Win + corners"], ["n4", "With a goals leg"]],
 };
 function pairOpts() {
+  document.getElementById("pair").style.display = PAIR_OPTS[LEAGUE].length ? "" : "none";
   document.getElementById("pair").innerHTML = `<option value="">All pairs</option>` +
     PAIR_OPTS[LEAGUE].map(([v, t]) => `<option value="${v}">${t}</option>`).join("");
 }
@@ -314,9 +314,9 @@ function render() {
   document.getElementById("foot").innerHTML =
     (SOC() ? `Soccer: favourite to win + favourite’s corners Under + underdog’s corners Over, with and without a goals Over. Fair value is the legs’ unrelated price adjusted for how much more often the whole slip hits (×1.25 to ×1.61, from 17,934 top-five-league matches). Those are league averages and corner books are often wide, so treat rows as leads. ` : "") +
     (LEAGUE === "nfl" ? `NFL: receptions, receiving yards and anytime touchdown for WRs, TEs and RBs (no rushing props). ` : "") +
+    (LEAGUE === "nba" ? `NBA: one slip a player, his main-line Points + Threes. Nothing else is asked, to keep the number of requests Novig’s pricers see down. ` : "") +
     `Fair value: each leg is Novig’s own exchange book at that line, devigged worst case, joined with the player’s shrunk correlation` +
     `${S.data ? ` (data ${S.data})` : ""}. Novig: the multiplier on its slip, its public quote after the 10% parlay fee. ` +
-    `* marks a higher line: its fair value is modelled from the main line, so it is rougher than a main-line row. ` +
     `Quotes move by a few percent between asks and last about 30 seconds, so a row is a lead to re-check on the slip, and against sharp odds, before betting. ` +
     `Nothing is asked of Novig until you press Fetch; the last pass for each league stays here until then.`;
 }
