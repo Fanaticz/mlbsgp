@@ -10,6 +10,8 @@
     --muted:#8b98a5; --accent:#f5a623; --pos:#3fb950; --neg:#f85149;
   }
   * { box-sizing:border-box; }
+  /* iOS enlarges text it thinks is body copy, which made rows change size. */
+  html { -webkit-text-size-adjust:100%; text-size-adjust:100%; }
   body { margin:0; background:var(--bg); color:var(--txt);
     font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
   header { padding:14px 22px 10px; display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 14px; }
@@ -52,9 +54,11 @@
   .ev.pos { color:var(--pos); }
   .ev.neg { color:var(--neg); font-weight:500; }
   .lab { display:none; }
-  .det { grid-column:1 / -1; color:var(--muted); font-size:12.5px; line-height:1.75; padding:8px 2px 2px;
-    cursor:default; white-space:normal; }
-  .det b { color:var(--txt); font-weight:600; }
+  .det { grid-column:1 / -1; padding:8px 0 2px; cursor:default; }
+  .lgs { display:flex; flex-wrap:wrap; gap:6px; }
+  .lg { border:1px solid var(--line); border-radius:7px; padding:3px 9px; font-size:13px; color:var(--muted); white-space:nowrap; }
+  .lg b { color:var(--txt); font-weight:600; margin-left:4px; }
+  .tech { color:var(--muted); font-size:11.5px; margin-top:7px; }
   .empty { padding:28px 14px; color:var(--muted); text-align:center; line-height:1.7; }
   .foot { padding:4px 22px 60px; color:var(--muted); font-size:12px; line-height:1.7; max-width:900px; }
 
@@ -70,7 +74,9 @@
     .row { grid-template-columns:repeat(4, minmax(0,1fr)); gap:5px 8px; padding:11px 8px; }
     .who { grid-column:1 / span 3; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .ev { grid-column:4; grid-row:1; font-size:17px; }
-    .legs { grid-column:1 / -1; }
+    .legs { grid-column:1 / -1; font-size:15px; }
+    .row .num:not(.ev) { font-size:14px; }
+    .foot { font-size:11.5px; }
     .row .num:not(.ev) { text-align:left; }
     .lab { display:block; font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; font-weight:400; }
     .qk, .rr { display:none; }
@@ -182,17 +188,20 @@ function tip(ms) {
   return d.toLocaleDateString([], { weekday:"short" }) + " " + clock(ms);
 }
 
+// Expanded row: just what the row doesn't already say. Each leg's own fair
+// odds, then one quiet line of the working numbers.
 function detail(c) {
   const legs = c.legs.map(L =>
-    `${LABEL[L.stat]} ${L.side === "over" ? "o" : "u"}${L.line} fair <b>${am(L.fair)}</b> <span>(Novig book ${(100 * L.width).toFixed(1)}¢ wide)</span>`).join(" · ");
-  const forced = c.forced ? "<br>These threes already clear the points line, so the parlay is priced as the threes leg alone." : "";
-  return `<div class="det">${legs}<br>` +
-    (c.legs.length === 3 ? `lowest r of the three pairs <b>+${c.r.toFixed(3)}</b>`
-      : `r <b>${c.r >= 0 ? "+" : "−"}${Math.abs(c.r).toFixed(3)}</b> · devig r <b>${c.devig_r >= 0 ? "+" : "−"}${Math.abs(c.devig_r).toFixed(3)}</b>`) +
-    ` · fair <b>${am(c.fair)}</b> (${c.fair_x.toFixed(2)}x)${forced}<br>` +
-    `Novig quote ${c.raw_x.toFixed(2)}x, <b>${c.slip_x.toFixed(2)}x</b> (${am(c.slip)}) on the slip after its 10% parlay fee` +
-    ` · ${c.qk > 0 ? `quarter Kelly <b>${c.qk.toFixed(2)}u</b> = <b>$${c.wager.toFixed(2)}</b>` : "no bet at this price"}` +
-    `${c.starts ? ` · tips ${tip(c.starts)}` : ""}</div>`;
+    `<span class="lg">${LABEL[L.stat]} ${L.side === "over" ? "o" : "u"}${L.line} <b>${am(L.fair)}</b></span>`).join("");
+  const sg = v => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
+  const tech = [
+    c.legs.length === 3 ? `lowest pair r ${sg(c.r)}` : `r ${sg(c.r)} · devig r ${sg(c.devig_r)}`,
+    `books ${c.legs.map(L => (100 * L.width).toFixed(1)).join(" / ")}¢`,
+    `quote ${c.raw_x.toFixed(2)}x before fee`,
+    c.qk > 0 ? `${c.qk.toFixed(2)}u` : null,
+    c.forced ? "threes alone clear the points line" : null,
+  ].filter(Boolean).join(" · ");
+  return `<div class="det"><div class="lgs">${legs}</div><div class="tech">${tech}</div></div>`;
 }
 
 function render() {
