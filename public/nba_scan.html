@@ -46,6 +46,14 @@
   .row:hover { background:#161d25; }
   .row.old { opacity:.55; }
   .who b { font-weight:600; }
+  /* Name, then team and tip (which give way first), then the chip, always whole. */
+  .who { display:flex; align-items:baseline; min-width:0; }
+  .who b { flex:none; }
+  .who small { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+  .more { flex:none; margin-left:8px; background:none; border:1px solid var(--line); color:var(--muted); border-radius:999px;
+    padding:1px 9px; font-size:11.5px; cursor:pointer; white-space:nowrap; }
+  .row.sub { background:#12181f; }
+  .row.sub .legs { padding-left:14px; }
   .who small, .legs small { color:var(--muted); font-size:11.5px; margin-left:6px; white-space:nowrap; }
   .legs { overflow:hidden; text-overflow:ellipsis; }
   .rough { color:var(--accent); cursor:help; margin-left:4px; }
@@ -76,6 +84,9 @@
     .who { grid-column:1 / span 3; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .ev { grid-column:4; grid-row:1; font-size:17px; }
     .legs { grid-column:1 / -1; font-size:15px; }
+    .row.sub { padding-left:20px; }
+    .row.sub .who { display:none; }
+    .row.sub .legs { grid-column:1 / span 3; grid-row:1; padding-left:0; }
     .row .num:not(.ev) { font-size:14px; }
     .foot { font-size:11.5px; }
     .row .num:not(.ev) { text-align:left; }
@@ -145,6 +156,7 @@ function pairOpts() {
     PAIR_OPTS[LEAGUE].map(([v, t]) => `<option value="${v}">${t}</option>`).join("");
 }
 const OPEN = new Set();    // expanded rows, by key
+const GOPEN = new Set();   // players whose other rows are unfolded
 // The passcode (the server's NOVIG_SCAN_KEY), kept on this device once entered.
 const KEYLS = "nbaScanKey";
 let KEY = "";
@@ -252,9 +264,14 @@ function render() {
       `No combo at ${MINEV > 0 ? "+" : ""}${MINEV}% or better right now. Best of ${all.length}: ${esc(best.player)}, ${esc(best.label)} at ${pct(best.ev)}. <b>All combos</b> shows the rest.`
     }</div>`;
   } else {
-    rowsEl.innerHTML = rows.map(c =>
-      `<div class="row${isOld(c) ? " old" : ""}" data-k="${c.key}">` +
-      `<div class="who"><b>${esc(c.player)}</b><small>${esc(c.team)}${c.starts ? " · " + tip(c.starts) : ""}</small></div>` +
+    // One card per player (or match): his best row, with the rest folded
+    // under a "+N more" chip. They are usually the same mispriced pair again.
+    const groups = new Map();
+    for (const c of rows) (groups.get(c.id) || groups.set(c.id, []).get(c.id)).push(c);
+    const one = (c, sub, more) =>
+      `<div class="row${sub ? " sub" : ""}${isOld(c) ? " old" : ""}" data-k="${c.key}">` +
+      `<div class="who">${sub ? "" : `<b>${esc(c.player)}</b><small>${esc(c.team)}${c.starts ? " · " + tip(c.starts) : ""}</small>` +
+        (more ? `<button type="button" class="more" data-g="${esc(c.id)}">${GOPEN.has(c.id) ? "hide" : `+${more} more`}</button>` : "")}</div>` +
       `<div class="legs">${esc(c.label)}${c.model ? `<span class="rough" title="A higher line: fair value is modelled from the main line, not read off a book.">*</span>` : ""}${c.rough ? `<span class="rough" title="A leg sits on a Novig book wider than 4¢: rough fair value. Check sharp odds.">~</span>` : ""}</div>` +
       `<div class="num fair"><span class="lab">Fair</span>${am(c.fair)}</div>` +
       `<div class="num"><span class="lab">Novig</span>${c.slip_x.toFixed(2)}x</div>` +
@@ -263,7 +280,15 @@ function render() {
       `<div class="num"><span class="lab">Wager</span>${c.qk > 0 ? "$" + Math.round(c.wager).toLocaleString() : "—"}</div>` +
       `<div class="num rr">${c.r === null ? "" : (c.r >= 0 ? "+" : "−") + Math.abs(c.r).toFixed(2)}</div>` +
       `<div class="num"><span class="lab">Age</span>${age(c)}</div>` +
-      (OPEN.has(c.key) ? detail(c) : "") + `</div>`).join("");
+      (OPEN.has(c.key) ? detail(c) : "") + `</div>`;
+    rowsEl.innerHTML = [...groups.values()].map(g =>
+      one(g[0], false, g.length - 1) + (GOPEN.has(g[0].id) ? g.slice(1).map(c => one(c, true, 0)).join("") : "")).join("");
+    rowsEl.querySelectorAll(".more").forEach(b => b.onclick = e => {
+      e.stopPropagation();
+      const g = b.dataset.g;
+      GOPEN.has(g) ? GOPEN.delete(g) : GOPEN.add(g);
+      render();
+    });
     rowsEl.querySelectorAll(".row").forEach(el => el.onclick = e => {
       if (e.target.closest(".det")) return;   // let text in the details be selected
       const k = el.dataset.k;
