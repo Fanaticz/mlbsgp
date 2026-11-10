@@ -25,12 +25,12 @@ body{background:var(--bg);color:var(--tx);font-family:'Inter',sans-serif;min-hei
 .sport-btn.active .sport-dot{opacity:1;}
 /* Phone / saved web app: one swipeable row of readable tabs, clear of the status bar. */
 @media (max-width:760px){
-  .sport-bar{padding:calc(10px + env(safe-area-inset-top)) 12px 10px;gap:8px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;}
+  .sport-bar{padding:calc(22px + env(safe-area-inset-top)) 12px 10px;gap:8px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;}
   .sport-bar::-webkit-scrollbar{display:none;}
   .sport-bar .sport-label{font-size:11px;color:#9aa7b4;flex:none;padding:8px 2px;}
   .sport-btn{flex:none;white-space:nowrap;font-size:13px;padding:9px 14px;color:#d5dde5;border-color:#3a4652;}
   .sport-btn .sport-dot{opacity:.5;}
-  .sport-btn.active{color:var(--ac);border-color:var(--ac);}
+  .sport-btn.active{color:#0d0f14;border-color:var(--ac);}
   .sport-btn.active .sport-dot{opacity:1;}
 }
 .nav{display:flex;background:var(--s1);border-bottom:1px solid var(--b1);padding:0 24px;position:sticky;top:0;z-index:100;}
