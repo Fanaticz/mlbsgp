@@ -22,6 +22,7 @@ import os
 import sys
 import time
 import unicodedata
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -73,6 +74,7 @@ def quote(m):
     bu = side.get("under", {}).get("bid")
     row = {"stat": STAT[m["marketType"]], "line": float(m["strike"]), "volume": m["volume"],
            "starts": m["startsTs"], "market": m["marketId"],
+           "ids": {k: o["outcomeId"] for k, o in side.items()},
            "bid": float(bo["price"]) if bo else None,
            "ask": 1 - float(bu["price"]) if bu else None}
     if row["bid"] is not None and row["ask"] is not None:
@@ -84,6 +86,27 @@ def quote(m):
     else:
         row["mid"] = row["spread"] = row["fo"] = row["fu"] = None
     return row
+
+
+def parlay(outcome_ids):
+    """Novig's price for a parlay of these outcomes, as (probability, None), or
+    (None, why). POST /rfq/v2/quote/unauthenticated: the documented keyless
+    quote (docs.novig.com/affiliates/parlay-pricing), "a price a user could
+    get on Novig right now". 10-request burst per IP, then 1 a second."""
+    req = urllib.request.Request(
+        f"{HOST}/rfq/v2/quote/unauthenticated", data=json.dumps({"outcomeIds": outcome_ids}).encode(),
+        headers={"Content-Type": "application/json", "Accept": "application/json", "User-Agent": "mlbsgp-nba-sgp-fv"})
+    for _ in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return float(json.load(r)["price"]), None
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                time.sleep(float(e.headers.get("Retry-After") or 2))
+                continue
+            body = e.read().decode(errors="replace")[:200]
+            return None, "no price for these legs right now" if e.code == 404 else f"{e.code} {body}"
+    return None, "rate limited"
 
 
 def player_name(m):

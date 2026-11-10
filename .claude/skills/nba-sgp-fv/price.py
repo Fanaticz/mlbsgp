@@ -6,7 +6,8 @@
       "tpm over 2.5 odds +150 -197" \\
       "reb over 9.5 from 11.5 odds +115 -114" --payout 6.58
 
---payout is the slip's price (3.80, 3.80x or +280). It adds EV% and a
+--payout is the slip's price (3.80, 3.80x or +280), or "novig" to ask Novig
+for its parlay price at the legs' lines (player-stat legs only). It adds EV% and a
 quarter-Kelly stake at the FV as shown: units = f/4 x 100 (1u = 1% of
 bankroll), dollars = units x --unit (default $250, Max's unit).
 
@@ -238,12 +239,25 @@ def mc_joint(ps, R, draws=4_000_000):
     return float(np.mean(np.all(Z < np.array([sgp.nppf(q) for q in ps]), axis=1)))
 
 
-def novig_legs(player, legs, max_spread):
+def novig_payout(rows, legs):
+    """Novig's parlay price for the slip as decimal odds text, from its quote
+    endpoint. Every leg must be a player stat posted on Novig at its own line."""
+    ids = []
+    for leg in legs:
+        row = next((r for r in rows.get(leg["stat"], []) if r["line"] == leg["line"]), None)
+        side = "over" if leg["side"] > 0 else "under"
+        if row is None or side not in row["ids"]:
+            raise SystemExit(f"--payout novig: {leg['stat']} {leg['line']:g} isn't posted on Novig; pass the payout by hand")
+        ids.append(row["ids"][side])
+    price, why = novig.parlay(ids)
+    if price is None:
+        raise SystemExit(f"--payout novig: {why}; pass the payout by hand")
+    return f"{1 / price:.4f}"
+
+
+def novig_legs(name, rows, legs, max_spread):
     """Fill each 'odds novig' leg from Novig: p_over (worst-case devig of the
     two sides' asks, from the leg's side), from, and a note."""
-    name, rows = novig.ladder(novig.fetch(), player)
-    if not name:
-        raise SystemExit(f"{player}: not on Novig's open pregame NBA props")
     for leg in legs:
         if not leg.get("novig"):
             continue
@@ -266,7 +280,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("player")
     ap.add_argument("legs", nargs="+")
-    ap.add_argument("--payout", help="slip price: decimal (3.80, 3.80x) or American (+280)")
+    ap.add_argument("--payout", help="slip price: decimal (3.80, 3.80x) or American (+280), or 'novig' for Novig's parlay quote")
     ap.add_argument("--unit", type=float, default=250.0, help="dollars per unit, 1u = 1%% of bankroll")
     ap.add_argument("--kelly", type=float, default=0.25, help="Kelly fraction (default quarter)")
     ap.add_argument("--novig-spread", type=float, default=novig.MAX_SPREAD,
@@ -284,8 +298,14 @@ def main():
     if len(legs) < 2:
         raise SystemExit("need at least two legs")
     print(f"{hits[0]} ({p['team_abbr']}) · data {d['generated_at'][:10]}")
-    if any(leg.get("novig") for leg in legs):
-        novig_legs(hits[0], legs, args.novig_spread)
+    ask_novig = (args.payout or "").lower() == "novig"
+    if ask_novig or any(leg.get("novig") for leg in legs):
+        name, rows = novig.ladder(novig.fetch(), hits[0])
+        if not name:
+            raise SystemExit(f"{hits[0]}: not on Novig's open pregame NBA props")
+        if ask_novig:
+            args.payout = novig_payout(rows, legs)
+        novig_legs(name, rows, legs, args.novig_spread)
     ps = []
     for leg in legs:
         q, note = leg_prob(p, leg)
@@ -317,6 +337,8 @@ def main():
     if args.payout:
         # EV and stake use the FV as shown, so the block checks by hand.
         p, dec = sgp.prob(fv), decimal_odds(args.payout)
+        if ask_novig:
+            print(f"Novig pays {dec:.2f}x ({sgp.american(1 / dec):+d})")
         b = dec - 1
         units = max(0.0, (p * b - (1 - p)) / b) * args.kelly * 100
         print(f"EV% = {(p * dec - 1) * 100:.1f}%")

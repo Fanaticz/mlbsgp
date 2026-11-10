@@ -7,7 +7,8 @@ description: Fair value of an NBA same-player SGP (2+ legs of points, rebounds, 
 
 ## 1. Read the inputs
 
-- **Slip:** player, legs and payout. Novig milestones: "26+ Points · Yes" =
+- **Slip:** player, legs and payout (no slip, legs only → `--payout novig`,
+  see Related). Novig milestones: "26+ Points · Yes" =
   Over 25.5, "10+ Assists · No" = Under 9.5. The payout (Novig "3.80x", or
   American) is the price for EV and Kelly.
 - **Leg odds, in order of preference:**
@@ -158,7 +159,11 @@ count, then commit and push `public/data/nba_correlations.json` to `main`.
   Discord card. Its `sgp.py` holds the copula math this script imports.
 - Dashboard `public/nba.html`: shows the plug-in r and devig r and prices
   2-leg combos in each player's builder.
-- Novig's SGP *multipliers* (the slip payout) still can't be pulled: the
-  official API (docs.novig.com) prices parlays only through its RFQ program
-  for registered liquidity providers, and reverse-engineering the app is off
-  the table. Single-leg prices come from the public catalog (above).
+- Novig's SGP price (the slip payout) can be pulled: `--payout novig` asks
+  Novig's keyless parlay quote (`POST /rfq/v2/quote/unauthenticated`,
+  docs.novig.com/affiliates/parlay-pricing) for the legs' own lines and
+  prints `Novig pays 2.75x (+175)` above the block. Player-stat legs posted
+  on Novig only; a score leg, an unposted line or a 404 ("no price right
+  now") stops with "pass the payout by hand". The quote lasts about 30
+  seconds and the limit is a 10-request burst per IP, then 1 a second. A
+  payout on the user's slip always wins over the quote.
