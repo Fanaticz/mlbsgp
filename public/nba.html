@@ -11,6 +11,8 @@
     --prev:#6f9fd0; --old:#4e5965;
   }
   * { box-sizing:border-box; }
+  /* iOS inflates small text inside the dashboard's iframe; keep sizes as set. */
+  html { -webkit-text-size-adjust:100%; text-size-adjust:100%; }
   body { margin:0; background:var(--bg); color:var(--txt);
     font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
   header { padding:14px 22px 10px; display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 14px; }
@@ -158,16 +160,34 @@
     padding:6px 11px; font-size:12.5px; }
   .plug b { font-size:14px; }
   .pr-out, .sub-scroll { overflow-x:auto; }
+  .pr-out { margin-top:10px; }
   .nvbtn { font-size:12.5px; border-color:var(--accent); color:var(--accent); }
   .nvbtn:disabled { opacity:.5; cursor:wait; }
-  .nv-out { color:var(--muted); font-size:11.5px; margin-top:8px; line-height:1.9; }
+  .nv-out { color:var(--muted); font-size:12px; margin-top:10px; line-height:1.5; }
   .nv-out:empty { display:none; }
+  /* Result of a Fetch FV / Novig SGP press: a boxed report, one line per leg
+     or combo, each opening with a green check (filled) or amber ! (not). */
+  .nv-out.rep { border:1px solid var(--line); border-radius:8px; background:#10161c; padding:9px 11px; max-width:760px; }
+  .nv-h { font-size:11px; text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px; }
+  .nv-h b { color:var(--txt); }
+  .nv-leg + .nv-leg { margin-top:8px; padding-top:8px; border-top:1px solid var(--line); }
+  .nv-st { color:var(--txt); padding-left:22px; position:relative; }
+  .nv-st::before { position:absolute; left:0; top:1px; width:15px; height:15px; border-radius:50%;
+    font-size:10.5px; font-weight:700; line-height:15px; text-align:center; color:#10161c; }
+  .nv-st.ok::before { content:"\2713"; background:var(--pos); }
+  .nv-st.warn::before { content:"!"; background:var(--accent); }
+  .nv-st.busy::before { content:"\2026"; background:var(--old); color:var(--txt); }
+  .nv-st.ok b.w { color:var(--pos); }
+  .nv-st.warn b.w { color:var(--accent); }
+  .nv-pick { padding-left:22px; margin-top:5px; line-height:2.1; }
+  /* A box Novig just filled: green edge until it's edited. */
+  input.got { border-color:var(--pos) !important; box-shadow:0 0 0 1px rgba(63,185,80,.35); }
   .nv-chip { background:var(--panel); border:1px solid var(--line); color:var(--txt); border-radius:7px;
     padding:2px 7px; margin:0 3px; font-size:11.5px; cursor:pointer; white-space:nowrap; }
   .nv-chip:hover { border-color:var(--accent); }
-  .nv-chip.on { border-color:var(--accent); color:var(--accent); }
+  .nv-chip.on { border-color:var(--pos); color:var(--pos); border-style:solid; }
   .nv-chip.wide { border-style:dashed; color:var(--muted); }
-  .nv-chip.wide.on { color:var(--accent); }
+  .nv-chip.wide.on { color:var(--pos); }
   .nv-chip small { font-size:10px; opacity:.8; }
 
   /* The player panel sits in a table row as wide as the table (~1780px), so
@@ -1159,7 +1179,7 @@ function drawPricer(pb, p, games) {
     const { j, L } = tri, legsAm = L.map(l => fairOdds(l[2])).join(",");
     return `<tr data-j="${j}"><td class="l">${L.map(l => `${STAT_LABEL[l[0]]} <b>o${l[1]}</b>`).join(" &amp; ")}</td>` +
       `<td class="fv">${fairOdds(j)}</td>` +
-      `<td><input type="text" inputmode="decimal" class="payin" placeholder="5.66x" value="${pays.tri || ""}" data-pay="tri"></td>` +
+      `<td><input type="text" inputmode="decimal" placeholder="price" class="payin${st.payGot?.tri ? " got" : ""}" value="${pays.tri || ""}" data-pay="tri"></td>` +
       `<td data-ev>${evCell(j, pays.tri)}</td><td>${(1 / j).toFixed(2)}x</td>` +
       `<td>${pct(j)}</td><td class="dvr" title="Devig tool: Leg Odds ${legsAm} and Correlation ${fairOdds(j)}=${legsAm}">3-leg</td>` +
       `<td>${L.map(l => pct(l[2])).join(" · ")}</td></tr>`;
@@ -1174,12 +1194,12 @@ function drawPricer(pb, p, games) {
     const dv = devigR(j, a, b);
     return `<tr data-j="${j}"><td class="l">${xL} <b>${xo ? "o" : "u"}${st.xLine}</b> &amp; ${yL} <b>${yo ? "o" : "u"}${st.yLine}</b></td>` +
       `<td class="fv">${fairOdds(j)}</td>` +
-      `<td><input type="text" inputmode="decimal" class="payin" placeholder="4.14x" value="${pays[k] || ""}" data-pay="${k}"></td>` +
+      `<td><input type="text" inputmode="decimal" class="payin${st.payGot?.[k] ? " got" : ""}" placeholder="price" value="${pays[k] || ""}" data-pay="${k}"></td>` +
       `<td data-ev>${evCell(j, pays[k])}</td><td>${(1 / j).toFixed(2)}x</td>` +
       `<td>${pct(j)}</td><td class="dvr" title="phi-formula r: ${corr >= 0 ? "+" : ""}${corr.toFixed(3)}">${dv >= 0 ? "+" : ""}${dv.toFixed(3)}</td><td>${pct(a)} · ${pct(b)}</td></tr>`;
   };
   out.innerHTML = `<table class="sub"><thead><tr><th class="l">Combo</th><th>Fair odds</th>` +
-    `<th>SGP odds</th><th>EV</th><th>Fair x</th><th>Fair %</th><th title="The r to type into the devig tool's Correlation box; it returns this row's fair odds. Hover a cell for the phi-formula r other calculators use.">Devig r</th><th>Legs</th></tr></thead><tbody>` +
+    `<th title="The price on your slip (4.14x or +314); Novig SGP fills Novig's.">SGP odds</th><th>EV</th><th>Fair x</th><th>Fair %</th><th title="The r to type into the devig tool's Correlation box; it returns this row's fair odds. Hover a cell for the phi-formula r other calculators use.">Devig r</th><th>Legs</th></tr></thead><tbody>` +
     // Over+Over only; PTS+AST (its 4 fair boxes) adds the two Over/Under mixes.
     row(true, true) + (four ? row(true, false) + row(false, true) : "") + triRow() + `</tbody></table>`;
   if (tri) {
@@ -1189,6 +1209,8 @@ function drawPricer(pb, p, games) {
   // Typing a price updates that row's EV only, so the input keeps focus.
   out.querySelectorAll("[data-pay]").forEach(inp => inp.oninput = () => {
     pays[inp.dataset.pay] = inp.value.trim();
+    if (st.payGot) delete st.payGot[inp.dataset.pay];   // typed over: no longer Novig's
+    inp.classList.remove("got");
     const tr = inp.closest("tr");
     tr.querySelector("[data-ev]").innerHTML = evCell(+tr.dataset.j, pays[inp.dataset.pay]);
   });
@@ -1290,26 +1312,26 @@ const nvTight = r => r.spread !== null && r.spread <= NV_MAX_SPREAD + 1e-9;
 // click moves the line there and fills its fair odds.
 async function fetchNovig(pb, p) {
   const btn = pb.querySelector("[data-novig]"), msg = pb.querySelector(".nv-out");
+  const say = (cls, html) => { msg.classList.add("rep"); msg.innerHTML = `<div class="nv-st ${cls}">${html}</div>`; };
   btn.disabled = true;
-  msg.textContent = "Fetching Novig…";
+  btn.textContent = "Fetching…";
+  say("busy", "Asking Novig for fair odds…");
+  const idle = () => { btn.disabled = false; btn.textContent = "Fetch FV"; };
   let lad;
   try {
     lad = novigLadder(await novigMarkets(), p.name);
   } catch (e) {
-    msg.textContent = `Couldn't reach Novig (${e.message}).`;
-    btn.disabled = false;
-    return;
+    idle();
+    return say("warn", `<b class="w">Nothing filled.</b> Couldn't reach Novig (${e.message}).`);
   }
-  btn.disabled = false;
-  if (!lad) {
-    msg.textContent = `${p.name} isn't on Novig's open pregame props right now.`;
-    return;
-  }
+  idle();
+  if (!lad) return say("warn", `<b class="w">Nothing filled.</b> ${p.name} isn't on Novig's open pregame props right now.`);
   const st = propState(p);
   const time = new Date().toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
-  // "PTS o17.5: -113 (mid 53.0%, 52.5–53.5, 1.0¢ wide)" for the line in use.
-  const used = (a, r) => `${STAT_LABEL[st[a + "Stat"]]} ${r.line}: o <b>${fairOdds(r.fair[0])}</b> / u <b>${fairOdds(r.fair[1])}</b> (worst case; mid ${(100 * r.mid).toFixed(1)}%, ` +
-    `${(100 * r.bid).toFixed(1)}–${(100 * r.ask).toFixed(1)}, ${(100 * r.spread).toFixed(1)}¢ wide${nvTight(r) ? "" : ", rough"})`;
+  const cents = r => `${(100 * r.spread).toFixed(1)}¢`;
+  // "PTS 17.5 filled: over -113 / under +105 · 1.0¢ wide" for the line in use.
+  const used = (a, r) => `<b class="w">${STAT_LABEL[st[a + "Stat"]]} ${r.line} filled:</b> over <b>${fairOdds(r.fair[0])}</b> / under <b>${fairOdds(r.fair[1])}</b>` +
+    ` <span class="muted" title="Worst-case devig of Novig's two asks; mid ${(100 * r.mid).toFixed(1)}%, ${(100 * r.bid).toFixed(1)}–${(100 * r.ask).toFixed(1)}">· ${cents(r)} wide${nvTight(r) ? "" : ", rough"}</span>`;
   const byChip = {};
   const fill = (a, r) => {
     st.auto = false;          // the user's now: Pinnacle landing later won't reset it
@@ -1317,43 +1339,58 @@ async function fetchNovig(pb, p) {
     clearTyped(st, a);
     for (const [u, q] of [["", r.fair[0]], ["U", r.fair[1]]]) {
       st[a + "Fv" + u] = fairOdds(q);
-      pb.querySelector(`[data-f="${a}Fv${u}"]`).value = st[a + "Fv" + u];
+      const box = pb.querySelector(`[data-f="${a}Fv${u}"]`);
+      box.value = st[a + "Fv" + u];
+      box.classList.add("got");
     }
   };
-  const lines = ["x", "y", ...(st.zStat ? ["z"] : [])].map(a => {
-    const stat = st[a + "Stat"], line = st[a + "Line"], lab = `${STAT_LABEL[stat]} o${line}`;
-    if (!NV_TYPES[stat]) return `${lab}: Novig doesn't list ${STAT_LABEL[stat].toLowerCase()} props.`;
+  const legs = ["x", "y", ...(st.zStat ? ["z"] : [])];
+  const lines = legs.map(a => {
+    const stat = st[a + "Stat"], line = st[a + "Line"], lab = `${STAT_LABEL[stat]} ${line}`;
+    const no = why => `<b class="w">${lab} not filled:</b> ${why}`;
+    if (!NV_TYPES[stat]) return `<div class="nv-st warn">${no(`Novig doesn't list ${STAT_LABEL[stat].toLowerCase()} props.`)}</div>`;
     const rows = lad[stat] || [], at = rows.find(r => r.line === line);
     if (at && nvTight(at)) {
       fill(a, at);
-      return used(a, at);
+      return `<div class="nv-st ok" data-nvh="${a}">${used(a, at)}</div>`;
     }
-    const why = !at ? `no Novig line at ${line}`
-      : at.mid === null ? `Novig's ${line} is one-sided`
-      : `Novig's ${line} is ${(100 * at.spread).toFixed(1)}¢ wide, not used`;
-    // Wide books stay pickable, dimmed and with their spread: the mid is shaky
+    const why = !at ? `Novig has no line at ${line}.`
+      : at.mid === null ? `Novig's ${line} is one-sided.`
+      : `Novig's ${line} is ${cents(at)} wide, too wide to trust.`;
+    // Wide books stay pickable, dashed and with their spread: the mid is shaky
     // but sometimes it's the only line near the slip's.
     const two = rows.filter(r => r.mid !== null);
     const chips = two.map(r => {
-      const w = !nvTight(r), sp = `${(100 * r.spread).toFixed(1)}¢`;
+      const w = !nvTight(r);
       byChip[`${a}|${r.line}`] = r;
       return `<button type="button" class="nv-chip${w ? " wide" : ""}" data-nv="${a}|${r.line}"` +
-        ` title="${(100 * r.bid).toFixed(1)}–${(100 * r.ask).toFixed(1)}, ${sp} wide${w ? " (rough)" : ""} · vol ${r.vol.toLocaleString()}">` +
-        `${r.line} ${fairOdds(r.fair[0])}${w ? ` <small>${sp}</small>` : ""}</button>`;
+        ` title="${(100 * r.bid).toFixed(1)}–${(100 * r.ask).toFixed(1)}, ${cents(r)} wide${w ? " (rough)" : ""} · vol ${r.vol.toLocaleString()}">` +
+        `o${r.line} <b>${fairOdds(r.fair[0])}</b>${w ? ` <small>${cents(r)} wide</small>` : ""}</button>`;
     }).join("");
-    return `<span data-nvh="${a}">${lab}: ${why}.</span> ${two.length ? `Novig's lines: ${chips}` : "Novig has no two-sided line for this stat."}`;
+    return `<div class="nv-st warn" data-nvh="${a}">${no(why)}</div>` +
+      `<div class="nv-pick">${two.length ? `Tap a Novig line to switch ${STAT_LABEL[stat]} to it: ${chips}` : "Novig has no two-sided line for this stat."}</div>`;
   });
-  msg.innerHTML = `Novig · ${time}<br>` + lines.join("<br>");
+  const head = () => {
+    const n = msg.querySelectorAll(".nv-st.ok").length;
+    msg.querySelector(".nv-h").innerHTML = `<b>Fetch FV</b> · Novig ${time} · ${n === legs.length ? `all ${n}` : `${n} of ${legs.length}`} legs filled`;
+  };
+  msg.classList.add("rep");
+  msg.innerHTML = `<div class="nv-h"></div>` + lines.map(l => `<div class="nv-leg">${l}</div>`).join("");
+  head();
   msg.querySelectorAll("[data-nv]").forEach(c => c.onclick = () => {
     const [a, line] = c.dataset.nv.split("|");
     st[a + "Line"] = +line;
-    st.pays = {};             // SGP prices belonged to the old line
-    pb.querySelector(".nvp-out").textContent = "";
+    st.pays = {}; st.payGot = {};   // SGP prices belonged to the old line
+    const sg = pb.querySelector(".nvp-out");
+    sg.textContent = ""; sg.classList.remove("rep");
     pb.querySelector(`[data-f="${a}Line"]`).value = line;
     fill(a, byChip[`${a}|${line}`]);
     msg.querySelectorAll(`[data-nv^="${a}|"]`).forEach(o => o.classList.toggle("on", o === c));
-    // The note now describes the line the chip moved to.
-    msg.querySelector(`[data-nvh="${a}"]`).innerHTML = used(a, byChip[`${a}|${line}`]) + ".";
+    // The status line now describes the line the chip moved to.
+    const h = msg.querySelector(`[data-nvh="${a}"]`);
+    h.className = "nv-st ok";
+    h.innerHTML = used(a, byChip[`${a}|${line}`]);
+    head();
     drawProp(pb, p);
   });
   drawPricer(pb, p, logOf(p).filter(g => g[st.xStat] != null && g[st.yStat] != null));
@@ -1400,16 +1437,23 @@ async function fetchNovigSgp(pb, p) {
   const btn = pb.querySelector("[data-nvsgp]"), msg = pb.querySelector(".nvp-out");
   const st = propState(p);
   const snap = JSON.stringify(["x", "y", "z"].map(a => [st[a + "Stat"], st[a + "Line"]]));
+  const line = (cls, html) => `<div class="nv-st ${cls}">${html}</div>`;
   btn.disabled = true;
-  msg.textContent = "Asking Novig…";
-  const done = t => { msg.innerHTML = t; btn.disabled = false; };
+  btn.textContent = "Asking…";
+  msg.classList.add("rep");
+  msg.innerHTML = line("busy", "Asking Novig for its parlay price…");
+  const done = html => {
+    msg.innerHTML = html; msg.classList.toggle("rep", !!html);
+    btn.disabled = false; btn.textContent = "Novig SGP";
+  };
+  const fail = why => done(line("warn", `<b class="w">No SGP price filled.</b> ${why}`));
   let lad;
   try {
     lad = novigLadder(await novigMarkets(), p.name);
   } catch (e) {
-    return done(`Couldn't reach Novig (${e.message}).`);
+    return fail(`Couldn't reach Novig (${e.message}).`);
   }
-  if (!lad) return done(`${p.name} isn't on Novig's open pregame props right now.`);
+  if (!lad) return fail(`${p.name} isn't on Novig's open pregame props right now.`);
   const legs = ["x", "y", ...(st.zStat ? ["z"] : [])];
   const at = {}, miss = [];
   for (const a of legs) {
@@ -1419,31 +1463,33 @@ async function fetchNovigSgp(pb, p) {
   const combos = [["oo", "xo yo"], ...(fourBoxes(st) ? [["ou", "xo yu"], ["uo", "xu yo"]] : []),
                   ...(st.zStat ? [["tri", "xo yo zo"]] : [])];
   const parts = [];
-  const pays = st.pays ||= {};
+  const pays = st.pays ||= {}, got = st.payGot ||= {};
   try {
     for (const [k, spec] of combos) {
       const picks = spec.split(" ").map(t => [t[0], t[1]]);
       const lab = picks.map(([a, o]) => `${STAT_LABEL[st[a + "Stat"]]} ${o}${st[a + "Line"]}`).join(" & ");
       if (picks.some(([a]) => !at[a])) continue;   // named once, below
       const ids = picks.map(([a, o]) => at[a].ids[o]);
-      if (ids.some(id => !id)) { parts.push(`${lab}: not offered`); continue; }
+      if (ids.some(id => !id)) { parts.push(line("warn", `<b class="w">${lab} not priced:</b> Novig doesn't offer it.`)); continue; }
       const q = await novigQuote(ids);
       if (q.price) {
         pays[k] = `${q.price.toFixed(2)}x`;
-        parts.push(`${lab} <b>${q.price.toFixed(2)}x</b> (${fairOdds(1 / q.price)})`);
-      } else parts.push(`${lab}: ${q.why}`);
+        got[k] = true;
+        parts.push(line("ok", `<b class="w">${lab}:</b> Novig's slip pays <b>${q.price.toFixed(2)}x</b> (${fairOdds(1 / q.price)}), filled into SGP odds`));
+      } else parts.push(line("warn", `<b class="w">${lab} not priced:</b> ${q.why}.`));
     }
   } catch (e) {
-    return done(`Couldn't reach Novig (${e.message}).`);
+    return fail(`Couldn't reach Novig (${e.message}).`);
   }
   // Lines or stats changed while Novig was answering: the prices aren't theirs.
   if (snap !== JSON.stringify(["x", "y", "z"].map(a => [st[a + "Stat"], st[a + "Line"]]))) {
-    st.pays = {};
+    st.pays = {}; st.payGot = {};
     return done("");
   }
-  if (miss.length) parts.push(`no Novig line at ${miss.join(", ")}`);
+  if (miss.length) parts.push(line("warn", `<b class="w">No SGP price filled.</b> Novig has no line at ${miss.join(" or ")}. ` +
+    `Tap <b>Fetch FV</b>, pick one of Novig's lines, then tap Novig SGP again.`));
   const time = new Date().toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
-  done(`Novig SGP · ${time}, after its 10% parlay fee: ${parts.join(" · ")}`);
+  done(`<div class="nv-h"><b>Novig SGP</b> · ${time} · slip price, after its 10% parlay fee</div>` + parts.join(""));
   drawPricer(pb, p, logOf(p).filter(g => g[st.xStat] != null && g[st.yStat] != null));
 }
 
@@ -1460,6 +1506,7 @@ function initProp(pb) {
       if (/^[xyz]FvU?$/.test(f)) {
         // Pricer inputs: keep the raw text (odds can be negative), reprice only.
         st[f] = el.value.trim();
+        el.classList.remove("got");
         st.typed = st.typed || {};
         st.typed[f] = true;
         const other = f.endsWith("U") ? f.slice(0, -1) : f + "U";
@@ -1474,14 +1521,15 @@ function initProp(pb) {
       // A new stat or line makes that leg's entered fair odds and the
       // combos' SGP prices stale.
       const a = f[0];
-      st.pays = {};
+      st.pays = {}; st.payGot = {};
       pb.querySelector(".nvp-out").textContent = "";
+      pb.querySelector(".nvp-out").classList.remove("rep");
       st[a + "Pin"] = null;
       clearTyped(st, a);
       for (const u of ["", "U"]) {
         st[a + "Fv" + u] = "";
         const fvIn = pb.querySelector(`[data-f="${a}Fv${u}"]`);
-        if (fvIn) fvIn.value = "";
+        if (fvIn) { fvIn.value = ""; fvIn.classList.remove("got"); }
       }
       if (f === "zStat") {
         st.zStat = el.value;
@@ -1504,6 +1552,7 @@ function initProp(pb) {
         const inp = pb.querySelector(`[data-f="${a}Line"]`);
         inp.value = st[a + "Line"];
         inp.parentElement.firstChild.textContent = STAT_LABEL[el.value] + " line";
+        pb.querySelector(".nv-out").classList.remove("rep");
         pb.querySelector(".nv-out").innerHTML = pinNote(st);
         pb.querySelector('[data-f="zStat"]').innerHTML = zOpts(st);
         if (!st.zStat) pb.querySelectorAll(".zon").forEach(e => e.style.display = "none");

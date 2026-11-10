@@ -2,6 +2,18 @@
 
 ## 2026-11-10 session
 
+### NBA dashboard: Fetch FV and Novig SGP say what they did
+Pressing either button used to print a paragraph of muted text, which on an iPhone inside the dashboard's iframe was also blown up by iOS text inflation.
+
+- Each press now leaves a boxed report with one line per leg or combo: a green check and "PTS 19.5 filled: over +102 / under −102 · 2.0¢ wide", or an amber ! and "PTS 17.5 not filled: Novig has no line at 17.5." The Fetch FV header counts it ("0 of 2 legs filled"). Bid/ask/mid detail moved to the tooltip.
+- Under an unfilled leg: "Tap a Novig line to switch PTS to it" and the chips (`o19.5 +102`; wide books dashed with "44.0¢ wide"). The picked chip and the leg's line turn green.
+- Boxes Novig filled (fair odds, SGP odds) get a green edge until edited. The buttons read "Fetching…" / "Asking…" while they work.
+- Novig SGP with a line Novig doesn't have says what to do: "No SGP price filled. Novig has no line at PTS 17.5. Tap Fetch FV, pick one of Novig's lines, then tap Novig SGP again."
+- The SGP odds box's placeholder was "4.14x", which read as a filled price; it is now "price".
+- `text-size-adjust: 100%` stops iOS inflating the text.
+
+Checked in headless Chromium at 390 and 1500 px with Novig's two endpoints mocked (no line, too-wide line, chip picks, parlay quote): no page errors. Not run against live Novig or on a real iPhone.
+
 ### NBA dashboard: cleaned up
 The table was 16 columns with a line annotation beside every r. Now one number per cell.
 
