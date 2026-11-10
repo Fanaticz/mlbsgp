@@ -25,10 +25,11 @@ allows one a second, so the order is the scan's budget):
      points line Novig lists (to main + 10) with threes at main, +1 and +2.
      Fair is modelled, not read off a book: each leg is shifted from the
      main line (price.py's `from`: normal for points, normal + count model
-     for threes) and the copula joint is scaled by LADDER_FIX, the model's
-     measured shortfall on 128 shooters' game logs (x1.00 at the main lines
-     up to x1.28 at +8 points, +2 threes: real tails are fatter). Rows are
-     marked * on the page.
+     for threes), then the usual copula joint. Rows are marked * on the
+     page. --ladder-fix also scales the joint by LADDER_FIX, the model's
+     shortfall on 128 shooters' game logs (x1.00 at the main lines up to
+     x1.28 at +8 points, +2 threes); it is off by default because other
+     books' SGP prices say that correction is too generous.
   2  Over + Over on the other pairs (PTS·REB, PTS·AST, REB·AST, REB·3PM,
      AST·3PM) at main lines, where r is at least --min-r.
   3  Points and Assists, every player, no r cutoff: Over + Over, Points Over
@@ -289,7 +290,12 @@ def candidates(markets, d, by, a):
                             c = combo(6, r, la, lb)
                             if c["key"] in have:
                                 continue
-                            fix = LADDER_FIX[(min(8, 2 * round(dp / 2)), int(dt))]
+                            # The game-log tail correction is off unless asked for: on the
+                            # two slips checked against other books (McCain 14+/3+ and
+                            # 15+/3+, 11-10) the corrected fair sat right on the books'
+                            # own SGP price, i.e. too generous; the plain model sat about
+                            # 6% under it, where a fair value should.
+                            fix = LADDER_FIX[(min(8, 2 * round(dp / 2)), int(dt))] if a.ladder_fix else 1.0
                             # never past what near-perfect dependence would give
                             c.update(j=min(c["j"] * fix, sgp.joint(0.97, la["p"], lb["p"])), model=True, fix=fix, devig_r=None)
                             lad.append(c)
@@ -419,6 +425,7 @@ def main():
     ap.add_argument("--tri-min-ev", type=float, default=-6.0, help="only extend two-leg rows at this EV%% or better")
     ap.add_argument("--max", type=int, default=0, help="quote at most this many combos (default: all)")
     ap.add_argument("--ladder-r", type=float, default=0.70, help="smallest PTS-3PM r for the higher-line combos")
+    ap.add_argument("--ladder-fix", action="store_true", help="scale higher-line joints by LADDER_FIX (off: plain model)")
     ap.add_argument("--no-ladder", dest="ladder", action="store_false", help="skip the higher-line combos")
     ap.add_argument("--min-r", type=float, default=0.15, help="smallest r for an Over + Over on the other pairs")
     ap.add_argument("--max-spread", type=float, default=novig.MAX_SPREAD, help="widest Novig book for a leg (prob)")
@@ -460,7 +467,7 @@ def main():
         print(f"| {c['player']} {c['team']} | {c['label']}{' *' if c.get('model') else ''}{' ~' if c['rough'] else ''} | {legs} | {rtxt} | "
               f"{c['fair']:+d} | {c['slip_x']:.2f}x | {c['ev']:+.1%} | {c['qk']:.2f}u | ${c['wager']:,.0f} |")
     if any(c.get("model") for c in shown):
-        print("* a higher line: fair value modelled from the main line (see LADDER_FIX), not read off a book")
+        print("* a higher line: fair value modelled from the main line, not read off a book")
     if any(c["rough"] for c in shown):
         print("~ a leg sits on a Novig book wider than 4c: rough fair value")
 

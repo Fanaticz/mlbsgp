@@ -176,11 +176,14 @@ between asks, so reprice the slip (and check sharp odds) before a bet.
 Higher lines ("the ladder", rows marked *): for shooters with r at least
 0.70 the scan also asks every higher points line Novig lists (to main + 10)
 with threes at main, +1 and +2. Those fairs are modelled: legs shifted from
-the main line as `from` does, joint scaled by `LADDER_FIX` (the model runs
-short on the tails: actual / model was x1.00 at the main lines, x1.06 at +1
-three, x1.28 at +8 points and +2 threes over 128 shooters' logs). First live
-run 11-10: 28 of 85 above fair, several at +30% or more. Model risk is real
-out there: confirm a ladder play with Vulture's alt-line fair before sizing.
+the main line as `from` does, then the usual copula joint. Checked against
+other books 11-10 on McCain: 14+ PTS / 3+ 3PM plain model +218 vs Fanatics
++195; 15+ / 3+ plain model +226 vs Fanatics +210, FD +207, DK +206, so the
+model sits about 6% longer than the books, as a fair value should.
+`--ladder-fix` scales the joint by a game-log tail correction (`LADDER_FIX`,
+x1.00 to x1.28); it is off because it put fair right on the books' price.
+Still model fairs: confirm a ladder play against other books' SGP price or
+Vulture before sizing.
 
 `--league nfl` scans NFL instead: Over + Over on Receptions·Yards,
 Receptions·TD and Yards·TD (TD = Novig's TOUCHDOWNS 0.5, any touchdown) for
