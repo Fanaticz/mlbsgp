@@ -2455,11 +2455,43 @@ const NV_SCAN_PY = path.join(__dirname, '.claude', 'skills', 'nba-sgp-fv', 'scan
 // button asks for one (?now=1), at most once a minute for the same board.
 const NV_SCAN_NOW_MS = 60 * 1000;
 const NV_SCAN_MAX_MS = 20 * 60 * 1000;   // a pass stuck this long is killed
-const NV_SCAN = { proc: null, league: 'nba', wide: false, started: 0, finished: 0, total: 0, done: 0, players: 0,
-                  data: null, seconds: 0, error: null, rows: new Map(), seen: new Set() };
+// One board per league and book width ("nba:0", "nfl:1", ...). The last pass
+// of each is kept, in memory and on disk, until the next Fetch replaces it:
+// leaving the page, switching league or a redeploy doesn't lose it (the disk
+// copy survives a redeploy only where NBA_DATA_DIR / /data is a volume).
+const NV_BOARDS = new Map();
+let NV_RUN = null;   // { proc, key } while a pass is running
+const NV_SCAN_FILE = (() => {
+  const fsx = require('fs'), os = require('os');
+  for (const dir of [process.env.NBA_DATA_DIR, '/data/nba', os.tmpdir()]) {
+    if (!dir) continue;
+    try { fsx.mkdirSync(dir, { recursive: true }); fsx.accessSync(dir, fsx.constants.W_OK); return path.join(dir, 'novig_scan_boards.json'); } catch (_) { /* next */ }
+  }
+  return null;
+})();
+function nvBoard(key) {
+  if (!NV_BOARDS.has(key)) {
+    NV_BOARDS.set(key, { started: 0, finished: 0, total: 0, done: 0, players: 0, data: null, seconds: 0,
+                         error: null, rows: new Map(), seen: new Set() });
+  }
+  return NV_BOARDS.get(key);
+}
+function nvSaveBoards() {
+  if (!NV_SCAN_FILE) return;
+  const out = {};
+  for (const [k, b] of NV_BOARDS) out[k] = Object.assign({}, b, { rows: [...b.rows.values()], seen: undefined });
+  require('fs').writeFile(NV_SCAN_FILE, JSON.stringify(out), () => {});
+}
+try {
+  const saved = JSON.parse(require('fs').readFileSync(NV_SCAN_FILE, 'utf8'));
+  for (const [k, b] of Object.entries(saved)) {
+    NV_BOARDS.set(k, Object.assign(b, { rows: new Map((b.rows || []).map(r => [r.key, r])), seen: new Set() }));
+  }
+} catch (_) { /* no saved boards yet */ }
 
 function startNovigScan(league, wide) {
-  if (NV_SCAN.proc) return;
+  if (NV_RUN) return;
+  const key = `${league}:${wide ? 1 : 0}`, B = nvBoard(key);
   // wide: also price legs on books up to 8c (10c for the second threes
   // milestone); the page flags those rows as rough.
   const args = [NV_SCAN_PY, '--json', '--league', league].concat(wide ? ['--max-spread', '0.08', '--alt-spread', '0.10'] : []);
@@ -2467,19 +2499,19 @@ function startNovigScan(league, wide) {
   try {
     proc = require('child_process').spawn(PYTHON, args, { stdio: ['ignore', 'pipe', 'pipe'] });
   } catch (e) {
-    NV_SCAN.error = 'scan could not start: ' + e.message;
-    NV_SCAN.finished = Date.now();
+    B.error = 'scan could not start: ' + e.message;
     return;
   }
-  Object.assign(NV_SCAN, { proc, league, wide, started: Date.now(), total: 0, done: 0, error: null, seen: new Set() });
-  const timer = setTimeout(() => { if (NV_SCAN.proc === proc) proc.kill(); }, NV_SCAN_MAX_MS);
+  NV_RUN = { proc, key };
+  Object.assign(B, { started: Date.now(), total: 0, done: 0, error: null, seen: new Set() });
+  const timer = setTimeout(() => { if (NV_RUN && NV_RUN.proc === proc) proc.kill(); }, NV_SCAN_MAX_MS);
   let buf = '', err = '', ok = false;
   const onEvent = e => {
-    if (e.type === 'start') { NV_SCAN.total = e.total; NV_SCAN.players = e.players; NV_SCAN.data = e.data; }
-    else if (e.type === 'more') { NV_SCAN.total += e.add; }
-    else if (e.type === 'row') { NV_SCAN.done++; NV_SCAN.seen.add(e.key); NV_SCAN.rows.set(e.key, e); }
-    else if (e.type === 'miss') { NV_SCAN.done++; NV_SCAN.rows.delete(e.key); }
-    else if (e.type === 'done') { ok = true; NV_SCAN.seconds = e.seconds; }
+    if (e.type === 'start') { B.total = e.total; B.players = e.players; B.data = e.data; }
+    else if (e.type === 'more') { B.total += e.add; }
+    else if (e.type === 'row') { B.done++; B.seen.add(e.key); B.rows.set(e.key, e); }
+    else if (e.type === 'miss') { B.done++; B.rows.delete(e.key); }
+    else if (e.type === 'done') { ok = true; B.seconds = e.seconds; }
   };
   proc.stdout.on('data', chunk => {
     buf += chunk;
@@ -2489,23 +2521,24 @@ function startNovigScan(league, wide) {
   });
   proc.stderr.on('data', c => { err = (err + c).slice(-4000); });
   const end = why => {
-    if (NV_SCAN.proc !== proc) return;
+    if (!NV_RUN || NV_RUN.proc !== proc) return;
     clearTimeout(timer);
-    NV_SCAN.proc = null;
-    NV_SCAN.finished = Date.now();
+    NV_RUN = null;
     if (ok) {
+      B.finished = Date.now();
       // A combo this pass didn't price is gone: its line moved or closed.
-      for (const k of [...NV_SCAN.rows.keys()]) if (!NV_SCAN.seen.has(k)) NV_SCAN.rows.delete(k);
+      for (const k of [...B.rows.keys()]) if (!B.seen.has(k)) B.rows.delete(k);
     } else {
-      NV_SCAN.error = (why || err.trim().split('\n').pop() || 'scan stopped early').slice(0, 300);
+      B.error = (why || err.trim().split('\n').pop() || 'scan stopped early').slice(0, 300);
     }
+    nvSaveBoards();
   };
   proc.on('error', e => end('scan could not start: ' + e.message));
   proc.on('close', () => end(''));
 }
 
-// GET /api/nba/novig-scan[?wide=1] — the board so far, and whether a pass is
-// running. Polling it is what keeps the scanner going.
+// GET /api/nba/novig-scan?league=nba|nfl|soccer[&wide=1][&now=1] — that
+// board's last pass (or the one running), and what else is running.
 // Private: the scanner answers only to the passcode in NOVIG_SCAN_KEY (sent
 // as X-Scan-Key; the page asks for it once and keeps it on that device).
 // With no NOVIG_SCAN_KEY set, the scanner is off for everyone.
@@ -2518,19 +2551,14 @@ app.get('/api/nba/novig-scan', (req, res) => {
   }
   const wide = req.query.wide === '1';
   const league = ['nfl', 'soccer'].includes(req.query.league) ? req.query.league : 'nba';
-  const now = Date.now();
-  // One board at a time: asking for another league or other books waits for
-  // the running pass, then starts over on what was asked.
-  const other = league !== NV_SCAN.league || wide !== NV_SCAN.wide;
-  if (req.query.now === '1' && !NV_SCAN.proc && (other || now - NV_SCAN.finished > NV_SCAN_NOW_MS)) {
-    if (other) NV_SCAN.rows.clear();
-    startNovigScan(league, wide);
-  }
+  const key = `${league}:${wide ? 1 : 0}`, B = nvBoard(key), now = Date.now();
+  // One pass at a time (Novig's limit is per IP), and only when asked.
+  if (req.query.now === '1' && !NV_RUN && now - Math.max(B.finished, B.started) > NV_SCAN_NOW_MS) startNovigScan(league, wide);
+  const mine = !!NV_RUN && NV_RUN.key === key;
   res.json({
-    now, scanning: !!NV_SCAN.proc, league: NV_SCAN.league, wide: NV_SCAN.wide, started: NV_SCAN.started, finished: NV_SCAN.finished,
-    total: NV_SCAN.total, done: NV_SCAN.done, players: NV_SCAN.players, data: NV_SCAN.data,
-    seconds: NV_SCAN.seconds, error: NV_SCAN.error,
-    rows: [...NV_SCAN.rows.values()],
+    now, league, wide, scanning: mine, busy: NV_RUN && !mine ? NV_RUN.key.split(':')[0] : null,
+    started: B.started, finished: B.finished, total: B.total, done: B.done, players: B.players, data: B.data,
+    seconds: B.seconds, error: B.error, rows: [...B.rows.values()],
   });
 });
 

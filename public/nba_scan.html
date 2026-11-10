@@ -184,9 +184,11 @@ function shown() {
 function age(row) {
   // The server's clock stamps both `now` and each row, so the phone's clock doesn't matter.
   const s = Math.max(0, (S.now + (Date.now() - GOT)) / 1000 - row.at);
-  return s < 90 ? `${Math.round(s)}s` : `${Math.round(s / 60)}m`;
+  return s < 90 ? `${Math.round(s)}s` : s < 5400 ? `${Math.round(s / 60)}m` : s < 172800 ? `${Math.round(s / 3600)}h` : `${Math.round(s / 86400)}d`;
 }
-const isOld = row => (S.now + (Date.now() - GOT)) / 1000 - row.at > 300;
+// While a pass runs, rows it hasn't re-priced yet are from the pass before: dimmed.
+const isOld = row => S.scanning && row.at * 1000 < S.started;
+const ago = ms => { const m = Math.round(ms / 60000); return m < 1 ? "just now" : m < 90 ? `${m} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`; };
 
 function tip(ms) {
   if (!ms) return "";
@@ -214,14 +216,6 @@ function detail(c) {
 function render() {
   if (!S) return;
   const st = document.getElementById("status"), rowsEl = document.getElementById("rows");
-  if (S.league !== LEAGUE || S.wide !== WIDE) {
-    // The server is still on the board asked for before; ours starts when that pass ends.
-    st.classList.remove("err");
-    st.textContent = S.scanning ? `A ${S.league.toUpperCase()} pass is still running. Press Fetch when it finishes.` : "Press Fetch to scan.";
-    rowsEl.innerHTML = "";
-    document.getElementById("bar").style.width = "0";
-    return;
-  }
   const all = S.rows.slice().sort((a, b) => b.ev - a.ev);
   const plays = all.filter(c => c.ev * 100 >= MINEV);
   const q = document.getElementById("search").value.trim().toLowerCase();
@@ -239,10 +233,11 @@ function render() {
   } else if (S.error) {
     st.textContent = `Scan failed: ${S.error}`;
   } else if (S.finished) {
-    st.innerHTML = `Last pass ${clock(Date.now() - (S.now + (Date.now() - GOT) - S.finished))} · ${S.total} combos in ` +
-      `${Math.floor(S.seconds / 60)}:${String(Math.round(S.seconds % 60)).padStart(2, "0")} · ${n} · press Fetch for a new one`;
+    const since = S.now + (Date.now() - GOT) - S.finished;
+    st.innerHTML = `Saved from ${clock(Date.now() - since)} (${ago(since)}) · ${S.total} combos · ${n}` +
+      (S.busy ? ` · a ${S.busy.toUpperCase()} pass is running` : since > 20 * 60000 ? " · prices are old: Fetch before betting" : "");
   } else {
-    st.textContent = "Press Fetch to scan.";
+    st.textContent = S.busy ? `A ${S.busy.toUpperCase()} pass is running. Press Fetch when it finishes.` : "Press Fetch to scan.";
   }
   document.getElementById("bar").style.width = S.scanning && S.total ? `${Math.round(100 * S.done / S.total)}%` : "0";
 
@@ -281,7 +276,7 @@ function render() {
     `${S.data ? ` (data ${S.data})` : ""}. Novig: the multiplier on its slip, its public quote after the 10% parlay fee. ` +
     `* marks a higher line: its fair value is modelled from the main line, so it is rougher than a main-line row. ` +
     `Quotes move by a few percent between asks and last about 30 seconds, so a row is a lead to re-check on the slip, and against sharp odds, before betting. ` +
-    `Nothing is asked of Novig until you press Fetch.`;
+    `Nothing is asked of Novig until you press Fetch; the last pass for each league stays here until then.`;
 }
 
 async function poll() {
@@ -305,7 +300,7 @@ async function poll() {
     S = await r.json();
     GOT = Date.now();
     if (S.scanning) NOW = false;
-    document.getElementById("now").disabled = S.scanning;
+    document.getElementById("now").disabled = S.scanning || !!S.busy;
     render();
   } catch (e) {
     const st = document.getElementById("status");
