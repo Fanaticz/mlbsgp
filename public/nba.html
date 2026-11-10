@@ -1539,7 +1539,7 @@ async function init() {
   // Pinnacle's main lines land after the first paint too: the r columns move
   // to them, and builders still on their defaults reopen on them.
   loadPinnacle().then(() => {
-    if (!PIN) return;
+    if (!PIN || !PIN.n) return;   // no lines matched: the header keeps saying averages
     document.getElementById("meta").textContent =
       `Box stats: ${BOX_SEASON} season · r at Pinnacle main lines (@, ${PIN.at}, ${PIN.n} players), else this season's averages (~)`;
     for (const [id, st] of PROPS) if (st.auto) PROPS.delete(id);

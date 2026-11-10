@@ -13,12 +13,15 @@ body{background:var(--bg);color:var(--tx);font-family:'Inter',sans-serif;min-hei
    style (same Space Mono + subtle border as existing badges) so it reads
    as "mode switcher" rather than "tab". Active sport gets the accent-
    green treatment that MLB nav-tabs already use. */
-.sport-bar{display:flex;gap:6px;padding:8px 22px 8px 24px;background:var(--bg);border-bottom:1px solid var(--b1);align-items:center;}
-.sport-bar .sport-label{font-size:10px;color:var(--mu);font-family:'Space Mono',monospace;letter-spacing:.8px;margin-right:4px;}
-.sport-btn{display:inline-flex;align-items:center;gap:7px;padding:5px 14px;font-size:11px;font-weight:600;font-family:'Space Mono',monospace;letter-spacing:.6px;background:transparent;border:1px solid var(--b1);border-radius:16px;color:var(--mu);cursor:pointer;transition:border-color .15s,color .15s,background .15s;}
-.sport-btn:hover{border-color:var(--b2);color:var(--tx);}
-.sport-btn.active{color:var(--ac);border-color:var(--ac);background:rgba(74,222,128,.08);}
-.sport-btn .sport-dot{width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.35;}
+.sport-bar{display:flex;gap:8px;padding:10px 22px 10px 24px;background:var(--bg);border-bottom:1px solid var(--b2);align-items:center;overflow-x:auto;scrollbar-width:none;}
+.sport-bar::-webkit-scrollbar{display:none;}
+.sport-bar>*{flex:none;}
+.sport-bar .sport-label{font-size:10px;color:#9aa5bd;font-family:'Space Mono',monospace;letter-spacing:.8px;margin-right:4px;}
+.sport-btn{display:inline-flex;align-items:center;gap:7px;padding:7px 14px;font-size:12px;font-weight:600;font-family:'Space Mono',monospace;letter-spacing:.6px;white-space:nowrap;background:var(--s2);border:1px solid #4a5370;border-radius:16px;color:#d5dbec;cursor:pointer;transition:border-color .15s,color .15s,background .15s;}
+.sport-btn:hover{border-color:#6b7490;color:#fff;}
+.sport-btn.active{color:#0d0f14;border-color:var(--ac);background:var(--ac);}
+.sport-btn .sport-dot{width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.45;}
+@media(max-width:600px){.sport-bar{padding:10px 12px;gap:6px;}.sport-btn{padding:8px 11px;}.sport-btn .sport-dot{display:none;}.sport-bar .sport-label{margin-right:0;}}
 .sport-btn.active .sport-dot{opacity:1;}
 .nav{display:flex;background:var(--s1);border-bottom:1px solid var(--b1);padding:0 24px;position:sticky;top:0;z-index:100;}
 .nav-tab{padding:13px 18px;font-size:13px;font-weight:500;cursor:pointer;border:none;background:transparent;color:var(--mu);border-bottom:2px solid transparent;font-family:'Inter',sans-serif;}

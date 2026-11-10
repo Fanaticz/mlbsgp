@@ -2,6 +2,9 @@
 
 ## 2026-11-10 session
 
+### Sport tabs: readable
+The tab bar above every page had dim grey text on transparent pills, and on a phone the two-word tabs wrapped onto two lines. Inactive tabs are now light text on a filled pill with a visible border, the active tab is solid green with dark text, labels stay on one line, and on a phone the bar scrolls sideways (dots hidden to fit more). The NBA header no longer says "r at Pinnacle main lines (… 0 players)" when Pinnacle matched nobody.
+
 ### NBA dashboard: higher-contrast colors
 The page was hard to read, mostly on a phone: grey labels on a near-black panel, boxes barely lighter than their background, and r values as tinted text on a faint tint.
 
