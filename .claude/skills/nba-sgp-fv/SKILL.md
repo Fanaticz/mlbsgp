@@ -186,6 +186,9 @@ A shifted leg is capped at Novig's own ask on that line (a seller there means
 the true chance is lower). Still model fairs: confirm a ladder play against other books' SGP price or
 Vulture before sizing.
 
+Triple-doubles (10+ REB · 10+ AST with points at the lowest line from 10+
+and the next two up) are asked for players whose rebounds and assists main
+lines are both 5.5+. Rebounds + Assists at main lines is not asked.
 Build-your-own double-doubles (10+ with 10+ on points, rebounds, assists;
 `--no-dd` skips them) ride at the end of the NBA pass, modelled like the
 ladder. First test 11-10: 2 of 34 above fair, and Novig prices them in line

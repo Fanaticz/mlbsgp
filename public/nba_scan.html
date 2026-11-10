@@ -135,8 +135,8 @@ let NOW = false;           // Fetch was pressed: ask for a pass on the next poll
 let GOT = 0;               // when it arrived (ms, this clock)
 let MODE = "plays", WIDE = false, MINEV = 0, LEAGUE = "nba";
 const PAIR_OPTS = {
-  nba: [["pts,tpm", "PTS + 3PM"], ["ladder", "PTS + 3PM higher lines"], ["dd", "Double-doubles (10+ / 10+)"], ["pts,reb", "PTS + REB (bigs)"],
-        ["reb,ast", "REB + AST"], ["reb,tpm", "REB + 3PM"], ["ast,tpm", "AST + 3PM"], ["3", "3 legs"]],
+  nba: [["pts,tpm", "PTS + 3PM"], ["ladder", "PTS + 3PM higher lines"], ["dd", "Double-doubles (10+ / 10+)"], ["td", "Triple-doubles"], ["pts,reb", "PTS + REB (bigs)"],
+        ["reb,tpm", "REB + 3PM"], ["ast,tpm", "AST + 3PM"], ["3", "3 legs"]],
   nfl: [["rec,yds", "REC + YDS"], ["rec,td", "REC + TD"], ["yds,td", "YDS + TD"], ["3", "3 legs"]],
   soccer: [["n3", "Win + corners"], ["n4", "With a goals leg"]],
 };
@@ -222,7 +222,7 @@ function render() {
   let rows = MODE === "plays" ? plays : all;
   if (q) rows = rows.filter(c => c.player.toLowerCase().includes(q));
   const pair = document.getElementById("pair").value;
-  if (pair) rows = rows.filter(c => pair === "dd" ? !!c.dd : pair === "ladder" ? !!c.model && !c.dd : pair === "n3" ? c.legs.length === 3 : pair === "n4" ? c.legs.length === 4 : pair === "3" ? c.legs.length === 3 : pair === "mix" ? c.legs.some(L => L.side === "under")
+  if (pair) rows = rows.filter(c => pair === "td" ? !!c.td : pair === "dd" ? !!c.dd : pair === "ladder" ? !!c.model && !c.dd && !c.td : pair === "n3" ? c.legs.length === 3 : pair === "n4" ? c.legs.length === 4 : pair === "3" ? c.legs.length === 3 : pair === "mix" ? c.legs.some(L => L.side === "under")
     : c.legs.length === 2 && c.legs.every(L => L.side === "over") && c.legs.map(L => L.stat).join() === pair);
 
   // Status line.

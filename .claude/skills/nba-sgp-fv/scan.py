@@ -30,13 +30,16 @@ allows one a second, so the order is the scan's budget):
      shortfall on 128 shooters' game logs (x1.00 at the main lines up to
      x1.28 at +8 points, +2 threes); it is off by default because other
      books' SGP prices say that correction is too generous.
+  1d Triple-doubles for players whose rebounds and assists main lines are
+     both 5.5+: 10+ rebounds · 10+ assists with points at the lowest line
+     from 10+, then the next two up (no higher than his main line).
   1c Build-your-own double-doubles: 10+ with 10+ on points, rebounds and
      assists, for players whose main lines are both at least 5.5. Modelled
      like the ladder (legs shifted from the main lines), marked *.
   2  Over + Over at main lines, where r is at least --min-r: Points +
      Rebounds for big men only (centres, and forwards averaging 9.5+
-     rebounds), and REB·AST, REB·3PM, AST·3PM for anyone. Points + Assists
-     is not asked in any direction, and nothing is asked Over + Under.
+     rebounds), and REB·3PM, AST·3PM for anyone. Points + Assists and
+     Rebounds + Assists are not asked, and nothing is asked Over + Under.
   4  Three legs: the best --tri two-leg Over + Over rows (at --tri-min-ev or
      better) each get every other stat's main-line Over added, wherever no
      pair in the three has a negative r.
@@ -320,15 +323,37 @@ def candidates(markets, d, by, a):
                     continue
                 c.update(model=True, dd=True, fix=1.0, devig_r=None)
                 dds.append(c)
+        # Triple-doubles for the players who threaten one (rebounds and assists
+        # main lines both 5.5+): 10+ rebounds, 10+ assists and points at the
+        # lowest line listed from 10+, then the next two lines up, no higher
+        # than his main line.
+        if a.tier == 0 and a.dd and all(k in main for k in ("pts", "reb", "ast")) \
+                and min(main["reb"]["line"], main["ast"]["line"]) >= 5.5:
+            rr = next((q for q in rows["reb"] if q["line"] == 9.5 and "over" in q["ids"]), None)
+            ra = next((q for q in rows["ast"] if q["line"] == 9.5 and "over" in q["ids"]), None)
+            pts = [q for q in rows["pts"] if 9.5 <= q["line"] <= max(main["pts"]["line"], 9.5) and "over" in q["ids"]][:3]
+            if rr and ra and pts:
+                rpr, rpa, rra = (price.shrunk_r(d, by, p, x, y)[0] for x, y in (("pts", "reb"), ("pts", "ast"), ("reb", "ast")))
+                for pq in pts:
+                    try:
+                        legs = [shifted(p, "pts", pq, main["pts"]), shifted(p, "reb", rr, main["reb"]), shifted(p, "ast", ra, main["ast"])]
+                        j = price.tri_joint([L["p"] for L in legs], [[1, rpr, rpa], [rpr, 1, rra], [rpa, rra, 1]])
+                    except (ValueError, ZeroDivisionError, OverflowError):
+                        continue
+                    dds.append({"key": ",".join(L["id"] for L in legs), "tier": 8, "player": p["name"], "id": p["athlete_id"],
+                                "team": p.get("team_abbr") or "", "starts": starts, "legs": legs,
+                                "label": " · ".join(leg_text(L) for L in legs), "r": min(rpr, rpa, rra), "j": j,
+                                "forced": False, "devig_r": None, "model": True, "td": True, "fix": 1.0,
+                                "rough": max(L["width"] for L in legs) > novig.MAX_SPREAD + 1e-9})
         if a.tier == 1:
             continue
         for x, y in PAIRS:
             if x not in main or y not in main:
                 continue
             r = price.shrunk_r(d, by, p, x, y)[0]
-            # Max's cuts (11-10): no Points + Assists at all, and Points +
-            # Rebounds only for big men. Neither has paid in any test.
-            if (x, y) == ("pts", "ast") or ((x, y) == ("pts", "reb") and not big(p)):
+            # Max's cuts (11-10): no Points + Assists or Rebounds + Assists,
+            # and Points + Rebounds only for big men. None has paid in any test.
+            if (x, y) in (("pts", "ast"), ("reb", "ast")) or ((x, y) == ("pts", "reb") and not big(p)):
                 continue
             if r >= a.min_r and a.tier in (0, 2):
                 rest.append(combo(2, r, leg(x, main[x], 1), leg(y, main[y], 1)))
