@@ -123,7 +123,9 @@ def parlay(outcome_ids):
                 continue
             body = e.read().decode(errors="replace")[:200]
             return None, "no price for these legs right now" if e.code == 404 else f"{e.code} {body}"
-    return None, "rate limited"
+        except OSError:   # dropped connection, timeout, DNS: one quote lost, not the whole scan
+            time.sleep(2)
+    return None, "rate limited or unreachable"
 
 
 def player_name(m):
