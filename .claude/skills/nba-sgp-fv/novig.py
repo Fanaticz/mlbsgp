@@ -57,7 +57,7 @@ def fetch(league="NBA", stats=tuple(TYPES)):
         if after:
             q["after"] = after
         url = f"{HOST}/v3/public/catalog/markets?{urllib.parse.urlencode(q)}"
-        req = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "mlbsgp-nba-sgp-fv"})
+        req = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "nba-sgp-fv"})
         with urllib.request.urlopen(req, timeout=30) as r:
             page = json.load(r)
         out += page.get("items", [])
@@ -95,7 +95,7 @@ def parlay(outcome_ids):
     get on Novig right now". 10-request burst per IP, then 1 a second."""
     req = urllib.request.Request(
         f"{HOST}/rfq/v2/quote/unauthenticated", data=json.dumps({"outcomeIds": outcome_ids}).encode(),
-        headers={"Content-Type": "application/json", "Accept": "application/json", "User-Agent": "mlbsgp-nba-sgp-fv"})
+        headers={"Content-Type": "application/json", "Accept": "application/json", "User-Agent": "nba-sgp-fv"})
     for _ in range(3):
         try:
             with urllib.request.urlopen(req, timeout=60) as r:
