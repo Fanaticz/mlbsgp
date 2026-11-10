@@ -135,7 +135,7 @@ let NOW = false;           // Fetch was pressed: ask for a pass on the next poll
 let GOT = 0;               // when it arrived (ms, this clock)
 let MODE = "plays", WIDE = false, MINEV = 0, LEAGUE = "nba";
 const PAIR_OPTS = {
-  nba: [["pts,tpm", "PTS + 3PM"], ["ladder", "PTS + 3PM higher lines"], ["dd", "Double-doubles (10+ / 10+)"], ["pts,reb", "PTS + REB"], ["pts,ast", "PTS + AST"], ["mix", "PTS / AST over-under"],
+  nba: [["pts,tpm", "PTS + 3PM"], ["ladder", "PTS + 3PM higher lines"], ["dd", "Double-doubles (10+ / 10+)"], ["pts,reb", "PTS + REB (bigs)"],
         ["reb,ast", "REB + AST"], ["reb,tpm", "REB + 3PM"], ["ast,tpm", "AST + 3PM"], ["3", "3 legs"]],
   nfl: [["rec,yds", "REC + YDS"], ["rec,td", "REC + TD"], ["yds,td", "YDS + TD"], ["3", "3 legs"]],
   soccer: [["n3", "Win + corners"], ["n4", "With a goals leg"]],

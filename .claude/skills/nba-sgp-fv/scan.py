@@ -33,12 +33,10 @@ allows one a second, so the order is the scan's budget):
   1c Build-your-own double-doubles: 10+ with 10+ on points, rebounds and
      assists, for players whose main lines are both at least 5.5. Modelled
      like the ladder (legs shifted from the main lines), marked *.
-  2  Over + Over on the other pairs (PTS·REB, PTS·AST, REB·AST, REB·3PM,
-     AST·3PM) at main lines, where r is at least --min-r.
-  3  Points and Assists, every player, no r cutoff: Over + Over, Points Over
-     + Assists Under, Points Under + Assists Over. (The fourth, Under +
-     Under, Novig rejects.) No other pair is asked Over + Under: Max never
-     plays those.
+  2  Over + Over at main lines, where r is at least --min-r: Points +
+     Rebounds for big men only (centres, and forwards averaging 9.5+
+     rebounds), and REB·AST, REB·3PM, AST·3PM for anyone. Points + Assists
+     is not asked in any direction, and nothing is asked Over + Under.
   4  Three legs: the best --tri two-leg Over + Over rows (at --tri-min-ev or
      better) each get every other stat's main-line Over added, wherever no
      pair in the three has a negative r.
@@ -113,6 +111,12 @@ def shifted(p, stat, row, main):
         po = min(po, row["ask"])
     return {"stat": stat, "side": "over", "line": row["line"], "p": po, "fair": sgp.american(po),
             "width": main["spread"], "id": row["ids"]["over"], "from": None if row is main else main["line"]}
+
+
+def big(p):
+    """A centre, or a forward who rebounds like one (Wembanyama, Giannis and
+    Sabonis are listed as F)."""
+    return p.get("position") == "C" or (p.get("position") == "F" and (p.get("reb_mean") or 0) >= 9.5)
 
 
 def usable(r, spread):
@@ -322,12 +326,11 @@ def candidates(markets, d, by, a):
             if x not in main or y not in main:
                 continue
             r = price.shrunk_r(d, by, p, x, y)[0]
-            if (x, y) == ("pts", "ast"):
-                if a.tier in (0, 2):
-                    rest.append(combo(2, r, leg(x, main[x], 1), leg(y, main[y], 1)))
-                if a.tier in (0, 3):
-                    rest += [combo(3, r, leg(x, main[x], sx), leg(y, main[y], -sx)) for sx in (1, -1)]
-            elif r >= a.min_r and a.tier in (0, 2):
+            # Max's cuts (11-10): no Points + Assists at all, and Points +
+            # Rebounds only for big men. Neither has paid in any test.
+            if (x, y) == ("pts", "ast") or ((x, y) == ("pts", "reb") and not big(p)):
+                continue
+            if r >= a.min_r and a.tier in (0, 2):
                 rest.append(combo(2, r, leg(x, main[x], 1), leg(y, main[y], 1)))
     t1.sort(key=lambda c: -c["r"])
     # Most lift over independent legs first: that's where a price can be off.
