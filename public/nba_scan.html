@@ -61,7 +61,7 @@
   @media (max-width:760px) {
     header { padding:12px 14px 8px; }
     .controls { padding:8px 14px; gap:8px 10px; }
-    .toggle { flex:1 1 100%; }
+    .toggle { flex:1 1 40%; }
     .toggle button { flex:1; padding:9px 8px; }
     input[type=search] { flex:1 1 40%; width:auto; min-width:0; }
     input[type=search], input[type=number] { font-size:16px; }
@@ -84,14 +84,16 @@
   <div class="sub" id="status">Starting…</div>
 </header>
 <div class="controls">
+  <div class="toggle" id="league">
+    <button data-league="nba" class="on">NBA</button>
+    <button data-league="nfl">NFL</button>
+  </div>
   <div class="toggle" id="mode">
     <button data-mode="plays" class="on">Plays</button>
     <button data-mode="all">All combos</button>
   </div>
   <input type="search" id="search" placeholder="Filter by name…" />
   <select id="pair" title="Show one kind of combo" style="background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:7px 10px;font-size:13px">
-    <option value="">All pairs</option><option value="pts,tpm">PTS + 3PM</option><option value="pts,reb">PTS + REB</option>
-    <option value="pts,ast">PTS + AST</option><option value="mix">PTS over + AST under</option><option value="reb,ast">REB + AST</option><option value="reb,tpm">REB + 3PM</option><option value="ast,tpm">AST + 3PM</option><option value="3">3 legs</option>
   </select>
   <label class="muted" title="Plays shows combos at this EV or better.">Min EV %
     <input type="number" id="minev" value="0" step="1" /></label>
@@ -121,7 +123,16 @@
 // polls while it is actually on screen.
 let S = null;              // last response
 let GOT = 0;               // when it arrived (ms, this clock)
-let MODE = "plays", WIDE = false, MINEV = 0;
+let MODE = "plays", WIDE = false, MINEV = 0, LEAGUE = "nba";
+const PAIR_OPTS = {
+  nba: [["pts,tpm", "PTS + 3PM"], ["pts,reb", "PTS + REB"], ["pts,ast", "PTS + AST"], ["mix", "PTS over + AST under"],
+        ["reb,ast", "REB + AST"], ["reb,tpm", "REB + 3PM"], ["ast,tpm", "AST + 3PM"], ["3", "3 legs"]],
+  nfl: [["rec,yds", "REC + YDS"], ["rec,td", "REC + TD"], ["yds,td", "YDS + TD"], ["3", "3 legs"]],
+};
+function pairOpts() {
+  document.getElementById("pair").innerHTML = `<option value="">All pairs</option>` +
+    PAIR_OPTS[LEAGUE].map(([v, t]) => `<option value="${v}">${t}</option>`).join("");
+}
 const OPEN = new Set();    // expanded rows, by key
 // The passcode (the server's NOVIG_SCAN_KEY), kept on this device once entered.
 const KEYLS = "nbaScanKey";
@@ -139,16 +150,17 @@ const LS = "nbaNovigScan";
 try {
   const v = JSON.parse(localStorage.getItem(LS) || "{}");
   if (v.mode === "all") MODE = "all";
+  if (v.league === "nfl") LEAGUE = "nfl";
   WIDE = !!v.wide;
   if (Number.isFinite(v.minev)) MINEV = v.minev;
 } catch (_) {}
-const save = () => { try { localStorage.setItem(LS, JSON.stringify({ mode: MODE, wide: WIDE, minev: MINEV })); } catch (_) {} };
+const save = () => { try { localStorage.setItem(LS, JSON.stringify({ mode: MODE, wide: WIDE, minev: MINEV, league: LEAGUE })); } catch (_) {} };
 
 const am = v => (v > 0 ? "+" : "−") + Math.abs(v);
 const pct = v => `${v >= 0 ? "+" : "−"}${Math.abs(100 * v).toFixed(1)}%`;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
 const clock = ms => new Date(ms).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
-const LABEL = { pts:"PTS", reb:"REB", ast:"AST", tpm:"3PM" };
+const LABEL = { pts:"PTS", reb:"REB", ast:"AST", tpm:"3PM", rec:"REC", yds:"YDS", td:"TD" };
 
 // Shown on screen: the tab is visible and, inside the site's tab frame, that
 // frame is the one displayed.
@@ -186,6 +198,14 @@ function detail(c) {
 function render() {
   if (!S) return;
   const st = document.getElementById("status"), rowsEl = document.getElementById("rows");
+  if (S.league !== LEAGUE || S.wide !== WIDE) {
+    // The server is still on the board asked for before; ours starts when that pass ends.
+    st.classList.remove("err");
+    st.textContent = `Finishing the pass in progress, then ${LEAGUE.toUpperCase()} starts…`;
+    rowsEl.innerHTML = "";
+    document.getElementById("bar").style.width = "0";
+    return;
+  }
   const all = S.rows.slice().sort((a, b) => b.ev - a.ev);
   const plays = all.filter(c => c.ev * 100 >= MINEV);
   const q = document.getElementById("search").value.trim().toLowerCase();
@@ -214,7 +234,7 @@ function render() {
     rowsEl.innerHTML = `<div class="empty">${
       q ? "No combo for that name." :
       !all.length ? (S.scanning ? "Pricing the slate. Rows appear as Novig answers (about one a second)." :
-        `Nothing to price right now: no player has two Novig books tight enough.${S.wide ? "" : " They tighten through the day; tick <b>Wide books</b> for rough numbers."}`) :
+        `Nothing to price right now: no player has two Novig books tight enough.${S.wide ? "" : ` They tighten ${LEAGUE === "nfl" ? "toward the weekend" : "through the day"}; tick <b>Wide books</b> for rough numbers.`}`) :
       `No combo at ${MINEV > 0 ? "+" : ""}${MINEV}% or better right now. Best of ${all.length}: ${esc(best.player)}, ${esc(best.label)} at ${pct(best.ev)}. <b>All combos</b> shows the rest.`
     }</div>`;
   } else {
@@ -238,6 +258,7 @@ function render() {
     });
   }
   document.getElementById("foot").innerHTML =
+    (LEAGUE === "nfl" ? `NFL: receptions, receiving yards and anytime touchdown for WRs, TEs and RBs (no rushing props). ` : "") +
     `Fair value: each leg is Novig’s own exchange book at that line, devigged worst case, joined with the player’s shrunk correlation` +
     `${S.data ? ` (data ${S.data})` : ""}. Novig: the multiplier on its slip, its public quote after the 10% parlay fee. ` +
     `Quotes move by a few percent between asks and last about 30 seconds, so a row is a lead to re-check on the slip, and against sharp odds, before betting. ` +
@@ -251,7 +272,7 @@ async function poll() {
     return;
   }
   try {
-    const r = await fetch(`/api/nba/novig-scan${WIDE ? "?wide=1" : ""}`, { cache: "no-store", headers: { "X-Scan-Key": KEY } });
+    const r = await fetch(`/api/nba/novig-scan?league=${LEAGUE}${WIDE ? "&wide=1" : ""}`, { cache: "no-store", headers: { "X-Scan-Key": KEY } });
     if (r.status === 403) {
       KEY = "";
       try { localStorage.removeItem(KEYLS); } catch (_) {}
@@ -281,6 +302,16 @@ document.querySelectorAll("#mode button").forEach(b => {
   };
 });
 document.getElementById("search").oninput = render;
+pairOpts();
+document.querySelectorAll("#league button").forEach(b => {
+  b.classList.toggle("on", b.dataset.league === LEAGUE);
+  b.onclick = () => {
+    LEAGUE = b.dataset.league; save(); OPEN.clear(); pairOpts();
+    document.querySelectorAll("#league button").forEach(o => o.classList.toggle("on", o === b));
+    document.getElementById("rows").innerHTML = "";
+    poll();
+  };
+});
 document.getElementById("pair").onchange = render;
 document.getElementById("lock").onsubmit = e => {
   e.preventDefault();

@@ -6,6 +6,7 @@ player, ranked by EV at what Novig's slip pays.
   python3 scan.py --tier 1        # Points + Threes only (about 2 minutes)
   python3 scan.py --max 120       # stop after 120 quotes
   python3 scan.py --min-ev 3      # print only rows at +3% or better
+  python3 scan.py --league nfl    # NFL: receptions, receiving yards, anytime TD
   python3 scan.py --json          # one JSON object per line as quotes land
                                   # (server.js reads this for the Scanner page)
 
@@ -30,6 +31,12 @@ allows one a second, so the order is the scan's budget):
 Under + Under is never asked: Novig rejects it for one player. Legs on books
 wider than --max-spread are skipped, not guessed.
 
+NFL (--league nfl): WRs, TEs and RBs in public/data/nfl_correlations.json,
+whose shrunk r's are already copula correlations. Over + Over at main lines
+on Receptions·Yards, Receptions·TD and Yards·TD (TD = Novig's TOUCHDOWNS 0.5,
+any touchdown, as the data counts receiving + rushing), then the three
+together. Rushing props aren't priced: the data has no r for them.
+
 EV and the stake use the fair value as shown (American odds), like price.py:
 quarter Kelly, 1u = 1% of bankroll = --unit dollars.
 """
@@ -50,8 +57,17 @@ import price  # noqa: E402  shrunk_r
 import sgp  # noqa: E402  joint, american, prob, load
 
 STATS = ("pts", "reb", "ast", "tpm")
-LABEL = {"pts": "PTS", "reb": "REB", "ast": "AST", "tpm": "3PM"}
+LABEL = {"pts": "PTS", "reb": "REB", "ast": "AST", "tpm": "3PM", "rec": "REC", "yds": "YDS", "td": "TD"}
 PAIRS = [("pts", "reb"), ("pts", "ast"), ("reb", "ast"), ("reb", "tpm"), ("ast", "tpm")]
+NFL_STATS = ("rec", "yds", "td")
+NFL_PAIRS = {("rec", "yds"): "rec_yds", ("rec", "td"): "rec_td", ("yds", "td"): "yds_td"}
+NFL_DATA = os.path.join(HERE, "..", "..", "..", "public", "data", "nfl_correlations.json")
+
+
+def nfl_r(p, x, y):
+    """The player's shrunk copula r for the pair, or None when he has too few games."""
+    k = NFL_PAIRS.get((x, y)) or NFL_PAIRS.get((y, x))
+    return ((p.get(k) or {}).get("shrunk") or {}).get("r")
 
 
 def usable(r, spread):
@@ -83,6 +99,35 @@ def leg_text(L):
     if L["side"] == "over":
         return f"{math.floor(L['line']) + 1}+ {LABEL[L['stat']]}"
     return f"U{L['line']:g} {LABEL[L['stat']]}"
+
+
+def nfl_candidates(markets, by, a):
+    """NFL: Over + Over at main lines on each pair with r at least --min-r,
+    most lift over independent legs first. Same shapes as candidates()."""
+    key = {novig.norm(n): n for n in by}
+    out, ctx = [], {}
+    for nm in sorted({novig.player_name(m) for m in markets}):
+        p = by.get(key.get(novig.norm(nm), ""))
+        if not p:
+            continue
+        _, rows = novig.ladder(markets, nm)
+        main = {s: main_line(v) for s in NFL_STATS
+                for v in [[r for r in rows.get(s, []) if usable(r, a.max_spread)]] if v}
+        starts = min((r["starts"] for v in rows.values() for r in v), default=None)
+        ctx[p["athlete_id"]] = (p, main, starts)
+        for x, y in NFL_PAIRS:
+            r = nfl_r(p, x, y)
+            if x not in main or y not in main or r is None or r < a.min_r:
+                continue
+            la, lb = leg(x, main[x], 1), leg(y, main[y], 1)
+            j = sgp.joint(r, la["p"], lb["p"])
+            out.append({"key": f"{la['id']},{lb['id']}", "tier": 2, "player": p["name"], "id": p["athlete_id"],
+                        "team": p.get("team_abbr") or "", "starts": starts, "legs": [la, lb],
+                        "label": f"{leg_text(la)} · {leg_text(lb)}", "r": r, "j": j, "forced": False,
+                        "devig_r": sgp.devig_r(j, la["p"], lb["p"]),
+                        "rough": max(la["width"], lb["width"]) > novig.MAX_SPREAD + 1e-9})
+    out.sort(key=lambda c: -c["j"] / (c["legs"][0]["p"] * c["legs"][1]["p"]))
+    return (out[:a.max] if a.max else out), ctx
 
 
 def candidates(markets, d, by, a):
@@ -136,16 +181,16 @@ def candidates(markets, d, by, a):
     return (out[:a.max] if a.max else out), ctx
 
 
-def triples(rows, ctx, d, by, a):
+def triples(rows, ctx, stats, rfun, a):
     """Three-leg combos: the best two-leg Over + Over rows, each with one more
-    stat's main-line Over."""
+    stat's main-line Over. rfun(player, stat, stat) is the pair's r (or None)."""
     base = sorted((c for c in rows if len(c["legs"]) == 2 and all(L["side"] == "over" for L in c["legs"])
                    and c["ev"] * 100 >= a.tri_min_ev), key=lambda c: -c["ev"])[:a.tri]
     out, seen = [], set()
     for c in base:
         p, main, starts = ctx[c["id"]]
         la, lb = c["legs"]
-        for s in STATS:
+        for s in stats:
             if s in (la["stat"], lb["stat"]) or s not in main:
                 continue
             lc = leg(s, main[s], 1)
@@ -153,8 +198,8 @@ def triples(rows, ctx, d, by, a):
             if ids in seen:   # the same three legs, reached from another pair
                 continue
             seen.add(ids)
-            rac, rbc = (price.shrunk_r(d, by, p, L["stat"], s)[0] for L in (la, lb))
-            if min(rac, rbc) < 0:
+            rac, rbc = (rfun(p, L["stat"], s) for L in (la, lb))
+            if rac is None or rbc is None or min(rac, rbc) < 0:
                 continue
             # Forced points (see candidates): the parlay is threes + the new leg.
             j = (sgp.joint(rbc, lb["p"], lc["p"]) if c["forced"] else
@@ -196,10 +241,16 @@ def finish(c, quote, unit, kelly):
 def scan(a, emit):
     """Quote every candidate; emit(event dict) as things happen. Returns the priced rows."""
     t0 = time.time()
-    d, by = sgp.load()
-    cands, ctx = candidates(novig.fetch(), d, by, a)
+    if a.league == "nfl":
+        d = json.load(open(NFL_DATA))
+        cands, ctx = nfl_candidates(novig.fetch("NFL", NFL_STATS), {p["name"]: p for p in d["players"]}, a)
+        stats, rfun = NFL_STATS, nfl_r
+    else:
+        d, by = sgp.load()
+        cands, ctx = candidates(novig.fetch(), d, by, a)
+        stats, rfun = STATS, lambda p, x, y: price.shrunk_r(d, by, p, x, y)[0]
     emit({"type": "start", "total": len(cands), "players": len({c["id"] for c in cands}),
-          "data": d["generated_at"][:10], "at": t0})
+          "league": a.league, "data": d["generated_at"][:10], "at": t0})
     pace, rows, lock = Pace(), [], threading.Lock()
 
     def one(c):
@@ -215,7 +266,7 @@ def scan(a, emit):
     with concurrent.futures.ThreadPoolExecutor(max_workers=a.workers) as pool:
         list(pool.map(one, cands))
         if a.tri and a.tier in (0, 4):
-            more = triples(list(rows), ctx, d, by, a)
+            more = triples(list(rows), ctx, stats, rfun, a)
             emit({"type": "more", "add": len(more)})
             cands = cands + more
             list(pool.map(one, more))
@@ -225,6 +276,7 @@ def scan(a, emit):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--league", default="nba", choices=("nba", "nfl"))
     ap.add_argument("--tier", type=int, default=0, choices=(0, 1, 2, 3), help="one two-leg group only (default: all, then three legs)")
     ap.add_argument("--tri", type=int, default=12, help="two-leg rows to extend to three legs (0 = none)")
     ap.add_argument("--tri-min-ev", type=float, default=-6.0, help="only extend two-leg rows at this EV%% or better")

@@ -172,6 +172,11 @@ Over rows (-6% EV or better) with each other stat's main-line Over added
 marked ~, rough). About one quote a second. Under + Under is never asked:
 Novig rejects it for one player. A row is a lead: quotes move a few percent
 between asks, so reprice the slip (and check sharp odds) before a bet.
+`--league nfl` scans NFL instead: Over + Over on Receptions·Yards,
+Receptions·TD and Yards·TD (TD = Novig's TOUCHDOWNS 0.5, any touchdown) for
+the WRs, TEs and RBs in `public/data/nfl_correlations.json`, then the three
+together. No rushing props (no r for them). NFL books are thin until late in
+the week.
 The dashboard's Scanner page (`public/nba_scan.html`, `/api/nba/novig-scan`
 in `server.js`) runs the same script on the server while the page is open.
 It is private: the route needs the passcode in the server's `NOVIG_SCAN_KEY`

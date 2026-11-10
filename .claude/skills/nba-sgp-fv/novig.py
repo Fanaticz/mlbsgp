@@ -31,7 +31,11 @@ import sgp  # noqa: E402  devig_worst
 
 HOST = os.environ.get("NOVIG_HOST", "https://api.novig.com")
 TYPES = {"pts": "POINTS", "reb": "REBOUNDS", "ast": "ASSISTS", "tpm": "THREE_POINTERS_MADE"}
-STAT = {v: k for k, v in TYPES.items()}
+# NFL props the slate scan prices (scan.py --league nfl). TOUCHDOWNS 0.5 is the
+# anytime touchdown: any TD the player scores.
+NFL_TYPES = {"rec": "RECEPTIONS", "yds": "RECEIVING_YARDS", "td": "TOUCHDOWNS"}
+ALL_TYPES = {**TYPES, **NFL_TYPES}
+STAT = {v: k for k, v in ALL_TYPES.items()}
 MAX_SPREAD = 0.04  # ask - bid on the Over, in probability
 SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
 # Novig's full name -> ESPN's short one, where they differ (same table in nba.html).
@@ -50,7 +54,7 @@ def norm(name):
 
 def fetch(league="NBA", stats=tuple(TYPES)):
     """Every open pregame market of these stat types, all pages."""
-    q = {"league": league, "marketType": ",".join(TYPES[s] for s in stats),
+    q = {"league": league, "marketType": ",".join(ALL_TYPES[s] for s in stats),
          "eventStatus": "OPEN_PREGAME", "limit": 5000}
     out, after = [], None
     for _ in range(20):

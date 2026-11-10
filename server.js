@@ -2453,14 +2453,14 @@ app.get('/api/nba/scoreboard', async (req, res) => {
 const NV_SCAN_PY = path.join(__dirname, '.claude', 'skills', 'nba-sgp-fv', 'scan.py');
 const NV_SCAN_REST_MS = 45 * 1000;       // pause between passes while watched
 const NV_SCAN_MAX_MS = 20 * 60 * 1000;   // a pass stuck this long is killed
-const NV_SCAN = { proc: null, wide: false, started: 0, finished: 0, total: 0, done: 0, players: 0,
+const NV_SCAN = { proc: null, league: 'nba', wide: false, started: 0, finished: 0, total: 0, done: 0, players: 0,
                   data: null, seconds: 0, error: null, rows: new Map(), seen: new Set() };
 
-function startNovigScan(wide) {
+function startNovigScan(league, wide) {
   if (NV_SCAN.proc) return;
   // wide: also price legs on books up to 8c (10c for the second threes
   // milestone); the page flags those rows as rough.
-  const args = [NV_SCAN_PY, '--json'].concat(wide ? ['--max-spread', '0.08', '--alt-spread', '0.10'] : []);
+  const args = [NV_SCAN_PY, '--json', '--league', league].concat(wide ? ['--max-spread', '0.08', '--alt-spread', '0.10'] : []);
   let proc;
   try {
     proc = require('child_process').spawn(PYTHON, args, { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -2469,7 +2469,7 @@ function startNovigScan(wide) {
     NV_SCAN.finished = Date.now();
     return;
   }
-  Object.assign(NV_SCAN, { proc, wide, started: Date.now(), total: 0, done: 0, error: null, seen: new Set() });
+  Object.assign(NV_SCAN, { proc, league, wide, started: Date.now(), total: 0, done: 0, error: null, seen: new Set() });
   const timer = setTimeout(() => { if (NV_SCAN.proc === proc) proc.kill(); }, NV_SCAN_MAX_MS);
   let buf = '', err = '', ok = false;
   const onEvent = e => {
@@ -2515,14 +2515,17 @@ app.get('/api/nba/novig-scan', (req, res) => {
     return setTimeout(() => res.status(403).json({ error: 'wrong passcode' }), 800);  // slows guessing
   }
   const wide = req.query.wide === '1';
+  const league = req.query.league === 'nfl' ? 'nfl' : 'nba';
   const now = Date.now();
-  if (!NV_SCAN.proc && (!NV_SCAN.finished || wide !== NV_SCAN.wide || now - NV_SCAN.finished > NV_SCAN_REST_MS)) {
-    if (wide !== NV_SCAN.wide) NV_SCAN.rows.clear();
-    startNovigScan(wide);
+  // One board at a time: asking for another league or other books waits for
+  // the running pass, then starts over on what was asked.
+  const other = league !== NV_SCAN.league || wide !== NV_SCAN.wide;
+  if (!NV_SCAN.proc && (!NV_SCAN.finished || other || now - NV_SCAN.finished > NV_SCAN_REST_MS)) {
+    if (other) NV_SCAN.rows.clear();
+    startNovigScan(league, wide);
   }
-  res.set('Cache-Control', 'no-store');
   res.json({
-    now, scanning: !!NV_SCAN.proc, wide: NV_SCAN.wide, started: NV_SCAN.started, finished: NV_SCAN.finished,
+    now, scanning: !!NV_SCAN.proc, league: NV_SCAN.league, wide: NV_SCAN.wide, started: NV_SCAN.started, finished: NV_SCAN.finished,
     total: NV_SCAN.total, done: NV_SCAN.done, players: NV_SCAN.players, data: NV_SCAN.data,
     seconds: NV_SCAN.seconds, restMs: NV_SCAN_REST_MS, error: NV_SCAN.error,
     rows: [...NV_SCAN.rows.values()],
