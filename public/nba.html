@@ -13,12 +13,26 @@
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--txt);
     font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
-  header { padding:18px 22px 10px; border-bottom:1px solid var(--line); }
-  h1 { margin:0 0 4px; font-size:19px; }
+  header { padding:14px 22px 10px; display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 14px; }
+  h1 { margin:0; font-size:18px; }
   .sub { color:var(--muted); font-size:12.5px; }
-  .controls { display:flex; flex-wrap:wrap; gap:14px; align-items:center;
-    padding:12px 22px; border-bottom:1px solid var(--line); position:sticky;
+  .controls { display:flex; flex-wrap:wrap; gap:10px 12px; align-items:center;
+    padding:10px 22px; border-top:1px solid var(--line); border-bottom:1px solid var(--line); position:sticky;
     top:0; background:var(--bg); z-index:5; }
+  /* Sorting is the column headers' job on a wide screen; the menu is for
+     phones, where the header row is hidden. */
+  .sortw { display:none !important; }
+  /* Options: the rarely-touched filters, tucked into a popover. */
+  .opts { position:relative; }
+  .opts summary { list-style:none; cursor:pointer; color:var(--muted); font-size:13px;
+    border:1px solid var(--line); border-radius:8px; padding:6px 12px; user-select:none; }
+  .opts summary::-webkit-details-marker { display:none; }
+  .opts[open] summary, .opts summary:hover { color:var(--txt); }
+  .opts-panel { position:absolute; top:calc(100% + 6px); left:0; z-index:20; background:var(--panel);
+    border:1px solid var(--line); border-radius:10px; padding:12px 14px; display:grid; gap:10px;
+    min-width:230px; box-shadow:0 8px 24px rgba(0,0,0,.5); font-size:13px; }
+  .opts-panel label { display:flex; align-items:center; gap:8px; white-space:nowrap; }
+  .opts-panel input[type=number] { margin-left:auto; }
   .toggle { display:inline-flex; border:1px solid var(--line); border-radius:8px;
     overflow:hidden; }
   .toggle button { background:transparent; color:var(--muted); border:0;
@@ -31,16 +45,22 @@
   select { background:var(--panel); border:1px solid var(--line); color:var(--txt);
     border-radius:8px; padding:7px 8px; font-size:13px; }
   .count { color:var(--muted); font-size:12.5px; margin-left:auto; }
-  .sched { padding:8px 22px; border-bottom:1px solid var(--line); color:var(--muted);
-    font-size:12px; display:flex; flex-wrap:wrap; gap:8px 14px; }
-  .sched .g { white-space:nowrap; }
-  .sched b { color:var(--txt); }
-  .sched .flip { margin-left:10px; background:none; border:1px solid var(--accent); color:var(--accent);
+  .sched { padding:8px 22px; color:var(--muted);
+    font-size:12px; display:flex; flex-wrap:wrap; gap:6px 8px; align-items:center; }
+  .sched .g { white-space:nowrap; border:1px solid var(--line); border-radius:6px; padding:2px 8px; }
+  .sched b { color:var(--txt); font-weight:600; }
+  .sched .flip { margin-left:auto; background:none; border:1px solid var(--accent); color:var(--accent);
                  border-radius:7px; padding:2px 9px; font-size:12px; cursor:pointer; white-space:nowrap; }
   .sched .flip:disabled { opacity:.5; cursor:wait; }
   .wrap { overflow-x:auto; padding:0 12px 60px; }
-  table { border-collapse:collapse; width:100%; min-width:1240px; }
-  th,td { padding:7px 9px; text-align:right; white-space:nowrap; }
+  table { border-collapse:collapse; width:100%; min-width:900px; }
+  th,td { padding:8px 10px; text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  /* First correlation column: a rule and some air between box stats and r's. */
+  #tbl th.grp, #tbl td.grp { border-left:1px solid var(--line); padding-left:18px; }
+  #tbl td.c-stat { color:#c3ccd5; }
+  /* Three r columns don't need the full width of a wide monitor. */
+  #tbl.narrow { max-width:1180px; }
+  #tbl td.c-r { min-width:92px; }
   th { position:sticky; top:0; background:var(--panel); color:var(--muted);
     font-weight:600; font-size:11.5px; text-transform:uppercase; letter-spacing:.03em;
     cursor:pointer; border-bottom:1px solid var(--line); user-select:none; }
@@ -60,13 +80,15 @@
     background:var(--pos); margin-right:6px; vertical-align:middle; }
   .r { font-weight:600; border-radius:4px; padding:1px 4px; }
   .rflag { color:var(--accent); font-weight:700; font-size:11.5px; cursor:help; }
-  .at { color:var(--muted); font-size:10.5px; margin-left:3px; white-space:nowrap; }
+  #tbl td.c-r .rflag { display:inline-block; width:9px; text-align:right; }
+  .at { color:var(--muted); font-size:10.5px; margin-left:5px; white-space:nowrap; }
+  #tbl td.c-r .at { display:inline-block; min-width:64px; text-align:left; }
   .raw { color:var(--muted); font-size:11.5px; }
   .sig { text-decoration:underline; text-decoration-color:var(--accent);
     text-underline-offset:2px; }
   .muted { color:var(--muted); }
   .err { color:var(--neg); padding:20px 22px; }
-  .care { display:inline-block; width:12px; color:var(--muted); }
+  .care { display:inline-block; width:14px; color:var(--old); font-size:11px; }
   tbody tr.prow { cursor:pointer; }
   tbody tr.prow:hover .care { color:var(--accent); }
   tbody tr.drow > td { padding:0; background:#10161c; }
@@ -85,11 +107,12 @@
     padding:12px 14px 14px; margin-bottom:14px; }
   .pb-title { font-size:13px; font-weight:600; margin-bottom:2px; }
   .pb-sub { color:var(--muted); font-size:11.5px; margin-bottom:10px; }
+  .pb-head { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 18px; margin-bottom:10px; }
   .pb-legend { display:flex; flex-wrap:wrap; gap:6px 16px; color:var(--muted);
-    font-size:11.5px; margin-bottom:10px; }
+    font-size:11.5px; }
   .pb-legend i { display:inline-block; width:9px; height:9px; border-radius:50%;
     margin-right:6px; vertical-align:-1px; }
-  .pb-row { display:flex; flex-wrap:nowrap; gap:10px 14px; align-items:center; flex-basis:100%; min-width:0; }
+  .pb-row { display:flex; flex-wrap:nowrap; gap:10px 14px; align-items:center; min-width:0; }
   .pb-row label { white-space:nowrap; display:flex; align-items:center; min-width:0; }
   .pb-row select { min-width:0; max-width:42vw; }
   .pb-controls { display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center;
@@ -162,28 +185,41 @@
   @media (max-width: 700px) {
     header { padding:12px 14px 8px; }
     h1 { font-size:17px; }
-    h1 .h1sub { display:block; font-size:12px !important; margin-top:2px; }
     #meta { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
       overflow:hidden; cursor:pointer; }
     #meta.open { display:block; }
     .controls { position:static; padding:10px 14px; gap:8px 10px; }
-    .toggle { flex:1 1 auto; }
+    .sortw { display:inline-flex !important; order:3; }
+    .opts { order:2; margin-left:auto; }
+    #outn, .count { order:4; }
+    #tbl.narrow { max-width:none; }
+    .opts-panel { left:auto; right:0; }
+    .pb-row { flex-basis:100%; }
+    .toggle { flex:1 1 100%; }
     .toggle button { flex:1; padding:9px 8px; white-space:nowrap; }
     input[type=search] { flex:1 1 100%; width:auto; }
     input[type=search], input[type=number], input[type=text], select { font-size:16px; }
-    #sortsel { max-width:60vw; }
+    #sortsel { max-width:44vw; }
     .count { margin-left:0; width:100%; }
-    .sched { padding:8px 14px; }
+    /* One swipeable row instead of six stacked lines. */
+    .sched { padding:8px 14px; flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; }
+    .sched::-webkit-scrollbar { display:none; }
+    .sched > * { flex:none; }
+    .sched .flip { margin-left:6px; }
     .wrap { padding:0 8px 60px; overflow-x:visible; }
     #tbl, #tbl > tbody { display:block; min-width:0; width:auto; }
     #tbl > thead { display:none; }
-    #tbl > tbody > tr.prow { display:grid; grid-template-columns:repeat(21, minmax(0,1fr));
+    #tbl > tbody > tr.prow { display:grid; grid-template-columns:repeat(42, minmax(0,1fr));
       row-gap:6px; padding:10px 4px; }
     #tbl > tbody > tr.prow > td { padding:0 2px; text-align:left; min-width:0; }
-    #tbl td.c-name { grid-column:span 15; font-size:15px; overflow:hidden; text-overflow:ellipsis; }
-    #tbl td.c-tag { grid-column:span 3; text-align:right; color:var(--muted); font-size:12px; align-self:center; }
-    #tbl td.c-stat { grid-column:span 3; text-align:center; font-variant-numeric:tabular-nums; }
-    #tbl td.c-r { grid-column:span 7; text-align:center; font-size:15px; }
+    #tbl th.grp, #tbl td.grp { border-left:0; padding-left:2px; }
+    #tbl td.c-r { min-width:0; }
+    #tbl td.c-r .at { display:inline; min-width:0; }
+    #tbl td.c-r .rflag:empty, #tbl td.c-r .at:empty { display:none; }
+    #tbl td.c-name { grid-column:span 30; font-size:15px; overflow:hidden; text-overflow:ellipsis; }
+    #tbl td.c-tag { grid-column:span 6; text-align:right; color:var(--muted); font-size:12px; align-self:center; }
+    #tbl td.c-stat { grid-column:span 7; text-align:center; }
+    #tbl td.c-r { grid-column:span 14; text-align:center; font-size:15px; }
     #tbl td[data-label]::before { content:attr(data-label); display:block; font-size:10px;
       color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
     #tbl td.srt::before { color:var(--accent) !important; font-weight:700; }
@@ -198,7 +234,7 @@
 </head>
 <body>
 <header>
-  <h1>NBA Points Correlations <span class="muted h1sub" style="font-size:13px">— PTS·REB, PTS·AST, PTS·3PM &amp; game score·REB</span></h1>
+  <h1>NBA Points Correlations</h1>
   <div class="sub" id="meta">Loading…</div>
 </header>
 
@@ -211,14 +247,7 @@
   <label class="muted" title="Set to 0 to show everyone (incl. low-minute players).">Min mpg
     <input type="number" id="minmpg" value="20" min="0" step="1" style="width:56px" />
   </label>
-  <label class="muted" title="Optional. 0 = show everyone (small samples included).">Min G
-    <input type="number" id="ming" value="0" min="0" step="1" style="width:56px" />
-  </label>
-  <span class="muted" id="outn" title="Players ESPN's injury report lists as Out (or suspended) are always left off. Day-to-day / questionable players stay, with a badge."></span>
-  <label class="muted" title="Games under 60% of a player's median minutes that season (injury exits, blowouts, foul trouble). A prop on a player who plays is action, so they always count in the r values; uncheck to leave them out of the box stats and prop builder.">
-    <input type="checkbox" id="shortg" checked /> Show short-min games
-  </label>
-  <span class="sortw"><label class="muted">Sort:
+  <span class="sortw"><label class="muted">Sort
     <select id="sortsel">
       <option value="pts_reb.shrunk">PTS·REB r</option>
       <option value="pts_ast.shrunk">PTS·AST r</option>
@@ -233,6 +262,17 @@
       <option value="_min">Minutes</option>
     </select>
   </label><button type="button" class="sgn" id="sortdir" title="Flip the sort order"></button></span>
+  <details class="opts" id="opts"><summary>Options</summary>
+    <div class="opts-panel">
+      <label class="muted" title="Final game total, team score and opponent score vs his rebounds. Small for most players, so off by default.">
+        <input type="checkbox" id="scorecols" /> Game score·REB columns</label>
+      <label class="muted" title="Games under 60% of a player's median minutes that season (injury exits, blowouts, foul trouble). A prop on a player who plays is action, so they always count in the r values; uncheck to leave them out of the box stats and prop builder.">
+        <input type="checkbox" id="shortg" checked /> Short-minute games</label>
+      <label class="muted" title="Optional. 0 = show everyone (small samples included).">Min games
+        <input type="number" id="ming" value="0" min="0" step="1" style="width:56px" /></label>
+    </div>
+  </details>
+  <span class="muted" id="outn" style="font-size:12.5px" title="Players ESPN's injury report lists as Out (or suspended) are always left off. Day-to-day / questionable players stay, with a badge."></span>
   <span class="count" id="count"></span>
 </div>
 
@@ -288,7 +328,8 @@ async function slateFor(ymd) {
     // game starts its players drop off (the slate bar still shows it).
     const state = e.status?.type?.state || "";
     if (state === "pre") pair.forEach(p => ids.add(p.id));
-    const st = e.status?.type?.shortDetail || state;
+    // "11/10 - 7:30 PM EST" -> "7:30 PM": the bar already says which day.
+    const st = (e.status?.type?.shortDetail || state).replace(/^\d+\/\d+\s*-\s*/, "").replace(/\s+[ECMP][SD]T$/, "");
     games.push({ matchup: pair.map(p=>p.ab).reverse().join(" @ "), st });
   }
   return { ids, games, date: ymd, live:true, day:"today" };
@@ -360,7 +401,7 @@ function renderSched(games, live, day = "today", flip = false) {
   const sw = !flip ? "" : `<button type="button" class="flip" data-flip title="${day === "tomorrow"
     ? "Back to the games still to tip today" : "Done with today? Show tomorrow's slate and players now"}">${
     day === "tomorrow" ? "← Today’s slate" : "Tomorrow’s slate →"}</button>`;
-  el.innerHTML = `<span class="muted">${Day}’s slate${live?" (live)":""}${day==="tomorrow"&&!flip?" — no games left today":""}:</span> ` +
+  el.innerHTML = `<span class="muted">${Day}${day==="tomorrow"&&!flip?" (no games left today)":""}</span> ` +
     games.map(g => `<span class="g"><b>${g.matchup}</b>${g.st?` <span class="muted">${g.st}</span>`:""}</span>`).join("") + sw;
   const b = el.querySelector("[data-flip]");
   if (b) b.onclick = async () => {
@@ -491,24 +532,31 @@ const rAt = (p, key) => ((p._r ||= {})[key] !== undefined ? p._r[key] : (p._r[ke
 // init(). The correlation columns remain pooled + recency-weighted across
 // every season; expand a row for the per-season history.
 const COLS = [
-  { k:"name", h:"Player", l:true,  v:p=>`<span class="care" >${EXPANDED.has(p.athlete_id)?"▾":"▸"}</span>${TODAY_IDS&&TODAY_IDS.has(p.team_id)?'<span class="dot"></span>':''}<span class="name">${p.name}</span>${injBadge(p)}` },
+  { k:"name", h:"Player", l:true,  v:p=>`<span class="care" >${EXPANDED.has(p.athlete_id)?"▾":"▸"}</span>${MODE==="all"&&TODAY_IDS&&TODAY_IDS.has(p.team_id)?`<span class="dot" title="Plays ${DAY}"></span>`:''}<span class="name">${p.name}</span>${injBadge(p)}` },
   { k:"team_abbr", h:"Tm", l:true, v:p=>`<span class="team">${p.team_abbr||"—"}</span>` },
   { k:"position", h:"Pos", l:true, v:p=>p.position||"—" },
   { k:"_g", h:"G", ht:"Games this season (short-minute games included unless unchecked)", v:p=>p._g },
-  { k:"effective_n", h:"nEff", ht:"Effective sample size of the pooled weighted correlation (r columns are within-season: each season centered on its own average, then pooled)", v:p=>num(p.effective_n,1) },
   { k:"_min", h:"Min", v:p=>num(p._min,1) },
   { k:"_pts", h:"Pts", v:p=>num(p._pts,1) },
   { k:"_reb", h:"Reb", v:p=>num(p._reb,1) },
   { k:"_ast", h:"Ast", v:p=>num(p._ast,1) },
   { k:"_tpm", h:"3PM", v:p=>num(p._tpm,1) },
-  { k:"pts_reb.shrunk", h:"PTS·REB r", ht:SHRUNK_HT, v:p=>rCell(p, "pts_reb") },
-  { k:"pts_ast.shrunk", h:"PTS·AST r", ht:SHRUNK_HT, v:p=>rCell(p, "pts_ast") },
-  { k:"pts_3pm.shrunk", h:"PTS·3PM r", ht:SHRUNK_HT, v:p=>rCell(p, "pts_3pm") },
-  { k:"tot_reb.shrunk", h:"TOT·REB r", ht:"Final game total (both teams) vs his rebounds. Negative = more boards in low-scoring games (pairs with game Under + REB Over). " + SHRUNK_HT, v:p=>rCell(p, "tot_reb") },
-  { k:"tm_reb.shrunk", h:"TM·REB r", ht:"His team's final score vs his rebounds. " + SHRUNK_HT, v:p=>rCell(p, "tm_reb") },
-  { k:"op_reb.shrunk", h:"OPP·REB r", ht:"Opponent's final score vs his rebounds. " + SHRUNK_HT, v:p=>rCell(p, "op_reb") },
+  { k:"pts_reb.shrunk", h:"PTS·REB", grp:true, ht:SHRUNK_HT, v:p=>rCell(p, "pts_reb") },
+  { k:"pts_ast.shrunk", h:"PTS·AST", ht:SHRUNK_HT, v:p=>rCell(p, "pts_ast") },
+  { k:"pts_3pm.shrunk", h:"PTS·3PM", ht:SHRUNK_HT, v:p=>rCell(p, "pts_3pm") },
+  { k:"tot_reb.shrunk", score:true, h:"TOT·REB", ht:"Final game total (both teams) vs his rebounds. Negative = more boards in low-scoring games (pairs with game Under + REB Over). " + SHRUNK_HT, v:p=>rCell(p, "tot_reb") },
+  { k:"tm_reb.shrunk", score:true, h:"TM·REB", ht:"His team's final score vs his rebounds. " + SHRUNK_HT, v:p=>rCell(p, "tm_reb") },
+  { k:"op_reb.shrunk", score:true, h:"OPP·REB", ht:"Opponent's final score vs his rebounds. " + SHRUNK_HT, v:p=>rCell(p, "op_reb") },
 ];
 const EXPANDED = new Set();
+// The three game score·REB columns are small for nearly everyone: hidden
+// until asked for (Options), or while the table is sorted on one of them.
+let SHOW_SCORE = false;
+try { SHOW_SCORE = localStorage.getItem("nbaScoreCols") === "1"; } catch (_) {}
+const scoreOn = () => SHOW_SCORE || COLS.some(c => c.score && c.k === SORT.key);
+const visCols = () => COLS.filter(c => !c.score || scoreOn());
+// "-0.00" reads as noise: a value that rounds to zero shows as 0.00.
+const rTxt = (v, d=2) => num(v, d).replace(/^-(0\.0+)$/, "$1");
 
 // The r a column shows and sorts by: the devig r at the pair's lines (rAt).
 // Null = no r.
@@ -539,19 +587,23 @@ function rCell(p, key, full) {
   const why = ` title="devig r ${where}, from margin r ${num(m,3)}` +
     `${s ? ` (${own} pulled toward the role prior ${num(s.prior,3)}, ${Math.round(100*s.w)}% weight on his own r)` : `, ${own}`}` +
     `; an Over/Under mix is negative (the builder shows its exact value)"`;
-  const at = c.X ? `<span class="at">${c.X.L && c.Y.L ? "@" : "~"}${c.X.line}/${c.Y.line}</span>` : "";
-  const r = `<span class="r" style="color:${col}${heat ? `;background:${heat.bg}` : ""}"${why}>${num(v)}</span>`;
+  const lines = c.X ? `${c.X.L && c.Y.L ? "@" : "~"}${c.X.line}/${c.Y.line}` : "";
+  const r = `<span class="r" style="color:${col}${heat ? `;background:${heat.bg}` : ""}"${why}>${rTxt(v)}</span>`;
   if (!full) {
+    // Only the sorted column spells out its lines; the others keep them in
+    // the tooltip, so the table is one number per cell.
+    const at = key === SORT.key.split(".")[0] ? `<span class="at">${lines}</span>` : "";
     // Table cell: just the devig r and its lines. A "!" flags a player
     // whose own r is far from the margin r (thin or noisy sample: the role
     // prior is doing most of the work).
     const gap = Math.abs(w.r - m) >= R_GAP_FLAG;
-    const flag = gap ? ` <span class="rflag" title="His own r (${num(w.r)}) is ${num(Math.abs(w.r - m))} from the margin r (${num(m)}): thin or noisy sample, lean on this one less.">!</span>` : "";
-    return r + at + flag;
+    const flag = `<span class="rflag"${gap ? ` title="His own r (${num(w.r)}) is ${num(Math.abs(w.r - m))} from the margin r (${num(m)}): thin or noisy sample, lean on this one less."` : ""}>${gap ? "!" : ""}</span>`;
+    return r + flag + at;
   }
-  return r + at + ` <span class="raw">` +
-    `margin ${num(m)} · data <span class="${sig}">${num(w.r)}</span> · p=${num(w.p_value,3)}` +
-    `${s ? ` · prior ${num(s.prior)}` : ""}</span>`;
+  // Expanded row: devig r, its lines, the margin r and his own (underlined
+  // when p < 0.05); p-value and prior are in the tooltip.
+  return r + (lines ? `<span class="at">${lines}</span>` : "") + ` <span class="raw"${why}>` +
+    `margin ${num(m)} · own <span class="${sig}">${num(w.r)}</span></span>`;
 }
 
 // Gap between a player's own r and the margin r that earns the "!" flag.
@@ -588,8 +640,7 @@ function rMini(pair) {
   if (!pair || pair.r===null || pair.r===undefined) return '<span class="muted">—</span>';
   const col = pair.r>0 ? "var(--pos)" : "var(--neg)";
   const sig = (pair.p_value!==null && pair.p_value<0.05) ? "sig" : "";
-  return `<span class="r ${sig}" style="color:${col}">${num(pair.r)}</span>` +
-         ` <span class="raw">p=${num(pair.p_value,3)}</span>`;
+  return `<span class="r ${sig}" style="color:${col}" title="p=${num(pair.p_value,3)}">${rTxt(pair.r)}</span>`;
 }
 
 // ---- Prop builder: two-stat scatter over every pulled season, weighted -----
@@ -891,9 +942,9 @@ function propHTML(p) {
   const st = propState(p);
   const g = logOf(p).filter(x => x[st.xStat] != null);
   return `<div class="pb" data-id="${p.athlete_id}">
-    <div class="pb-title">Prop builder</div>
+    <div class="pb-head"><div class="pb-title">Prop builder</div>
     <div class="pb-legend">${BLEND.slice().reverse().map((yr, j) =>
-      `<span><i style="background:${seasonColor(BLEND.length - 1 - j)}"></i>${yr}${j===0?" · this season":j===1?" · last season":""}</span>`).join("")}</div>
+      `<span><i style="background:${seasonColor(BLEND.length - 1 - j)}"></i>${yr}${j===0?" · this season":j===1?" · last season":""}</span>`).join("")}</div></div>
     <div class="pb-controls">
       <div class="pb-row"><label>1st stat<select data-f="xStat">${opts(X_STATS, st.xStat)}</select></label><label>${STAT_LABEL[st.xStat]} line<input type="number" step="0.5" min="0" value="${st.xLine}" data-f="xLine"></label></div>
       <div class="pb-row"><label>2nd stat<select data-f="yStat">${opts(Y_STATS, st.yStat)}</select></label><label>${STAT_LABEL[st.yStat]} line<input type="number" step="0.5" min="0" value="${st.yLine}" data-f="yLine"></label></div>
@@ -1482,24 +1533,23 @@ function initProp(pb) {
 // Expanded per-season history block (rendered in a full-width detail row).
 function detailHTML(p) {
   const yrs = Object.keys(p.by_season||{}).sort();
+  const keys = ["pts_reb", "pts_ast", "pts_3pm", ...(scoreOn() ? ["tot_reb", "tm_reb", "op_reb"] : [])];
+  const heads = { pts_reb:"PTS·REB", pts_ast:"PTS·AST", pts_3pm:"PTS·3PM", tot_reb:"TOT·REB", tm_reb:"TM·REB", op_reb:"OPP·REB" };
   let body = yrs.map(y => {
     const s = p.by_season[y];
     const sg = s.short_games ? ` <span class="muted" title="of which short-minute games (under 60% of his median minutes); they count in the r's">(${s.short_games} short)</span>` : "";
     return `<tr><td class="l"><b>${y}</b></td><td>${s.games}${sg}</td><td>${num(s.min_mean,1)}</td>`+
            `<td>${num(s.pts_mean,1)}</td><td>${num(s.reb_mean,1)}</td><td>${num(s.ast_mean,1)}</td><td>${num(s.tpm_mean,1)}</td>`+
-           `<td class="l">${rMini(s.pts_reb)}</td><td class="l">${rMini(s.pts_ast)}</td><td class="l">${rMini(s.pts_3pm)}</td>`+
-           `<td class="l">${rMini(s.tot_reb)}</td><td class="l">${rMini(s.tm_reb)}</td><td class="l">${rMini(s.op_reb)}</td></tr>`;
+           keys.map(k => `<td class="l">${rMini(s[k])}</td>`).join("") + `</tr>`;
   }).join("");
   // Pooled (all seasons, recency-weighted) reference row.
-  body += `<tr class="pool"><td class="l" title="Each season is centered on its own average before pooling, so a season where his role moved every stat up or down together can't fake a correlation"><b>Pooled</b> <span class="muted">(wtd, within-season)</span></td>`+
+  body += `<tr class="pool"><td class="l" title="Each season is centered on its own average before pooling, so a season where his role moved every stat up or down together can't fake a correlation"><b>Pooled</b></td>`+
           `<td>${p.n_games}</td><td>${num(p.min_mean,1)}</td>`+
           `<td>${num(p.pts_mean,1)}</td><td>${num(p.reb_mean,1)}</td><td>${num(p.ast_mean,1)}</td><td>${num(p.tpm_mean,1)}</td>`+
-          `<td class="l">${rCell(p, "pts_reb", 1)}</td><td class="l">${rCell(p, "pts_ast", 1)}</td><td class="l">${rCell(p, "pts_3pm", 1)}</td>`+
-          `<td class="l">${rCell(p, "tot_reb", 1)}</td><td class="l">${rCell(p, "tm_reb", 1)}</td><td class="l">${rCell(p, "op_reb", 1)}</td></tr>`;
-  return `<div class="detail-wrap">${propHTML(p)}<div class="detail-h">Per-season history</div>`+
+          keys.map(k => `<td class="l">${rCell(p, k, 1)}</td>`).join("") + `</tr>`;
+  return `<div class="detail-wrap">${propHTML(p)}<div class="detail-h">By season · underlined = p &lt; 0.05 · pooled row is recency-weighted within season, effective sample ${num(p.effective_n,1)} games</div>`+
          `<div class="sub-scroll"><table class="sub"><thead><tr><th class="l">Season</th><th>G</th><th>Min</th><th>Pts</th><th>Reb</th><th>Ast</th><th>3PM</th>`+
-         `<th class="l">PTS·REB</th><th class="l">PTS·AST</th><th class="l">PTS·3PM</th>`+
-         `<th class="l">TOT·REB</th><th class="l">TM·REB</th><th class="l">OPP·REB</th></tr></thead><tbody>${body}</tbody></table></div></div>`;
+         keys.map(k => `<th class="l">${heads[k]}</th>`).join("") + `</tr></thead><tbody>${body}</tbody></table></div></div>`;
 }
 
 function sortKey(p, key) {
@@ -1535,10 +1585,13 @@ function render() {
     if (av < bv) return -SORT.dir; if (av > bv) return SORT.dir; return 0;
   });
 
+  const cols = visCols();
+  document.getElementById("tbl").classList.toggle("narrow", !scoreOn());
+  document.getElementById("scorecols").checked = scoreOn();
   const thead = document.querySelector("#tbl thead");
-  thead.innerHTML = "<tr>" + COLS.map(c => {
+  thead.innerHTML = "<tr>" + cols.map(c => {
     const on = c.k === SORT.key ? "sorted " + (SORT.dir>0?"asc":"") : "";
-    return `<th class="${c.l?'l ':''}${on}" data-k="${c.k}"${c.ht?` title="${c.ht}"`:""}>${c.h}</th>`;
+    return `<th class="${c.l?'l ':''}${c.grp?'grp ':''}${on}" data-k="${c.k}"${c.ht?` title="${c.ht}"`:""}>${c.h}</th>`;
   }).join("") + "</tr>";
   thead.querySelectorAll("th").forEach(th => th.onclick = () => {
     const k = th.dataset.k;
@@ -1553,13 +1606,13 @@ function render() {
   const tbody = document.querySelector("#tbl tbody");
   tbody.innerHTML = rows.map(p => {
     const main = `<tr class="prow" data-id="${p.athlete_id}">` +
-      COLS.map(c => {
+      cols.map(c => {
         const kind = c.k === "name" ? "c-name" : c.l ? "c-tag" : c.k.includes(".") ? "c-r" : "c-stat";
-        const lab = kind === "c-stat" || kind === "c-r" ? ` data-label="${c.h.replace(/ r$/, "")}"` : "";
-        return `<td class="${c.l?'l ':''}${kind}${c.k===SORT.key?' srt':''}"${lab}>${c.v(p)}</td>`;
+        const lab = kind === "c-stat" || kind === "c-r" ? ` data-label="${c.h}"` : "";
+        return `<td class="${c.l?'l ':''}${c.grp?'grp ':''}${kind}${c.k===SORT.key?' srt':''}"${lab}>${c.v(p)}</td>`;
       }).join("") + "</tr>";
     const det = EXPANDED.has(p.athlete_id)
-      ? `<tr class="drow"><td colspan="${COLS.length}">${detailHTML(p)}</td></tr>` : "";
+      ? `<tr class="drow"><td colspan="${cols.length}">${detailHTML(p)}</td></tr>` : "";
     return main + det;
   }).join("");
   tbody.querySelectorAll("tr.prow").forEach(tr => tr.onclick = () => {
@@ -1571,7 +1624,8 @@ function render() {
 
   document.getElementById("sortdir").textContent = SORT.dir < 0 ? "↓ High first" : "↑ Low first";
   document.getElementById("count").textContent =
-    `${rows.length} player${rows.length===1?"":"s"}` + (MODE==="today" ? ` playing ${DAY} (not started)` : "");
+    `${rows.length} player${rows.length===1?"":"s"}`;
+  document.getElementById("count").title = MODE==="today" ? `Playing ${DAY}, game not started` : "";
 }
 
 // Baked-snapshot fallback: team ids for games whose start time is still
@@ -1648,6 +1702,22 @@ async function init() {
     SORT = { key: e.target.value, dir: -1 }; syncPropsToSort(); render();
   };
   document.getElementById("sortdir").onclick = () => { SORT.dir *= -1; render(); };
+  document.getElementById("scorecols").onchange = e => {
+    SHOW_SCORE = e.target.checked;
+    try { localStorage.setItem("nbaScoreCols", SHOW_SCORE ? "1" : "0"); } catch (_) {}
+    // Turned off while sorted on one of them: back to the default sort.
+    if (!SHOW_SCORE && scoreOn()) {
+      SORT = { key: "pts_reb.shrunk", dir: -1 };
+      document.getElementById("sortsel").value = SORT.key;
+      syncPropsToSort();
+    }
+    render();
+  };
+  // The Options popover closes on a click anywhere else.
+  document.addEventListener("click", e => {
+    const o = document.getElementById("opts");
+    if (o.open && !o.contains(e.target)) o.open = false;
+  });
   render();
   // The injury report lands after the first paint, then filters and badges.
   loadInjuries().then(render);

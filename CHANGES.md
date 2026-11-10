@@ -1,5 +1,17 @@
 # Changes
 
+## 2026-11-10 session
+
+### NBA dashboard: cleaned up
+The table was 16 columns with a line annotation beside every r. Now one number per cell.
+
+- **Table**: the three game score·REB columns (TOT / TM / OPP) are off by default (Options → "Game score·REB columns", remembered; sorting on one from the phone's Sort menu shows them). nEff moved to the expanded row's caption. Only the sorted column spells out its lines (`~17.5/9.5`); the other columns keep them in the tooltip. A rule separates box stats from the r's, numbers are tabular, `-0.00` shows as `0.00`, and the "plays today" dot shows only under All players (under Playing today every row had it).
+- **Controls**: Min games and the short-minute checkbox moved into an Options popover. The Sort menu shows on phones only (headers sort on a wide screen). The count reads "85 players".
+- **Slate bar**: one chip per game with just the tip time (`MIL @ NY 7:30 PM`); one swipeable row on a phone instead of six lines.
+- **Player panel**: the builder's stat and line controls sit on one row beside the devig r. The by-season table drops the `p=` text (underlined = p < 0.05, p in the tooltip) and the pooled row reads `0.43 ~17.5/9.5 margin 0.29 · own 0.41` (prior and p in the tooltip).
+
+No pricing or data logic changed. Checked in headless Chromium at 1500 and 390 px: 85 rows, the panel opens, Options toggles the score columns and the sort falls back to PTS·REB when they are turned off, no page errors, no horizontal overflow. Pinnacle wasn't reachable from the test machine, so the `@` (Pinnacle line) labels weren't seen live.
+
 ## 2026-11-04 session (evening)
 
 ### NBA TEAMMATES tab: every stat pairing at tonight's lines, like last season's sheet
