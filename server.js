@@ -2474,6 +2474,7 @@ function startNovigScan(wide) {
   let buf = '', err = '', ok = false;
   const onEvent = e => {
     if (e.type === 'start') { NV_SCAN.total = e.total; NV_SCAN.players = e.players; NV_SCAN.data = e.data; }
+    else if (e.type === 'more') { NV_SCAN.total += e.add; }
     else if (e.type === 'row') { NV_SCAN.done++; NV_SCAN.seen.add(e.key); NV_SCAN.rows.set(e.key, e); }
     else if (e.type === 'miss') { NV_SCAN.done++; NV_SCAN.rows.delete(e.key); }
     else if (e.type === 'done') { ok = true; NV_SCAN.seconds = e.seconds; }

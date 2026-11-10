@@ -23,6 +23,9 @@ allows one a second, so the order is the scan's budget):
   2  Over + Over on the other pairs (PTS·REB, PTS·AST, REB·AST, REB·3PM,
      AST·3PM) at main lines, where r is at least --min-r.
   3  Over + Under both ways at main lines, where r is at most -(--neg-r).
+  4  Three legs: the best --tri two-leg Over + Over rows (at --tri-min-ev or
+     better) each get every other stat's main-line Over added, wherever no
+     pair in the three has a negative r.
 Under + Under is never asked: Novig rejects it for one player. Legs on books
 wider than --max-spread are skipped, not guessed.
 
@@ -82,9 +85,10 @@ def leg_text(L):
 
 
 def candidates(markets, d, by, a):
-    """Every combo worth a quote, in quoting order."""
+    """(every 2-leg combo worth a quote, in quoting order; {player id: (player,
+    his main-line rows by stat)} for the 3-leg pass)."""
     key = {novig.norm(n): n for n in by}
-    t1, rest = [], []
+    t1, rest, ctx = [], [], {}
     for nm in sorted({novig.player_name(m) for m in markets}):
         p = by.get(key.get(novig.norm(nm), ""))
         if not p:
@@ -93,6 +97,7 @@ def candidates(markets, d, by, a):
         tight = {s: [r for r in rows.get(s, []) if usable(r, a.max_spread)] for s in STATS}
         main = {s: main_line(v) for s, v in tight.items() if v}
         starts = min((r["starts"] for v in rows.values() for r in v), default=None)
+        ctx[p["athlete_id"]] = (p, main, starts)
 
         def combo(tier, r, la, lb):
             same = la["side"] == lb["side"]
@@ -126,7 +131,37 @@ def candidates(markets, d, by, a):
     t1.sort(key=lambda c: -c["r"])
     rest.sort(key=lambda c: -abs(c["r"]))
     out = t1 + rest
-    return out[:a.max] if a.max else out
+    return (out[:a.max] if a.max else out), ctx
+
+
+def triples(rows, ctx, d, by, a):
+    """Three-leg combos: the best two-leg Over + Over rows, each with one more
+    stat's main-line Over."""
+    base = sorted((c for c in rows if len(c["legs"]) == 2 and all(L["side"] == "over" for L in c["legs"])
+                   and c["ev"] * 100 >= a.tri_min_ev), key=lambda c: -c["ev"])[:a.tri]
+    out, seen = [], set()
+    for c in base:
+        p, main, starts = ctx[c["id"]]
+        la, lb = c["legs"]
+        for s in STATS:
+            if s in (la["stat"], lb["stat"]) or s not in main:
+                continue
+            lc = leg(s, main[s], 1)
+            ids = frozenset((la["id"], lb["id"], lc["id"]))
+            if ids in seen:   # the same three legs, reached from another pair
+                continue
+            seen.add(ids)
+            rac, rbc = (price.shrunk_r(d, by, p, L["stat"], s)[0] for L in (la, lb))
+            if min(rac, rbc) < 0:
+                continue
+            # Forced points (see candidates): the parlay is threes + the new leg.
+            j = (sgp.joint(rbc, lb["p"], lc["p"]) if c["forced"] else
+                 price.tri_joint([la["p"], lb["p"], lc["p"]], [[1, c["r"], rac], [c["r"], 1, rbc], [rac, rbc, 1]]))
+            out.append({"key": f"{c['key']},{lc['id']}", "tier": 4, "player": c["player"], "id": c["id"], "team": c["team"],
+                        "starts": starts, "legs": [la, lb, lc], "label": f"{c['label']} · {leg_text(lc)}",
+                        "r": min(c["r"], rac, rbc), "j": j, "forced": c["forced"], "devig_r": None,
+                        "rough": c["rough"] or lc["width"] > novig.MAX_SPREAD + 1e-9})
+    return out
 
 
 class Pace:
@@ -160,7 +195,7 @@ def scan(a, emit):
     """Quote every candidate; emit(event dict) as things happen. Returns the priced rows."""
     t0 = time.time()
     d, by = sgp.load()
-    cands = candidates(novig.fetch(), d, by, a)
+    cands, ctx = candidates(novig.fetch(), d, by, a)
     emit({"type": "start", "total": len(cands), "players": len({c["id"] for c in cands}),
           "data": d["generated_at"][:10], "at": t0})
     pace, rows, lock = Pace(), [], threading.Lock()
@@ -177,13 +212,20 @@ def scan(a, emit):
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=a.workers) as pool:
         list(pool.map(one, cands))
+        if a.tri and a.tier in (0, 4):
+            more = triples(list(rows), ctx, d, by, a)
+            emit({"type": "more", "add": len(more)})
+            cands = cands + more
+            list(pool.map(one, more))
     emit({"type": "done", "quoted": len(cands), "priced": len(rows), "seconds": time.time() - t0, "at": time.time()})
     return rows
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--tier", type=int, default=0, choices=(0, 1, 2, 3), help="one group only (default: all)")
+    ap.add_argument("--tier", type=int, default=0, choices=(0, 1, 2, 3), help="one two-leg group only (default: all, then three legs)")
+    ap.add_argument("--tri", type=int, default=12, help="two-leg rows to extend to three legs (0 = none)")
+    ap.add_argument("--tri-min-ev", type=float, default=-6.0, help="only extend two-leg rows at this EV%% or better")
     ap.add_argument("--max", type=int, default=0, help="quote at most this many combos (default: all)")
     ap.add_argument("--min-r", type=float, default=0.15, help="smallest r for an Over + Over on the other pairs")
     ap.add_argument("--neg-r", type=float, default=0.05, help="Over + Under is asked when r is at most minus this")
@@ -207,6 +249,8 @@ def main():
         return
 
     def emit(e):
+        if e["type"] == "more" and e["add"]:
+            print(f"+ {e['add']} three-leg combos", file=sys.stderr)
         if e["type"] == "start":
             print(f"{e['total']} combos on {e['players']} players · r data {e['data']} · "
                   f"about {max(1, round(e['total'] * 1.1 / 60))} min", file=sys.stderr)

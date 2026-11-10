@@ -45,7 +45,7 @@
   .row.old { opacity:.55; }
   .who b { font-weight:600; }
   .who small, .legs small { color:var(--muted); font-size:11.5px; margin-left:6px; white-space:nowrap; }
-  .legs { white-space:nowrap; }
+  .legs { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .rough { color:var(--accent); cursor:help; margin-left:4px; }
   .fair { color:var(--accent); font-weight:600; }
   .ev { font-weight:700; }
@@ -91,7 +91,7 @@
   <input type="search" id="search" placeholder="Filter by name…" />
   <select id="pair" title="Show one kind of combo" style="background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:7px 10px;font-size:13px">
     <option value="">All pairs</option><option value="pts,tpm">PTS + 3PM</option><option value="pts,reb">PTS + REB</option>
-    <option value="pts,ast">PTS + AST</option><option value="reb,ast">REB + AST</option><option value="reb,tpm">REB + 3PM</option><option value="ast,tpm">AST + 3PM</option>
+    <option value="pts,ast">PTS + AST</option><option value="reb,ast">REB + AST</option><option value="reb,tpm">REB + 3PM</option><option value="ast,tpm">AST + 3PM</option><option value="3">3 legs</option>
   </select>
   <label class="muted" title="Plays shows combos at this EV or better.">Min EV %
     <input type="number" id="minev" value="0" step="1" /></label>
@@ -175,7 +175,8 @@ function detail(c) {
     `${LABEL[L.stat]} ${L.side === "over" ? "o" : "u"}${L.line} fair <b>${am(L.fair)}</b> <span>(Novig book ${(100 * L.width).toFixed(1)}¢ wide)</span>`).join(" · ");
   const forced = c.forced ? "<br>These threes already clear the points line, so the parlay is priced as the threes leg alone." : "";
   return `<div class="det">${legs}<br>` +
-    `r <b>${c.r >= 0 ? "+" : "−"}${Math.abs(c.r).toFixed(3)}</b> · devig r <b>${c.devig_r >= 0 ? "+" : "−"}${Math.abs(c.devig_r).toFixed(3)}</b>` +
+    (c.legs.length === 3 ? `lowest r of the three pairs <b>+${c.r.toFixed(3)}</b>`
+      : `r <b>${c.r >= 0 ? "+" : "−"}${Math.abs(c.r).toFixed(3)}</b> · devig r <b>${c.devig_r >= 0 ? "+" : "−"}${Math.abs(c.devig_r).toFixed(3)}</b>`) +
     ` · fair <b>${am(c.fair)}</b> (${c.fair_x.toFixed(2)}x)${forced}<br>` +
     `Novig quote ${c.raw_x.toFixed(2)}x, <b>${c.slip_x.toFixed(2)}x</b> (${am(c.slip)}) on the slip after its 10% parlay fee` +
     ` · ${c.qk > 0 ? `quarter Kelly <b>${c.qk.toFixed(2)}u</b> = <b>$${c.wager.toFixed(2)}</b>` : "no bet at this price"}` +
@@ -191,7 +192,7 @@ function render() {
   let rows = MODE === "plays" ? plays : all;
   if (q) rows = rows.filter(c => c.player.toLowerCase().includes(q));
   const pair = document.getElementById("pair").value;
-  if (pair) rows = rows.filter(c => c.legs.map(L => L.stat).join() === pair);
+  if (pair) rows = rows.filter(c => pair === "3" ? c.legs.length === 3 : c.legs.map(L => L.stat).join() === pair);
 
   // Status line.
   st.classList.toggle("err", !!S.error && !S.scanning);

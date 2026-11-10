@@ -164,7 +164,9 @@ count, then commit and push `public/data/nba_correlations.json` to `main`.
 player's same-player 2-leg combos (fair from Novig's legs, as `odds novig`)
 against Novig's slip price and prints them best EV first: Points + Threes
 Overs first, then Over + Over on the other pairs (r at least 0.15), then
-Over + Under where r is negative. `--tier 1` is Points + Threes only,
+Over + Under where r is negative, then three legs: the best 12 two-leg
+Over rows (-6% EV or better) with each other stat's main-line Over added
+(`--tri 0` turns that off). `--tier 1` is Points + Threes only,
 `--min-ev 3` trims the table, `--max-spread 0.08` lets in wide books (rows
 marked ~, rough). About one quote a second. Under + Under is never asked:
 Novig rejects it for one player. A row is a lead: quotes move a few percent
@@ -180,8 +182,8 @@ that has entered it (five taps on the SPORT label opens the passcode box).
 - `nba-ast-pts-sgp`: Vulture `/run` commands and the Assists × Points
   Discord card. Its `sgp.py` holds the copula math this script imports.
 - Dashboard `public/nba.html`: shows the plug-in r and devig r and prices
-  2-leg combos in each player's builder. Its **Novig SGP** button fills each
-  combo's SGP odds with the same Novig parlay quote as `--payout novig`.
+  2-leg combos in each player's builder (Fetch FV fills Novig's leg fairs;
+  the slip price is typed in: Novig's own prices live on the private Scanner).
 - Novig's SGP price (the slip payout) can be pulled: `--payout novig` asks
   Novig's keyless parlay quote (`POST /rfq/v2/quote/unauthenticated`,
   docs.novig.com/affiliates/parlay-pricing) for the legs' own lines, takes
