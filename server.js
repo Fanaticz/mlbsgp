@@ -2447,16 +2447,13 @@ app.get('/api/nba/scoreboard', async (req, res) => {
 // .claude/skills/nba-sgp-fv/scan.py quotes every same-player combo worth
 // asking Novig about and streams one JSON event per line. Novig's quote limit
 // is per IP (one a second), so one pass runs at a time, here on the server.
-// It only runs while the Scanner page is open: the page polls this route, a
-// cold or rested board starts a pass, and passes repeat while polls keep
-// coming. Close the page and the current pass is the last.
+// It never runs by itself: the page polls this route for the board, and a
+// pass starts only when the Fetch button is pressed.
 const NV_SCAN_PY = path.join(__dirname, '.claude', 'skills', 'nba-sgp-fv', 'scan.py');
-// Every quote is a live auction sent to all of Novig's parlay pricers, so a
-// board refreshed every minute is a loud, repeating footprint on exactly the
-// combos worth betting. Passes are spaced out; the page's Scan now button
-// (?now=1) asks for one sooner, at most once a minute.
-const NV_SCAN_REST_MS = 15 * 60 * 1000;  // pause between automatic passes while watched
-const NV_SCAN_NOW_MS = 60 * 1000;        // soonest a requested pass may follow the last
+// Every quote is a live auction sent to all of Novig's parlay pricers, so
+// nothing here scans on its own: a pass runs only when the page's Fetch
+// button asks for one (?now=1), at most once a minute for the same board.
+const NV_SCAN_NOW_MS = 60 * 1000;
 const NV_SCAN_MAX_MS = 20 * 60 * 1000;   // a pass stuck this long is killed
 const NV_SCAN = { proc: null, league: 'nba', wide: false, started: 0, finished: 0, total: 0, done: 0, players: 0,
                   data: null, seconds: 0, error: null, rows: new Map(), seen: new Set() };
@@ -2525,15 +2522,14 @@ app.get('/api/nba/novig-scan', (req, res) => {
   // One board at a time: asking for another league or other books waits for
   // the running pass, then starts over on what was asked.
   const other = league !== NV_SCAN.league || wide !== NV_SCAN.wide;
-  const asked = req.query.now === '1' && now - NV_SCAN.finished > NV_SCAN_NOW_MS;
-  if (!NV_SCAN.proc && (!NV_SCAN.finished || other || asked || now - NV_SCAN.finished > NV_SCAN_REST_MS)) {
+  if (req.query.now === '1' && !NV_SCAN.proc && (other || now - NV_SCAN.finished > NV_SCAN_NOW_MS)) {
     if (other) NV_SCAN.rows.clear();
     startNovigScan(league, wide);
   }
   res.json({
     now, scanning: !!NV_SCAN.proc, league: NV_SCAN.league, wide: NV_SCAN.wide, started: NV_SCAN.started, finished: NV_SCAN.finished,
     total: NV_SCAN.total, done: NV_SCAN.done, players: NV_SCAN.players, data: NV_SCAN.data,
-    seconds: NV_SCAN.seconds, restMs: NV_SCAN_REST_MS, error: NV_SCAN.error,
+    seconds: NV_SCAN.seconds, error: NV_SCAN.error,
     rows: [...NV_SCAN.rows.values()],
   });
 });

@@ -199,7 +199,9 @@ with Over 2.5 paid 17.24x on Novig (other books 8.2x to 9.9x) against about
 13.9x fair for that kind of match; with Over 1.5 it paid 13.45x against
 about 10.8x.
 The dashboard's Scanner page (`public/nba_scan.html`, `/api/nba/novig-scan`
-in `server.js`) runs the same script on the server while the page is open.
+in `server.js`) runs the same script on the server, one pass each time
+Fetch is pressed and never by itself: every quote is a live auction sent to
+all of Novig's pricers, so repeated scans show them what is being watched.
 It is private: the route needs the passcode in the server's `NOVIG_SCAN_KEY`
 (no key set = scanner off), and the NOVIG SCAN tab only shows on a device
 that has entered it (five taps on the EVC label opens the passcode box).
