@@ -182,7 +182,8 @@ other books 11-10 on McCain: 14+ PTS / 3+ 3PM plain model +218 vs Fanatics
 model sits about 6% longer than the books, as a fair value should.
 `--ladder-fix` scales the joint by a game-log tail correction (`LADDER_FIX`,
 x1.00 to x1.28); it is off because it put fair right on the books' price.
-Still model fairs: confirm a ladder play against other books' SGP price or
+A shifted leg is capped at Novig's own ask on that line (a seller there means
+the true chance is lower). Still model fairs: confirm a ladder play against other books' SGP price or
 Vulture before sizing.
 
 `--league nfl` scans NFL instead: Over + Over on Receptions·Yards,

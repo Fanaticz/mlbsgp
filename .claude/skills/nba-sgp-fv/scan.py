@@ -104,6 +104,10 @@ def shifted(p, stat, row, main):
     po = main["fo"] if row is main else price.leg_prob(
         p, {"stat": stat, "side": 1, "line": row["line"], "from": main["line"], "p_over": main["fo"],
             "over": None, "under": None})[0]
+    # Novig's own ask on that line is a ceiling: someone is selling the Over
+    # there, so the true chance is below it however wide the book is.
+    if row is not main and row.get("ask") is not None:
+        po = min(po, row["ask"])
     return {"stat": stat, "side": "over", "line": row["line"], "p": po, "fair": sgp.american(po),
             "width": main["spread"], "id": row["ids"]["over"], "from": None if row is main else main["line"]}
 
