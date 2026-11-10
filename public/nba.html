@@ -104,34 +104,27 @@
   table.sub td { padding:4px 12px; border-bottom:1px solid #20272f; white-space:nowrap; }
   table.sub tr.pool td { border-top:1px solid var(--line); }
 
-  /* --- prop builder (every pulled season, scatter) --- */
+  /* --- prop builder: two stats, their lines, and the SGP pricer --- */
   .pb { border:1px solid var(--line); border-radius:10px; background:var(--panel);
     padding:12px 14px 14px; margin-bottom:14px; }
   .pb-title { font-size:13px; font-weight:600; margin-bottom:2px; }
   .pb-sub { color:var(--muted); font-size:11.5px; margin-bottom:10px; }
   .pb-head { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 18px; margin-bottom:10px; }
-  .pb-legend { display:flex; flex-wrap:wrap; gap:6px 16px; color:var(--muted);
-    font-size:11.5px; }
-  .pb-legend i { display:inline-block; width:9px; height:9px; border-radius:50%;
-    margin-right:6px; vertical-align:-1px; }
   .pb-row { display:flex; flex-wrap:nowrap; gap:10px 14px; align-items:center; min-width:0; }
   .pb-row label { white-space:nowrap; display:flex; align-items:center; min-width:0; }
   .pb-row select { min-width:0; max-width:42vw; }
   .pb-controls { display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center;
     margin-bottom:12px; }
   .pb-controls label { color:var(--muted); font-size:12px; }
-  .pb-controls input[type=number] { width:70px; margin-left:6px; }
+  .pb-controls input[type=number] { width:64px; margin:0 4px; text-align:center; -moz-appearance:textfield; }
+  .pb-controls input[type=number]::-webkit-inner-spin-button { -webkit-appearance:none; }
+  .stp { background:var(--panel); border:1px solid var(--line); color:var(--txt); border-radius:8px;
+    width:32px; padding:6px 0; font-size:15px; font-weight:600; cursor:pointer; margin-left:6px; }
+  .stp + input + .stp { margin-left:0; }
+  .stp:active { border-color:var(--accent); color:var(--accent); }
   .pb-controls select { margin-left:6px; }
   .pb-body { display:flex; flex-wrap:wrap; gap:18px; align-items:flex-start; }
-  .pb-chart { position:relative; }
-  .pb-chart svg { display:block; }
   .pb-note { color:var(--muted); font-size:11px; margin-top:8px; grid-column:1/-1; }
-  .pb-tip { position:absolute; pointer-events:none; display:none; z-index:10;
-    background:#0b0f14; border:1px solid var(--line); border-radius:7px;
-    padding:6px 9px; font-size:11.5px; line-height:1.4; white-space:nowrap;
-    box-shadow:0 4px 14px rgba(0,0,0,.45); }
-  .pb-tip b { color:var(--accent); }
-
   /* --- SGP pricer (copula on the shrunk r) --- */
   /* Beside the chart when the screen has room, below it (full width) when
      it doesn't. min-width:0 lets its table scroll instead of widening the panel. */
@@ -186,9 +179,6 @@
      it). Pin it to the visible width; --vw is the page's width without the
      scrollbar, set from JS. */
   .detail-wrap { position:sticky; left:0; width:min(100%, calc(var(--vw, 100vw) - 24px)); }
-  @media (max-width: 900px) {
-    .pb-chart svg { max-width:100%; height:auto; }
-  }
 
   /* Phones: each player is a card (name / box stats / r values) instead of a
      16-column row; the Sort menu stands in for the hidden header. 16px
@@ -653,7 +643,7 @@ function rMini(pair) {
   return `<span class="r ${sig}" style="color:${col}" title="p=${num(pair.p_value,3)}">${rTxt(pair.r)}</span>`;
 }
 
-// ---- Prop builder: two-stat scatter over every pulled season, weighted -----
+// ---- Prop builder: two stats and their lines, priced as an SGP -------------
 // Per-player builder settings survive re-renders. yStat is the second stat.
 const PROPS = new Map();
 const STAT_LABEL = { pts:"PTS", reb:"REB", ast:"AST", tpm:"3PM", tot:"Game total", tm:"Team score", op:"Opp score" };
@@ -809,136 +799,36 @@ function fairOdds(pr) {
                    : `+${Math.round(100 * (1 - pr) / pr)}`;
 }
 
-function niceStep(span, target = 7) {
-  const raw = span / target;
-  for (const s of [1, 2, 5, 10, 20]) if (s >= raw) return s;
-  return 50;
-}
-
-// Build the SVG scatter inside the given .pb container.
+// Redraw the builder's output (the SGP pricer) for its current stats and lines.
 function drawProp(pb, p) {
   const st = propState(p);
-  const yKey = st.yStat, yLab = STAT_LABEL[yKey];
-  const xKey = st.xStat, xLab = STAT_LABEL[xKey];
   // Score stats can be missing on a game ESPN didn't score; skip those.
-  const games = logOf(p).filter(g => g[xKey] != null && g[yKey] != null);
-  const chartEl = pb.querySelector(".pb-chart");
-  drawPricer(pb, p, games);
-  if (!games.length) {
-    chartEl.innerHTML = `<div class="muted" style="padding:20px 0">No ${BLEND.join(" or ")} games for this player.</div>`;
-    return;
-  }
-
-  // Scales — pad the domain so the red lines and edge dots never clip.
-  const W = 520, H = 400, ML = 46, MR = 16, MT = 14, MB = 42;
-  const xs = games.map(g => g[xKey]), ys = games.map(g => g[yKey]);
-  const xmax = Math.max(...xs, st.xLine) + 2;
-  const xmin = Math.max(0, Math.min(...xs, st.xLine) - 2);
-  const ymax = Math.max(...ys, st.yLine) + 1.5;
-  const ymin = Math.max(0, Math.min(...ys, st.yLine) - 1.5);
-  const X = v => ML + (v - xmin) / (xmax - xmin) * (W - ML - MR);
-  const Y = v => H - MB - (v - ymin) / (ymax - ymin) * (H - MT - MB);
-
-  // Duplicate (x,y) games collapse into one bigger dot: a muted dot sized by
-  // every game at that point, with an accent dot on top sized by this
-  // season's games there (so a muted ring = last-season games too).
-  const cells = new Map();
-  for (const g of games) {
-    const k = `${g[xKey]},${g[yKey]}`;
-    if (!cells.has(k)) cells.set(k, []);
-    cells.get(k).push(g);
-  }
-
-  const xStep = niceStep(xmax - xmin), yStep = niceStep(ymax - ymin);
-  let grid = "", labels = "";
-  for (let v = Math.ceil(xmin / xStep) * xStep; v <= xmax; v += xStep) {
-    grid += `<line x1="${X(v)}" y1="${MT}" x2="${X(v)}" y2="${H-MB}"/>`;
-    labels += `<text x="${X(v)}" y="${H-MB+16}" text-anchor="middle">${v}</text>`;
-  }
-  for (let v = Math.ceil(ymin / yStep) * yStep; v <= ymax; v += yStep) {
-    grid += `<line x1="${ML}" y1="${Y(v)}" x2="${W-MR}" y2="${Y(v)}"/>`;
-    labels += `<text x="${ML-8}" y="${Y(v)+3.5}" text-anchor="end">${v}</text>`;
-  }
-
-  // One layer per season, oldest first: each layer's dot is sized by games
-  // from that season onward, so older seasons show as rings around newer.
-  const dot = (k, m) => {
-    const [gx, gy] = k.split(",").map(Number);
-    return `<circle cx="${X(gx)}" cy="${Y(gy)}" r="${5 + 2.2 * Math.sqrt(m - 1)}" data-k="${k}"/>`;
-  };
-  const layers = BLEND.map((yr, i) => {
-    let d = "";
-    for (const [k, gs] of cells) {
-      if (!gs.some(g => g.s === yr)) continue;
-      d += dot(k, gs.filter(g => g.s >= yr).length);
-    }
-    return `<g fill="${seasonColor(i)}" stroke="#10161c" stroke-width="2">${d}</g>`;
-  }).join("");
-
-  chartEl.innerHTML =
-    `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img"
-       aria-label="${p.name}: ${BLEND.join(" + ")} games, ${xLab} vs ${yLab}">
-      <g stroke="#2a333d" stroke-width="1">${grid}</g>
-      <g fill="#8b98a5" font-size="11">${labels}</g>
-      <g stroke="var(--neg)" stroke-width="1.5">
-        <line x1="${X(st.xLine)}" y1="${MT}" x2="${X(st.xLine)}" y2="${H-MB}"/>
-        <line x1="${ML}" y1="${Y(st.yLine)}" x2="${W-MR}" y2="${Y(st.yLine)}"/>
-      </g>
-      <g fill="var(--neg)" font-size="10.5">
-        <text x="${Math.min(X(st.xLine)+4, W-MR-24)}" y="${MT+11}">${st.xLine}</text>
-        <text x="${W-MR-4}" y="${Y(st.yLine)-5}" text-anchor="end">${st.yLine}</text>
-      </g>
-      ${layers}
-      <text x="${(ML+W-MR)/2}" y="${H-6}" text-anchor="middle" fill="#8b98a5" font-size="12">${xLab}</text>
-      <text x="12" y="${(MT+H-MB)/2}" text-anchor="middle" fill="#8b98a5" font-size="12"
-        transform="rotate(-90 12 ${(MT+H-MB)/2})">${yLab}</text>
-    </svg><div class="pb-tip"></div>`;
-
-  // Hover tooltip: date · opp · result · stat line for each game on the dot.
-  const tip = chartEl.querySelector(".pb-tip");
-  chartEl.querySelectorAll("circle").forEach(c => {
-    c.style.cursor = "pointer";
-    c.onmouseenter = e => {
-      const gs = cells.get(c.dataset.k);
-      tip.innerHTML = gs.map(g =>
-        `${g.d} ${g.loc} ${g.opp} (${g.res}${g.tm!=null?` ${g.tm}-${g.op}`:""}) — <b>${g.pts} pts, ${g.reb} reb, ${g.ast} ast, ${g.tpm} 3pm</b>`
-      ).join("<br>");
-      tip.style.display = "block";
-      const bb = chartEl.getBoundingClientRect(), cb = c.getBoundingClientRect();
-      let tx = cb.left - bb.left + 14, ty = cb.top - bb.top - 8;
-      tip.style.left = "0px"; tip.style.top = "0px";
-      const tw = tip.offsetWidth;
-      if (tx + tw > W - 4) tx = cb.left - bb.left - tw - 14;
-      tip.style.left = tx + "px"; tip.style.top = ty + "px";
-    };
-    c.onmouseleave = () => { tip.style.display = "none"; };
-  });
+  drawPricer(pb, p, logOf(p).filter(g => g[st.xStat] != null && g[st.yStat] != null));
 }
 
-// Static shell for the builder; drawProp fills in the chart.
-// Dot color per BLEND index: newest = accent, then progressively dimmer.
-const seasonColor = i => ["var(--accent)", "var(--prev)", "var(--old)"][BLEND.length - 1 - i] || "var(--old)";
+// Static shell for the builder; drawProp fills in the pricer.
+// A line box with -/+ beside it: one tap moves the line a full point
+// (17.5 -> 18.5), easier than retyping it on a phone.
+const lineBox = (f, lab, v, extra = "") => `<label${extra}>${lab} line<button type="button" class="stp" data-stp="${f}" data-d="-1" title="Line down 1">−</button>` +
+  `<input type="number" inputmode="decimal" step="0.5" min="0" value="${v}" data-f="${f}"><button type="button" class="stp" data-stp="${f}" data-d="1" title="Line up 1">+</button></label>`;
 
 function propHTML(p) {
   const st = propState(p);
-  const g = logOf(p).filter(x => x[st.xStat] != null);
   return `<div class="pb" data-id="${p.athlete_id}">
-    <div class="pb-head"><div class="pb-title">Prop builder</div>
-    <div class="pb-legend">${BLEND.slice().reverse().map((yr, j) =>
-      `<span><i style="background:${seasonColor(BLEND.length - 1 - j)}"></i>${yr}${j===0?" · this season":j===1?" · last season":""}</span>`).join("")}</div></div>
+    <div class="pb-head"><div class="pb-title">Prop builder</div></div>
     <div class="pb-controls">
-      <div class="pb-row"><label>1st stat<select data-f="xStat">${opts(X_STATS, st.xStat)}</select></label><label>${STAT_LABEL[st.xStat]} line<input type="number" step="0.5" min="0" value="${st.xLine}" data-f="xLine"></label></div>
-      <div class="pb-row"><label>2nd stat<select data-f="yStat">${opts(Y_STATS, st.yStat)}</select></label><label>${STAT_LABEL[st.yStat]} line<input type="number" step="0.5" min="0" value="${st.yLine}" data-f="yLine"></label></div>
+      <div class="pb-row"><label>1st stat<select data-f="xStat">${opts(X_STATS, st.xStat)}</select></label>${lineBox("xLine", STAT_LABEL[st.xStat], st.xLine)}</div>
+      <div class="pb-row"><label>2nd stat<select data-f="yStat">${opts(Y_STATS, st.yStat)}</select></label>${lineBox("yLine", STAT_LABEL[st.yStat], st.yLine)}</div>
       <span class="plug" data-plug></span>
     </div>
-    <div class="pb-body"><div class="pb-chart"></div>
+    <div class="pb-body">
     <div class="pr">
       <div class="pb-title">SGP pricer</div>
       <div class="pr-sub"></div>
       <div class="pb-controls">
         ${["x", "y"].map(a => ["", "U"].map(u => `<span class="fvw"><label title="Fair odds (already devigged, e.g. Vulture's Fair column). Pre-filled with Pinnacle's main line devigged worst-case; Fetch FV fills Novig's."><span data-lab="${a}${u}"></span> fair<input type="text" inputmode="numeric" placeholder="e.g. -110" value="${st[a + "Fv" + u] || ""}" data-f="${a}Fv${u}"></label><button type="button" class="sgn" data-sgn="${a}Fv${u}" title="Flip the sign (phone number pads have no minus key)">±</button></span>`).join("")).join("")}
         <span class="zleg"><label>3rd leg<select data-f="zStat">${zOpts(st)}</select></label>
-          <label class="zon"${st.zStat ? "" : ' style="display:none"'}>${STAT_LABEL[st.zStat] || ""} line<input type="number" step="0.5" min="0" value="${st.zLine ?? ""}" data-f="zLine"></label>
+          ${lineBox("zLine", STAT_LABEL[st.zStat] || "", st.zLine ?? "", ` class="zon"${st.zStat ? "" : ' style="display:none"'}`)}
           <span class="fvw zon"${st.zStat ? "" : ' style="display:none"'}><label title="Fair Over odds for the 3rd leg (Vulture's Fair column). Fetch FV fills Novig's."><span data-lab="z"></span> fair<input type="text" inputmode="numeric" placeholder="e.g. -110" value="${st.zFv || ""}" data-f="zFv"></label><button type="button" class="sgn" data-sgn="zFv" title="Flip the sign">±</button></span>
           <input type="hidden" data-f="zFvU" value="${st.zFvU || ""}"></span>
         <button type="button" class="sgn nvbtn" data-novig title="Fill both legs' Over and Under fair odds from Novig's exchange: each side the worst-case devig of the two asks at that line (pregame, books up to ${NV_MAX_SPREAD * 100}¢ wide)">Fetch FV</button>
@@ -1541,6 +1431,15 @@ function initProp(pb) {
     inp.focus();
     inp.setSelectionRange(inp.value.length, inp.value.length);
   });
+  pb.querySelectorAll(".stp").forEach(btn => btn.onclick = e => {
+    e.preventDefault();
+    const inp = pb.querySelector(`[data-f="${btn.dataset.stp}"]`);
+    const v = parseFloat(inp.value);
+    inp.value = Math.max(0.5, (Number.isFinite(v) ? v : 0.5) + +btn.dataset.d);
+    inp.dispatchEvent(new Event("input"));
+  });
+  // Tapping a line box selects it, so typing replaces the old line.
+  pb.querySelectorAll('input[type=number][data-f$="Line"]').forEach(inp => inp.onfocus = () => inp.select());
   pb.querySelector("[data-novig]").onclick = () => fetchNovig(pb, p);
   pb.querySelector("[data-nvsgp]").onclick = () => fetchNovigSgp(pb, p);
   drawProp(pb, p);

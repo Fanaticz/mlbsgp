@@ -2,6 +2,12 @@
 
 ## 2026-11-10 session
 
+### NBA dashboard: scatter chart removed; − / + on the line boxes
+- The prop builder's scatter chart (and its season legend and hover tooltip) is gone, after the hit-rate tiles. The panel is now the two stats and lines, the devig r, and the SGP pricer.
+- Each line box (both legs and the 3rd leg) has − and + buttons that move the line a full point (17.5 → 18.5), and tapping the box selects its value so typing replaces it. Retyping a line on a phone meant clearing the box first, and each keystroke repriced on a half-typed number.
+
+Checked in headless Chromium at 390 and 1500 px: + on PTS 17.5 gives 18.5 and reprices (+229 → +240), the 3rd-leg stepper works, Fetch FV / Novig SGP (mocked) still fill, no page errors.
+
 ### NBA dashboard: hit-rate tiles removed from the prop builder
 The four over/under tiles under the chart (share of games in each quadrant, with a game-log fair price) are gone; they weren't used and crowded the panel. The scatter still shows the same games against the two lines. On a wide screen the SGP pricer now sits beside the chart.
 
