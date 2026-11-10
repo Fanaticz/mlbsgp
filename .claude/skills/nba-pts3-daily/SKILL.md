@@ -76,5 +76,11 @@ any skipped players.
   only percentage.
 - Main lines only (both when DK and FD differ); no shifted lines.
 - A slip without the dummy leg is compared to Fair x times pD.
+- What the dummy is for (Max, 11-10): size, not price. Novig fills about $250
+  on one set of legs; adding the dummy makes a new set of legs, so a new
+  auction, and lets him bet more. It never improves the multiplier (16 quotes
+  with and without one: same or lower, 2 to 11 points of EV). So the first
+  ~$250 of a play goes on the plain 2-leg slip and the dummy slip carries the
+  rest of the stake.
 - A heavier NBA moneyline is not a better dummy: Novig's vig on it costs more
   than the boost (Celtics -541 turned a 29.6% EV slip into 22.7%).
