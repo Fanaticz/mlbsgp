@@ -2515,7 +2515,7 @@ app.get('/api/nba/novig-scan', (req, res) => {
     return setTimeout(() => res.status(403).json({ error: 'wrong passcode' }), 800);  // slows guessing
   }
   const wide = req.query.wide === '1';
-  const league = req.query.league === 'nfl' ? 'nfl' : 'nba';
+  const league = ['nfl', 'soccer'].includes(req.query.league) ? req.query.league : 'nba';
   const now = Date.now();
   // One board at a time: asking for another league or other books waits for
   // the running pass, then starts over on what was asked.

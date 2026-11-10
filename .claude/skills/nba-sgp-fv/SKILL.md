@@ -178,6 +178,11 @@ Receptions·TD and Yards·TD (TD = Novig's TOUCHDOWNS 0.5, any touchdown) for
 the WRs, TEs and RBs in `public/data/nfl_correlations.json`, then the three
 together. No rushing props (no r for them). NFL books are thin until late in
 the week.
+`--league soccer` watches Max's corners shape (favourite 3-way win +
+favourite corners Under + underdog corners Over, with and without goals Over
+1.5 / 2.5) on every open match with team-corners books. No fair value: the
+"EV" is Novig's slip against the unrelated-legs price, and near or above 0%
+is the signal (11-06 Venezia: Novig 17.24x, other books 8.2x to 9.9x).
 The dashboard's Scanner page (`public/nba_scan.html`, `/api/nba/novig-scan`
 in `server.js`) runs the same script on the server while the page is open.
 It is private: the route needs the passcode in the server's `NOVIG_SCAN_KEY`
