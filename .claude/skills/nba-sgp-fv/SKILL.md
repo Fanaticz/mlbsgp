@@ -164,8 +164,9 @@ count, then commit and push `public/data/nba_correlations.json` to `main`.
 player's same-player 2-leg combos (fair from Novig's legs, as `odds novig`)
 against Novig's slip price and prints them best EV first: Points + Threes
 Overs first, then Over + Over on the other pairs (r at least 0.15), then
-Points Over + Assists Under where the PTS·AST r is 0.05 or lower (the only
-Over + Under asked: Max never plays the others for one player), then three legs: the best 12 two-leg
+Points and Assists for every player with no r cutoff (Over + Over and both
+Over + Under mixes; Under + Under is rejected by Novig; no other pair is
+asked Over + Under, Max never plays those), then three legs: the best 12 two-leg
 Over rows (-6% EV or better) with each other stat's main-line Over added
 (`--tri 0` turns that off). `--tier 1` is Points + Threes only,
 `--min-ev 3` trims the table, `--max-spread 0.08` lets in wide books (rows
@@ -182,6 +183,12 @@ in `server.js`) runs the same script on the server while the page is open.
 It is private: the route needs the passcode in the server's `NOVIG_SCAN_KEY`
 (no key set = scanner off), and the NOVIG SCAN tab only shows on a device
 that has entered it (five taps on the EVC label opens the passcode box).
+
+Teammate combos are not scanned, on purpose (checked 11-10, 40 live quotes):
+Novig prices cross-player parlays 10 to 25% under fair in every direction
+(assist Over + teammate scoring Over or Under, star points Under + teammate
+points Over), more than our teammate correlations (shrunk phi at most 0.15)
+can ever make back.
 
 ## Related
 
