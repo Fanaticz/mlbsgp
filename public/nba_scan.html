@@ -246,7 +246,9 @@ function render() {
     rowsEl.innerHTML = `<div class="empty">${
       q ? "No combo for that name." :
       !all.length ? (S.scanning ? "Pricing the slate. Rows appear as Novig answers (about one a second)." :
-        !S.finished ? "Nothing fetched yet. Press <b>Fetch</b> to price the slate." : `Nothing to price right now: no player has two Novig books tight enough.${S.wide ? "" : ` They tighten ${LEAGUE === "nfl" ? "toward the weekend" : "through the day"}; tick <b>Wide books</b> for rough numbers.`}`) :
+        !S.finished ? "Nothing fetched yet. Press <b>Fetch</b> to price the slate." :
+        SOC() ? "No open match has two-sided books on both teams’ corners right now. They usually appear a day or two before kickoff." :
+        `Nothing to price right now: no player has two Novig books tight enough.${S.wide ? "" : ` They tighten ${LEAGUE === "nfl" ? "toward the weekend" : "through the day"}; tick <b>Wide books</b> for rough numbers.`}`) :
       `No combo at ${MINEV > 0 ? "+" : ""}${MINEV}% or better right now. Best of ${all.length}: ${esc(best.player)}, ${esc(best.label)} at ${pct(best.ev)}. <b>All combos</b> shows the rest.`
     }</div>`;
   } else {

@@ -52,23 +52,40 @@ def norm(name):
     return ALIAS.get(key, key)
 
 
-def fetch(league="NBA", stats=tuple(TYPES)):
-    """Every open pregame market of these stat types, all pages."""
-    q = {"league": league, "marketType": ",".join(ALL_TYPES[s] for s in stats),
-         "eventStatus": "OPEN_PREGAME", "limit": 5000}
-    out, after = [], None
+def catalog(query):
+    """Every market matching `query` in Novig's public catalog, all pages. The
+    catalog is throttled per IP: a 429, a 5xx or a dropped connection is
+    retried (waiting what Retry-After says) before it is given up on."""
+    q, out, after = dict(query, limit=5000), [], None
     for _ in range(20):
         if after:
             q["after"] = after
         url = f"{HOST}/v3/public/catalog/markets?{urllib.parse.urlencode(q)}"
         req = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "nba-sgp-fv"})
-        with urllib.request.urlopen(req, timeout=30) as r:
-            page = json.load(r)
+        for attempt in range(5):
+            try:
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    page = json.load(r)
+                break
+            except urllib.error.HTTPError as e:
+                if e.code != 429 and e.code < 500 or attempt == 4:
+                    raise
+                time.sleep(min(20.0, float(e.headers.get("Retry-After") or 2 + 2 * attempt)))
+            except OSError:
+                if attempt == 4:
+                    raise
+                time.sleep(2 + 2 * attempt)
         out += page.get("items", [])
         after = page.get("next")
         if not after:
             break
     return out
+
+
+def fetch(league="NBA", stats=tuple(TYPES)):
+    """Every open pregame market of these stat types, all pages."""
+    return catalog({"league": league, "marketType": ",".join(ALL_TYPES[s] for s in stats),
+                    "eventStatus": "OPEN_PREGAME"})
 
 
 def quote(m):

@@ -180,19 +180,15 @@ SOCCER_LEAGUES = ("EPL", "Serie A", "La Liga", "Bundesliga", "Ligue 1", "Champio
 def soccer_candidates(a):
     """Favourite ML + goals Over + favourite corners Under + underdog corners
     Over, per match, against the unrelated-legs price."""
-    import urllib.parse
-    import urllib.request
-    out = []
+    out, failed = [], []
     for lg in SOCCER_LEAGUES:
-        q = {"league": lg, "eventStatus": "OPEN_PREGAME", "limit": 5000,
-             "marketType": "MONEYLINE_3_WAY_WIN,TOTAL,TEAM_TOTAL_CORNERS"}
-        req = urllib.request.Request(f"{novig.HOST}/v3/public/catalog/markets?{urllib.parse.urlencode(q)}",
-                                     headers={"Accept": "application/json", "User-Agent": "nba-sgp-fv"})
         try:
-            with urllib.request.urlopen(req, timeout=30) as r:
-                items = json.load(r).get("items", [])
-        except Exception:
+            items = novig.catalog({"league": lg, "eventStatus": "OPEN_PREGAME",
+                                   "marketType": "MONEYLINE_3_WAY_WIN,TOTAL,TEAM_TOTAL_CORNERS"})
+        except Exception as e:   # one league not answering shouldn't lose the rest
+            failed.append(f"{lg} ({getattr(e, 'code', None) or type(e).__name__})")
             continue
+        time.sleep(0.4)   # twelve catalog calls in a row trip the per-IP throttle
         ev = {}
         for m in items:
             o = m["outcomes"]
@@ -236,6 +232,8 @@ def soccer_candidates(a):
                             "team": lg, "starts": wins[0]["starts"], "legs": legs, "label": " · ".join(x["text"] for x in legs),
                             "r": None, "j": min(unrelated * lift, 0.99), "forced": False, "devig_r": None,
                             "lift": lift, "unrelated_x": 1 / unrelated, "rough": max(x["width"] for x in legs) > novig.MAX_SPREAD + 1e-9})
+    if failed and not out:
+        raise SystemExit("Novig's catalog didn't answer for " + ", ".join(failed))
     return (out[:a.max] if a.max else out), {}
 
 
