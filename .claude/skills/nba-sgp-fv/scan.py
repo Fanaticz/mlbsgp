@@ -21,6 +21,14 @@ allows one a second, so the order is the scan's budget):
   1  Points Over + Threes Over, highest r first: the points main line with
      the threes main line and the next milestone beside it (that second one
      may sit on a book up to --alt-spread wide; flagged ~).
+  1b Up the ladder for the shooters (r at least --ladder-r): every higher
+     points line Novig lists (to main + 10) with threes at main, +1 and +2.
+     Fair is modelled, not read off a book: each leg is shifted from the
+     main line (price.py's `from`: normal for points, normal + count model
+     for threes) and the copula joint is scaled by LADDER_FIX, the model's
+     measured shortfall on 128 shooters' game logs (x1.00 at the main lines
+     up to x1.28 at +8 points, +2 threes: real tails are fatter). Rows are
+     marked * on the page.
   2  Over + Over on the other pairs (PTS·REB, PTS·AST, REB·AST, REB·3PM,
      AST·3PM) at main lines, where r is at least --min-r.
   3  Points and Assists, every player, no r cutoff: Over + Over, Points Over
@@ -81,6 +89,22 @@ def nfl_r(p, x, y):
     """The player's shrunk copula r for the pair, or None when he has too few games."""
     k = NFL_PAIRS.get((x, y)) or NFL_PAIRS.get((y, x))
     return ((p.get(k) or {}).get("shrunk") or {}).get("r")
+
+
+# actual / modelled hit rate of both legs, by (points above main rounded to 2, threes above main):
+# 128 rotation shooters, lines relative to each player's own average (ladder backtest, 11-10).
+LADDER_FIX = {(0, 0): 1.00, (0, 1): 1.06, (0, 2): 1.13, (2, 0): 1.00, (2, 1): 1.05, (2, 2): 1.16,
+              (4, 0): 1.04, (4, 1): 1.09, (4, 2): 1.20, (6, 0): 1.08, (6, 1): 1.12, (6, 2): 1.23,
+              (8, 0): 1.18, (8, 1): 1.20, (8, 2): 1.28}
+
+
+def shifted(p, stat, row, main):
+    """A leg at `row`'s line with its fair value shifted from the main line's."""
+    po = main["fo"] if row is main else price.leg_prob(
+        p, {"stat": stat, "side": 1, "line": row["line"], "from": main["line"], "p_over": main["fo"],
+            "over": None, "under": None})[0]
+    return {"stat": stat, "side": "over", "line": row["line"], "p": po, "fair": sgp.american(po),
+            "width": main["spread"], "id": row["ids"]["over"], "from": None if row is main else main["line"]}
 
 
 def usable(r, spread):
@@ -218,7 +242,7 @@ def candidates(markets, d, by, a):
     """(every 2-leg combo worth a quote, in quoting order; {player id: (player,
     his main-line rows by stat)} for the 3-leg pass)."""
     key = {novig.norm(n): n for n in by}
-    t1, rest, ctx = [], [], {}
+    t1, lad, rest, ctx = [], [], [], {}
     for nm in sorted({novig.player_name(m) for m in markets}):
         p = by.get(key.get(novig.norm(nm), ""))
         if not p:
@@ -248,6 +272,27 @@ def candidates(markets, d, by, a):
                 P, T = main["pts"], main["tpm"]
                 threes = [T] + beside([x for x in rows.get("tpm", []) if usable(x, a.alt_spread)], T)
                 t1 += [combo(1, r, leg("pts", P, 1), leg("tpm", t, 1)) for t in threes]
+                have = {c["key"] for c in t1}
+                if r >= a.ladder_r and a.ladder:
+                    for pr in rows["pts"]:
+                        dp = pr["line"] - P["line"]
+                        for tr in rows["tpm"]:
+                            dt = tr["line"] - T["line"]
+                            if (not 0 <= dp <= 10 or dt not in (0, 1, 2) or (dp == 0 and dt == 0)
+                                    or "over" not in pr["ids"] or "over" not in tr["ids"]
+                                    or 3 * (math.floor(tr["line"]) + 1) > pr["line"]):
+                                continue
+                            try:
+                                la, lb = shifted(p, "pts", pr, P), shifted(p, "tpm", tr, T)
+                            except (ValueError, ZeroDivisionError, OverflowError):
+                                continue
+                            c = combo(6, r, la, lb)
+                            if c["key"] in have:
+                                continue
+                            fix = LADDER_FIX[(min(8, 2 * round(dp / 2)), int(dt))]
+                            # never past what near-perfect dependence would give
+                            c.update(j=min(c["j"] * fix, sgp.joint(0.97, la["p"], lb["p"])), model=True, fix=fix, devig_r=None)
+                            lad.append(c)
         if a.tier == 1:
             continue
         for x, y in PAIRS:
@@ -264,14 +309,15 @@ def candidates(markets, d, by, a):
     t1.sort(key=lambda c: -c["r"])
     # Most lift over independent legs first: that's where a price can be off.
     rest.sort(key=lambda c: -c["j"] / (c["legs"][0]["p"] * c["legs"][1]["p"]))
-    out = t1 + rest
+    lad.sort(key=lambda c: -c["r"])
+    out = t1 + lad + rest
     return (out[:a.max] if a.max else out), ctx
 
 
 def triples(rows, ctx, stats, rfun, a):
     """Three-leg combos: the best two-leg Over + Over rows, each with one more
     stat's main-line Over. rfun(player, stat, stat) is the pair's r (or None)."""
-    base = sorted((c for c in rows if len(c["legs"]) == 2 and all(L["side"] == "over" for L in c["legs"])
+    base = sorted((c for c in rows if len(c["legs"]) == 2 and not c.get("model") and all(L["side"] == "over" for L in c["legs"])
                    and c["ev"] * 100 >= a.tri_min_ev), key=lambda c: -c["ev"])[:a.tri]
     out, seen = [], set()
     for c in base:
@@ -372,6 +418,8 @@ def main():
     ap.add_argument("--tri", type=int, default=12, help="two-leg rows to extend to three legs (0 = none)")
     ap.add_argument("--tri-min-ev", type=float, default=-6.0, help="only extend two-leg rows at this EV%% or better")
     ap.add_argument("--max", type=int, default=0, help="quote at most this many combos (default: all)")
+    ap.add_argument("--ladder-r", type=float, default=0.70, help="smallest PTS-3PM r for the higher-line combos")
+    ap.add_argument("--no-ladder", dest="ladder", action="store_false", help="skip the higher-line combos")
     ap.add_argument("--min-r", type=float, default=0.15, help="smallest r for an Over + Over on the other pairs")
     ap.add_argument("--max-spread", type=float, default=novig.MAX_SPREAD, help="widest Novig book for a leg (prob)")
     ap.add_argument("--alt-spread", type=float, default=0.08, help="widest book for the second threes milestone")
@@ -409,8 +457,10 @@ def main():
     for c in shown:
         legs = " / ".join(f"{L['fair']:+d}" for L in c["legs"])
         rtxt = "unrel." if c["r"] is None else f"{c['r']:+.2f}"
-        print(f"| {c['player']} {c['team']} | {c['label']}{' ~' if c['rough'] else ''} | {legs} | {rtxt} | "
+        print(f"| {c['player']} {c['team']} | {c['label']}{' *' if c.get('model') else ''}{' ~' if c['rough'] else ''} | {legs} | {rtxt} | "
               f"{c['fair']:+d} | {c['slip_x']:.2f}x | {c['ev']:+.1%} | {c['qk']:.2f}u | ${c['wager']:,.0f} |")
+    if any(c.get("model") for c in shown):
+        print("* a higher line: fair value modelled from the main line (see LADDER_FIX), not read off a book")
     if any(c["rough"] for c in shown):
         print("~ a leg sits on a Novig book wider than 4c: rough fair value")
 

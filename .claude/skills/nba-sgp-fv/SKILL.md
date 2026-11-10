@@ -173,6 +173,15 @@ Over rows (-6% EV or better) with each other stat's main-line Over added
 marked ~, rough). About one quote a second. Under + Under is never asked:
 Novig rejects it for one player. A row is a lead: quotes move a few percent
 between asks, so reprice the slip (and check sharp odds) before a bet.
+Higher lines ("the ladder", rows marked *): for shooters with r at least
+0.70 the scan also asks every higher points line Novig lists (to main + 10)
+with threes at main, +1 and +2. Those fairs are modelled: legs shifted from
+the main line as `from` does, joint scaled by `LADDER_FIX` (the model runs
+short on the tails: actual / model was x1.00 at the main lines, x1.06 at +1
+three, x1.28 at +8 points and +2 threes over 128 shooters' logs). First live
+run 11-10: 28 of 85 above fair, several at +30% or more. Model risk is real
+out there: confirm a ladder play with Vulture's alt-line fair before sizing.
+
 `--league nfl` scans NFL instead: Over + Over on Receptions·Yards,
 Receptions·TD and Yards·TD (TD = Novig's TOUCHDOWNS 0.5, any touchdown) for
 the WRs, TEs and RBs in `public/data/nfl_correlations.json`, then the three

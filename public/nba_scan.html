@@ -58,6 +58,7 @@
   .lgs { display:flex; flex-wrap:wrap; gap:6px; }
   .lg { border:1px solid var(--line); border-radius:7px; padding:3px 9px; font-size:13px; color:var(--muted); white-space:nowrap; }
   .lg b { color:var(--txt); font-weight:600; margin-left:4px; }
+  .lg small { font-size:11px; }
   .tech { color:var(--muted); font-size:11.5px; margin-top:7px; }
   .empty { padding:28px 14px; color:var(--muted); text-align:center; line-height:1.7; }
   .foot { padding:4px 22px 60px; color:var(--muted); font-size:12px; line-height:1.7; max-width:900px; }
@@ -132,7 +133,7 @@ let S = null;              // last response
 let GOT = 0;               // when it arrived (ms, this clock)
 let MODE = "plays", WIDE = false, MINEV = 0, LEAGUE = "nba";
 const PAIR_OPTS = {
-  nba: [["pts,tpm", "PTS + 3PM"], ["pts,reb", "PTS + REB"], ["pts,ast", "PTS + AST"], ["mix", "PTS / AST over-under"],
+  nba: [["pts,tpm", "PTS + 3PM"], ["ladder", "PTS + 3PM higher lines"], ["pts,reb", "PTS + REB"], ["pts,ast", "PTS + AST"], ["mix", "PTS / AST over-under"],
         ["reb,ast", "REB + AST"], ["reb,tpm", "REB + 3PM"], ["ast,tpm", "AST + 3PM"], ["3", "3 legs"]],
   nfl: [["rec,yds", "REC + YDS"], ["rec,td", "REC + TD"], ["yds,td", "YDS + TD"], ["3", "3 legs"]],
   soccer: [["n3", "Win + corners"], ["n4", "With a goals leg"]],
@@ -195,9 +196,10 @@ function tip(ms) {
 // odds, then one quiet line of the working numbers.
 function detail(c) {
   const legs = c.legs.map(L =>
-    `<span class="lg">${L.text ? esc(L.text) : `${LABEL[L.stat]} ${L.side === "over" ? "o" : "u"}${L.line}`} <b>${am(L.fair)}</b></span>`).join("");
+    `<span class="lg">${L.text ? esc(L.text) : `${LABEL[L.stat]} ${L.side === "over" ? "o" : "u"}${L.line}`} <b>${am(L.fair)}</b>${L.from != null ? ` <small>from ${L.from}</small>` : ""}</span>`).join("");
   const sg = v => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
   const tech = [
+    c.model ? `r ${sg(c.r)} · modelled from the main line, ×${c.fix.toFixed(2)} for fat tails` :
     c.r === null ? `unrelated legs ${c.unrelated_x.toFixed(2)}x, hits ×${c.lift.toFixed(2)} as often` : c.legs.length === 3 ? `lowest pair r ${sg(c.r)}` : `r ${sg(c.r)} · devig r ${sg(c.devig_r)}`,
     `books ${c.legs.map(L => (100 * L.width).toFixed(1)).join(" / ")}¢`,
     `quote ${c.raw_x.toFixed(2)}x before fee`,
@@ -224,7 +226,7 @@ function render() {
   let rows = MODE === "plays" ? plays : all;
   if (q) rows = rows.filter(c => c.player.toLowerCase().includes(q));
   const pair = document.getElementById("pair").value;
-  if (pair) rows = rows.filter(c => pair === "n3" ? c.legs.length === 3 : pair === "n4" ? c.legs.length === 4 : pair === "3" ? c.legs.length === 3 : pair === "mix" ? c.legs.some(L => L.side === "under")
+  if (pair) rows = rows.filter(c => pair === "ladder" ? !!c.model : pair === "n3" ? c.legs.length === 3 : pair === "n4" ? c.legs.length === 4 : pair === "3" ? c.legs.length === 3 : pair === "mix" ? c.legs.some(L => L.side === "under")
     : c.legs.length === 2 && c.legs.every(L => L.side === "over") && c.legs.map(L => L.stat).join() === pair);
 
   // Status line.
@@ -253,7 +255,7 @@ function render() {
     rowsEl.innerHTML = rows.map(c =>
       `<div class="row${isOld(c) ? " old" : ""}" data-k="${c.key}">` +
       `<div class="who"><b>${esc(c.player)}</b><small>${esc(c.team)}${c.starts ? " · " + tip(c.starts) : ""}</small></div>` +
-      `<div class="legs">${esc(c.label)}${c.rough ? `<span class="rough" title="A leg sits on a Novig book wider than 4¢: rough fair value. Check sharp odds.">~</span>` : ""}</div>` +
+      `<div class="legs">${esc(c.label)}${c.model ? `<span class="rough" title="A higher line: fair value is modelled from the main line, not read off a book.">*</span>` : ""}${c.rough ? `<span class="rough" title="A leg sits on a Novig book wider than 4¢: rough fair value. Check sharp odds.">~</span>` : ""}</div>` +
       `<div class="num fair"><span class="lab">Fair</span>${am(c.fair)}</div>` +
       `<div class="num"><span class="lab">Novig</span>${c.slip_x.toFixed(2)}x</div>` +
       `<div class="num ev ${c.ev >= 0 ? "pos" : "neg"}">${pct(c.ev)}</div>` +
@@ -274,6 +276,7 @@ function render() {
     (LEAGUE === "nfl" ? `NFL: receptions, receiving yards and anytime touchdown for WRs, TEs and RBs (no rushing props). ` : "") +
     `Fair value: each leg is Novig’s own exchange book at that line, devigged worst case, joined with the player’s shrunk correlation` +
     `${S.data ? ` (data ${S.data})` : ""}. Novig: the multiplier on its slip, its public quote after the 10% parlay fee. ` +
+    `* marks a higher line: its fair value is modelled from the main line and checked against game logs, so it is rougher than a main-line row. ` +
     `Quotes move by a few percent between asks and last about 30 seconds, so a row is a lead to re-check on the slip, and against sharp odds, before betting. ` +
     `Scanning runs on the server only while this page is on screen.`;
 }
