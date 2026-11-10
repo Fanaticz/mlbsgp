@@ -91,7 +91,7 @@
   <input type="search" id="search" placeholder="Filter by name…" />
   <select id="pair" title="Show one kind of combo" style="background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:7px 10px;font-size:13px">
     <option value="">All pairs</option><option value="pts,tpm">PTS + 3PM</option><option value="pts,reb">PTS + REB</option>
-    <option value="pts,ast">PTS + AST</option><option value="reb,ast">REB + AST</option><option value="reb,tpm">REB + 3PM</option><option value="ast,tpm">AST + 3PM</option><option value="3">3 legs</option>
+    <option value="pts,ast">PTS + AST</option><option value="mix">PTS over + AST under</option><option value="reb,ast">REB + AST</option><option value="reb,tpm">REB + 3PM</option><option value="ast,tpm">AST + 3PM</option><option value="3">3 legs</option>
   </select>
   <label class="muted" title="Plays shows combos at this EV or better.">Min EV %
     <input type="number" id="minev" value="0" step="1" /></label>
@@ -192,7 +192,8 @@ function render() {
   let rows = MODE === "plays" ? plays : all;
   if (q) rows = rows.filter(c => c.player.toLowerCase().includes(q));
   const pair = document.getElementById("pair").value;
-  if (pair) rows = rows.filter(c => pair === "3" ? c.legs.length === 3 : c.legs.map(L => L.stat).join() === pair);
+  if (pair) rows = rows.filter(c => pair === "3" ? c.legs.length === 3 : pair === "mix" ? c.legs.some(L => L.side === "under")
+    : c.legs.length === 2 && c.legs.every(L => L.side === "over") && c.legs.map(L => L.stat).join() === pair);
 
   // Status line.
   st.classList.toggle("err", !!S.error && !S.scanning);

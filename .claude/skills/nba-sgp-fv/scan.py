@@ -22,7 +22,8 @@ allows one a second, so the order is the scan's budget):
      may sit on a book up to --alt-spread wide; flagged ~).
   2  Over + Over on the other pairs (PTS·REB, PTS·AST, REB·AST, REB·3PM,
      AST·3PM) at main lines, where r is at least --min-r.
-  3  Over + Under both ways at main lines, where r is at most -(--neg-r).
+  3  Points Over + Assists Under at main lines, where the PTS·AST r is at
+     most --mix-r. No other Over + Under is asked (Max never plays them).
   4  Three legs: the best --tri two-leg Over + Over rows (at --tri-min-ev or
      better) each get every other stat's main-line Over added, wherever no
      pair in the three has a negative r.
@@ -126,10 +127,11 @@ def candidates(markets, d, by, a):
             r = price.shrunk_r(d, by, p, x, y)[0]
             if r >= a.min_r and a.tier in (0, 2):
                 rest.append(combo(2, r, leg(x, main[x], 1), leg(y, main[y], 1)))
-            elif r <= -a.neg_r and a.tier in (0, 3):
-                rest += [combo(3, r, leg(x, main[x], sx), leg(y, main[y], -sx)) for sx in (1, -1)]
+            if (x, y) == ("pts", "ast") and r <= a.mix_r and a.tier in (0, 3):
+                rest.append(combo(3, r, leg("pts", main["pts"], 1), leg("ast", main["ast"], -1)))
     t1.sort(key=lambda c: -c["r"])
-    rest.sort(key=lambda c: -abs(c["r"]))
+    # Most lift over independent legs first: that's where a price can be off.
+    rest.sort(key=lambda c: -c["j"] / (c["legs"][0]["p"] * c["legs"][1]["p"]))
     out = t1 + rest
     return (out[:a.max] if a.max else out), ctx
 
@@ -228,7 +230,7 @@ def main():
     ap.add_argument("--tri-min-ev", type=float, default=-6.0, help="only extend two-leg rows at this EV%% or better")
     ap.add_argument("--max", type=int, default=0, help="quote at most this many combos (default: all)")
     ap.add_argument("--min-r", type=float, default=0.15, help="smallest r for an Over + Over on the other pairs")
-    ap.add_argument("--neg-r", type=float, default=0.05, help="Over + Under is asked when r is at most minus this")
+    ap.add_argument("--mix-r", type=float, default=0.05, help="Points Over + Assists Under is asked when PTS-AST r is at most this")
     ap.add_argument("--max-spread", type=float, default=novig.MAX_SPREAD, help="widest Novig book for a leg (prob)")
     ap.add_argument("--alt-spread", type=float, default=0.08, help="widest book for the second threes milestone")
     ap.add_argument("--workers", type=int, default=3, help="quotes in flight at once")

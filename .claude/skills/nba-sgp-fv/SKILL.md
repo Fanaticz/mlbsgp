@@ -164,7 +164,8 @@ count, then commit and push `public/data/nba_correlations.json` to `main`.
 player's same-player 2-leg combos (fair from Novig's legs, as `odds novig`)
 against Novig's slip price and prints them best EV first: Points + Threes
 Overs first, then Over + Over on the other pairs (r at least 0.15), then
-Over + Under where r is negative, then three legs: the best 12 two-leg
+Points Over + Assists Under where the PTS·AST r is 0.05 or lower (the only
+Over + Under asked: Max never plays the others for one player), then three legs: the best 12 two-leg
 Over rows (-6% EV or better) with each other stat's main-line Over added
 (`--tri 0` turns that off). `--tier 1` is Points + Threes only,
 `--min-ev 3` trims the table, `--max-spread 0.08` lets in wide books (rows
