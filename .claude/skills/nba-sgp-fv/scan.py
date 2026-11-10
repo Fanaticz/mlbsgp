@@ -30,6 +30,9 @@ allows one a second, so the order is the scan's budget):
      shortfall on 128 shooters' game logs (x1.00 at the main lines up to
      x1.28 at +8 points, +2 threes); it is off by default because other
      books' SGP prices say that correction is too generous.
+  1c Build-your-own double-doubles: 10+ with 10+ on points, rebounds and
+     assists, for players whose main lines are both at least 5.5. Modelled
+     like the ladder (legs shifted from the main lines), marked *.
   2  Over + Over on the other pairs (PTS·REB, PTS·AST, REB·AST, REB·3PM,
      AST·3PM) at main lines, where r is at least --min-r.
   3  Points and Assists, every player, no r cutoff: Over + Over, Points Over
@@ -245,7 +248,7 @@ def candidates(markets, d, by, a):
     """(every 2-leg combo worth a quote, in quoting order; {player id: (player,
     his main-line rows by stat)} for the 3-leg pass)."""
     key = {novig.norm(n): n for n in by}
-    t1, lad, rest, ctx = [], [], [], {}
+    t1, lad, dds, rest, ctx = [], [], [], [], {}
     for nm in sorted({novig.player_name(m) for m in markets}):
         p = by.get(key.get(novig.norm(nm), ""))
         if not p:
@@ -301,6 +304,18 @@ def candidates(markets, d, by, a):
                             # never past what near-perfect dependence would give
                             c.update(j=min(c["j"] * fix, sgp.joint(0.97, la["p"], lb["p"])), model=True, fix=fix, devig_r=None)
                             lad.append(c)
+        if a.tier == 0 and a.dd:
+            for x, y in (("pts", "reb"), ("pts", "ast"), ("reb", "ast")):
+                rx = next((q for q in rows.get(x, []) if q["line"] == 9.5 and "over" in q["ids"]), None)
+                ry = next((q for q in rows.get(y, []) if q["line"] == 9.5 and "over" in q["ids"]), None)
+                if not rx or not ry or x not in main or y not in main or min(main[x]["line"], main[y]["line"]) < 5.5:
+                    continue
+                try:
+                    c = combo(7, price.shrunk_r(d, by, p, x, y)[0], shifted(p, x, rx, main[x]), shifted(p, y, ry, main[y]))
+                except (ValueError, ZeroDivisionError, OverflowError):
+                    continue
+                c.update(model=True, dd=True, fix=1.0, devig_r=None)
+                dds.append(c)
         if a.tier == 1:
             continue
         for x, y in PAIRS:
@@ -318,7 +333,9 @@ def candidates(markets, d, by, a):
     # Most lift over independent legs first: that's where a price can be off.
     rest.sort(key=lambda c: -c["j"] / (c["legs"][0]["p"] * c["legs"][1]["p"]))
     lad.sort(key=lambda c: -c["r"])
-    out = t1 + lad + rest
+    dds.sort(key=lambda c: -c["j"])
+    seen = {c["key"] for c in t1 + lad + rest}
+    out = t1 + lad + rest + [c for c in dds if c["key"] not in seen]
     return (out[:a.max] if a.max else out), ctx
 
 
@@ -428,6 +445,7 @@ def main():
     ap.add_argument("--max", type=int, default=0, help="quote at most this many combos (default: all)")
     ap.add_argument("--ladder-r", type=float, default=0.70, help="smallest PTS-3PM r for the higher-line combos")
     ap.add_argument("--ladder-fix", action="store_true", help="scale higher-line joints by LADDER_FIX (off: plain model)")
+    ap.add_argument("--no-dd", dest="dd", action="store_false", help="skip the build-your-own double-doubles")
     ap.add_argument("--no-ladder", dest="ladder", action="store_false", help="skip the higher-line combos")
     ap.add_argument("--min-r", type=float, default=0.15, help="smallest r for an Over + Over on the other pairs")
     ap.add_argument("--max-spread", type=float, default=novig.MAX_SPREAD, help="widest Novig book for a leg (prob)")

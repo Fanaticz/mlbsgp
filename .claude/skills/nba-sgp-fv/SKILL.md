@@ -186,6 +186,11 @@ A shifted leg is capped at Novig's own ask on that line (a seller there means
 the true chance is lower). Still model fairs: confirm a ladder play against other books' SGP price or
 Vulture before sizing.
 
+Build-your-own double-doubles (10+ with 10+ on points, rebounds, assists;
+`--no-dd` skips them) ride at the end of the NBA pass, modelled like the
+ladder. First test 11-10: 2 of 34 above fair, and Novig prices them in line
+with its own DOUBLE_DOUBLE market, so expect little.
+
 `--league nfl` scans NFL instead: Over + Over on Receptions·Yards,
 Receptions·TD and Yards·TD (TD = Novig's TOUCHDOWNS 0.5, any touchdown) for
 the WRs, TEs and RBs in `public/data/nfl_correlations.json`, then the three
