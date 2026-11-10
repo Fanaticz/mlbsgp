@@ -21,7 +21,8 @@ allows one a second, so the order is the scan's budget):
   1  Points Over + Threes Over, highest r first: the points main line with
      the threes main line and the next milestone beside it (that second one
      may sit on a book up to --alt-spread wide; flagged ~).
-  1b Up the ladder for the shooters (r at least --ladder-r): every higher
+  1b Up the ladder for the shooters (r at least --ladder-r) whose best
+     main-line quote came back at --ladder-gate (-3%) or better: every higher
      points line Novig lists (to main + 10) with threes at main, +1 and +2.
      Fair is modelled, not read off a book: each leg is shifted from the
      main line (price.py's `from`: normal for points, normal + count model
@@ -439,6 +440,12 @@ def scan(a, emit):
         d, by = sgp.load()
         cands, ctx = candidates(novig.fetch(), d, by, a)
         stats, rfun = STATS, lambda p, x, y: price.shrunk_r(d, by, p, x, y)[0]
+    # The higher lines wait for the main lines: a player goes up the ladder
+    # only if his best main-line Points + Threes quote came back at
+    # --ladder-gate or better. On the 11-10 board that kept 6 of the 8 ladder
+    # rows at +5% or more, every one of the big ones, for 74 quotes, not 168.
+    ladder = [c for c in cands if c["tier"] == 6]
+    cands = [c for c in cands if c["tier"] != 6]
     emit({"type": "start", "total": len(cands), "players": len({c["id"] for c in cands}),
           "league": a.league, "data": d["generated_at"][:10], "at": t0})
     pace, rows, lock = Pace(), [], threading.Lock()
@@ -454,7 +461,15 @@ def scan(a, emit):
                 emit({"type": "miss", "key": c["key"], "player": c["player"], "label": c["label"], "why": why})
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=a.workers) as pool:
-        list(pool.map(one, cands))
+        first = [c for c in cands if c["tier"] == 1]
+        list(pool.map(one, first))
+        best = {}
+        for c in list(rows):
+            best[c["id"]] = max(best.get(c["id"], -9.0), c["ev"])
+        up = [c for c in ladder if best.get(c["id"], -9.0) * 100 >= a.ladder_gate]
+        emit({"type": "more", "add": len(up)})
+        list(pool.map(one, up + [c for c in cands if c["tier"] != 1]))
+        cands = cands + up
         if a.tri and a.tier in (0, 4):
             more = triples(list(rows), ctx, stats, rfun, a)
             emit({"type": "more", "add": len(more)})
@@ -472,6 +487,8 @@ def main():
     ap.add_argument("--tri-min-ev", type=float, default=-6.0, help="only extend two-leg rows at this EV%% or better")
     ap.add_argument("--max", type=int, default=0, help="quote at most this many combos (default: all)")
     ap.add_argument("--ladder-r", type=float, default=0.70, help="smallest PTS-3PM r for the higher-line combos")
+    ap.add_argument("--ladder-gate", type=float, default=-3.0,
+                    help="go up a player's ladder only if his best main-line PTS+3PM EV%% is at least this (-100 = everyone)")
     ap.add_argument("--ladder-fix", action="store_true", help="scale higher-line joints by LADDER_FIX (off: plain model)")
     ap.add_argument("--no-dd", dest="dd", action="store_false", help="skip the build-your-own double-doubles")
     ap.add_argument("--no-ladder", dest="ladder", action="store_false", help="skip the higher-line combos")
