@@ -158,6 +158,20 @@ session's GitHub access can't trigger workflows (403), so to refresh by hand:
 ESPN is reachable from the container), check `generated_at` and the player
 count, then commit and push `public/data/nba_correlations.json` to `main`.
 
+## Slate scan
+
+`python3 .claude/skills/nba-sgp-fv/scan.py` prices every open pregame
+player's same-player 2-leg combos (fair from Novig's legs, as `odds novig`)
+against Novig's slip price and prints them best EV first: Points + Threes
+Overs first, then Over + Over on the other pairs (r at least 0.15), then
+Over + Under where r is negative. `--tier 1` is Points + Threes only,
+`--min-ev 3` trims the table, `--max-spread 0.08` lets in wide books (rows
+marked ~, rough). About one quote a second. Under + Under is never asked:
+Novig rejects it for one player. A row is a lead: quotes move a few percent
+between asks, so reprice the slip (and check sharp odds) before a bet.
+The dashboard's Scanner page (`public/nba_scan.html`, `/api/nba/novig-scan`
+in `server.js`) runs the same script on the server while the page is open.
+
 ## Related
 
 - `nba-ast-pts-sgp`: Vulture `/run` commands and the Assists × Points

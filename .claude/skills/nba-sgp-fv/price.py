@@ -181,6 +181,36 @@ def interp(knots, x):
     return knots[-1][1]
 
 
+_PRIORS = {}  # pair -> (knots, tau2): the pool is every rotation player, so build it once
+
+
+def role_prior(d, by, key, weights):
+    """(knots, tau2) for a pair the data file doesn't carry: rotation players'
+    r binned by the pair's covariate, and the real spread between players."""
+    if key not in _PRIORS:
+        a, b = key
+        cov = COVARIATE.get(key, "min_mean")
+        pool = []
+        for q in by.values():
+            if q["min_mean"] >= POOL["min_mpg"] and q["n_games"] >= POOL["min_games"]:
+                r, n = wcorr(q, a, b, weights)
+                if r is not None:
+                    pool.append((q[cov], r, n))
+        pool.sort()
+        knots = []
+        for i in range(BINS):
+            bin_ = pool[i * len(pool) // BINS:(i + 1) * len(pool) // BINS]
+            xs = sorted(x for x, _, _ in bin_)
+            knots.append((xs[len(xs) // 2], sum(r for _, r, _ in bin_) / len(bin_)))
+        # Sampling noise evaluated at the prior, as the data script does: at a
+        # player's own r, a small sample that ran high would get the most weight.
+        resid = [r - interp(knots, x) for x, r, _ in pool]
+        tau2 = max(sum(e * e for e in resid) / len(resid)
+                   - sum((1 - interp(knots, x) ** 2) ** 2 / n for x, _, n in pool) / len(pool), 0.02 ** 2)
+        _PRIORS[key] = (knots, tau2)
+    return _PRIORS[key]
+
+
 def shrunk_r(d, by, p, a, b):
     """(r, how) for the pair, oriented as corr(a, b)."""
     key = tuple(sorted((a, b), key=ORDER.index))
@@ -190,25 +220,8 @@ def shrunk_r(d, by, p, a, b):
             return pair["shrunk"]["r"], "data file"
         return pair["weighted"]["r"] or 0.0, "data file (unshrunk)"
     weights = {int(k): v for k, v in d["weighting"]["per_game_season_weights"].items()}
-    cov = COVARIATE.get(key, "min_mean")
-    pool = []
-    for q in by.values():
-        if q["min_mean"] >= POOL["min_mpg"] and q["n_games"] >= POOL["min_games"]:
-            r, n = wcorr(q, a, b, weights)
-            if r is not None:
-                pool.append((q[cov], r, n))
-    pool.sort()
-    knots = []
-    for i in range(BINS):
-        bin_ = pool[i * len(pool) // BINS:(i + 1) * len(pool) // BINS]
-        xs = sorted(x for x, _, _ in bin_)
-        knots.append((xs[len(xs) // 2], sum(r for _, r, _ in bin_) / len(bin_)))
-    # Sampling noise evaluated at the prior, as the data script does: at a
-    # player's own r, a small sample that ran high would get the most weight.
-    resid = [r - interp(knots, x) for x, r, _ in pool]
-    tau2 = max(sum(e * e for e in resid) / len(resid)
-               - sum((1 - interp(knots, x) ** 2) ** 2 / n for x, _, n in pool) / len(pool), 0.02 ** 2)
-    prior = interp(knots, p[cov])
+    knots, tau2 = role_prior(d, by, key, weights)
+    prior = interp(knots, p[COVARIATE.get(key, "min_mean")])
     r, n = wcorr(p, a, b, weights)
     if r is None:
         return prior, "role prior (too few games)"

@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Novig SGP Scanner</title>
+<style>
+  :root {
+    --bg:#0f1419; --panel:#1a2129; --line:#2a333d; --txt:#e6edf3;
+    --muted:#8b98a5; --accent:#f5a623; --pos:#3fb950; --neg:#f85149;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+    font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  header { padding:14px 22px 10px; display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 14px; }
+  h1 { margin:0; font-size:18px; }
+  .sub { color:var(--muted); font-size:12.5px; }
+  .sub.err { color:var(--neg); }
+  .sub b { color:var(--txt); font-weight:600; }
+  a { color:var(--accent); text-decoration:none; }
+  .controls { display:flex; flex-wrap:wrap; gap:10px 12px; align-items:center; padding:10px 22px;
+    border-top:1px solid var(--line); border-bottom:1px solid var(--line); position:sticky; top:0;
+    background:var(--bg); z-index:5; }
+  .toggle { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .toggle button { background:transparent; color:var(--muted); border:0; padding:7px 13px; font-size:13px; cursor:pointer; }
+  .toggle button.on { background:var(--accent); color:#1a1a1a; font-weight:600; }
+  input[type=search], input[type=number] { background:var(--panel); border:1px solid var(--line);
+    color:var(--txt); border-radius:8px; padding:7px 10px; font-size:13px; }
+  input[type=search] { width:170px; }
+  input[type=number] { width:62px; margin-left:4px; }
+  label.muted { color:var(--muted); font-size:13px; white-space:nowrap; display:inline-flex; align-items:center; gap:6px; }
+  .muted { color:var(--muted); }
+  .back { margin-left:auto; font-size:13px; white-space:nowrap; }
+  .bar { height:2px; background:var(--line); }
+  .bar i { display:block; height:2px; width:0; background:var(--accent); transition:width .4s; }
+
+  .board { padding:0 12px 24px; }
+  .row, .head { display:grid; align-items:center; gap:0 12px; padding:9px 10px;
+    grid-template-columns:minmax(190px,1.5fr) minmax(170px,1.3fr) repeat(6, minmax(62px,.55fr)) 46px; }
+  .head { position:sticky; top:53px; background:var(--panel); color:var(--muted); font-weight:600; font-size:11px;
+    text-transform:uppercase; letter-spacing:.03em; border-bottom:1px solid var(--line); z-index:4; }
+  .head .num, .row .num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .row { border-bottom:1px solid var(--line); cursor:pointer; }
+  .row:hover { background:#161d25; }
+  .row.old { opacity:.55; }
+  .who b { font-weight:600; }
+  .who small, .legs small { color:var(--muted); font-size:11.5px; margin-left:6px; white-space:nowrap; }
+  .legs { white-space:nowrap; }
+  .rough { color:var(--accent); cursor:help; margin-left:4px; }
+  .fair { color:var(--accent); font-weight:600; }
+  .ev { font-weight:700; }
+  .ev.pos { color:var(--pos); }
+  .ev.neg { color:var(--neg); font-weight:500; }
+  .lab { display:none; }
+  .det { grid-column:1 / -1; color:var(--muted); font-size:12.5px; line-height:1.75; padding:8px 2px 2px;
+    cursor:default; white-space:normal; }
+  .det b { color:var(--txt); font-weight:600; }
+  .empty { padding:28px 14px; color:var(--muted); text-align:center; line-height:1.7; }
+  .foot { padding:4px 22px 60px; color:var(--muted); font-size:12px; line-height:1.7; max-width:900px; }
+
+  @media (max-width:760px) {
+    header { padding:12px 14px 8px; }
+    .controls { padding:8px 14px; gap:8px 10px; }
+    .toggle { flex:1 1 100%; }
+    .toggle button { flex:1; padding:9px 8px; }
+    input[type=search] { flex:1 1 40%; width:auto; min-width:0; }
+    input[type=search], input[type=number] { font-size:16px; }
+    .board { padding:0 6px 24px; }
+    .head { display:none; }
+    .row { grid-template-columns:repeat(4, minmax(0,1fr)); gap:5px 8px; padding:11px 8px; }
+    .who { grid-column:1 / span 3; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ev { grid-column:4; grid-row:1; font-size:17px; }
+    .legs { grid-column:1 / -1; }
+    .row .num:not(.ev) { text-align:left; }
+    .lab { display:block; font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; font-weight:400; }
+    .qk, .rr { display:none; }
+    .foot { padding:4px 14px 60px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Novig SGP scanner</h1>
+  <div class="sub" id="status">Starting…</div>
+</header>
+<div class="controls">
+  <div class="toggle" id="mode">
+    <button data-mode="plays" class="on">Plays</button>
+    <button data-mode="all">All combos</button>
+  </div>
+  <input type="search" id="search" placeholder="Filter by name…" />
+  <label class="muted" title="Plays shows combos at this EV or better.">Min EV %
+    <input type="number" id="minev" value="0" step="1" /></label>
+  <label class="muted" title="Also price legs on Novig books up to 8¢ wide (10¢ for the second threes milestone). Their fair values are rough: marked ~.">
+    <input type="checkbox" id="wide" /> Wide books</label>
+  <a class="back" href="nba.html">Correlations →</a>
+</div>
+<div class="bar"><i id="bar"></i></div>
+<div class="board">
+  <div class="head">
+    <div>Player</div><div>Legs</div><div class="num">Fair</div><div class="num">Novig</div>
+    <div class="num">EV</div><div class="num">QK</div><div class="num">Wager</div><div class="num">r</div><div class="num">Age</div>
+  </div>
+  <div id="rows"></div>
+</div>
+<div class="foot" id="foot"></div>
+
+<script>
+// The board comes from the server: /api/nba/novig-scan runs
+// .claude/skills/nba-sgp-fv/scan.py (one pass at a time) and returns what it
+// has priced so far. Polling is what keeps it scanning, so this page only
+// polls while it is actually on screen.
+let S = null;              // last response
+let GOT = 0;               // when it arrived (ms, this clock)
+let MODE = "plays", WIDE = false, MINEV = 0;
+const OPEN = new Set();    // expanded rows, by key
+const LS = "nbaNovigScan";
+try {
+  const v = JSON.parse(localStorage.getItem(LS) || "{}");
+  if (v.mode === "all") MODE = "all";
+  WIDE = !!v.wide;
+  if (Number.isFinite(v.minev)) MINEV = v.minev;
+} catch (_) {}
+const save = () => { try { localStorage.setItem(LS, JSON.stringify({ mode: MODE, wide: WIDE, minev: MINEV })); } catch (_) {} };
+
+const am = v => (v > 0 ? "+" : "−") + Math.abs(v);
+const pct = v => `${v >= 0 ? "+" : "−"}${Math.abs(100 * v).toFixed(1)}%`;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
+const clock = ms => new Date(ms).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
+const LABEL = { pts:"PTS", reb:"REB", ast:"AST", tpm:"3PM" };
+
+// Shown on screen: the tab is visible and, inside the site's tab frame, that
+// frame is the one displayed.
+function shown() {
+  if (document.visibilityState !== "visible") return false;
+  try { return !window.frameElement || window.frameElement.offsetParent !== null; } catch (_) { return true; }
+}
+
+function age(row) {
+  // The server's clock stamps both `now` and each row, so the phone's clock doesn't matter.
+  const s = Math.max(0, (S.now + (Date.now() - GOT)) / 1000 - row.at);
+  return s < 90 ? `${Math.round(s)}s` : `${Math.round(s / 60)}m`;
+}
+const isOld = row => (S.now + (Date.now() - GOT)) / 1000 - row.at > 300;
+
+function tip(ms) {
+  if (!ms) return "";
+  const d = new Date(ms);
+  return d.toLocaleDateString([], { weekday:"short" }) + " " + clock(ms);
+}
+
+function detail(c) {
+  const legs = c.legs.map(L =>
+    `${LABEL[L.stat]} ${L.side === "over" ? "o" : "u"}${L.line} fair <b>${am(L.fair)}</b> <span>(Novig book ${(100 * L.width).toFixed(1)}¢ wide)</span>`).join(" · ");
+  const forced = c.forced ? "<br>These threes already clear the points line, so the parlay is priced as the threes leg alone." : "";
+  return `<div class="det">${legs}<br>` +
+    `r <b>${c.r >= 0 ? "+" : "−"}${Math.abs(c.r).toFixed(3)}</b> · devig r <b>${c.devig_r >= 0 ? "+" : "−"}${Math.abs(c.devig_r).toFixed(3)}</b>` +
+    ` · fair <b>${am(c.fair)}</b> (${c.fair_x.toFixed(2)}x)${forced}<br>` +
+    `Novig quote ${c.raw_x.toFixed(2)}x, <b>${c.slip_x.toFixed(2)}x</b> (${am(c.slip)}) on the slip after its 10% parlay fee` +
+    ` · ${c.qk > 0 ? `quarter Kelly <b>${c.qk.toFixed(2)}u</b> = <b>$${c.wager.toFixed(2)}</b>` : "no bet at this price"}` +
+    `${c.starts ? ` · tips ${tip(c.starts)}` : ""}</div>`;
+}
+
+function render() {
+  if (!S) return;
+  const st = document.getElementById("status"), rowsEl = document.getElementById("rows");
+  const all = S.rows.slice().sort((a, b) => b.ev - a.ev);
+  const plays = all.filter(c => c.ev * 100 >= MINEV);
+  const q = document.getElementById("search").value.trim().toLowerCase();
+  let rows = MODE === "plays" ? plays : all;
+  if (q) rows = rows.filter(c => c.player.toLowerCase().includes(q));
+
+  // Status line.
+  st.classList.toggle("err", !!S.error && !S.scanning);
+  const n = `<b>${plays.length}</b> at ${MINEV > 0 ? "+" : ""}${MINEV}% or better of ${all.length} priced`;
+  if (S.scanning) {
+    st.innerHTML = S.total ? `Scanning ${S.done} / ${S.total} combos on ${S.players} players · ${n}` : "Reading Novig’s lines…";
+  } else if (S.error) {
+    st.textContent = `Scan failed: ${S.error}`;
+  } else if (S.finished) {
+    const next = Math.max(0, Math.ceil((S.restMs - (S.now + (Date.now() - GOT) - S.finished)) / 1000));
+    st.innerHTML = `Last pass ${clock(Date.now() - (S.now + (Date.now() - GOT) - S.finished))} · ${S.total} combos in ` +
+      `${Math.floor(S.seconds / 60)}:${String(Math.round(S.seconds % 60)).padStart(2, "0")} · ${n} · next pass in ${next}s`;
+  }
+  document.getElementById("bar").style.width = S.scanning && S.total ? `${Math.round(100 * S.done / S.total)}%` : "0";
+
+  if (!rows.length) {
+    const best = all[0];
+    rowsEl.innerHTML = `<div class="empty">${
+      q ? "No combo for that name." :
+      !all.length ? (S.scanning ? "Pricing the slate. Rows appear as Novig answers (about one a second)." :
+        `Nothing to price right now: no player has two Novig books tight enough.${S.wide ? "" : " They tighten through the day; tick <b>Wide books</b> for rough numbers."}`) :
+      `No combo at ${MINEV > 0 ? "+" : ""}${MINEV}% or better right now. Best of ${all.length}: ${esc(best.player)}, ${esc(best.label)} at ${pct(best.ev)}. <b>All combos</b> shows the rest.`
+    }</div>`;
+  } else {
+    rowsEl.innerHTML = rows.map(c =>
+      `<div class="row${isOld(c) ? " old" : ""}" data-k="${c.key}">` +
+      `<div class="who"><b>${esc(c.player)}</b><small>${esc(c.team)}${c.starts ? " · " + tip(c.starts) : ""}</small></div>` +
+      `<div class="legs">${esc(c.label)}${c.rough ? `<span class="rough" title="A leg sits on a Novig book wider than 4¢: rough fair value. Check sharp odds.">~</span>` : ""}</div>` +
+      `<div class="num fair"><span class="lab">Fair</span>${am(c.fair)}</div>` +
+      `<div class="num"><span class="lab">Novig</span>${c.slip_x.toFixed(2)}x</div>` +
+      `<div class="num ev ${c.ev >= 0 ? "pos" : "neg"}">${pct(c.ev)}</div>` +
+      `<div class="num qk">${c.qk > 0 ? c.qk.toFixed(2) + "u" : "—"}</div>` +
+      `<div class="num"><span class="lab">Wager</span>${c.qk > 0 ? "$" + Math.round(c.wager).toLocaleString() : "—"}</div>` +
+      `<div class="num rr">${c.r >= 0 ? "+" : "−"}${Math.abs(c.r).toFixed(2)}</div>` +
+      `<div class="num"><span class="lab">Age</span>${age(c)}</div>` +
+      (OPEN.has(c.key) ? detail(c) : "") + `</div>`).join("");
+    rowsEl.querySelectorAll(".row").forEach(el => el.onclick = e => {
+      if (e.target.closest(".det")) return;   // let text in the details be selected
+      const k = el.dataset.k;
+      OPEN.has(k) ? OPEN.delete(k) : OPEN.add(k);
+      render();
+    });
+  }
+  document.getElementById("foot").innerHTML =
+    `Fair value: each leg is Novig’s own exchange book at that line, devigged worst case, joined with the player’s shrunk correlation` +
+    `${S.data ? ` (data ${S.data})` : ""}. Novig: the multiplier on its slip, its public quote after the 10% parlay fee. ` +
+    `Quotes move by a few percent between asks and last about 30 seconds, so a row is a lead to re-check on the slip, and against sharp odds, before betting. ` +
+    `Scanning runs on the server only while this page is on screen.`;
+}
+
+async function poll() {
+  if (!shown()) return;
+  try {
+    const r = await fetch(`/api/nba/novig-scan${WIDE ? "?wide=1" : ""}`, { cache: "no-store" });
+    if (!r.ok) throw new Error(`server answered ${r.status}`);
+    S = await r.json();
+    GOT = Date.now();
+    render();
+  } catch (e) {
+    const st = document.getElementById("status");
+    st.classList.add("err");
+    st.textContent = `Couldn’t reach the scanner (${e.message}).`;
+  }
+}
+
+document.querySelectorAll("#mode button").forEach(b => {
+  b.classList.toggle("on", b.dataset.mode === MODE);
+  b.onclick = () => {
+    MODE = b.dataset.mode; save();
+    document.querySelectorAll("#mode button").forEach(o => o.classList.toggle("on", o === b));
+    render();
+  };
+});
+document.getElementById("search").oninput = render;
+const minev = document.getElementById("minev");
+minev.value = MINEV;
+minev.oninput = () => { const v = parseFloat(minev.value); MINEV = Number.isFinite(v) ? v : 0; save(); render(); };
+const wide = document.getElementById("wide");
+wide.checked = WIDE;
+wide.onchange = () => { WIDE = wide.checked; save(); OPEN.clear(); poll(); };
+
+poll();
+setInterval(poll, 4000);
+document.addEventListener("visibilitychange", poll);
+</script>
+</body>
+</html>

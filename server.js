@@ -2443,6 +2443,82 @@ app.get('/api/nba/scoreboard', async (req, res) => {
   }
 });
 
+// ---- NBA: Novig SGP scanner (public/nba_scan.html) -------------------------
+// .claude/skills/nba-sgp-fv/scan.py quotes every same-player combo worth
+// asking Novig about and streams one JSON event per line. Novig's quote limit
+// is per IP (one a second), so one pass runs at a time, here on the server.
+// It only runs while the Scanner page is open: the page polls this route, a
+// cold or rested board starts a pass, and passes repeat while polls keep
+// coming. Close the page and the current pass is the last.
+const NV_SCAN_PY = path.join(__dirname, '.claude', 'skills', 'nba-sgp-fv', 'scan.py');
+const NV_SCAN_REST_MS = 45 * 1000;       // pause between passes while watched
+const NV_SCAN_MAX_MS = 20 * 60 * 1000;   // a pass stuck this long is killed
+const NV_SCAN = { proc: null, wide: false, started: 0, finished: 0, total: 0, done: 0, players: 0,
+                  data: null, seconds: 0, error: null, rows: new Map(), seen: new Set() };
+
+function startNovigScan(wide) {
+  if (NV_SCAN.proc) return;
+  // wide: also price legs on books up to 8c (10c for the second threes
+  // milestone); the page flags those rows as rough.
+  const args = [NV_SCAN_PY, '--json'].concat(wide ? ['--max-spread', '0.08', '--alt-spread', '0.10'] : []);
+  let proc;
+  try {
+    proc = require('child_process').spawn(PYTHON, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (e) {
+    NV_SCAN.error = 'scan could not start: ' + e.message;
+    NV_SCAN.finished = Date.now();
+    return;
+  }
+  Object.assign(NV_SCAN, { proc, wide, started: Date.now(), total: 0, done: 0, error: null, seen: new Set() });
+  const timer = setTimeout(() => { if (NV_SCAN.proc === proc) proc.kill(); }, NV_SCAN_MAX_MS);
+  let buf = '', err = '', ok = false;
+  const onEvent = e => {
+    if (e.type === 'start') { NV_SCAN.total = e.total; NV_SCAN.players = e.players; NV_SCAN.data = e.data; }
+    else if (e.type === 'row') { NV_SCAN.done++; NV_SCAN.seen.add(e.key); NV_SCAN.rows.set(e.key, e); }
+    else if (e.type === 'miss') { NV_SCAN.done++; NV_SCAN.rows.delete(e.key); }
+    else if (e.type === 'done') { ok = true; NV_SCAN.seconds = e.seconds; }
+  };
+  proc.stdout.on('data', chunk => {
+    buf += chunk;
+    for (let i; (i = buf.indexOf('\n')) >= 0; buf = buf.slice(i + 1)) {
+      try { onEvent(JSON.parse(buf.slice(0, i))); } catch (_) { /* not an event line */ }
+    }
+  });
+  proc.stderr.on('data', c => { err = (err + c).slice(-4000); });
+  const end = why => {
+    if (NV_SCAN.proc !== proc) return;
+    clearTimeout(timer);
+    NV_SCAN.proc = null;
+    NV_SCAN.finished = Date.now();
+    if (ok) {
+      // A combo this pass didn't price is gone: its line moved or closed.
+      for (const k of [...NV_SCAN.rows.keys()]) if (!NV_SCAN.seen.has(k)) NV_SCAN.rows.delete(k);
+    } else {
+      NV_SCAN.error = (why || err.trim().split('\n').pop() || 'scan stopped early').slice(0, 300);
+    }
+  };
+  proc.on('error', e => end('scan could not start: ' + e.message));
+  proc.on('close', () => end(''));
+}
+
+// GET /api/nba/novig-scan[?wide=1] — the board so far, and whether a pass is
+// running. Polling it is what keeps the scanner going.
+app.get('/api/nba/novig-scan', (req, res) => {
+  const wide = req.query.wide === '1';
+  const now = Date.now();
+  if (!NV_SCAN.proc && (!NV_SCAN.finished || wide !== NV_SCAN.wide || now - NV_SCAN.finished > NV_SCAN_REST_MS)) {
+    if (wide !== NV_SCAN.wide) NV_SCAN.rows.clear();
+    startNovigScan(wide);
+  }
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    now, scanning: !!NV_SCAN.proc, wide: NV_SCAN.wide, started: NV_SCAN.started, finished: NV_SCAN.finished,
+    total: NV_SCAN.total, done: NV_SCAN.done, players: NV_SCAN.players, data: NV_SCAN.data,
+    seconds: NV_SCAN.seconds, restMs: NV_SCAN_REST_MS, error: NV_SCAN.error,
+    rows: [...NV_SCAN.rows.values()],
+  });
+});
+
 app.get('/healthz', (_req, res) => res.send('ok'));
 
 app.listen(PORT, '0.0.0.0', () => console.log('Listening on 0.0.0.0:' + PORT));
