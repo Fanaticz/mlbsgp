@@ -286,7 +286,7 @@ def candidates(markets, d, by, a):
             if r > 0:
                 P, T = main["pts"], main["tpm"]
                 threes = [T] + beside([x for x in rows.get("tpm", []) if usable(x, a.alt_spread)], T)
-                t1 += [combo(1, r, leg("pts", P, 1), leg("tpm", t, 1)) for t in threes]
+                t1 += [dict(combo(1, r, leg("pts", P, 1), leg("tpm", t, 1)), main=t is T) for t in threes]
                 have = {c["key"] for c in t1}
                 if r >= a.ladder_r and a.ladder:
                     for pr in rows["pts"]:

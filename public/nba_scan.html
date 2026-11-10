@@ -231,11 +231,29 @@ function render() {
   const all = S.rows.slice().sort((a, b) => b.ev - a.ev);
   const plays = all.filter(c => c.ev * 100 >= MINEV);
   const q = document.getElementById("search").value.trim().toLowerCase();
-  let rows = MODE === "plays" ? plays : all;
+  let rows = all;
   if (q) rows = rows.filter(c => c.player.toLowerCase().includes(q));
   const pair = document.getElementById("pair").value;
   if (pair) rows = rows.filter(c => pair === "td" ? !!c.td : pair === "dd" ? !!c.dd : pair === "ladder" ? !!c.model && !c.dd && !c.td : pair === "n3" ? c.legs.length === 3 : pair === "n4" ? c.legs.length === 4 : pair === "3" ? c.legs.length === 3 : pair === "mix" ? c.legs.some(L => L.side === "under")
     : c.legs.length === 2 && c.legs.every(L => L.side === "over") && c.legs.map(L => L.stat).join() === pair);
+  // One card per player (or match). Its head is his main-line Points + Threes
+  // row, the price everything else hangs off; his other rows fold under a
+  // chip. A player with no such row, or any view filtered to one kind of
+  // combo, is headed by his best row. Plays keeps a card when any of his rows
+  // clears Min EV, and folds only the rows that do.
+  const pass = c => MODE !== "plays" || c.ev * 100 >= MINEV;
+  const byId = new Map();
+  for (const c of rows) (byId.get(c.id) || byId.set(c.id, []).get(c.id)).push(c);
+  const mainOf = g => g.find(c => c.main) ||
+    g.filter(c => c.tier === 1).sort((a, b) => Math.abs(a.legs[1].p - 0.5) - Math.abs(b.legs[1].p - 0.5))[0];
+  const cards = [];
+  for (const g of byId.values()) {
+    const shown = g.filter(pass);
+    if (!shown.length) continue;
+    const head = (!pair && mainOf(g)) || shown[0];
+    cards.push({ head, others: shown.filter(c => c !== head) });
+  }
+  cards.sort((a, b) => b.head.ev - a.head.ev);
 
   // Status line.
   st.classList.toggle("err", !!S.error && !S.scanning);
@@ -253,7 +271,7 @@ function render() {
   }
   document.getElementById("bar").style.width = S.scanning && S.total ? `${Math.round(100 * S.done / S.total)}%` : "0";
 
-  if (!rows.length) {
+  if (!cards.length) {
     const best = all[0];
     rowsEl.innerHTML = `<div class="empty">${
       q ? "No combo for that name." :
@@ -264,14 +282,11 @@ function render() {
       `No combo at ${MINEV > 0 ? "+" : ""}${MINEV}% or better right now. Best of ${all.length}: ${esc(best.player)}, ${esc(best.label)} at ${pct(best.ev)}. <b>All combos</b> shows the rest.`
     }</div>`;
   } else {
-    // One card per player (or match): his best row, with the rest folded
-    // under a "+N more" chip. They are usually the same mispriced pair again.
-    const groups = new Map();
-    for (const c of rows) (groups.get(c.id) || groups.set(c.id, []).get(c.id)).push(c);
-    const one = (c, sub, more) =>
+    const one = (c, sub, others) =>
       `<div class="row${sub ? " sub" : ""}${isOld(c) ? " old" : ""}" data-k="${c.key}">` +
       `<div class="who">${sub ? "" : `<b>${esc(c.player)}</b><small>${esc(c.team)}${c.starts ? " · " + tip(c.starts) : ""}</small>` +
-        (more ? `<button type="button" class="more" data-g="${esc(c.id)}">${GOPEN.has(c.id) ? "hide" : `+${more} more`}</button>` : "")}</div>` +
+        (others && others.length ? `<button type="button" class="more" data-g="${esc(c.id)}">${GOPEN.has(c.id) ? "hide" :
+          `+${others.length} more${others[0].ev > c.ev ? `, to ${pct(others[0].ev)}` : ""}`}</button>` : "")}</div>` +
       `<div class="legs">${esc(c.label)}${c.model ? `<span class="rough" title="A higher line: fair value is modelled from the main line, not read off a book.">*</span>` : ""}${c.rough ? `<span class="rough" title="A leg sits on a Novig book wider than 4¢: rough fair value. Check sharp odds.">~</span>` : ""}</div>` +
       `<div class="num fair"><span class="lab">Fair</span>${am(c.fair)}</div>` +
       `<div class="num"><span class="lab">Novig</span>${c.slip_x.toFixed(2)}x</div>` +
@@ -281,8 +296,8 @@ function render() {
       `<div class="num rr">${c.r === null ? "" : (c.r >= 0 ? "+" : "−") + Math.abs(c.r).toFixed(2)}</div>` +
       `<div class="num"><span class="lab">Age</span>${age(c)}</div>` +
       (OPEN.has(c.key) ? detail(c) : "") + `</div>`;
-    rowsEl.innerHTML = [...groups.values()].map(g =>
-      one(g[0], false, g.length - 1) + (GOPEN.has(g[0].id) ? g.slice(1).map(c => one(c, true, 0)).join("") : "")).join("");
+    rowsEl.innerHTML = cards.map(({ head, others }) =>
+      one(head, false, others) + (GOPEN.has(head.id) ? others.map(c => one(c, true)).join("") : "")).join("");
     rowsEl.querySelectorAll(".more").forEach(b => b.onclick = e => {
       e.stopPropagation();
       const g = b.dataset.g;
