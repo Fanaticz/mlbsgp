@@ -231,8 +231,19 @@ async function bets(body) {
       ? { method: "POST", headers: { "X-Scan-Key": KEY, "Content-Type": "application/json" }, body: JSON.stringify(body) }
       : { cache: "no-store", headers: { "X-Scan-Key": KEY } });
     if (!r.ok) return;
-    BETS = (await r.json()).bets || [];
+    const j = await r.json();
+    BETS = j.bets || [];
     BETS_AT = Date.now();
+    // This browser keeps its own copy. If the server's list was wiped (its
+    // epoch changed: a redeploy that lost the file), send back what is missing.
+    let mine = {};
+    try { mine = JSON.parse(localStorage.getItem("nbaScanBets") || "{}"); } catch (_) {}
+    if (!body || !body.restore) {
+      const have = new Set(BETS.map(b => b.id));
+      const lost = mine.epoch && j.epoch && mine.epoch !== j.epoch ? (mine.bets || []).filter(b => !have.has(b.id)) : [];
+      if (lost.length) return bets({ restore: lost });
+    }
+    try { localStorage.setItem("nbaScanBets", JSON.stringify({ epoch: j.epoch, bets: BETS })); } catch (_) {}
     render();
   } catch (_) { /* keep the list we have */ }
 }

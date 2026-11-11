@@ -2570,8 +2570,16 @@ app.get('/api/nba/novig-scan', (req, res) => {
 //   GET  /api/nba/novig-bets                      -> { bets }
 //   POST /api/nba/novig-bets { add: {...} } | { del: id }
 const NV_BETS_FILE = NV_SCAN_FILE ? path.join(path.dirname(NV_SCAN_FILE), 'novig_bets.json') : null;
-let NV_BETS = [];
-try { NV_BETS = JSON.parse(require('fs').readFileSync(NV_BETS_FILE, 'utf8')); } catch (_) { /* none yet */ }
+// The file also carries an epoch: a random id made when the file is first
+// written. If the server's disk is wiped (a redeploy with no volume mounted)
+// the epoch changes, and a browser that still holds the bets sends them back.
+let NV_BETS = [], NV_BETS_EPOCH = '';
+try {
+  const saved = JSON.parse(require('fs').readFileSync(NV_BETS_FILE, 'utf8'));
+  NV_BETS = Array.isArray(saved) ? saved : (saved.bets || []);
+  NV_BETS_EPOCH = saved.epoch || '';
+} catch (_) { /* none yet */ }
+if (!NV_BETS_EPOCH) NV_BETS_EPOCH = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 function nvBets() {
   // A bet leaves the list three days after its game (or after it was added).
   const cut = Date.now() - 3 * 86400000;
@@ -2584,23 +2592,35 @@ function nvBetsAuth(req, res) {
   if ((req.get('X-Scan-Key') || '') !== NV_SCAN_KEY) { setTimeout(() => res.status(403).json({ error: 'wrong passcode' }), 800); return false; }
   return true;
 }
-app.get('/api/nba/novig-bets', (req, res) => { if (nvBetsAuth(req, res)) res.json({ bets: nvBets() }); });
+app.get('/api/nba/novig-bets', (req, res) => { if (nvBetsAuth(req, res)) res.json({ bets: nvBets(), epoch: NV_BETS_EPOCH }); });
 app.post('/api/nba/novig-bets', (req, res) => {
   if (!nvBetsAuth(req, res)) return;
-  const { add, del } = req.body || {};
+  const { add, del, restore } = req.body || {};
+  const str = (v, n) => String(v == null ? '' : v).slice(0, n);
+  const clean = (b, id, at) => {
+    const stake = Number(b.stake), x = Number(b.x);
+    if (!(stake > 0) || !b.player) return null;
+    return { id, at, key: str(b.key, 400), board: str(b.board, 12), player: str(b.player, 80), team: str(b.team, 12),
+             label: str(b.label, 160), stake: Math.round(stake * 100) / 100, x: x > 1 ? x : null,
+             fair: Number.isFinite(Number(b.fair)) ? Number(b.fair) : null,
+             starts: Number(b.starts) > 0 ? Number(b.starts) : null };
+  };
   if (del) NV_BETS = NV_BETS.filter(b => b.id !== String(del));
   if (add) {
-    const stake = Number(add.stake), x = Number(add.x);
-    if (!(stake > 0) || !add.player) return res.status(400).json({ error: 'a bet needs a player and a stake' });
-    const str = (v, n) => String(v == null ? '' : v).slice(0, n);
-    NV_BETS.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7), at: Date.now(),
-                   key: str(add.key, 400), board: str(add.board, 12), player: str(add.player, 80), team: str(add.team, 12),
-                   label: str(add.label, 160), stake: Math.round(stake * 100) / 100, x: x > 1 ? x : null,
-                   fair: Number.isFinite(Number(add.fair)) ? Number(add.fair) : null,
-                   starts: Number(add.starts) > 0 ? Number(add.starts) : null });
+    const b = clean(add, Date.now().toString(36) + Math.random().toString(36).slice(2, 7), Date.now());
+    if (!b) return res.status(400).json({ error: 'a bet needs a player and a stake' });
+    NV_BETS.push(b);
   }
-  if (NV_BETS_FILE) require('fs').writeFile(NV_BETS_FILE, JSON.stringify(nvBets()), () => {});
-  res.json({ bets: nvBets() });
+  // Bets a browser still holds after this server lost its file.
+  if (Array.isArray(restore)) {
+    for (const r of restore.slice(0, 200)) {
+      const id = str(r && r.id, 40);
+      const b = id && !NV_BETS.some(x => x.id === id) && clean(r, id, Number(r.at) > 0 ? Number(r.at) : Date.now());
+      if (b) NV_BETS.push(b);
+    }
+  }
+  if (NV_BETS_FILE) require('fs').writeFile(NV_BETS_FILE, JSON.stringify({ epoch: NV_BETS_EPOCH, bets: nvBets() }), () => {});
+  res.json({ bets: nvBets(), epoch: NV_BETS_EPOCH });
 });
 
 app.get('/healthz', (_req, res) => res.send('ok'));

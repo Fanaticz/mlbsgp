@@ -2,6 +2,9 @@
 
 ## 2026-11-11 session
 
+### Novig Scan: My bets survive a redeploy
+Bets vanished after a hard refresh. A refresh alone keeps them (checked in a browser); what loses them is the server restarting on a new deploy when its data folder is not on the mounted volume, and there were several deploys that evening. Each browser now keeps its own copy of the list, and when it sees the server's list has been reset it sends the missing bets back. A bet removed with the × stays removed. Bets entered before this change were only on the server and are not recoverable.
+
 ### NFL Ladder: higher yards lines, one-way lines included
 A new board on the Novig Scan page (`scan.py --league nfl --scope ladder`), the NFL version of the NBA ladder. The NBA one is now labelled "NBA Ladder".
 
