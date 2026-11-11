@@ -111,7 +111,7 @@ QK=1.38u
 - Always quote leg prices, fair values and comparisons as American odds
   (+113, -108), never as percentages. EV% is the only percentage.
 - Check: Lillard O20.5 points (Fair +101/−101) + O3.5 threes from the 2.5
-  Fair (−142) at 3.80x → +227 / 16.2% / $723.57 / 1.45u on the 11-01 data
+  Fair (−142) at 3.80x → +238 / 12.4% / $277.37 / 1.11u on the 11-11 data
   (r drifts a little with each daily refresh).
 - For any number of legs (3-leg PTS·3PM·REB included), the script prints a
   `devig tool:` line: paste its Leg Odds into Leg Odds and its
@@ -144,10 +144,21 @@ QK=1.38u
   by integration (matches a 4M-draw simulation), four or more by Monte Carlo.
   Checked on PTS·3PM: across 254 player-seasons at book-style lines it
   predicted both overs 41.1% vs 41.05% actual.
-- **Line shifts (`from`):** a normal fit through the posted line with the
-  player's within-season SD. Rebounds, assists and threes average that with a
-  negative binomial using the player's own dispersion (they diverge on small
-  counts).
+- **Line shifts (`from`):** the leg is fitted through the posted line and
+  read off at the slip's line. Above the posted line (a one-way milestone
+  like 30+ against a 22.5 main) it is a negative binomial with the player's
+  own dispersion; points keep a fifth of the normal fit. Below it, points
+  use the normal with his within-season SD and rebounds, assists and threes
+  average the two. Study of 11-11 (about 30k player-games a stat, prior games
+  only): the normal alone gave 54% of the real hit rate on points at main +
+  12 and 36% on threes at + 3, the count model 96-112%; both-legs rates on
+  the ladder went from 52-80% of actual to 81-101%. DK's and FanDuel's
+  one-way ladders agree (their price over this fair is their margin: 6% near
+  the main, 30-45% on long shots). One player's shift still carries noise, so
+  a shifted `novig` leg is held inside Novig's own ladder: no higher than the
+  lowest ask at that line or below, no lower than the highest bid at that
+  line or above (a one-way line gives one of the two; the note says when it
+  bit). Score legs shift with the normal.
 
 ## Data freshness
 
@@ -187,8 +198,11 @@ the main line as `from` does, then the usual copula joint. Checked against
 other books 11-10 on McCain: 14+ PTS / 3+ 3PM plain model +218 vs Fanatics
 +195; 15+ / 3+ plain model +226 vs Fanatics +210, FD +207, DK +206, so the
 model sits about 6% longer than the books, as a fair value should.
+(Those were priced before 11-11, when shifted legs got the fatter upper
+tail described under Method; ladder fairs are shorter since.)
 `--ladder-fix` scales the joint by a game-log tail correction (`LADDER_FIX`,
-x1.00 to x1.28); it is off because it put fair right on the books' price.
+x1.00 to x1.28) measured on the old shift; leave it off, the legs carry the
+tail now.
 The main-line Points + Threes quotes go first and gate the rest (`--gate`,
 0%): a player whose best one isn't above fair gets nothing else asked, no
 ladder, other pairs, double-doubles or three-leg slips, to keep the number

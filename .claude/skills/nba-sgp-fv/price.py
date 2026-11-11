@@ -62,6 +62,15 @@ COVARIATE = {("reb", "ast"): "min_mean", ("reb", "tpm"): "reb_mean", ("ast", "tp
 # Any other pair (points, assists or threes against a score) bins on minutes.
 POOL = {"min_mpg": 20.0, "min_games": 40}
 BINS = 5
+# Line shifts (`from`): the count model's share of the shifted leg, the normal
+# taking the rest. Walk-forward on about 30k player-games a stat (11-11): above
+# the posted line the normal alone gave 44-72% of the real hit rate on points at
+# +8 to +15 and 36-57% on threes at +2 to +3, the count model 96-112% (points
+# +15: 128%, so points keep a fifth of the normal). Both-legs rates on the
+# ladder went from 52-80% of actual to 81-101%. DK's and FanDuel's one-way
+# ladders agree: their price over the count-model fair is their margin.
+UP_WEIGHT = {"pts": 0.8, "reb": 1.0, "ast": 1.0, "tpm": 1.0}
+DOWN_WEIGHT = {"pts": 0.0, "reb": 0.5, "ast": 0.5, "tpm": 0.5}
 
 
 def parse_leg(text):
@@ -144,11 +153,27 @@ def leg_prob(p, leg):
         sd = sgp.stat_sd(p, leg["stat"])
         mu = leg["from"] - sd * sgp.nppf(1 - po)
         normal = 1 - sgp.ncdf((leg["line"] - mu) / sd)
-        if leg["stat"] == "pts" or leg["stat"] in SCORE:
+        up = leg["line"] > leg["from"]
+        if leg["stat"] in SCORE:
             po, note = normal, note + f"shifted from {leg['from']:g} (SD {sd:.1f})"
-        else:  # small counts: average the normal with a count model
+        else:
+            # Box stats are skewed: a normal fits the lines under the posted one
+            # but runs far short above it (points at +10: 54% of the real hit
+            # rate, threes at +3: 36%), where the count model holds. UP_WEIGHT
+            # is the count model's share above the line (11-11 study).
             nb = nb_over(p, leg["stat"], leg["from"], leg["line"], po)
-            po, note = (normal + nb) / 2, note + f"shifted from {leg['from']:g}: normal {normal:.1%}, count model {nb:.1%}"
+            w = UP_WEIGHT[leg["stat"]] if up else DOWN_WEIGHT[leg["stat"]]
+            po = w * nb + (1 - w) * normal
+            note += (f"shifted from {leg['from']:g} (SD {sd:.1f})" if w == 0 else
+                     f"shifted from {leg['from']:g}: normal {normal:.1%}, count model {nb:.1%}")
+        # Novig's own ladder bounds the shifted leg: a seller of the Over at
+        # this line or a lower one is a ceiling, a buyer at this line or a
+        # higher one a floor (a one-way line still gives one of the two).
+        lo, hi = leg.get("bounds", (None, None))
+        if hi is not None and po > hi:
+            po, note = hi, note + f", capped at Novig's {hi:.1%} ask"
+        if lo is not None and po < lo:
+            po, note = lo, note + f", raised to Novig's {lo:.1%} bid"
     elif leg["under"] is None and "p_over" not in leg:
         note = "one side only"
     return (po if leg["side"] > 0 else 1 - po), note
@@ -287,6 +312,10 @@ def novig_legs(name, rows, legs, max_spread):
                        f"{r['spread'] * 100:.1f}c wide; ")
         if r["line"] != leg["line"]:
             leg["from"] = r["line"]
+            book = rows.get(leg["stat"], [])
+            asks = [x["ask"] for x in book if x["line"] <= leg["line"] and x["ask"] is not None]
+            bids = [x["bid"] for x in book if x["line"] >= leg["line"] and x["bid"] is not None]
+            leg["bounds"] = (max(bids) if bids else None, min(asks) if asks else None)
         else:
             leg["from"] = None
             leg["note"] = leg["note"][:-2]

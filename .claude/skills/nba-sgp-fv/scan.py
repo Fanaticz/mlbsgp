@@ -138,6 +138,8 @@ def shifted(p, stat, row, main):
     # there, so the true chance is below it however wide the book is.
     if row is not main and row.get("ask") is not None:
         po = min(po, row["ask"])
+    if row is not main and row.get("bid") is not None:   # and a buyer there is a floor
+        po = max(po, row["bid"])
     return {"stat": stat, "side": "over", "line": row["line"], "p": po, "fair": sgp.american(po),
             "width": main["spread"], "id": row["ids"]["over"], "from": None if row is main else main["line"]}
 

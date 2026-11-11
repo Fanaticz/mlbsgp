@@ -2,6 +2,16 @@
 
 ## 2026-11-11 session
 
+### NBA SGP fair value: legs on one-way and far lines
+An SGP leg on a line Novig has no two-way book for (30+ points against a 22.5 main, 5+ threes) is priced by shifting the main line's fair value. That shift was a bell curve for points and half bell curve, half count model for the other stats, and it ran far short above the main line.
+
+- **Study** (53k game logs, each game priced from prior games only): at main + 12 points the bell curve gave 54% of the real hit rate, at + 3 threes 36%, at + 4 rebounds 63%, at + 4 assists 45%. The count model gave 96–112%. Below the main line every method was within 3%.
+- **Books**: DK's and FanDuel's one-way ladders for all ten games of 11-11 (3,200 and 2,400 prices) sit over the count-model fair by their margin, measured against Novig's tight two-way lines: 6% near the main, 5–13% on 15–40% shots, 30–45% on long shots. Over the bell curve they would be charging 160–570%.
+- **Change** (`price.py`, used by the scanner's ladder too): above the posted line a leg is the count model (points: 80% count model, 20% bell curve, since it ran 12–28% high at + 12 to + 15). Below it nothing changes. Both-legs hit rates on the ladder (points + threes / rebounds / assists, up to main + 10 points and + 3) went from 52–80% of actual to 81–101%.
+- **Guard**: a shifted `novig` leg stays inside Novig's own ladder, at most the lowest ask at that line or below and at least the highest bid at that line or above. A one-way line still gives the ceiling. One player's shift is noisy: Pritchard 25+ points shifted to 17.3% with Novig asking 14% there. The scanner's ladder already had the ceiling and gets the floor.
+- `--ladder-fix` was measured on the old shift and should stay off.
+- DK's SGP price can't be pulled from this container (403 on its bet calculator), so slips were checked against game logs and leg prices, not against DK's parlay price.
+
 ### Novig Scan: rows drop off when their game starts
 The board kept the last pass until the next Fetch, so after tip-off it still listed slips on games already under way. A row now disappears once its game has started (the status line counts them: "12 hidden, game started"), and when every game on the board has started it says to press Fetch for the next slate. A Fetch already prices only games still to come, so after tonight's last tip it prices tomorrow's.
 
