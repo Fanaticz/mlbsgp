@@ -174,6 +174,13 @@ def leg_prob(p, leg):
             po, note = hi, note + f", capped at Novig's {hi:.1%} ask"
         if lo is not None and po < lo:
             po, note = lo, note + f", raised to Novig's {lo:.1%} bid"
+        # DK's and FanDuel's one-way price on this exact line, margin out, is
+        # a ceiling too (books.py).
+        cap, _, text = leg.get("book", (None, None, ""))
+        if cap is not None and po > cap:
+            po, note = cap, note + f", capped by {text} ({cap:.1%} with the least margin out)"
+        elif text:
+            note += f"; {text}"
     elif leg["under"] is None and "p_over" not in leg:
         note = "one side only"
     return (po if leg["side"] > 0 else 1 - po), note
@@ -330,6 +337,8 @@ def main():
                     help="--payout is Novig's raw quote (Pikkit's Novig price): take its 10%% parlay fee off")
     ap.add_argument("--unit", type=float, default=250.0, help="dollars per unit, 1u = 1%% of bankroll")
     ap.add_argument("--kelly", type=float, default=0.25, help="Kelly fraction (default quarter)")
+    ap.add_argument("--no-books", action="store_true",
+                    help="don't cap a shifted leg at DK's and FanDuel's one-way price on its line")
     ap.add_argument("--novig-spread", type=float, default=novig.MAX_SPREAD,
                     help="widest Novig market (ask - bid, probability) to price a novig leg from")
     args = ap.parse_args()
@@ -353,6 +362,13 @@ def main():
         if ask_novig:
             args.payout, args.before_fee = novig_payout(rows, legs), True
         novig_legs(name, rows, legs, args.novig_spread)
+    shifted = [leg for leg in legs if leg["from"] is not None and leg["from"] != leg["line"]
+               and leg["stat"] not in SCORE]
+    if shifted and not args.no_books:
+        import books
+        ladders = books.load(p.get("team_name"))
+        for leg in shifted:
+            leg["book"] = books.check(ladders, hits[0], leg["stat"], leg["line"])
     ps = []
     for leg in legs:
         q, note = leg_prob(p, leg)

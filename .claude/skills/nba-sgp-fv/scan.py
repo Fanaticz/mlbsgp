@@ -129,6 +129,9 @@ LADDER_FIX = {(0, 0): 1.00, (0, 1): 1.06, (0, 2): 1.13, (2, 0): 1.00, (2, 1): 1.
               (8, 0): 1.18, (8, 1): 1.20, (8, 2): 1.28}
 
 
+BOOKS = {"on": True, "ladders": None, "check": None}   # pulled once, on the first shifted leg
+
+
 def shifted(p, stat, row, main):
     """A leg at `row`'s line with its fair value shifted from the main line's."""
     po = main["fo"] if row is main else price.leg_prob(
@@ -140,6 +143,13 @@ def shifted(p, stat, row, main):
         po = min(po, row["ask"])
     if row is not main and row.get("bid") is not None:   # and a buyer there is a floor
         po = max(po, row["bid"])
+    if row is not main and BOOKS["on"]:   # DK / FanDuel one-way price, least margin out: a ceiling
+        if BOOKS["ladders"] is None:
+            import books
+            BOOKS["ladders"], BOOKS["check"] = books.load(), books.check
+        cap = BOOKS["check"](BOOKS["ladders"], p["name"], stat, row["line"])[0]
+        if cap is not None:
+            po = min(po, cap)
     return {"stat": stat, "side": "over", "line": row["line"], "p": po, "fair": sgp.american(po),
             "width": main["spread"], "id": row["ids"]["over"], "from": None if row is main else main["line"]}
 
@@ -683,6 +693,8 @@ def main():
     ap.add_argument("--ladder-r", type=float, default=0.70, help="smallest PTS-3PM r for the higher-line combos")
     ap.add_argument("--gate", type=float, default=0.0,
                     help="ask a player's other combos only if his best main-line PTS+3PM EV%% is above this (-100 = everyone)")
+    ap.add_argument("--no-books", action="store_true",
+                    help="don't cap shifted legs at DK's and FanDuel's one-way prices")
     ap.add_argument("--ladder-fix", action="store_true", help="scale higher-line joints by LADDER_FIX (off: plain model)")
     ap.add_argument("--no-dd", dest="dd", action="store_false", help="skip the build-your-own double-doubles")
     ap.add_argument("--no-ladder", dest="ladder", action="store_false", help="skip the higher-line combos")
@@ -696,6 +708,7 @@ def main():
     ap.add_argument("--top", type=int, default=25, help="rows to print (default 25; 0 = all)")
     ap.add_argument("--json", action="store_true", help="stream events as JSON lines instead of a table")
     a = ap.parse_args()
+    BOOKS["on"] = not a.no_books
     if a.scope == "main":
         # Max, 11-10: every quote is an auction the pricers see, and plays were
         # being repriced while the wider scans ran. One ask per player.

@@ -159,6 +159,19 @@ QK=1.38u
   lowest ask at that line or below, no lower than the highest bid at that
   line or above (a one-way line gives one of the two; the note says when it
   bit). Score legs shift with the normal.
+- **DK and FanDuel ceiling (`books.py`):** every shifted box-stat leg is also
+  checked against both books' one-way Over on its exact line, pulled live
+  (about 4 seconds a game, kept 4 minutes). The leg can't sit above the
+  better book's price with the least margin that book charges taken out
+  (measured against Novig's tight lines: DK 1.02 down to a 15% shot, 1.13
+  under; FanDuel 1.00 to 1.02, 1.05 under 15%). The leg's line in the output
+  ends with the prices (`DK +552 · FD +600`) and says when they capped it.
+  On the 11-11 slate that bit on 230 of 1,106 shifted legs, cutting them a
+  median 7%. `--no-books` turns it off; a book that can't be reached is left
+  out. `python3 .claude/skills/nba-sgp-fv/books.py "Player" [stat [line]]`
+  prints both ladders with "about" (usual margin out) and "no shorter than"
+  (least margin out) fairs. One-way prices are never a fair value by
+  themselves and never raise a leg.
 
 ## Data freshness
 

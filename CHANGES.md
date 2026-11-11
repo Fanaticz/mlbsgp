@@ -2,6 +2,15 @@
 
 ## 2026-11-11 session
 
+### NBA SGP fair value: DK and FanDuel one-way prices cap a shifted leg
+A leg shifted from the main line is now checked live against DraftKings' and FanDuel's one-way Over on that exact line (`books.py`, used by `price.py` and the scanner's ladder).
+
+- The leg's chance can't sit above the better book's price with the least margin that book charges taken out: DK 2% down to a 15% shot and 13% under it, FanDuel 0–2% and 5% (the low end of each book's margin against Novig's tight two-way lines on 11-11; the usual margins are 6% near the main and 30–45% on long shots).
+- The output shows the prices on the leg's line (`DK +552 · FD +600`) and says when they capped it. A one-way price never raises a leg.
+- On the 11-11 slate the cap bit on 230 of 1,106 shifted legs above the main line (after Novig's own ask had already cut 172), by a median 7%.
+- Cost: about 4 seconds for one game, 15 for all ten, kept for 4 minutes. The scanner pulls only when it prices a shifted leg, so the default main-lines scan is unchanged. `--no-books` turns it off, and a book that can't be reached is skipped.
+- `python3 .claude/skills/nba-sgp-fv/books.py "Payton Pritchard" pts` prints both books' ladders with an estimated fair for each line.
+
 ### NBA SGP fair value: legs on one-way and far lines
 An SGP leg on a line Novig has no two-way book for (30+ points against a 22.5 main, 5+ threes) is priced by shifting the main line's fair value. That shift was a bell curve for points and half bell curve, half count model for the other stats, and it ran far short above the main line.
 
