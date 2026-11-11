@@ -2,6 +2,9 @@
 
 ## 2026-11-11 session
 
+### NBA Ladder: higher lines only
+The NBA Ladder tab asked each shooter's main-line Points + Threes first and headed his card with it, so its top rows were the same slips as the NBA tab. It now asks and shows only the higher-line slips (fair value +500 to +800): about 60 quotes a pass instead of about 100, and none of them repeats an auction the NBA tab already ran. The main-line gate is gone with it; the fair-value band is what keeps the pass small.
+
 ### Novig Scan: My bets survive a redeploy
 Bets vanished after a hard refresh. A refresh alone keeps them (checked in a browser); what loses them is the server restarting on a new deploy when its data folder is not on the mounted volume, and there were several deploys that evening. Each browser now keeps its own copy of the list, and when it sees the server's list has been reset it sends the missing bets back. A bet removed with the × stays removed. Bets entered before this change were only on the server and are not recoverable.
 

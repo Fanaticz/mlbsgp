@@ -193,8 +193,9 @@ asked not to run on his board; use it only if he asks.
 
 `--scope ladder` (the page's **Ladder** tab) is the one wider scan Max runs
 (asked for 11-11): only shooters with PTS·3PM r at least 0.70 (43 on the
-11-11 slate). Each one's main-line Points + Threes is asked first; for those
-above `--gate` (-10% on this scope, 0% elsewhere), every higher points line Novig lists to main + 15 with threes
+11-11 slate). The main-line slips are not asked or shown here (the NBA tab
+has them; showing both was all overlap), so there is no gate: every higher
+points line Novig lists to main + 15 with threes
 at main to + 3, one-way lines included (`--ladder-pts`, `--ladder-3s`). Those
 legs are shifted from the main line and capped by Novig's ask and by DK's and
 FanDuel's one-way price (Method). Ungated pass of 11-11 (518 quotes, 10

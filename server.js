@@ -2511,7 +2511,7 @@ function startNovigScan(league, wide) {
   let buf = '', err = '', ok = false;
   const onEvent = e => {
     if (e.type === 'start') { B.total = e.total; B.players = e.players; B.data = e.data; }
-    else if (e.type === 'more') { B.total += e.add; }
+    else if (e.type === 'more') { B.total += e.add; if (e.players) B.players = e.players; }
     else if (e.type === 'row') { B.done++; B.seen.add(e.key); B.rows.set(e.key, e); }
     else if (e.type === 'miss') { B.done++; B.rows.delete(e.key); }
     else if (e.type === 'done') { ok = true; B.seconds = e.seconds; }

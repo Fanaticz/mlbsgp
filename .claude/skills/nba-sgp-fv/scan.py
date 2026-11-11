@@ -620,6 +620,10 @@ def candidates(markets, d, by, a):
                 continue
             if r >= a.min_r and a.tier in (0, 2):
                 rest.append(combo(2, r, leg(x, main[x], 1), leg(y, main[y], 1)))
+    if a.scope == "ladder":
+        # The Ladder board is the higher lines only: the main-line slips are
+        # the NBA board's, and asking them here doubled those auctions.
+        t1 = []
     t1.sort(key=lambda c: -c["r"])
     # Most lift over independent legs first: that's where a price can be off.
     rest.sort(key=lambda c: -c["j"] / (c["legs"][0]["p"] * c["legs"][1]["p"]))
@@ -749,6 +753,8 @@ def scan(a, emit):
             emit({"type": "more", "add": len(up) + len(kept) - len(rest)})
         else:
             up, kept = ladder, rest
+            if up:
+                emit({"type": "more", "add": len(up), "players": len({c["id"] for c in up + kept})})
         list(pool.map(one, up + kept))
         cands = first + up + kept
         if a.tri and a.tier in (0, 4):
@@ -771,8 +777,8 @@ def main():
                     help="main (default): NBA asks one slip a player, his main-line Points + Threes, and NFL asks no "
                          "three-leg slips. all: also the second threes milestone, higher lines, other pairs, "
                          "double- and triple-doubles and three legs. ladder (NBA): the shooters at --ladder-r or better, "
-                         "main-line Points + Threes first, then every higher points line Novig lists (to main + 15, "
-                         "one-way lines included) with threes at main to + 3, for those whose main line is above --gate. "
+                         "every higher points line Novig lists (to main + 15, "
+                         "one-way lines included) with threes at main to + 3, inside --ladder-fair (the main-line slips are the NBA board's). "
                          "ladder (NFL): each player's yards lines above his main line with anytime TD, receptions or "
                          "passing TDs at its main line")
     ap.add_argument("--tier", type=int, default=0, choices=(0, 1, 2, 3), help="one two-leg group only (default: all, then three legs)")
@@ -842,7 +848,7 @@ def main():
 
     def emit(e):
         if e["type"] == "more" and e["add"]:
-            print(f"+ {e['add']} three-leg combos", file=sys.stderr)
+            print(f"+ {e['add']} more combos", file=sys.stderr)
         if e["type"] == "start":
             print(f"{e['total']} combos on {e['players']} players · r data {e['data']} · "
                   f"about {max(1, round(e['total'] * 1.1 / 60))} min", file=sys.stderr)
