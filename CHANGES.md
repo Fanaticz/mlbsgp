@@ -1,5 +1,10 @@
 # Changes
 
+## 2026-11-11 session
+
+### NFL page: Fetch FV takes Novig books up to 6¢ wide
+The NFL page's Fetch FV priced a leg from Novig only when the book was at most 4¢ wide (bid to ask); the limit is now 6¢ (`NV_MAX_SPREAD` in `public/nfl.html`). Lines between 4¢ and 6¢ wide now fill in and are no longer dimmed as rough. The Novig scanner's NFL board and the NBA pages stay at 4¢.
+
 ## 2026-11-10 session
 
 ### Sport tabs: readable
