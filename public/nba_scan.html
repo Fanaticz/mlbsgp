@@ -250,7 +250,10 @@ function render() {
   // clears Min EV, and folds only the rows that do.
   const pass = c => MODE !== "plays" || c.ev * 100 >= MINEV;
   const byId = new Map();
-  for (const c of rows) (byId.get(c.id) || byId.set(c.id, []).get(c.id)).push(c);
+  // NFL shows every row on its own (a player's props, stacks and game-line
+  // slips are different bets, not versions of one).
+  const cardOf = c => LEAGUE === "nfl" ? c.key : c.id;
+  for (const c of rows) (byId.get(cardOf(c)) || byId.set(cardOf(c), []).get(cardOf(c))).push(c);
   const mainOf = g => g.find(c => c.main) ||
     g.filter(c => c.tier === 1).sort((a, b) => Math.abs(a.legs[1].p - 0.5) - Math.abs(b.legs[1].p - 0.5))[0];
   const cards = [];

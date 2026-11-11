@@ -2,8 +2,11 @@
 
 ## 2026-11-11 session
 
+### Novig Scan: NFL rows are not grouped
+On the NFL board every combo is its own row with the player's name, sorted by EV; nothing folds under a "+N more" chip. NBA and soccer keep one card per player / match.
+
 ### Novig Scan: one NFL tab
-The separate Stacks and Lines boards are gone. The NFL tab's single Fetch now prices a player's own props, the QB + receiver stacks and the prop + game-line slips in one pass, on one board, one card per player. The pair filter picks one kind (QB + his receiver, prop + game total / spread / team total). `scan.py --league nfl --kind props|stacks|lines` runs one kind from the command line. First pass, Wednesday, tight books: 102 combos (35 own props, 20 stacks, 47 with a game line).
+The separate Stacks and Lines boards are gone. The NFL tab's single Fetch now prices a player's own props, the QB + receiver stacks and the prop + game-line slips in one pass, on one board. The pair filter picks one kind (QB + his receiver, prop + game total / spread / team total). `scan.py --league nfl --kind props|stacks|lines` runs one kind from the command line. First pass, Wednesday, tight books: 102 combos (35 own props, 20 stacks, 47 with a game line).
 
 ### NFL: QB + receiver stacks and prop + game-line combos (nflverse)
 Two more kinds of slip on the Novig Scan page's NFL board (first shipped as separate Stacks and Lines boards, merged into NFL the same day, above). Novig prices both kinds of slip (test quotes 11-11); neither was being looked at.
