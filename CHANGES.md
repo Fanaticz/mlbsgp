@@ -2,8 +2,11 @@
 
 ## 2026-11-11 session
 
+### Novig Scan: one NFL tab
+The separate Stacks and Lines boards are gone. The NFL tab's single Fetch now prices a player's own props, the QB + receiver stacks and the prop + game-line slips in one pass, on one board, one card per player. The pair filter picks one kind (QB + his receiver, prop + game total / spread / team total). `scan.py --league nfl --kind props|stacks|lines` runs one kind from the command line. First pass, Wednesday, tight books: 102 combos (35 own props, 20 stacks, 47 with a game line).
+
 ### NFL: QB + receiver stacks and prop + game-line combos (nflverse)
-Two new boards on the Novig Scan page, **Stacks** and **Lines**, next to NFL. Novig prices both kinds of slip (test quotes 11-11); neither was being looked at.
+Two more kinds of slip on the Novig Scan page's NFL board (first shipped as separate Stacks and Lines boards, merged into NFL the same day, above). Novig prices both kinds of slip (test quotes 11-11); neither was being looked at.
 
 - **Data** (`scripts/nfl_stack_correlations.py` → `public/data/nfl_stack_correlations.json`, in the daily refresh): ten seasons of nflverse weekly player stats and closing spreads / totals (2017–2026, 5,038 team-games). These are league-wide r's by role, not per player: position plus that season's targets a game (3–5, 5–7, 7+) or carries a game (8–13, 13+). A QB and one receiver share a dozen games a season, too few to fit a pair on its own.
 - **What r is**: the copula correlation that reproduces how often both legs hit, each stat cut at the group's median (anytime TD 1+, passing TDs 2+, the game lines at the closing number). Checked at lines the fit never saw (each stat's upper third): actual vs modelled 14.1% / 13.5% (QB yards + WR1 yards), 18.5% / 18.6% (QB yards + game Over), 19.0% / 19.1% (lead back's rushing yards + cover). Each r carries about ±0.04–0.07 of sampling error, which is roughly ±2–4% of EV on a slip.

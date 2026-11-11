@@ -75,7 +75,6 @@
     header { padding:12px 14px 8px; }
     .controls { padding:8px 14px; gap:8px 10px; }
     .toggle { flex:1 1 40%; }
-    #league { flex-basis:100%; }
     .toggle button { flex:1; padding:9px 8px; }
     input[type=search] { flex:1 1 40%; width:auto; min-width:0; }
     input[type=search], input[type=number] { font-size:16px; }
@@ -105,9 +104,7 @@
 <div class="controls">
   <div class="toggle" id="league">
     <button data-league="nba" class="on">NBA</button>
-    <button data-league="nfl" title="NFL: one player's own props">NFL</button>
-    <button data-league="nflstack" title="NFL: a quarterback's passing with one of his receivers">Stacks</button>
-    <button data-league="nflgame" title="NFL: a player's prop with the game total, spread or team total">Lines</button>
+    <button data-league="nfl">NFL</button>
     <button data-league="soccer">Soccer</button>
   </div>
   <div class="toggle" id="mode">
@@ -153,9 +150,8 @@ const PAIR_OPTS = {
   nfl: [["rec,yds", "REC + YDS"], ["rec,td", "REC + TD"], ["yds,td", "YDS + TD"],
         ["pyds,ptd", "QB: PASS YDS + PASS TD"], ["cmp,pyds", "QB: CMP + PASS YDS"], ["att,cmp", "QB: ATT + CMP"],
         ["att,pyds", "QB: ATT + PASS YDS"], ["cmp,ptd", "QB: CMP + PASS TD"],
-        ["ryds,td", "RUSH YDS + TD"], ["rry,td", "RUSH+REC YDS + TD"], ["car,td", "CAR + TD"]],
-  nflstack: [["pyds,yds", "PASS YDS + REC YDS"], ["ptd,td", "PASS TD + TD"], ["cmp,rec", "CMP + REC"], ["pyds,td", "PASS YDS + TD"]],
-  nflgame: [["k:over", "With the game total"], ["k:cover", "With the spread"], ["k:tt", "With the team total"]],
+        ["ryds,td", "RUSH YDS + TD"], ["rry,td", "RUSH+REC YDS + TD"], ["car,td", "CAR + TD"],
+        ["k:stack", "QB + his receiver"], ["k:over", "Prop + game total"], ["k:cover", "Prop + spread"], ["k:tt", "Prop + team total"]],
   soccer: [["n3", "Win + corners"], ["n4", "With a goals leg"]],
 };
 function pairOpts() {
@@ -195,8 +191,7 @@ const LABEL = { pts:"PTS", reb:"REB", ast:"AST", tpm:"3PM", rec:"REC", yds:"YDS"
                 att:"PASS ATT", cmp:"CMP", pyds:"PASS YDS", ptd:"PASS TD",
                 car:"CAR", ryds:"RUSH YDS", rry:"RUSH+REC YDS" };
 const SOC = () => LEAGUE === "soccer";
-const NFLX = () => LEAGUE === "nflstack" || LEAGUE === "nflgame";
-const BOARD = { nba:"NBA", nfl:"NFL", nflstack:"NFL stacks", nflgame:"NFL lines", soccer:"soccer" };
+const BOARD = { nba:"NBA", nfl:"NFL", soccer:"soccer" };
 
 // Shown on screen: the tab is visible and, inside the site's tab frame, that
 // frame is the one displayed.
@@ -247,7 +242,7 @@ function render() {
   if (q) rows = rows.filter(c => c.player.toLowerCase().includes(q));
   const pair = document.getElementById("pair").value;
   if (pair) rows = rows.filter(c => pair.startsWith("k:") ? c.kind === pair.slice(2) : pair === "td" ? !!c.td : pair === "dd" ? !!c.dd : pair === "ladder" ? !!c.model && !c.dd && !c.td : pair === "n3" ? c.legs.length === 3 : pair === "n4" ? c.legs.length === 4 : pair === "3" ? c.legs.length === 3 : pair === "mix" ? c.legs.some(L => L.side === "under")
-    : c.legs.length === 2 && c.legs.every(L => L.side === "over") && c.legs.map(L => L.stat).join() === pair);
+    : !c.kind && c.legs.length === 2 && c.legs.every(L => L.side === "over") && c.legs.map(L => L.stat).join() === pair);
   // One card per player (or match). Its head is his main-line Points + Threes
   // row, the price everything else hangs off; his other rows fold under a
   // chip. A player with no such row, or any view filtered to one kind of
@@ -325,11 +320,9 @@ function render() {
   }
   document.getElementById("foot").innerHTML =
     (SOC() ? `Soccer: favourite to win + favourite’s corners Under + underdog’s corners Over, with and without a goals Over. Fair value is the legs’ unrelated price adjusted for how much more often the whole slip hits (×1.25 to ×1.61, from 17,934 top-five-league matches). Those are league averages and corner books are often wide, so treat rows as leads. ` : "") +
-    (LEAGUE === "nfl" ? `NFL: receptions, receiving yards and anytime touchdown for WRs, TEs and RBs; rushing yards, rushing + receiving yards and carries with anytime touchdown for RBs; pass attempts, completions, passing yards and passing touchdowns for QBs. Two legs only. ` : "") +
-    (LEAGUE === "nflstack" ? `Stacks: a quarterback’s passing Over with one of his own receivers’ Over (passing yards + receiving yards, passing TDs + anytime TD, completions + receptions, passing yards + anytime TD), up to three per receiver. ` : "") +
-    (LEAGUE === "nflgame" ? `Lines: a player’s prop Over with the game total, his team’s spread or his team’s total, on the side that goes with it (a back’s carries with his team covering; a quarterback’s pass attempts with the other team covering), up to three per player. ` : "") +
+    (LEAGUE === "nfl" ? `NFL: receptions, receiving yards and anytime touchdown for WRs, TEs and RBs; rushing yards, rushing + receiving yards and carries with anytime touchdown for RBs; pass attempts, completions, passing yards and passing touchdowns for QBs. Then a quarterback’s passing Over with one of his own receivers’ Over, and a player’s prop Over with the game total, his team’s spread or his team’s total on the side that goes with it (a back’s carries with his team covering; a quarterback’s pass attempts with the other team covering), up to three of each per player. Two legs only. ` : "") +
     (LEAGUE === "nba" ? `NBA: one slip a player, his main-line Points + Threes. Nothing else is asked, to keep the number of requests Novig’s pricers see down. ` : "") +
-    `Fair value: each leg is Novig’s own exchange book at that line, devigged worst case, joined with ${NFLX() ? "the league-wide correlation for his role (position and targets or carries a game; ten seasons of nflverse games against closing lines), not one fitted to him" : "the player’s shrunk correlation"}` +
+    `Fair value: each leg is Novig’s own exchange book at that line, devigged worst case, joined with the player’s shrunk correlation${LEAGUE === "nfl" ? " (for a slip across two players or with a game line: the league-wide correlation for his role, position and targets or carries a game, from ten seasons of nflverse games against closing lines)" : ""}` +
     `${S.data ? ` (data ${S.data})` : ""}. Novig: the multiplier on its slip, its public quote after the 10% parlay fee. ` +
     `Quotes move by a few percent between asks and last about 30 seconds, so a row is a lead to re-check on the slip, and against sharp odds, before betting. ` +
     `Nothing is asked of Novig until you press Fetch; the last pass for each league stays here until then.`;

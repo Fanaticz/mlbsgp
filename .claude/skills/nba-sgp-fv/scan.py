@@ -7,9 +7,8 @@ player, ranked by EV at what Novig's slip pays.
   python3 scan.py --tier 1        # Points + Threes only (about 2 minutes)
   python3 scan.py --max 120       # stop after 120 quotes
   python3 scan.py --min-ev 3      # print only rows at +3% or better
-  python3 scan.py --league nfl    # NFL: receiving, rushing and QB passing props
-  python3 scan.py --league nflstack   # NFL: QB + his receiver
-  python3 scan.py --league nflgame    # NFL: a prop + the game total / spread
+  python3 scan.py --league nfl    # NFL: a player's own props, QB + receiver stacks, props + game lines
+  python3 scan.py --league nfl --kind stacks   # one kind only: props, stacks or lines
   python3 scan.py --json          # one JSON object per line as quotes land
                                   # (server.js reads this for the Scanner page)
 
@@ -61,15 +60,15 @@ least --min-r (attempts + passing TDs, about 0.11, falls under it), and
 rushing yards with his anytime TD. Running backs: rushing yards, rushing +
 receiving yards and carries, each with anytime TD.
 
-NFL stacks (--league nflstack): a QB's passing Over with one of his own
-receivers' Over: passing yards + receiving yards, passing TDs + anytime TD,
-completions + receptions, passing yards + anytime TD. NFL game lines
-(--league nflgame): a player's prop Over with the game total, his team's
+The same NFL pass then asks two kinds of slip across markets (--kind picks
+one). Stacks: a QB's passing Over with one of his own receivers' Over:
+passing yards + receiving yards, passing TDs + anytime TD, completions +
+receptions, passing yards + anytime TD. Lines: a player's prop Over with the game total, his team's
 spread or his team's total, on whichever side goes with it (RB rushing yards
 + his team covering; QB pass attempts + the other team covering), where |r|
 is at least --line-r. Both use league-wide r's by role (position and targets
 or carries a game) from public/data/nfl_stack_correlations.json, ten
-seasons of nflverse; each player gets his --per highest-r combos.
+seasons of nflverse; each player gets his --per highest-r combos of each.
 
 Soccer (--league soccer): for every open match with team-corners books it
 asks Max's shape, favourite to win (3-way) + favourite's corners Under +
@@ -243,18 +242,17 @@ def two_way(m):
             "volume": m["volume"]}
 
 
-def nflx_candidates(a):
+def nflx_candidates(a, game):
     """NFL bets across two markets in one game, priced with league-wide role
     correlations (scripts/nfl_stack_correlations.py, nflverse):
-      nflstack  a QB's passing Over + one of his own receivers' Over
-      nflgame   a player's prop Over + the game total, his team's spread or
-                team total, on the side that goes with it (QB pass attempts
-                Over goes with the OTHER team covering)
-    Each player gets his --per highest-r combos."""
+      stacks (game=False)  a QB's passing Over + one of his own receivers' Over
+      lines (game=True)    a player's prop Over + the game total, his team's
+                           spread or team total, on the side that goes with it
+                           (QB pass attempts Over goes with the OTHER team covering)
+    Each player gets his --per highest-r combos of each kind."""
     d, S = json.load(open(NFL_DATA)), json.load(open(STACK_DATA))
     cur = str(max(d["seasons"]))
     by = {novig.norm(p["name"]): p for p in d["players"]}
-    game = a.league == "nflgame"
     types = [novig.ALL_TYPES[s] for s in STACK_PROPS] + (list(LINE_TYPES.values()) if game else ["TOTAL"])
     items = novig.catalog({"league": "NFL", "eventStatus": "OPEN_PREGAME", "marketType": ",".join(types)})
     props = [m for m in items if m["marketType"] in novig.STAT]
@@ -349,7 +347,7 @@ def nflx_candidates(a):
                         mine.append(row(p, starts, prop(p, s, main), lb, abs(r), line, 8))
                 out += sorted(mine, key=lambda c: -c["r"])[:a.per]
     out.sort(key=lambda c: -c["j"] / (c["legs"][0]["p"] * c["legs"][1]["p"]))
-    return (out[:a.max] if a.max else out), S
+    return out[:a.max] if a.max else out
 
 
 # (favourite's win probability up to, lift over unrelated legs) by goals leg:
@@ -541,7 +539,7 @@ def candidates(markets, d, by, a):
 def triples(rows, ctx, stats, rfun, a):
     """Three-leg combos: the best two-leg Over + Over rows, each with one more
     stat's main-line Over. rfun(player, stat, stat) is the pair's r (or None)."""
-    base = sorted((c for c in rows if len(c["legs"]) == 2 and not c.get("model") and all(L["side"] == "over" for L in c["legs"])
+    base = sorted((c for c in rows if len(c["legs"]) == 2 and not c.get("model") and not c.get("kind") and all(L["side"] == "over" for L in c["legs"])
                    and c["ev"] * 100 >= a.tri_min_ev), key=lambda c: -c["ev"])[:a.tri]
     out, seen = [], set()
     for c in base:
@@ -602,12 +600,15 @@ def scan(a, emit):
         d = {"generated_at": time.strftime("%Y-%m-%d")}
         cands, ctx = soccer_candidates(a)
         stats, rfun, a.tri = (), None, 0
-    elif a.league in ("nflstack", "nflgame"):
-        cands, d = nflx_candidates(a)
-        ctx, stats, rfun, a.tri = {}, (), None, 0
     elif a.league == "nfl":
         d = json.load(open(NFL_DATA))
-        cands, ctx = nfl_candidates(novig.fetch("NFL", NFL_STATS), {p["name"]: p for p in d["players"]}, a)
+        cands, ctx = [], {}
+        if a.kind in ("all", "props"):
+            cands, ctx = nfl_candidates(novig.fetch("NFL", NFL_STATS), {p["name"]: p for p in d["players"]}, a)
+        if a.kind in ("all", "stacks"):
+            cands = cands + nflx_candidates(a, False)
+        if a.kind in ("all", "lines"):
+            cands = cands + nflx_candidates(a, True)
         stats, rfun = NFL_STATS, nfl_r
     else:
         d, by = sgp.load()
@@ -664,9 +665,11 @@ def scan(a, emit):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--league", default="nba", choices=("nba", "nfl", "nflstack", "nflgame", "soccer"))
-    ap.add_argument("--per", type=int, default=3, help="nflstack / nflgame: combos asked per player, highest r first")
-    ap.add_argument("--line-r", type=float, default=0.25, help="nflgame: smallest |r| between a prop and a game line")
+    ap.add_argument("--league", default="nba", choices=("nba", "nfl", "soccer"))
+    ap.add_argument("--kind", default="all", choices=("all", "props", "stacks", "lines"),
+                    help="NFL: one kind of slip only (default: a player's own props, then stacks, then game lines)")
+    ap.add_argument("--per", type=int, default=3, help="NFL stacks / lines: combos asked per player of each kind, highest r first")
+    ap.add_argument("--line-r", type=float, default=0.25, help="NFL lines: smallest |r| between a prop and a game line")
     ap.add_argument("--scope", default="main", choices=("main", "all"),
                     help="main (default): NBA asks one slip a player, his main-line Points + Threes, and NFL asks no "
                          "three-leg slips. all: also the second threes milestone, higher lines, other pairs, "
