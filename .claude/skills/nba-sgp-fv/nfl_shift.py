@@ -17,7 +17,12 @@ line runs far short above it. Study of 11-11:
 The gamma runs a little high far out (book price over fair of 1.00-1.07 on DK
 beyond 1.8x, where its margin should be 13%), so above the main line a leg
 keeps 15% of the normal. Passing yards are close to symmetric (CV about 0.3)
-and the same curve fits.
+and keep half.
+- Both legs (yards at 1x to 2.5x the main + TD / receptions, 4,400 receiver
+  and 1,600 back games): predicted / actual 1.00 at the main, 0.90-0.92 at
+  1.5x, 0.65-0.77 at 2x. The copula holds (the slip tracks the yards leg);
+  the shortfall far out is the yards leg, because a trailing average is a
+  worse main line than the market's. So these fairs err long, not short.
 """
 import math
 import sys
@@ -26,7 +31,11 @@ import sys
 CV = {"yds": [(8, 1.07), (20, 0.87), (30, 0.78), (42, 0.68), (60, 0.57), (85, 0.52)],
       "ryds": [(10, 0.93), (27, 0.71), (42, 0.62), (60, 0.54), (85, 0.46)],
       "pyds": [(180, 0.34), (215, 0.31), (245, 0.28), (280, 0.27)]}
-UP_NORMAL = 0.15   # the normal's share of a leg above the main line
+# The normal's share of a leg above the main line. Passing yards take half:
+# on game logs both-legs rates with passing TDs came out 22% high at 1.5x the
+# main line with the gamma alone (963 QB games), where receiving and rushing
+# came out 9-35% low.
+UP_NORMAL = {"yds": 0.15, "ryds": 0.15, "pyds": 0.5}
 
 
 def ncdf(x):
@@ -98,7 +107,7 @@ def over(stat, main, p_main, line):
         return g
     sd = cv * main
     n = 1 - ncdf((line - (main - sd * nppf(1 - p_main))) / sd)
-    return (1 - UP_NORMAL) * g + UP_NORMAL * n
+    return (1 - UP_NORMAL[stat]) * g + UP_NORMAL[stat] * n
 
 
 if __name__ == "__main__":
