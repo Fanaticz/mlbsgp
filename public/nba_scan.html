@@ -86,6 +86,7 @@
   .betform .x { padding:1px 7px; color:var(--muted); margin-left:2px; }
   #hidebets { background:none; border:1px solid var(--line); color:var(--muted); border-radius:8px; padding:7px 11px; font-size:13px; cursor:pointer; }
   body.nobets .mybets, body.nobets .bet, body.nobets .betform { display:none; }
+  body.nobets #hidebets { border-color:var(--accent); color:var(--accent); font-weight:600; }
   .empty { padding:28px 14px; color:var(--muted); text-align:center; line-height:1.7; }
   .foot { padding:4px 22px 60px; color:var(--muted); font-size:12px; line-height:1.7; max-width:900px; }
 
@@ -255,7 +256,7 @@ const total = list => list.reduce((s, b) => s + b.stake, 0);
 function betStrip() {
   const el = document.getElementById("mybets"), live = liveBets();
   document.body.classList.toggle("nobets", HIDEBETS);
-  document.getElementById("hidebets").textContent = HIDEBETS ? "Show my bets" : "Hide my bets";
+  document.getElementById("hidebets").textContent = HIDEBETS ? "Bets hidden · show" : "Hide my bets";
   el.style.display = live.length ? "" : "none";
   if (!live.length) return;
   const by = new Map();

@@ -2,6 +2,9 @@
 
 ## 2026-11-11 session
 
+### Novig Scan: the hide button shows when bets are hidden
+With bets hidden the button read "Show my bets" in the same grey as everything else, which looked like the bets had been lost. It now reads "Bets hidden · show" in amber while they are hidden. It says nothing about what the bets are, so a screenshot still gives nothing away.
+
 ### NBA Ladder: higher lines only
 The NBA Ladder tab asked each shooter's main-line Points + Threes first and headed his card with it, so its top rows were the same slips as the NBA tab. It now asks and shows only the higher-line slips (fair value +500 to +800): about 60 quotes a pass instead of about 100, and none of them repeats an auction the NBA tab already ran. The main-line gate is gone with it; the fair-value band is what keeps the pass small.
 
