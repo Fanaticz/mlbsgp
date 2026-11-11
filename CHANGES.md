@@ -2,6 +2,12 @@
 
 ## 2026-11-11 session
 
+### Novig Scan: Ladder tab and My bets
+- **Ladder tab** (`scan.py --scope ladder`): its own board, next to NBA. It asks only shooters whose Points and Threes move together (r 0.70 or better, 43 on the 11-11 slate): each one's main-line Points + Threes first, then, for those priced above fair, every higher points line Novig lists up to main + 15 with threes at main to + 3. One-way lines are included; their fair values are shifted from the main line and capped by Novig's ask and DK's / FanDuel's one-way price. Asking everyone's ladder would be about 490 slips; with the gate it is a few minutes. The NBA tab is unchanged (one main-line slip a player), which is why it still shows 97 combos.
+- **My bets**: open a row, type the stake (the price defaults to Novig's multiplier) and press Save. A strip above the board lists each player with his total and the slip; a green badge sits by the player's name (his total) and by the slip you hold. Remove a bet with the × in the open row. The list is kept on the server, so the phone and the desktop show the same bets, and a bet stays until about five hours after tip.
+- **Hide my bets** (button by Fetch) hides the strip, the badges and the stake box on that device, for a screenshot; press it again to show them.
+- Checked in a browser on stand-in prices (no quotes sent to Novig): the Ladder board, saving two bets on desktop, seeing and removing them on a phone layout, and hiding. The first real Ladder pass is yours to run.
+
 ### NBA SGP fair value: DK and FanDuel one-way prices cap a shifted leg
 A leg shifted from the main line is now checked live against DraftKings' and FanDuel's one-way Over on that exact line (`books.py`, used by `price.py` and the scanner's ladder).
 

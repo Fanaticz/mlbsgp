@@ -191,6 +191,15 @@ while the wider scans ran. Everything below about higher lines, other pairs,
 double- and triple-doubles and three legs needs `--scope all`, which Max has
 asked not to run on his board; use it only if he asks.
 
+`--scope ladder` (the page's **Ladder** tab) is the one wider scan Max runs
+(asked for 11-11): only shooters with PTS·3PM r at least 0.70 (43 on the
+11-11 slate). Each one's main-line Points + Threes is asked first; for those
+above `--gate`, every higher points line Novig lists to main + 15 with threes
+at main to + 3, one-way lines included (`--ladder-pts`, `--ladder-3s`). Those
+legs are shifted from the main line and capped by Novig's ask and by DK's and
+FanDuel's one-way price (Method). Ungated it would be about 490 slips; with
+the gate expect 100 to 250, a few minutes.
+
 `python3 .claude/skills/nba-sgp-fv/scan.py` prices every open pregame
 player's same-player 2-leg combos (fair from Novig's legs, as `odds novig`)
 against Novig's slip price and prints them best EV first: Points + Threes
@@ -248,6 +257,12 @@ The dashboard's Scanner page (`public/nba_scan.html`, `/api/nba/novig-scan`
 in `server.js`) runs the same script on the server, one pass each time
 Fetch is pressed and never by itself: every quote is a live auction sent to
 all of Novig's pricers, so repeated scans show them what is being watched.
+**My bets** on the page: open a row, type the stake (the price defaults to
+Novig's multiplier) and Save. The strip above the board lists each player
+with his total, and rows carry a green badge. Kept on the server
+(`/api/nba/novig-bets`, `novig_bets.json` beside the saved boards), so phone
+and desktop match; a bet shows until about five hours after tip. "Hide my
+bets" hides all of it on that device, for a screenshot.
 It is private: the route needs the passcode in the server's `NOVIG_SCAN_KEY`
 (no key set = scanner off), and the NOVIG SCAN tab only shows on a device
 that has entered it (five taps on the EVC label opens the passcode box).

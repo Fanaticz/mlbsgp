@@ -2494,7 +2494,9 @@ function startNovigScan(league, wide) {
   const key = `${league}:${wide ? 1 : 0}`, B = nvBoard(key);
   // wide: also price legs on books up to 8c (10c for the second threes
   // milestone); the page flags those rows as rough.
-  const args = [NV_SCAN_PY, '--json', '--league', league].concat(wide ? ['--max-spread', '0.08', '--alt-spread', '0.10'] : []);
+  // "ladder" is its own NBA board: the shooters' higher lines (one-way lines
+  // included), fair values shifted from the main line (scan.py --scope ladder).
+  const args = [NV_SCAN_PY, '--json'].concat(league === 'ladder' ? ['--league', 'nba', '--scope', 'ladder'] : ['--league', league]).concat(wide ? ['--max-spread', '0.08', '--alt-spread', '0.10'] : []);
   let proc;
   try {
     proc = require('child_process').spawn(PYTHON, args, { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -2537,7 +2539,7 @@ function startNovigScan(league, wide) {
   proc.on('close', () => end(''));
 }
 
-// GET /api/nba/novig-scan?league=nba|nfl|soccer[&wide=1][&now=1] — that
+// GET /api/nba/novig-scan?league=nba|ladder|nfl|soccer[&wide=1][&now=1] — that
 // board's last pass (or the one running), and what else is running.
 // Private: the scanner answers only to the passcode in NOVIG_SCAN_KEY (sent
 // as X-Scan-Key; the page asks for it once and keeps it on that device).
@@ -2550,7 +2552,7 @@ app.get('/api/nba/novig-scan', (req, res) => {
     return setTimeout(() => res.status(403).json({ error: 'wrong passcode' }), 800);  // slows guessing
   }
   const wide = req.query.wide === '1';
-  const league = ['nfl', 'soccer'].includes(req.query.league) ? req.query.league : 'nba';
+  const league = ['nfl', 'soccer', 'ladder'].includes(req.query.league) ? req.query.league : 'nba';
   const key = `${league}:${wide ? 1 : 0}`, B = nvBoard(key), now = Date.now();
   // One pass at a time (Novig's limit is per IP), and only when asked.
   if (req.query.now === '1' && !NV_RUN && now - Math.max(B.finished, B.started) > NV_SCAN_NOW_MS) startNovigScan(league, wide);
@@ -2560,6 +2562,44 @@ app.get('/api/nba/novig-scan', (req, res) => {
     started: B.started, finished: B.finished, total: B.total, done: B.done, players: B.players, data: B.data,
     seconds: B.seconds, error: B.error, rows: [...B.rows.values()],
   });
+});
+
+// My bets on the scanner page: what Max has down, kept on the server so the
+// phone and the desktop show the same list. Same passcode as the scanner.
+//   GET  /api/nba/novig-bets                      -> { bets }
+//   POST /api/nba/novig-bets { add: {...} } | { del: id }
+const NV_BETS_FILE = NV_SCAN_FILE ? path.join(path.dirname(NV_SCAN_FILE), 'novig_bets.json') : null;
+let NV_BETS = [];
+try { NV_BETS = JSON.parse(require('fs').readFileSync(NV_BETS_FILE, 'utf8')); } catch (_) { /* none yet */ }
+function nvBets() {
+  // A bet leaves the list three days after its game (or after it was added).
+  const cut = Date.now() - 3 * 86400000;
+  NV_BETS = NV_BETS.filter(b => (b.starts || b.at) > cut);
+  return NV_BETS;
+}
+function nvBetsAuth(req, res) {
+  res.set('Cache-Control', 'no-store');
+  if (!NV_SCAN_KEY) { res.status(503).json({ error: 'scanner off' }); return false; }
+  if ((req.get('X-Scan-Key') || '') !== NV_SCAN_KEY) { setTimeout(() => res.status(403).json({ error: 'wrong passcode' }), 800); return false; }
+  return true;
+}
+app.get('/api/nba/novig-bets', (req, res) => { if (nvBetsAuth(req, res)) res.json({ bets: nvBets() }); });
+app.post('/api/nba/novig-bets', (req, res) => {
+  if (!nvBetsAuth(req, res)) return;
+  const { add, del } = req.body || {};
+  if (del) NV_BETS = NV_BETS.filter(b => b.id !== String(del));
+  if (add) {
+    const stake = Number(add.stake), x = Number(add.x);
+    if (!(stake > 0) || !add.player) return res.status(400).json({ error: 'a bet needs a player and a stake' });
+    const str = (v, n) => String(v == null ? '' : v).slice(0, n);
+    NV_BETS.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7), at: Date.now(),
+                   key: str(add.key, 400), board: str(add.board, 12), player: str(add.player, 80), team: str(add.team, 12),
+                   label: str(add.label, 160), stake: Math.round(stake * 100) / 100, x: x > 1 ? x : null,
+                   fair: Number.isFinite(Number(add.fair)) ? Number(add.fair) : null,
+                   starts: Number(add.starts) > 0 ? Number(add.starts) : null });
+  }
+  if (NV_BETS_FILE) require('fs').writeFile(NV_BETS_FILE, JSON.stringify(nvBets()), () => {});
+  res.json({ bets: nvBets() });
 });
 
 app.get('/healthz', (_req, res) => res.send('ok'));

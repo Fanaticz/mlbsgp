@@ -68,6 +68,23 @@
   .lg b { color:var(--txt); font-weight:600; margin-left:4px; }
   .lg small { font-size:11px; }
   .tech { color:var(--muted); font-size:11.5px; margin-top:7px; }
+  /* My bets: the strip above the board, the badges on rows and the form in an
+     open row. body.nobets hides all of it (for a screenshot). */
+  .mybets { padding:8px 22px; border-bottom:1px solid var(--line); display:flex; flex-wrap:wrap; gap:6px 8px; align-items:center; font-size:13px; }
+  .mybets .t { color:var(--muted); margin-right:4px; }
+  .mybets .t b { color:var(--txt); }
+  .chip { border:1px solid var(--line); border-radius:999px; padding:2px 10px; white-space:nowrap; background:var(--panel); }
+  .chip b { color:var(--pos); margin-left:5px; font-variant-numeric:tabular-nums; }
+  .chip small { color:var(--muted); margin-left:6px; }
+  .bet { flex:none; margin-left:8px; color:var(--pos); border:1px solid var(--pos); border-radius:999px; padding:0 8px;
+    font-size:11.5px; font-weight:600; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .betform { margin-top:9px; display:flex; flex-wrap:wrap; gap:6px 8px; align-items:center; font-size:12.5px; color:var(--muted); }
+  .betform input { width:78px; margin:0; }
+  .betform button { background:none; border:1px solid var(--line); color:var(--txt); border-radius:8px; padding:6px 11px; font-size:12.5px; cursor:pointer; }
+  .betform .mine { color:var(--pos); }
+  .betform .x { padding:1px 7px; color:var(--muted); margin-left:2px; }
+  #hidebets { background:none; border:1px solid var(--line); color:var(--muted); border-radius:8px; padding:7px 11px; font-size:13px; cursor:pointer; }
+  body.nobets .mybets, body.nobets .bet, body.nobets .betform { display:none; }
   .empty { padding:28px 14px; color:var(--muted); text-align:center; line-height:1.7; }
   .foot { padding:4px 22px 60px; color:var(--muted); font-size:12px; line-height:1.7; max-width:900px; }
 
@@ -76,6 +93,7 @@
     .controls { padding:8px 14px; gap:8px 10px; }
     .toggle { flex:1 1 40%; }
     .toggle button { flex:1; padding:9px 8px; }
+    #league { flex:1 1 100%; }
     input[type=search] { flex:1 1 40%; width:auto; min-width:0; }
     input[type=search], input[type=number] { font-size:16px; }
     .board { padding:0 6px 24px; }
@@ -93,6 +111,8 @@
     .lab { display:block; font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; font-weight:400; }
     .rr { display:none; }
     .foot { padding:4px 14px 60px; }
+    .mybets { padding:8px 14px; }
+    .betform input { font-size:16px; }
   }
 </style>
 </head>
@@ -104,6 +124,7 @@
 <div class="controls">
   <div class="toggle" id="league">
     <button data-league="nba" class="on">NBA</button>
+    <button data-league="ladder" title="NBA shooters' higher lines, one-way lines included">Ladder</button>
     <button data-league="nfl">NFL</button>
     <button data-league="soccer">Soccer</button>
   </div>
@@ -119,6 +140,7 @@
   <label class="muted" title="Also price legs on Novig books up to 8¢ wide (10¢ for the second threes milestone). Their fair values are rough: marked ~.">
     <input type="checkbox" id="wide" /> Wide books</label>
   <button type="button" id="now" title="Run one pass. Nothing is asked of Novig until you press this: each pass sends every combo to its pricers as a live auction." style="background:var(--accent);border:0;color:#1a1a1a;font-weight:600;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;white-space:nowrap">Fetch</button>
+  <button type="button" id="hidebets" title="Hide or show your own bets on this page, for a screenshot.">Hide my bets</button>
   <a class="back" href="nba.html">Correlations →</a>
 </div>
 <div class="bar"><i id="bar"></i></div>
@@ -127,6 +149,7 @@
   <input type="password" id="pass" autocomplete="current-password" style="margin-top:10px;background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:9px 12px;font-size:16px;width:220px" />
   <button type="submit" style="margin-left:6px;background:var(--accent);border:0;border-radius:8px;padding:10px 16px;font-weight:600;font-size:14px">Open</button>
 </form>
+<div class="mybets" id="mybets" style="display:none"></div>
 <div class="board">
   <div class="head">
     <div>Player</div><div>Legs</div><div class="num">Fair</div><div class="num">Novig</div>
@@ -147,6 +170,7 @@ let GOT = 0;               // when it arrived (ms, this clock)
 let MODE = "plays", WIDE = false, MINEV = 0, LEAGUE = "nba";
 const PAIR_OPTS = {
   nba: [],   // one slip a player now: main-line Points + Threes
+  ladder: [],   // NBA shooters' higher lines
   nfl: [["rec,yds", "REC + YDS"], ["rec,td", "REC + TD"], ["yds,td", "YDS + TD"],
         ["pyds,ptd", "QB: PASS YDS + PASS TD"], ["cmp,pyds", "QB: CMP + PASS YDS"], ["att,cmp", "QB: ATT + CMP"],
         ["att,pyds", "QB: ATT + PASS YDS"], ["cmp,ptd", "QB: CMP + PASS TD"],
@@ -191,7 +215,42 @@ const LABEL = { pts:"PTS", reb:"REB", ast:"AST", tpm:"3PM", rec:"REC", yds:"YDS"
                 att:"PASS ATT", cmp:"CMP", pyds:"PASS YDS", ptd:"PASS TD",
                 car:"CAR", ryds:"RUSH YDS", rry:"RUSH+REC YDS" };
 const SOC = () => LEAGUE === "soccer";
-const BOARD = { nba:"NBA", nfl:"NFL", soccer:"soccer" };
+const BOARD = { nba:"NBA", ladder:"Ladder", nfl:"NFL", soccer:"soccer" };
+
+// My bets: what I have down, kept on the server (same list on every device).
+let BETS = [], BETS_AT = 0;
+let HIDEBETS = false;
+try { HIDEBETS = localStorage.getItem("nbaScanHideBets") === "1"; } catch (_) {}
+const usd = v => "$" + (Math.round(v * 100) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 });
+async function bets(body) {
+  try {
+    const r = await fetch("/api/nba/novig-bets", body
+      ? { method: "POST", headers: { "X-Scan-Key": KEY, "Content-Type": "application/json" }, body: JSON.stringify(body) }
+      : { cache: "no-store", headers: { "X-Scan-Key": KEY } });
+    if (!r.ok) return;
+    BETS = (await r.json()).bets || [];
+    BETS_AT = Date.now();
+    render();
+  } catch (_) { /* keep the list we have */ }
+}
+// A bet shows until about five hours after tip (a day after it was added when
+// the row had no start time).
+const liveBets = () => BETS.filter(b => (b.starts ? b.starts + 5 * 3600000 : b.at + 86400000) > Date.now());
+const betsOn = player => liveBets().filter(b => b.player === player);
+const total = list => list.reduce((s, b) => s + b.stake, 0);
+function betStrip() {
+  const el = document.getElementById("mybets"), live = liveBets();
+  document.body.classList.toggle("nobets", HIDEBETS);
+  document.getElementById("hidebets").textContent = HIDEBETS ? "Show my bets" : "Hide my bets";
+  el.style.display = live.length ? "" : "none";
+  if (!live.length) return;
+  const by = new Map();
+  for (const b of live) (by.get(b.player) || by.set(b.player, []).get(b.player)).push(b);
+  el.innerHTML = `<span class="t">My bets <b>${usd(total(live))}</b> on ${by.size} ${by.size === 1 ? "player" : "players"}</span>` +
+    [...by].sort((a, b) => total(b[1]) - total(a[1])).map(([p, l]) =>
+      `<span class="chip" title="${esc(l.map(b => `${usd(b.stake)} ${b.label}${b.x ? ` at ${b.x.toFixed(2)}x` : ""}`).join("\n"))}">${esc(p)}<b>${usd(total(l))}</b>` +
+      `<small>${l.length === 1 ? esc(l[0].label) + (l[0].x ? ` · ${l[0].x.toFixed(2)}x` : "") : l.length + " slips"}</small></span>`).join("");
+}
 
 // Shown on screen: the tab is visible and, inside the site's tab frame, that
 // frame is the one displayed.
@@ -229,11 +288,20 @@ function detail(c) {
     c.qk > 0 ? `${c.qk.toFixed(2)}u` : null,
     c.forced ? "threes alone clear the points line" : null,
   ].filter(Boolean).join(" · ");
-  return `<div class="det"><div class="lgs">${legs}</div><div class="tech">${tech}</div></div>`;
+  const mine = liveBets().filter(b => b.key === c.key);
+  const form = `<div class="betform">` +
+    mine.map(b => `<span class="mine">${usd(b.stake)}${b.x ? ` at ${b.x.toFixed(2)}x` : ""}<button type="button" class="x" data-del="${b.id}" title="Remove this bet">×</button></span>`).join("") +
+    `<span>${mine.length ? "Add" : "I bet this"}: $</span><input type="number" class="stake" min="0" step="1" placeholder="stake" />` +
+    `<span>at</span><input type="number" class="px" min="1" step="0.01" value="${c.slip_x.toFixed(2)}" /><span>x</span>` +
+    `<button type="button" data-add="${c.key}">Save</button></div>`;
+  return `<div class="det"><div class="lgs">${legs}</div><div class="tech">${tech}</div>${form}</div>`;
 }
 
 function render() {
   if (!S) return;
+  betStrip();
+  // Typing a stake: leave the rows alone until it is saved or left.
+  const typing = document.activeElement && document.activeElement.closest && document.activeElement.closest(".betform");
   const st = document.getElementById("status"), rowsEl = document.getElementById("rows");
   // A game that has started can't be bet pregame: its rows drop off the board
   // as it tips, and the next Fetch prices whatever is still to come (tomorrow's
@@ -287,7 +355,9 @@ function render() {
   }
   document.getElementById("bar").style.width = S.scanning && S.total ? `${Math.round(100 * S.done / S.total)}%` : "0";
 
-  if (!cards.length) {
+  if (typing) {
+    /* rows stay as they are */
+  } else if (!cards.length) {
     const best = all[0];
     rowsEl.innerHTML = `<div class="empty">${
       q ? "No combo for that name." :
@@ -302,9 +372,10 @@ function render() {
     const one = (c, sub, others) =>
       `<div class="row${sub ? " sub" : ""}${isOld(c) ? " old" : ""}" data-k="${c.key}">` +
       `<div class="who">${sub ? "" : `<b>${esc(c.player)}</b><small>${esc(c.team)}${c.starts ? " · " + tip(c.starts) : ""}</small>` +
+        (betsOn(c.player).length ? `<span class="bet" title="What you have on ${esc(c.player)}">${usd(total(betsOn(c.player)))}</span>` : "") +
         (others && others.length ? `<button type="button" class="more" data-g="${esc(c.id)}">${GOPEN.has(c.id) ? "hide" :
           `+${others.length} more${others[0].ev > c.ev ? `, to ${pct(others[0].ev)}` : ""}`}</button>` : "")}</div>` +
-      `<div class="legs">${esc(c.label)}${c.model ? `<span class="rough" title="A higher line: fair value is modelled from the main line, not read off a book.">*</span>` : ""}${c.rough ? `<span class="rough" title="A leg sits on a Novig book wider than 4¢: rough fair value. Check sharp odds.">~</span>` : ""}</div>` +
+      `<div class="legs">${esc(c.label)}${liveBets().some(b => b.key === c.key) ? `<span class="bet" title="You have this slip">${usd(total(liveBets().filter(b => b.key === c.key)))}</span>` : ""}${c.model ? `<span class="rough" title="A higher line: fair value is modelled from the main line, not read off a book.">*</span>` : ""}${c.rough ? `<span class="rough" title="A leg sits on a Novig book wider than 4¢: rough fair value. Check sharp odds.">~</span>` : ""}</div>` +
       `<div class="num fair"><span class="lab">Fair</span>${am(c.fair)}</div>` +
       `<div class="num"><span class="lab">Novig</span>${c.slip_x.toFixed(2)}x</div>` +
       `<div class="num ev ${c.ev >= 0 ? "pos" : "neg"}">${pct(c.ev)}</div>` +
@@ -320,6 +391,16 @@ function render() {
       GOPEN.has(g) ? GOPEN.delete(g) : GOPEN.add(g);
       render();
     });
+    rowsEl.querySelectorAll("[data-add]").forEach(b => b.onclick = () => {
+      const c = S.rows.find(r => r.key === b.dataset.add), f = b.closest(".betform");
+      const stake = parseFloat(f.querySelector(".stake").value), x = parseFloat(f.querySelector(".px").value);
+      if (!c || !(stake > 0)) return f.querySelector(".stake").focus();
+      b.disabled = true;
+      document.activeElement.blur();
+      bets({ add: { key: c.key, board: LEAGUE, player: c.player, team: c.team, label: c.label, stake, x, fair: c.fair, starts: c.starts } });
+    });
+    rowsEl.querySelectorAll("[data-del]").forEach(b => b.onclick = () => bets({ del: b.dataset.del }));
+    rowsEl.querySelectorAll(".betform input").forEach(i => { i.onkeydown = e => { if (e.key === "Enter") i.closest(".betform").querySelector("[data-add]").click(); }; i.onblur = () => setTimeout(render, 150); });
     rowsEl.querySelectorAll(".row").forEach(el => el.onclick = e => {
       if (e.target.closest(".det")) return;   // let text in the details be selected
       const k = el.dataset.k;
@@ -330,6 +411,7 @@ function render() {
   document.getElementById("foot").innerHTML =
     (SOC() ? `Soccer: favourite to win + favourite’s corners Under + underdog’s corners Over, with and without a goals Over. Fair value is the legs’ unrelated price adjusted for how much more often the whole slip hits (×1.25 to ×1.61, from 17,934 top-five-league matches). Those are league averages and corner books are often wide, so treat rows as leads. ` : "") +
     (LEAGUE === "nfl" ? `NFL: receptions, receiving yards and anytime touchdown for WRs, TEs and RBs; rushing yards, rushing + receiving yards and carries with anytime touchdown for RBs; pass attempts, completions, passing yards and passing touchdowns for QBs. Then a quarterback’s passing Over with one of his own receivers’ Over, and a player’s prop Over with the game total, his team’s spread or his team’s total on the side that goes with it (a back’s carries with his team covering; a quarterback’s pass attempts with the other team covering), up to three of each per player. Two legs only. ` : "") +
+    (LEAGUE === "ladder" ? `Ladder: NBA shooters whose Points and Threes move together (r 0.70 or better). Each one’s main-line Points + Threes is asked first; if that prices above fair, every higher points line Novig lists (to main + 15) is asked with threes at main to + 3, one-way lines included. Rows marked * have a leg whose fair value is shifted from his main line with a count model, held under Novig’s own ask and under DraftKings’ and FanDuel’s one-way price on that line. Check a play against another book before sizing it. ` : "") +
     (LEAGUE === "nba" ? `NBA: one slip a player, his main-line Points + Threes. Nothing else is asked, to keep the number of requests Novig’s pricers see down. ` : "") +
     `Fair value: each leg is Novig’s own exchange book at that line, devigged worst case, joined with the player’s shrunk correlation${LEAGUE === "nfl" ? " (for a slip across two players or with a game line: the league-wide correlation for his role, position and targets or carries a game, from ten seasons of nflverse games against closing lines)" : ""}` +
     `${S.data ? ` (data ${S.data})` : ""}. Novig: the multiplier on its slip, its public quote after the 10% parlay fee. ` +
@@ -357,6 +439,7 @@ async function poll() {
     document.querySelector(".controls").style.display = "";
     S = await r.json();
     GOT = Date.now();
+    if (Date.now() - BETS_AT > 30000) { BETS_AT = Date.now(); bets(); }
     if (S.scanning) NOW = false;
     document.getElementById("now").disabled = S.scanning || !!S.busy;
     render();
@@ -388,6 +471,11 @@ document.querySelectorAll("#league button").forEach(b => {
   };
 });
 document.getElementById("pair").onchange = render;
+document.getElementById("hidebets").onclick = () => {
+  HIDEBETS = !HIDEBETS;
+  try { localStorage.setItem("nbaScanHideBets", HIDEBETS ? "1" : "0"); } catch (_) {}
+  render();
+};
 document.getElementById("lock").onsubmit = e => {
   e.preventDefault();
   KEY = document.getElementById("pass").value.trim();

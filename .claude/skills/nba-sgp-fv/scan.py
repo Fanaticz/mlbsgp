@@ -4,6 +4,7 @@ player, ranked by EV at what Novig's slip pays.
 
   python3 scan.py                 # main-line Points + Threes, one slip a player
   python3 scan.py --scope all     # everything listed below (many more quotes)
+  python3 scan.py --scope ladder  # NBA shooters' higher lines only, one-way lines included
   python3 scan.py --tier 1        # Points + Threes only (about 2 minutes)
   python3 scan.py --max 120       # stop after 120 quotes
   python3 scan.py --min-ev 3      # print only rows at +3% or better
@@ -461,7 +462,7 @@ def candidates(markets, d, by, a):
 
         if a.tier in (0, 1) and "pts" in main and "tpm" in main:
             r = price.shrunk_r(d, by, p, "pts", "tpm")[0]
-            if r > 0:
+            if r > 0 and (a.scope != "ladder" or r >= a.ladder_r):
                 P, T = main["pts"], main["tpm"]
                 threes = [T] + beside([x for x in rows.get("tpm", []) if usable(x, a.alt_spread)], T)
                 t1 += [dict(combo(1, r, leg("pts", P, 1), leg("tpm", t, 1)), main=t is T) for t in threes
@@ -472,7 +473,7 @@ def candidates(markets, d, by, a):
                         dp = pr["line"] - P["line"]
                         for tr in rows["tpm"]:
                             dt = tr["line"] - T["line"]
-                            if (not 0 <= dp <= 10 or dt not in (0, 1, 2) or (dp == 0 and dt == 0)
+                            if (not 0 <= dp <= a.ladder_pts or dt not in range(a.ladder_3s + 1) or (dp == 0 and dt == 0)
                                     or "over" not in pr["ids"] or "over" not in tr["ids"]
                                     or 3 * (math.floor(tr["line"]) + 1) > pr["line"]):
                                 continue
@@ -488,7 +489,7 @@ def candidates(markets, d, by, a):
                             # 15+/3+, 11-10) the corrected fair sat right on the books'
                             # own SGP price, i.e. too generous; the plain model sat about
                             # 6% under it, where a fair value should.
-                            fix = LADDER_FIX[(min(8, 2 * round(dp / 2)), int(dt))] if a.ladder_fix else 1.0
+                            fix = LADDER_FIX[(min(8, 2 * round(dp / 2)), min(2, int(dt)))] if a.ladder_fix else 1.0
                             # never past what near-perfect dependence would give
                             c.update(j=min(c["j"] * fix, sgp.joint(0.97, la["p"], lb["p"])), model=True, fix=fix, devig_r=None)
                             lad.append(c)
@@ -682,15 +683,19 @@ def main():
                     help="NFL: one kind of slip only (default: a player's own props, then stacks, then game lines)")
     ap.add_argument("--per", type=int, default=3, help="NFL stacks / lines: combos asked per player of each kind, highest r first")
     ap.add_argument("--line-r", type=float, default=0.25, help="NFL lines: smallest |r| between a prop and a game line")
-    ap.add_argument("--scope", default="main", choices=("main", "all"),
+    ap.add_argument("--scope", default="main", choices=("main", "ladder", "all"),
                     help="main (default): NBA asks one slip a player, his main-line Points + Threes, and NFL asks no "
                          "three-leg slips. all: also the second threes milestone, higher lines, other pairs, "
-                         "double- and triple-doubles and three legs")
+                         "double- and triple-doubles and three legs. ladder (NBA): the shooters at --ladder-r or better, "
+                         "main-line Points + Threes first, then every higher points line Novig lists (to main + 15, "
+                         "one-way lines included) with threes at main to + 3, for those whose main line is above --gate")
     ap.add_argument("--tier", type=int, default=0, choices=(0, 1, 2, 3), help="one two-leg group only (default: all, then three legs)")
     ap.add_argument("--tri", type=int, default=12, help="two-leg rows to extend to three legs (0 = none)")
     ap.add_argument("--tri-min-ev", type=float, default=-6.0, help="only extend two-leg rows at this EV%% or better")
     ap.add_argument("--max", type=int, default=0, help="quote at most this many combos (default: all)")
     ap.add_argument("--ladder-r", type=float, default=0.70, help="smallest PTS-3PM r for the higher-line combos")
+    ap.add_argument("--ladder-pts", type=int, default=None, help="highest points line on the ladder, above main (10; ladder scope 15)")
+    ap.add_argument("--ladder-3s", type=int, default=None, help="highest threes line on the ladder, above main (2; ladder scope 3)")
     ap.add_argument("--gate", type=float, default=0.0,
                     help="ask a player's other combos only if his best main-line PTS+3PM EV%% is above this (-100 = everyone)")
     ap.add_argument("--no-books", action="store_true",
@@ -709,6 +714,14 @@ def main():
     ap.add_argument("--json", action="store_true", help="stream events as JSON lines instead of a table")
     a = ap.parse_args()
     BOOKS["on"] = not a.no_books
+    if a.ladder_pts is None:
+        a.ladder_pts = 15 if a.scope == "ladder" else 10
+    if a.ladder_3s is None:
+        a.ladder_3s = 3 if a.scope == "ladder" else 2
+    if a.scope == "ladder":
+        if a.league != "nba":
+            raise SystemExit("--scope ladder is NBA only")
+        a.tri, a.dd, a.ladder, a.tier = 0, False, True, 1
     if a.scope == "main":
         # Max, 11-10: every quote is an auction the pricers see, and plays were
         # being repriced while the wider scans ran. One ask per player.
