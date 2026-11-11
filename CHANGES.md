@@ -2,6 +2,16 @@
 
 ## 2026-11-11 session
 
+### NFL: QB + receiver stacks and prop + game-line combos (nflverse)
+Two new boards on the Novig Scan page, **Stacks** and **Lines**, next to NFL. Novig prices both kinds of slip (test quotes 11-11); neither was being looked at.
+
+- **Data** (`scripts/nfl_stack_correlations.py` → `public/data/nfl_stack_correlations.json`, in the daily refresh): ten seasons of nflverse weekly player stats and closing spreads / totals (2017–2026, 5,038 team-games). These are league-wide r's by role, not per player: position plus that season's targets a game (3–5, 5–7, 7+) or carries a game (8–13, 13+). A QB and one receiver share a dozen games a season, too few to fit a pair on its own.
+- **What r is**: the copula correlation that reproduces how often both legs hit, each stat cut at the group's median (anytime TD 1+, passing TDs 2+, the game lines at the closing number). Checked at lines the fit never saw (each stat's upper third): actual vs modelled 14.1% / 13.5% (QB yards + WR1 yards), 18.5% / 18.6% (QB yards + game Over), 19.0% / 19.1% (lead back's rushing yards + cover). Each r carries about ±0.04–0.07 of sampling error, which is roughly ±2–4% of EV on a slip.
+- **Stacks**, QB with his own receiver: PASS YDS·REC YDS +0.34 / +0.42 / +0.51 for a WR at 3–5 / 5–7 / 7+ targets (TE +0.28 / +0.43, RB +0.34); PASS TD·anytime TD +0.52 to +0.62 for WRs and TEs (a back's: +0.12); CMP·REC +0.36 to +0.52; PASS YDS·TD about +0.24. The board asks those four per receiver, three highest r first.
+- **Lines**: QB PASS YDS·game Over +0.41, PASS TD·game Over +0.62, PASS TD·team total Over +0.67, PASS ATT·his team covering −0.39 (asked as attempts Over + the other team). Lead back (13+ carries): CAR·cover +0.47, RUSH YDS·cover +0.38, TD·team total +0.51. WR at 7+ targets: TD·game Over +0.37, REC YDS·team total +0.26. Asked where |r| is 0.25 or more, three per player.
+- Also in the file, not asked yet: the negative pairs for Over + Under slips (QB PASS ATT·his back's CAR −0.29, PASS YDS·RUSH YDS −0.15).
+- First passes (Wednesday, tight books only): Stacks 20 combos, 3 above fair; Lines 47 combos, 3 above fair.
+
 ### NFL: rushing props in the correlation data and the Novig scanner
 - **Data**: running backs now carry carries, rushing yards and rushing + receiving yards in their game logs, with five more copula r's shrunk toward the average of the 41 backs at 8+ carries a game: RUSH YDS·TD +0.49, RUSH+REC YDS·TD +0.51, CAR·TD +0.37, RUSH YDS·REC −0.03, RUSH YDS·REC YDS +0.01. QBs get RUSH YDS·TD +0.30 (his rushing TDs) and PASS YDS·RUSH YDS −0.03.
 - On those backs' 1,439 games, both legs at his median line and 1+ TD hit as often as the copula says: 28.1% vs 27.9% (rush yards), 28.1% vs 28.4% (rush + rec yards), 24.8% vs 24.9% (carries); unrelated legs would be about 20%.

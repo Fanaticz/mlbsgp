@@ -2537,7 +2537,7 @@ function startNovigScan(league, wide) {
   proc.on('close', () => end(''));
 }
 
-// GET /api/nba/novig-scan?league=nba|nfl|soccer[&wide=1][&now=1] — that
+// GET /api/nba/novig-scan?league=nba|nfl|nflstack|nflgame|soccer[&wide=1][&now=1] — that
 // board's last pass (or the one running), and what else is running.
 // Private: the scanner answers only to the passcode in NOVIG_SCAN_KEY (sent
 // as X-Scan-Key; the page asks for it once and keeps it on that device).
@@ -2550,7 +2550,7 @@ app.get('/api/nba/novig-scan', (req, res) => {
     return setTimeout(() => res.status(403).json({ error: 'wrong passcode' }), 800);  // slows guessing
   }
   const wide = req.query.wide === '1';
-  const league = ['nfl', 'soccer'].includes(req.query.league) ? req.query.league : 'nba';
+  const league = ['nfl', 'nflstack', 'nflgame', 'soccer'].includes(req.query.league) ? req.query.league : 'nba';
   const key = `${league}:${wide ? 1 : 0}`, B = nvBoard(key), now = Date.now();
   // One pass at a time (Novig's limit is per IP), and only when asked.
   if (req.query.now === '1' && !NV_RUN && now - Math.max(B.finished, B.started) > NV_SCAN_NOW_MS) startNovigScan(league, wide);

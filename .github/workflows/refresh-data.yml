@@ -64,6 +64,12 @@ jobs:
         continue-on-error: true
         run: python scripts/nfl_fetch_correlations.py --workers 16
 
+      # League-wide QB + receiver and prop + game-line correlations from
+      # nflverse. Leaves the file alone if nflverse returns too little.
+      - name: Refresh NFL stack and game-line correlations
+        continue-on-error: true
+        run: python scripts/nfl_stack_correlations.py
+
       - name: Commit and push if data changed
         run: |
           git add espn-2026-pitcher-supplement.json public/data/*.json
