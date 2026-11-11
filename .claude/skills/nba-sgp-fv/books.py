@@ -50,6 +50,7 @@ CACHE = os.path.join(tempfile.gettempdir(), "nba_sgp_books.json")
 MARGIN = {"dk": [(0.15, 1.44, 1.13), (0.40, 1.13, 1.02), (1.01, 1.07, 1.02)],
           "fd": [(0.15, 1.29, 1.05), (0.40, 1.05, 1.00), (1.01, 1.05, 1.02)]}
 NAME = {"dk": "DK", "fd": "FD"}
+ERRORS = {}   # book -> why its last pull failed (the scanner shows it)
 
 
 def implied(american):
@@ -166,6 +167,7 @@ def _dk():
             import dk_api
             _DK.append(dk_api)
         except Exception as e:  # noqa: BLE001  missing dependency: FanDuel alone
+            ERRORS["dk"] = f"{type(e).__name__}: {e}"[:160]
             print(f"books: DraftKings unavailable ({type(e).__name__}: {e})", file=sys.stderr)
             _DK.append(None)
     return _DK[0]
@@ -242,6 +244,7 @@ def load(team=None, league="nba"):
                     dirty = True
                 out.setdefault(book, {}).update(g["players"])
         except Exception as e:  # noqa: BLE001  a book being down must not stop a price
+            ERRORS[book] = f"{type(e).__name__}: {e}"[:160]
             print(f"books: {NAME[book]} pull failed ({type(e).__name__}: {e})", file=sys.stderr)
     if dirty:
         fresh = {k: v for k, v in c.items() if now - v["at"] <= TTL}
@@ -263,6 +266,22 @@ def main_line(ladders, player, stat):
         if m and abs(m[1] - 0.5) <= 0.15 and (best is None or m[2] < best[0][2]):
             best = (m, book)
     return (best[0][0], best[0][1], f"{NAME[best[1]]} {best[0][0]:g}") if best else None
+
+
+def fair_ladder(ladders, player, stat):
+    """(line, P(over), [(line, fair P(over))]) from the book with the lower
+    hold: its two-way main line and its one-way ladder with the usual margin
+    taken out, for fitting that player's own spread. None without a main."""
+    key, best = novig.norm(player), None
+    for book in ("dk", "fd"):
+        d = ladders.get(book, {}).get(key, {})
+        m = d.get("main:" + stat)
+        if m and abs(m[1] - 0.5) <= 0.15 and (best is None or m[2] < best[0][2]):
+            best = (m, book, d.get(stat, {}))
+    if not best:
+        return None
+    m, book, lad = best
+    return m[0], m[1], [(float(ln), q / margins(book, q)[0]) for ln, q in lad.items() if q >= 0.012]
 
 
 def margins(book, q):

@@ -92,11 +92,12 @@ def cv_at(stat, main):
     return knots[-1][1]
 
 
-def over(stat, main, p_main, line):
-    """P(stat > line), given P(stat > main) = p_main."""
+def over(stat, main, p_main, line, cv=None):
+    """P(stat > line), given P(stat > main) = p_main. cv: this player's own
+    spread (fit_cv) in place of the level curve."""
     if line == main:
         return p_main
-    cv = cv_at(stat, main)
+    cv = cv or cv_at(stat, main)
     k = 1 / (cv * cv)
     lo, hi = 0.01, 5000.0
     for _ in range(70):   # the gamma's scale that puts p_main above the main line
@@ -108,6 +109,26 @@ def over(stat, main, p_main, line):
     sd = cv * main
     n = 1 - ncdf((line - (main - sd * nppf(1 - p_main))) / sd)
     return (1 - UP_NORMAL[stat]) * g + UP_NORMAL[stat] * n
+
+
+def fit_cv(stat, main, p_main, points):
+    """The spread that best fits one player's ladder: points = [(line, fair
+    P(over))] from a book's one-way prices with its usual margin taken out.
+    Players differ (a short-area receiver is tighter than a deep threat at the
+    same main line), and the book's own ladder says by how much. None with
+    fewer than three usable lines; kept within 0.6x to 1.5x of the level curve."""
+    pts = [(ln, f) for ln, f in points if ln != main and 0.02 < f < 0.9]
+    if len(pts) < 3:
+        return None
+    base = cv_at(stat, main)
+
+    def err(cv):
+        return sum(math.log(max(over(stat, main, p_main, ln, cv), 1e-6) / f) ** 2 for ln, f in pts)
+    lo, hi = 0.6 * base, 1.5 * base
+    for _ in range(18):   # golden-section: the error has one minimum in cv
+        a, b = lo + 0.382 * (hi - lo), lo + 0.618 * (hi - lo)
+        lo, hi = (lo, b) if err(a) < err(b) else (a, hi)
+    return (lo + hi) / 2
 
 
 if __name__ == "__main__":

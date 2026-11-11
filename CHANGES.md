@@ -2,6 +2,14 @@
 
 ## 2026-11-12 session
 
+### NFL Ladder: a fair value can't be shorter than DK's or FanDuel's one-way price
+Max caught Amon-Ra St. Brown 130+ YDS · 8+ REC at a fair of +513 while DraftKings sold 130+ yards alone at +610. A slip can't be likelier than one of its legs, and a one-way price already has margin in it, so the fair value had to be longer than +610.
+
+- **What went wrong**: the yards leg was meant to be capped by DK's price. Run from here the cap works (the same slip prices at +721). On the server the leg sat at Novig's own 17% ask, which means the DraftKings pull did not load there and nothing said so.
+- **Now visible**: the ladder tabs' status line says in red when DraftKings or FanDuel prices did not load, with the reason, and that fair values are not capped by that book. The open row shows the book prices next to the capped leg ("DK +610").
+- **Cap applies to every ladder leg**, including one priced off a tight Novig book.
+- **Each player's own spread**: the yards shift used one spread for everyone at the same main line. It now fits the player's spread to the book's own ladder for him when there is one (St. Brown 0.46 against 0.53 for his line, which alone takes 130+ from 17.5% to 13.5%). Across 168 DK ladders the player's spread is 0.90 to 1.09 of the level curve.
+
 ### Novig Scan: three-leg slips for the big-stat players
 The NBA tab now always asks three-leg slips for Luka Doncic, Stephen Curry, Victor Wembanyama, Shai Gilgeous-Alexander, Ty Jerome, Jayson Tatum and Nikola Jokic, plus anyone whose points main line is 26.5 or higher (Jalen Brunson on the 11-11 slate). Each gets every three of points, rebounds, assists and threes, all Overs at main lines: four slips a player, 32 extra quotes on that slate. They are asked whatever the player's two-leg price, and fold under his "more" chip. The list is `STARS` in `scan.py`; `--star-pts` moves the points cutoff and `--no-stars` turns them off. Checked with a dry run on stand-in prices; no real pass has been run.
 

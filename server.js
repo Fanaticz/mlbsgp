@@ -2510,7 +2510,7 @@ function startNovigScan(league, wide) {
   const timer = setTimeout(() => { if (NV_RUN && NV_RUN.proc === proc) proc.kill(); }, NV_SCAN_MAX_MS);
   let buf = '', err = '', ok = false;
   const onEvent = e => {
-    if (e.type === 'start') { B.total = e.total; B.players = e.players; B.data = e.data; }
+    if (e.type === 'start') { B.total = e.total; B.players = e.players; B.data = e.data; B.books = e.books || null; }
     else if (e.type === 'more') { B.total += e.add; if (e.players) B.players = e.players; }
     else if (e.type === 'row') { B.done++; B.seen.add(e.key); B.rows.set(e.key, e); }
     else if (e.type === 'miss') { B.done++; B.rows.delete(e.key); }
@@ -2561,7 +2561,7 @@ app.get('/api/nba/novig-scan', (req, res) => {
   res.json({
     now, league, wide, scanning: mine, busy: NV_RUN && !mine ? NV_RUN.key.split(':')[0] : null,
     started: B.started, finished: B.finished, total: B.total, done: B.done, players: B.players, data: B.data,
-    seconds: B.seconds, error: B.error, rows: [...B.rows.values()],
+    seconds: B.seconds, error: B.error, books: B.books || null, rows: [...B.rows.values()],
   });
 });
 

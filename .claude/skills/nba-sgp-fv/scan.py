@@ -132,11 +132,12 @@ LADDER_FIX = {(0, 0): 1.00, (0, 1): 1.06, (0, 2): 1.13, (2, 0): 1.00, (2, 1): 1.
               (8, 0): 1.18, (8, 1): 1.20, (8, 2): 1.28}
 
 
-BOOKS = {"on": True, "ladders": None, "check": None}   # pulled once, on the first shifted leg
+BOOKS = {"on": True, "ladders": None, "check": None, "seen": None}   # pulled once, on the first shifted leg
 
 
 def shifted(p, stat, row, main):
     """A leg at `row`'s line with its fair value shifted from the main line's."""
+    book_text = ""
     po = main["fo"] if row is main else price.leg_prob(
         p, {"stat": stat, "side": 1, "line": row["line"], "from": main["line"], "p_over": main["fo"],
             "over": None, "under": None})[0]
@@ -150,11 +151,14 @@ def shifted(p, stat, row, main):
         if BOOKS["ladders"] is None:
             import books
             BOOKS["ladders"], BOOKS["check"] = books.load(), books.check
-        cap = BOOKS["check"](BOOKS["ladders"], p["name"], stat, row["line"])[0]
+        cap, _, book_text = BOOKS["check"](BOOKS["ladders"], p["name"], stat, row["line"])
         if cap is not None:
             po = min(po, cap)
-    return {"stat": stat, "side": "over", "line": row["line"], "p": po, "fair": sgp.american(po),
-            "width": main["spread"], "id": row["ids"]["over"], "from": None if row is main else main["line"]}
+    out = {"stat": stat, "side": "over", "line": row["line"], "p": po, "fair": sgp.american(po),
+           "width": main["spread"], "id": row["ids"]["over"], "from": None if row is main else main["line"]}
+    if book_text:
+        out["books"] = book_text   # shown in the open row: "DK +552 · FD +600"
+    return out
 
 
 def big(p):
@@ -255,10 +259,14 @@ def nfl_ladder_candidates(markets, by, a):
         main = {s: main_line(v) for s, v in tight.items() if v}
         starts = min((r["starts"] for v in rows.values() for r in v), default=None)
         ctx[p["athlete_id"]] = (p, main, starts)
+        cvs = {}
         for y, z in NFL_LADDER:
             r = nfl_r(p, y, z)
             if r is None or r < a.min_r or z not in main or not rows.get(y):
                 continue
+            if y not in cvs:   # his own spread, from the book's ladder for him
+                fl = lad and books.fair_ladder(lad, nm, y)
+                cvs[y] = fl and nfl_shift.fit_cv(y, *fl)
             if y in main and abs(main[y]["fo"] - 0.5) <= 0.15:
                 m_line, m_p, m_w, src = main[y]["line"], main[y]["fo"], main[y]["spread"], None
             else:
@@ -271,24 +279,28 @@ def nfl_ladder_candidates(markets, by, a):
             for row in rows[y]:
                 if row["line"] <= m_line or "over" not in row["ids"] or row["line"] > 3 * m_line + 0.5:
                     continue
+                # DK's / FanDuel's one-way price on this line, least margin out,
+                # is a ceiling whatever Novig's own book says.
+                cap, _, book_text = books.check(lad, nm, y, row["line"]) if lad else (None, None, "")
                 if usable(row, a.max_spread):
-                    po, frm, width = row["fo"], None, row["spread"]
+                    po, frm, width = min(row["fo"], cap or 1), None, row["spread"]
                 else:
                     try:
-                        po = nfl_shift.over(y, m_line, m_p, row["line"])
+                        po = nfl_shift.over(y, m_line, m_p, row["line"], cvs[y])
                     except (ValueError, ZeroDivisionError, OverflowError):
                         continue
                     asks = [x["ask"] for x in rows[y] if x["line"] <= row["line"] and x["ask"] is not None]
                     bids = [x["bid"] for x in rows[y] if x["line"] >= row["line"] and x["bid"] is not None]
-                    cap = lad and books.check(lad, nm, y, row["line"])[0]
-                    po = min([po] + asks + ([cap] if cap else []))
-                    po, frm, width = max([po] + bids), m_line, m_w
+                    po = max([min([po] + asks)] + bids)
+                    po, frm, width = min(po, cap or 1), m_line, m_w
                 if not 0 < po < 1:
                     continue
                 ly = {"stat": y, "side": "over", "line": row["line"], "p": po, "fair": sgp.american(po),
                       "width": width, "id": row["ids"]["over"], "from": frm}
                 if src and frm is not None:
                     ly["src"] = src
+                if book_text:
+                    ly["books"] = book_text
                 j = sgp.joint(r, po, lz["p"])
                 if a.ladder_fair and not a.ladder_fair[0] <= sgp.american(j) <= a.ladder_fair[1]:
                     continue
@@ -299,6 +311,7 @@ def nfl_ladder_candidates(markets, by, a):
                             "model": frm is not None, "fix": 1.0,
                             "rough": max(width, lz["width"]) > novig.MAX_SPREAD + 1e-9})
     out.sort(key=lambda c: -c["r"])
+    BOOKS["seen"] = dict({b: len(v) for b, v in (lad or {}).items()}, errors=dict(books.ERRORS)) if BOOKS["on"] else None
     return (out[:a.max] if a.max else out), ctx
 
 
@@ -768,8 +781,11 @@ def scan(a, emit):
     # line) has no signal either way, so his few combos are still asked.
     ladder = [c for c in cands if c["tier"] == 6]
     cands = [c for c in cands if c["tier"] != 6]
+    if BOOKS["ladders"] is not None:   # the NBA ladder's lazy pull
+        import books as _b
+        BOOKS["seen"] = dict({b: len(v) for b, v in BOOKS["ladders"].items()}, errors=dict(_b.ERRORS))
     emit({"type": "start", "total": len(cands), "players": len({c["id"] for c in cands}),
-          "league": a.league, "data": d["generated_at"][:10], "at": t0})
+          "league": a.league, "data": d["generated_at"][:10], "at": t0, "books": BOOKS["seen"]})
     pace, rows, lock = Pace(), [], threading.Lock()
 
     def one(c):

@@ -299,7 +299,7 @@ function tip(ms) {
 // odds, then one quiet line of the working numbers.
 function detail(c) {
   const legs = c.legs.map(L =>
-    `<span class="lg">${L.text ? esc(L.text) : `${LABEL[L.stat]} ${L.side === "over" ? "o" : "u"}${L.line}`} <b>${am(L.fair)}</b>${L.from != null ? ` <small>from ${L.src ? esc(L.src) : L.from}</small>` : ""}</span>`).join("");
+    `<span class="lg">${L.text ? esc(L.text) : `${LABEL[L.stat]} ${L.side === "over" ? "o" : "u"}${L.line}`} <b>${am(L.fair)}</b>${L.from != null ? ` <small>from ${L.src ? esc(L.src) : L.from}</small>` : ""}${L.books ? ` <small>· ${esc(L.books)}</small>` : ""}</span>`).join("");
   const sg = v => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
   const tech = [
     c.model ? `r ${sg(c.r)} · modelled from the main line${c.fix > 1 ? `, ×${c.fix.toFixed(2)} for fat tails` : ""}` :
@@ -373,6 +373,12 @@ function render() {
       (S.busy ? ` · a ${BOARD[S.busy] || S.busy} pass is running` : since > 20 * 60000 ? " · prices are old: Fetch before betting" : "");
   } else {
     st.textContent = S.busy ? `A ${BOARD[S.busy] || S.busy} pass is running. Press Fetch when it finishes.` : "Press Fetch to scan.";
+  }
+  // Ladder boards lean on DK's and FanDuel's prices: say so when one didn't load.
+  if (LEAGUE.endsWith("ladder") && S.books && (S.finished || S.scanning) && !S.error) {
+    const miss = ["dk", "fd"].filter(b => !S.books[b]);
+    if (miss.length) st.innerHTML += ` · <span style="color:var(--neg)">${miss.map(b => b === "dk" ? "DraftKings" : "FanDuel").join(" and ")} prices did not load` +
+      `${S.books.errors && S.books.errors[miss[0]] ? ` (${esc(S.books.errors[miss[0]])})` : ""}: fair values are not capped by ${miss.length === 2 ? "either book" : "that book"}</span>`;
   }
   document.getElementById("bar").style.width = S.scanning && S.total ? `${Math.round(100 * S.done / S.total)}%` : "0";
 
