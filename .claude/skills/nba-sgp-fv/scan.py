@@ -492,6 +492,8 @@ def candidates(markets, d, by, a):
                             fix = LADDER_FIX[(min(8, 2 * round(dp / 2)), min(2, int(dt)))] if a.ladder_fix else 1.0
                             # never past what near-perfect dependence would give
                             c.update(j=min(c["j"] * fix, sgp.joint(0.97, la["p"], lb["p"])), model=True, fix=fix, devig_r=None)
+                            if a.ladder_fair and not a.ladder_fair[0] <= sgp.american(c["j"]) <= a.ladder_fair[1]:
+                                continue   # outside the fair-value band the ladder is kept to
                             lad.append(c)
         if a.tier == 0 and a.dd:
             for x, y in (("pts", "reb"), ("pts", "ast"), ("reb", "ast")):
@@ -696,6 +698,9 @@ def main():
     ap.add_argument("--ladder-r", type=float, default=0.70, help="smallest PTS-3PM r for the higher-line combos")
     ap.add_argument("--ladder-pts", type=int, default=None, help="highest points line on the ladder, above main (10; ladder scope 15)")
     ap.add_argument("--ladder-3s", type=int, default=None, help="highest threes line on the ladder, above main (2; ladder scope 3)")
+    ap.add_argument("--ladder-fair", type=float, nargs=2, default=None, metavar=("LOW", "HIGH"),
+                    help="ask only ladder slips whose fair value is in this American-odds band "
+                         "(ladder scope: 500 800; '0 0' = every slip)")
     ap.add_argument("--gate", type=float, default=None,
                     help="ask a player's other combos only if his best main-line PTS+3PM EV%% is above this (-100 = everyone)")
     ap.add_argument("--no-books", action="store_true",
@@ -719,6 +724,12 @@ def main():
         # pass of 11-11, players at -10% to 0% held 46 of the 81 ladder slips
         # at +10% or better; those under -10% held 4 (of 74 asked).
         a.gate = -10.0 if a.scope == "ladder" else 0.0
+    if a.ladder_fair is None and a.scope == "ladder":
+        # Max, 11-11: the +2000 fairs are modelled too far from the main line
+        # to trust. Keep the ladder to slips around +500 to +800.
+        a.ladder_fair = [500.0, 800.0]
+    if a.ladder_fair and not any(a.ladder_fair):
+        a.ladder_fair = None
     if a.ladder_pts is None:
         a.ladder_pts = 15 if a.scope == "ladder" else 10
     if a.ladder_3s is None:

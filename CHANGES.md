@@ -2,6 +2,9 @@
 
 ## 2026-11-11 session
 
+### Novig Scan: Ladder kept to slips with a fair value of +500 to +800
+Max's call: fair values of +2000 are modelled too far from the main line to trust. The Ladder tab now asks a ladder slip only when its fair value is between +500 and +800 (`scan.py --ladder-fair 500 800`; `0 0` asks every slip). On the 11-11 slate that is about 60 ladder slips after the 43 main-line asks, under two minutes, where the full ladder was 476. In that band the ungated pass had 8 slips above fair and 3 at +10% or better (Pritchard 25+ PTS · 3+ 3PM at 11.31x against a fair of +640; Curry 27+ and 26+ PTS · 7+ 3PM at +27% and +20%). Most of what priced at +10% or better was at +1200 and longer (59 of 81 slips).
+
 ### Novig Scan: Ladder asks players down to 10% under fair; remove a bet from the strip
 - **Ladder gate**: a full pass with no gate (518 quotes, 43 shooters, 11-11) priced 476 ladder slips, 81 of them at +10% or better. 31 were on the 11 players whose main line was above fair, 46 on the 21 players between 10% under and fair, and 4 on the 10 players more than 10% under. The Ladder tab now asks a player's ladder unless his main line is more than 10% under fair (it was: only above fair). The NBA tab's rule is unchanged.
 - **My bets**: each player's chip in the strip has an ×, which removes his bets after a confirm. It works even when the slip's row has left the board.

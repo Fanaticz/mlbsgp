@@ -202,6 +202,11 @@ minutes): 81 ladder slips at +10% or better, 31 on the 11 players whose main
 line was above fair, 46 on the 21 at -10% to 0%, 4 on the 10 under -10%;
 hence the -10% gate. The big ones are far lines (25+ points with 4+ to 6+
 threes at 20x to 50x), which Novig prices close to unrelated legs.
+Max (11-11) doesn't trust fairs that long: the scope now asks only ladder
+slips whose fair is +500 to +800 (`--ladder-fair 500 800`; `0 0` asks every
+slip). In that band the 11-11 pass had 61 slips, 8 above fair and 3 at +10%
+or better (Pritchard 25+ / 3+ at 11.31x against +640, Curry 27+ / 7+ and
+26+ / 7+); most of the +10% slips were at +1200 and longer.
 
 `python3 .claude/skills/nba-sgp-fv/scan.py` prices every open pregame
 player's same-player 2-leg combos (fair from Novig's legs, as `odds novig`)
