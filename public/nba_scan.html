@@ -76,6 +76,7 @@
   .chip { border:1px solid var(--line); border-radius:999px; padding:2px 10px; white-space:nowrap; background:var(--panel); }
   .chip b { color:var(--pos); margin-left:5px; font-variant-numeric:tabular-nums; }
   .chip small { color:var(--muted); margin-left:6px; }
+  .chip .cx { background:none; border:0; color:var(--muted); cursor:pointer; font-size:14px; padding:0 0 0 8px; }
   .bet { flex:none; margin-left:8px; color:var(--pos); border:1px solid var(--pos); border-radius:999px; padding:0 8px;
     font-size:11.5px; font-weight:600; white-space:nowrap; font-variant-numeric:tabular-nums; }
   .betform { margin-top:9px; display:flex; flex-wrap:wrap; gap:6px 8px; align-items:center; font-size:12.5px; color:var(--muted); }
@@ -249,7 +250,13 @@ function betStrip() {
   el.innerHTML = `<span class="t">My bets <b>${usd(total(live))}</b> on ${by.size} ${by.size === 1 ? "player" : "players"}</span>` +
     [...by].sort((a, b) => total(b[1]) - total(a[1])).map(([p, l]) =>
       `<span class="chip" title="${esc(l.map(b => `${usd(b.stake)} ${b.label}${b.x ? ` at ${b.x.toFixed(2)}x` : ""}`).join("\n"))}">${esc(p)}<b>${usd(total(l))}</b>` +
-      `<small>${l.length === 1 ? esc(l[0].label) + (l[0].x ? ` · ${l[0].x.toFixed(2)}x` : "") : l.length + " slips"}</small></span>`).join("");
+      `<small>${l.length === 1 ? esc(l[0].label) + (l[0].x ? ` · ${l[0].x.toFixed(2)}x` : "") : l.length + " slips"}</small>` +
+      `<button type="button" class="cx" data-p="${esc(p)}" title="Remove ${l.length === 1 ? "this bet" : "these bets"}">×</button></span>`).join("");
+  el.querySelectorAll(".cx").forEach(b => b.onclick = async () => {
+    const mine = liveBets().filter(x => x.player === b.dataset.p);
+    if (!confirm(`Remove ${mine.length === 1 ? "the bet" : `all ${mine.length} bets`} on ${b.dataset.p}?`)) return;
+    for (const x of mine) await bets({ del: x.id });
+  });
 }
 
 // Shown on screen: the tab is visible and, inside the site's tab frame, that
@@ -411,7 +418,7 @@ function render() {
   document.getElementById("foot").innerHTML =
     (SOC() ? `Soccer: favourite to win + favourite’s corners Under + underdog’s corners Over, with and without a goals Over. Fair value is the legs’ unrelated price adjusted for how much more often the whole slip hits (×1.25 to ×1.61, from 17,934 top-five-league matches). Those are league averages and corner books are often wide, so treat rows as leads. ` : "") +
     (LEAGUE === "nfl" ? `NFL: receptions, receiving yards and anytime touchdown for WRs, TEs and RBs; rushing yards, rushing + receiving yards and carries with anytime touchdown for RBs; pass attempts, completions, passing yards and passing touchdowns for QBs. Then a quarterback’s passing Over with one of his own receivers’ Over, and a player’s prop Over with the game total, his team’s spread or his team’s total on the side that goes with it (a back’s carries with his team covering; a quarterback’s pass attempts with the other team covering), up to three of each per player. Two legs only. ` : "") +
-    (LEAGUE === "ladder" ? `Ladder: NBA shooters whose Points and Threes move together (r 0.70 or better). Each one’s main-line Points + Threes is asked first; if that prices above fair, every higher points line Novig lists (to main + 15) is asked with threes at main to + 3, one-way lines included. Rows marked * have a leg whose fair value is shifted from his main line with a count model, held under Novig’s own ask and under DraftKings’ and FanDuel’s one-way price on that line. Check a play against another book before sizing it. ` : "") +
+    (LEAGUE === "ladder" ? `Ladder: NBA shooters whose Points and Threes move together (r 0.70 or better). Each one’s main-line Points + Threes is asked first; unless that prices more than 10% under fair, every higher points line Novig lists (to main + 15) is asked with threes at main to + 3, one-way lines included. Rows marked * have a leg whose fair value is shifted from his main line with a count model, held under Novig’s own ask and under DraftKings’ and FanDuel’s one-way price on that line. Check a play against another book before sizing it. ` : "") +
     (LEAGUE === "nba" ? `NBA: one slip a player, his main-line Points + Threes. Nothing else is asked, to keep the number of requests Novig’s pricers see down. ` : "") +
     `Fair value: each leg is Novig’s own exchange book at that line, devigged worst case, joined with the player’s shrunk correlation${LEAGUE === "nfl" ? " (for a slip across two players or with a game line: the league-wide correlation for his role, position and targets or carries a game, from ten seasons of nflverse games against closing lines)" : ""}` +
     `${S.data ? ` (data ${S.data})` : ""}. Novig: the multiplier on its slip, its public quote after the 10% parlay fee. ` +

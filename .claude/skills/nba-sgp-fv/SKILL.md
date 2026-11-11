@@ -194,11 +194,14 @@ asked not to run on his board; use it only if he asks.
 `--scope ladder` (the page's **Ladder** tab) is the one wider scan Max runs
 (asked for 11-11): only shooters with PTS·3PM r at least 0.70 (43 on the
 11-11 slate). Each one's main-line Points + Threes is asked first; for those
-above `--gate`, every higher points line Novig lists to main + 15 with threes
+above `--gate` (-10% on this scope, 0% elsewhere), every higher points line Novig lists to main + 15 with threes
 at main to + 3, one-way lines included (`--ladder-pts`, `--ladder-3s`). Those
 legs are shifted from the main line and capped by Novig's ask and by DK's and
-FanDuel's one-way price (Method). Ungated it would be about 490 slips; with
-the gate expect 100 to 250, a few minutes.
+FanDuel's one-way price (Method). Ungated pass of 11-11 (518 quotes, 10
+minutes): 81 ladder slips at +10% or better, 31 on the 11 players whose main
+line was above fair, 46 on the 21 at -10% to 0%, 4 on the 10 under -10%;
+hence the -10% gate. The big ones are far lines (25+ points with 4+ to 6+
+threes at 20x to 50x), which Novig prices close to unrelated legs.
 
 `python3 .claude/skills/nba-sgp-fv/scan.py` prices every open pregame
 player's same-player 2-leg combos (fair from Novig's legs, as `odds novig`)

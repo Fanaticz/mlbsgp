@@ -696,7 +696,7 @@ def main():
     ap.add_argument("--ladder-r", type=float, default=0.70, help="smallest PTS-3PM r for the higher-line combos")
     ap.add_argument("--ladder-pts", type=int, default=None, help="highest points line on the ladder, above main (10; ladder scope 15)")
     ap.add_argument("--ladder-3s", type=int, default=None, help="highest threes line on the ladder, above main (2; ladder scope 3)")
-    ap.add_argument("--gate", type=float, default=0.0,
+    ap.add_argument("--gate", type=float, default=None,
                     help="ask a player's other combos only if his best main-line PTS+3PM EV%% is above this (-100 = everyone)")
     ap.add_argument("--no-books", action="store_true",
                     help="don't cap shifted legs at DK's and FanDuel's one-way prices")
@@ -714,6 +714,11 @@ def main():
     ap.add_argument("--json", action="store_true", help="stream events as JSON lines instead of a table")
     a = ap.parse_args()
     BOOKS["on"] = not a.no_books
+    if a.gate is None:
+        # Ladder scope asks down to a main line 10% under fair: on the ungated
+        # pass of 11-11, players at -10% to 0% held 46 of the 81 ladder slips
+        # at +10% or better; those under -10% held 4 (of 74 asked).
+        a.gate = -10.0 if a.scope == "ladder" else 0.0
     if a.ladder_pts is None:
         a.ladder_pts = 15 if a.scope == "ladder" else 10
     if a.ladder_3s is None:

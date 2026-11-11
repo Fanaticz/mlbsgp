@@ -2,6 +2,10 @@
 
 ## 2026-11-11 session
 
+### Novig Scan: Ladder asks players down to 10% under fair; remove a bet from the strip
+- **Ladder gate**: a full pass with no gate (518 quotes, 43 shooters, 11-11) priced 476 ladder slips, 81 of them at +10% or better. 31 were on the 11 players whose main line was above fair, 46 on the 21 players between 10% under and fair, and 4 on the 10 players more than 10% under. The Ladder tab now asks a player's ladder unless his main line is more than 10% under fair (it was: only above fair). The NBA tab's rule is unchanged.
+- **My bets**: each player's chip in the strip has an ×, which removes his bets after a confirm. It works even when the slip's row has left the board.
+
 ### Novig Scan: Ladder tab and My bets
 - **Ladder tab** (`scan.py --scope ladder`): its own board, next to NBA. It asks only shooters whose Points and Threes move together (r 0.70 or better, 43 on the 11-11 slate): each one's main-line Points + Threes first, then, for those priced above fair, every higher points line Novig lists up to main + 15 with threes at main to + 3. One-way lines are included; their fair values are shifted from the main line and capped by Novig's ask and DK's / FanDuel's one-way price. Asking everyone's ladder would be about 490 slips; with the gate it is a few minutes. The NBA tab is unchanged (one main-line slip a player), which is why it still shows 97 combos.
 - **My bets**: open a row, type the stake (the price defaults to Novig's multiplier) and press Save. A strip above the board lists each player with his total and the slip; a green badge sits by the player's name (his total) and by the slip you hold. Remove a bet with the × in the open row. The list is kept on the server, so the phone and the desktop show the same bets, and a bet stays until about five hours after tip.
