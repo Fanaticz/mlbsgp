@@ -2,6 +2,12 @@
 
 ## 2026-11-11 session
 
+### NFL: quarterbacks in the correlation data and the Novig scanner
+- **Data** (`scripts/nfl_fetch_correlations.py` → `public/data/nfl_correlations.json`): QBs on current rosters are now in the file (60 of them, `group: "QB"`), with their game logs (attempts, completions, passing yards, passing TDs, interceptions, rushing yards) and six copula r's: `att_cmp`, `att_pyds`, `cmp_pyds`, `att_ptd`, `cmp_ptd`, `pyds_ptd`. Same method as the receivers; only games with 10+ pass attempts count, and each r is shrunk toward the average of the 28 QBs with 20+ games at 20+ attempts. The daily refresh picks them up.
+- **Position averages**: ATT·CMP +0.88, CMP·PASS YDS +0.76, ATT·PASS YDS +0.67, PASS YDS·PASS TD +0.43, CMP·PASS TD +0.25, ATT·PASS TD +0.11. On those 28 QBs' 993 games, both legs Over at each QB's median lines (2+ pass TDs) hit as often as the copula says: 37.6% vs 37.8%, 35.6% vs 35.8%, 34.0% vs 34.5%, 31.8% vs 31.0%, 25.4% vs 26.1%, 24.3% vs 24.4%. The 0.02–0.05 hold on the between-player spread was tested out of sample for receivers only and is carried over, so every QB sits within about 0.01 of the average.
+- **Scanner** (`scan.py --league nfl`, the Novig Scan page's NFL board): also asks each QB's Over + Over at main lines on those pairs (all but ATT·PASS TD, under the 0.15 minimum r). The pair filter has the five QB pairs. Novig quotes them: a wide-books pass priced 95 combos on 52 players, QBs included, none of the QB rows above fair.
+- The NFL page itself is unchanged: QBs are in the data but not in its table (its columns and pricer are receptions / yards / TD).
+
 ### NFL page: Fetch FV takes Novig books up to 6¢ wide
 The NFL page's Fetch FV priced a leg from Novig only when the book was at most 4¢ wide (bid to ask); the limit is now 6¢ (`NV_MAX_SPREAD` in `public/nfl.html`). Lines between 4¢ and 6¢ wide now fill in and are no longer dimmed as rough. The Novig scanner's NFL board and the NBA pages stay at 4¢.
 

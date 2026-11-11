@@ -7,7 +7,7 @@ player, ranked by EV at what Novig's slip pays.
   python3 scan.py --tier 1        # Points + Threes only (about 2 minutes)
   python3 scan.py --max 120       # stop after 120 quotes
   python3 scan.py --min-ev 3      # print only rows at +3% or better
-  python3 scan.py --league nfl    # NFL: receptions, receiving yards, anytime TD
+  python3 scan.py --league nfl    # NFL: receptions, receiving yards, anytime TD; QB passing
   python3 scan.py --json          # one JSON object per line as quotes land
                                   # (server.js reads this for the Scanner page)
 
@@ -53,7 +53,10 @@ NFL (--league nfl): WRs, TEs and RBs in public/data/nfl_correlations.json,
 whose shrunk r's are already copula correlations. Over + Over at main lines
 on Receptions·Yards, Receptions·TD and Yards·TD (TD = Novig's TOUCHDOWNS 0.5,
 any touchdown, as the data counts receiving + rushing), then the three
-together. Rushing props aren't priced: the data has no r for them.
+together (--scope all). Quarterbacks: Over + Over at main lines on pass
+attempts, completions, passing yards and passing TDs, every pair with r at
+least --min-r (attempts + passing TDs, about 0.11, falls under it). Rushing
+props aren't priced: the data has no r for them.
 
 Soccer (--league soccer): for every open match with team-corners books it
 asks Max's shape, favourite to win (3-way) + favourite's corners Under +
@@ -86,10 +89,14 @@ import price  # noqa: E402  shrunk_r
 import sgp  # noqa: E402  joint, american, prob, load
 
 STATS = ("pts", "reb", "ast", "tpm")
-LABEL = {"pts": "PTS", "reb": "REB", "ast": "AST", "tpm": "3PM", "rec": "REC", "yds": "YDS", "td": "TD"}
+LABEL = {"pts": "PTS", "reb": "REB", "ast": "AST", "tpm": "3PM", "rec": "REC", "yds": "YDS", "td": "TD",
+         "att": "PASS ATT", "cmp": "CMP", "pyds": "PASS YDS", "ptd": "PASS TD"}
 PAIRS = [("pts", "reb"), ("pts", "ast"), ("reb", "ast"), ("reb", "tpm"), ("ast", "tpm")]
-NFL_STATS = ("rec", "yds", "td")
-NFL_PAIRS = {("rec", "yds"): "rec_yds", ("rec", "td"): "rec_td", ("yds", "td"): "yds_td"}
+NFL_STATS = ("rec", "yds", "td", "att", "cmp", "pyds", "ptd")
+NFL_PAIRS = {("rec", "yds"): "rec_yds", ("rec", "td"): "rec_td", ("yds", "td"): "yds_td",
+             # quarterbacks (the data has these pairs for QBs only)
+             ("att", "cmp"): "att_cmp", ("att", "pyds"): "att_pyds", ("cmp", "pyds"): "cmp_pyds",
+             ("att", "ptd"): "att_ptd", ("cmp", "ptd"): "cmp_ptd", ("pyds", "ptd"): "pyds_ptd"}
 NFL_DATA = os.path.join(HERE, "..", "..", "..", "public", "data", "nfl_correlations.json")
 
 

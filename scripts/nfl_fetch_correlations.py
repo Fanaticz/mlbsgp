@@ -54,6 +54,16 @@ Data source (public ESPN endpoints, no key required):
   - This week's slate:
       https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard
 
+Quarterbacks
+------------
+QBs get the same treatment on their own stats: pass attempts (ATT),
+completions (CMP), passing yards (PYDS) and passing touchdowns (PTD), six
+pairs, shrunk toward the average of QBs who start (20+ games of 20+ attempts
+a game). Only games with at least QB_MIN_ATT attempts count: a prop is posted
+for the starter, and a backup's two kneel-downs aren't a game of his. The
+0.02-0.05 hold on tau was checked out of sample for receivers only; for QBs
+it is carried over, which keeps every QB close to the position average.
+
 Regular-season games only, every game the player appeared in (ESPN lists games
 with zero targets too, so a quiet game or an early injury exit stays in: a
 prop stands once the player takes a snap).
@@ -90,17 +100,28 @@ from nba_fetch_correlations import get_json, pearson_pvalue, weighted_pearson  #
 SITE = "https://site.web.api.espn.com/apis/common/v3/sports/football/nfl"
 SITE_API = "https://site.web.api.espn.com/apis/site/v2/sports/football/nfl"
 
-POSITIONS = {"WR": "WR", "TE": "TE", "RB": "RB", "FB": "RB"}  # roster position -> group
+POSITIONS = {"WR": "WR", "TE": "TE", "RB": "RB", "FB": "RB", "QB": "QB"}  # roster position -> group
 
 # Game-log columns by ESPN's stat `names` (column order differs by position:
 # an RB's log lists rushing first).
 COLS = {"rec": "receptions", "tgt": "receivingTargets", "yds": "receivingYards",
         "rec_td": "receivingTouchdowns", "rush_td": "rushingTouchdowns"}
+QB_COLS = {"att": "passingAttempts", "cmp": "completions", "pyds": "passingYards",
+           "ptd": "passingTouchdowns", "int": "interceptions", "ryds": "rushingYards",
+           "rush_td": "rushingTouchdowns"}
+QB_MIN_ATT = 10  # fewer pass attempts: a relief appearance, not a game of his
 
 # The three pairs: (key, continuous stat -> normal scores, count stat -> polyserial).
 PAIRS = (("rec_yds", "yds", "rec"), ("rec_td", "rec", "td"), ("yds_td", "yds", "td"))
+QB_PAIRS = (("att_cmp", "att", "cmp"), ("att_pyds", "pyds", "att"), ("cmp_pyds", "pyds", "cmp"),
+            ("att_ptd", "att", "ptd"), ("cmp_ptd", "cmp", "ptd"), ("pyds_ptd", "pyds", "ptd"))
 
-SHRINK_POOL = {"min_games": 20, "min_tgt": 3.0}
+
+def pairs_of(group: str) -> tuple:
+    return QB_PAIRS if group == "QB" else PAIRS
+
+
+SHRINK_POOL = {"min_games": 20, "min_tgt": 3.0, "min_att": 20.0}
 SHRINK_TAU = (0.02, 0.05)  # floor, cap
 RHO_CLAMP = 0.99
 
@@ -125,7 +146,7 @@ def _num(v) -> float | None:
 
 def roster_players(sess: requests.Session) -> dict[str, dict]:
     """athlete_id -> {name, position, group, team_id, team_abbr, team_name} for
-    every WR / TE / RB / FB on a current roster (active, reserve lists and
+    every WR / TE / RB / FB / QB on a current roster (active, reserve lists and
     practice squad alike; the viewer filters by volume)."""
     data = get_json(sess, f"{SITE_API}/teams")
     out: dict[str, dict] = {}
@@ -188,14 +209,15 @@ def _scores(meta: dict) -> tuple[float | None, float | None]:
     return (hs, aws) if home else (aws, hs)
 
 
-def regular_season_games(sess: requests.Session, aid: str, season: int) -> list[dict]:
-    """One dict per regular-season game the player appeared in."""
+def regular_season_games(sess: requests.Session, aid: str, season: int, qb: bool = False) -> list[dict]:
+    """One dict per regular-season game the player appeared in (a QB: games
+    with at least QB_MIN_ATT pass attempts)."""
     data = get_json(sess, f"{SITE}/athletes/{aid}/gamelog?season={season}")
     if not data:
         return []
     names = data.get("names") or []
-    idx = {k: names.index(v) for k, v in COLS.items() if v in names}
-    if not all(k in idx for k in ("rec", "yds", "rec_td")):
+    idx = {k: names.index(v) for k, v in (QB_COLS if qb else COLS).items() if v in names}
+    if not all(k in idx for k in (("att", "cmp", "pyds", "ptd") if qb else ("rec", "yds", "rec_td"))):
         return []
     meta_all = data.get("events") or {}
     out: list[dict] = []
@@ -210,17 +232,26 @@ def regular_season_games(sess: requests.Session, aid: str, season: int) -> list[
                     continue
                 stats = ev.get("stats") or []
                 val = lambda k: _num(stats[idx[k]]) if k in idx and idx[k] < len(stats) else None  # noqa: E731
-                rec, yds = val("rec"), val("yds")
-                if rec is None or yds is None:
-                    continue
+                if qb:
+                    att, pyds = val("att"), val("pyds")
+                    if att is None or pyds is None or att < QB_MIN_ATT:
+                        continue
+                    row = {"att": att, "cmp": val("cmp") or 0.0, "pyds": pyds, "ptd": val("ptd") or 0.0,
+                           "int": val("int") or 0.0, "ryds": val("ryds") or 0.0,
+                           "rush_td": val("rush_td") or 0.0}
+                else:
+                    rec, yds = val("rec"), val("yds")
+                    if rec is None or yds is None:
+                        continue
+                    rush_td = val("rush_td") or 0.0
+                    row = {"rec": rec, "yds": yds, "tgt": val("tgt") or 0.0,
+                           "td": (val("rec_td") or 0.0) + rush_td, "rush_td": rush_td}
                 if eid:
                     seen.add(eid)
                 m = meta_all.get(eid) or {}
                 tm, op = _scores(m)
-                rush_td = val("rush_td") or 0.0
                 out.append({
-                    "rec": rec, "yds": yds, "tgt": val("tgt") or 0.0,
-                    "td": (val("rec_td") or 0.0) + rush_td, "rush_td": rush_td,
+                    **row,
                     "week": m.get("week"),
                     "date": (m.get("gameDate") or "")[:10],
                     "opp": (m.get("opponent") or {}).get("abbreviation") or "",
@@ -317,25 +348,39 @@ def _pair(est: dict | None) -> dict:
 SEASON_MIN_GAMES_R = 8  # fewer games in a season: box stats only, no r (5 games can land on 0.99)
 
 
-def _season_stats(games: list[dict]) -> dict:
+def _box(games: list[dict], qb: bool) -> dict:
+    """Per-game averages over these games."""
+    n = len(games)
+    if qb:
+        return {"att_mean": round(sum(g["att"] for g in games) / n, 1),
+                "cmp_mean": round(sum(g["cmp"] for g in games) / n, 1),
+                "pyds_mean": round(sum(g["pyds"] for g in games) / n, 1),
+                "ptd_mean": round(sum(g["ptd"] for g in games) / n, 2),
+                "int_mean": round(sum(g["int"] for g in games) / n, 2),
+                "ryds_mean": round(sum(g["ryds"] for g in games) / n, 1)}
+    return {"tgt_mean": round(sum(g["tgt"] for g in games) / n, 2),
+            "rec_mean": round(sum(g["rec"] for g in games) / n, 2),
+            "yds_mean": round(sum(g["yds"] for g in games) / n, 1),
+            "td_rate": round(sum(1 for g in games if g["td"] >= 1) / n, 3)}
+
+
+def _season_stats(games: list[dict], group: str) -> dict:
     n = len(games)
     one = {0: games}
     return {
         "games": n,
-        "tgt_mean": round(sum(g["tgt"] for g in games) / n, 2),
-        "rec_mean": round(sum(g["rec"] for g in games) / n, 2),
-        "yds_mean": round(sum(g["yds"] for g in games) / n, 1),
-        "td_rate": round(sum(1 for g in games if g["td"] >= 1) / n, 3),
+        **_box(games, group == "QB"),
         **{key: _pair(copula_r(one, kx, ky, None) if n >= SEASON_MIN_GAMES_R else None)
-           for key, kx, ky in PAIRS},
+           for key, kx, ky in pairs_of(group)},
     }
 
 
 def process_player(sess: requests.Session, aid: str, info: dict, seasons: list[int],
                    weights: dict[int, float]) -> dict | None:
+    qb = info["group"] == "QB"
     by_year: dict[int, list[dict]] = {}
     for yr in seasons:
-        g = regular_season_games(sess, aid, yr)
+        g = regular_season_games(sess, aid, yr, qb)
         if g:
             by_year[yr] = g
     allg = [g for yr in sorted(by_year) for g in by_year[yr]]
@@ -349,7 +394,7 @@ def process_player(sess: requests.Session, aid: str, info: dict, seasons: list[i
 
     pairs: dict[str, dict] = {}
     est: dict[str, dict | None] = {}
-    for key, kx, ky in PAIRS:
+    for key, kx, ky in pairs_of(info["group"]):
         e = copula_r(by_year, kx, ky, weights)
         est[key] = e
         pairs[key] = {"unweighted": _pair(copula_r(by_year, kx, ky, None)),
@@ -365,8 +410,9 @@ def process_player(sess: requests.Session, aid: str, info: dict, seasons: list[i
     for yr in sorted(by_year):
         for g in by_year[yr]:
             row = {"s": yr, "wk": g["week"], "d": g["date"], "opp": g["opp"], "loc": g["loc"],
-                   "res": g["res"], "tgt": _i(g["tgt"]), "rec": _i(g["rec"]),
-                   "yds": _i(g["yds"]), "td": _i(g["td"])}
+                   "res": g["res"],
+                   **{k: _i(g[k]) for k in (("att", "cmp", "pyds", "ptd", "int", "ryds") if qb
+                                            else ("tgt", "rec", "yds", "td"))}}
             if g["rush_td"]:
                 row["rtd"] = _i(g["rush_td"])
             if g["tm"] is not None:
@@ -384,13 +430,10 @@ def process_player(sess: requests.Session, aid: str, info: dict, seasons: list[i
         "n_games": n,
         "effective_n": None if n_eff is None else round(n_eff, 1),
         "games_by_season": {str(yr): len(g) for yr, g in sorted(by_year.items())},
-        "tgt_mean": round(sum(g["tgt"] for g in allg) / n, 2),
-        "rec_mean": round(sum(g["rec"] for g in allg) / n, 2),
-        "yds_mean": round(sum(g["yds"] for g in allg) / n, 1),
-        "td_rate": round(sum(1 for g in allg if g["td"] >= 1) / n, 3),
-        "td_rate_weighted": round(wmean(lambda g: 1.0 if g["td"] >= 1 else 0.0), 3),
+        **_box(allg, qb),
+        **({} if qb else {"td_rate_weighted": round(wmean(lambda g: 1.0 if g["td"] >= 1 else 0.0), 3)}),
         **pairs,
-        "by_season": {str(yr): _season_stats(g) for yr, g in sorted(by_year.items()) if len(g) >= 3},
+        "by_season": {str(yr): _season_stats(g, info["group"]) for yr, g in sorted(by_year.items()) if len(g) >= 3},
         "games": games,
         # Shrinkage inputs, dropped before writing.
         "_est": est,
@@ -414,8 +457,11 @@ def add_shrinkage(players: list[dict]) -> dict:
         return e["f"] ** 2 * (1 - r0 * r0) ** 2 / e["neff"]
 
     def in_pool(p: dict, key: str) -> bool:
-        return bool(p["_est"][key]) and p["n_games"] >= SHRINK_POOL["min_games"] \
-            and p["tgt_mean"] >= SHRINK_POOL["min_tgt"]
+        if not p["_est"].get(key) or p["n_games"] < SHRINK_POOL["min_games"]:
+            return False
+        if p["group"] == "QB":
+            return p["att_mean"] >= SHRINK_POOL["min_att"]
+        return p["tgt_mean"] >= SHRINK_POOL["min_tgt"]
 
     def fit(pool: list[dict]) -> tuple[float, float]:
         m = statistics.mean(e["rho"] for e in pool)
@@ -434,10 +480,10 @@ def add_shrinkage(players: list[dict]) -> dict:
     fits: dict[str, dict] = {}
     for group in sorted({p["group"] for p in players}):
         members = [p for p in players if p["group"] == group]
-        for key, _, _ in PAIRS:
+        for key, _, _ in pairs_of(group):
             pool = [p["_est"][key] for p in members if in_pool(p, key)]
             src = group
-            if len(pool) < 5:  # too few rotation players: every position's pool
+            if len(pool) < 5 and group != "QB":  # too few rotation players: every position's pool
                 pool = [p["_est"][key] for p in players if in_pool(p, key)]
                 src = "ALL"
             if len(pool) < 5:
@@ -491,7 +537,7 @@ def main() -> None:
     roster = roster_players(sess)
     if not roster:
         sys.exit("No rosters from ESPN; refusing to overwrite the data file.")
-    print(f"  {len(roster)} WR/TE/RB on rosters; week {sched.get('week')} of {sched.get('season')}: "
+    print(f"  {len(roster)} WR/TE/RB/QB on rosters; week {sched.get('week')} of {sched.get('season')}: "
           f"{len(sched['games'])} games", file=sys.stderr)
 
     ids = sorted(roster, key=int)
@@ -522,13 +568,14 @@ def main() -> None:
     shrinkage = add_shrinkage(players)
     for p in players:
         del p["_est"]
-    reportable = [p for p in players if p["n_games"] >= args.min_games]
+    reportable = [p for p in players if p["n_games"] >= args.min_games and p["group"] != "QB"]
 
     payload = {
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
         "source": "ESPN NFL public API",
         "seasons": seasons,
-        "scope": "regular-season games, WR / TE / RB on current rosters; TD = receiving + rushing",
+        "scope": "regular-season games, WR / TE / RB / QB on current rosters; TD = receiving + rushing; "
+                 f"a QB's games are those with {QB_MIN_ATT}+ pass attempts",
         "weighting": {
             "scheme": "per-game season weights (recency tilt); weighted Pearson, Kish "
                       "effective-N used for significance",
@@ -568,6 +615,15 @@ def main() -> None:
         print(f"{p['name'][:23]:<24}{p['position']:<4}{p['team_abbr']:<5}{p['n_games']:>4}"
               f"{cell(p['effective_n'], 6, 1)}{p['tgt_mean']:>6.1f}{p['rec_mean']:>6.1f}"
               f"{p['yds_mean']:>7.1f}{100 * p['td_rate']:>5.0f}%{cells}")
+    qbs = sorted((p for p in players if p["group"] == "QB" and p["n_games"] >= args.min_games
+                  and p["att_mean"] >= 20), key=lambda p: -p["pyds_mean"])[:40]
+    print()
+    print(f"{'QB':<24}{'Tm':<5}{'G':>4}{'Att':>6}{'Cmp':>6}{'Yds':>7}{'TD':>6}"
+          + "".join(f"{k.upper().replace('_', '-'):>10}" for k, _, _ in QB_PAIRS))
+    for p in qbs:
+        cells = "".join(cell(p[k]["shrunk"]["r"] if "shrunk" in p[k] else None, 10, 3) for k, _, _ in QB_PAIRS)
+        print(f"{p['name'][:23]:<24}{p['team_abbr']:<5}{p['n_games']:>4}{p['att_mean']:>6.1f}"
+              f"{p['cmp_mean']:>6.1f}{p['pyds_mean']:>7.1f}{p['ptd_mean']:>6.2f}{cells}")
     print()
     print(f"Wrote {args.out}")
 

@@ -147,7 +147,9 @@ let GOT = 0;               // when it arrived (ms, this clock)
 let MODE = "plays", WIDE = false, MINEV = 0, LEAGUE = "nba";
 const PAIR_OPTS = {
   nba: [],   // one slip a player now: main-line Points + Threes
-  nfl: [["rec,yds", "REC + YDS"], ["rec,td", "REC + TD"], ["yds,td", "YDS + TD"]],
+  nfl: [["rec,yds", "REC + YDS"], ["rec,td", "REC + TD"], ["yds,td", "YDS + TD"],
+        ["pyds,ptd", "QB: PASS YDS + PASS TD"], ["cmp,pyds", "QB: CMP + PASS YDS"], ["att,cmp", "QB: ATT + CMP"],
+        ["att,pyds", "QB: ATT + PASS YDS"], ["cmp,ptd", "QB: CMP + PASS TD"]],
   soccer: [["n3", "Win + corners"], ["n4", "With a goals leg"]],
 };
 function pairOpts() {
@@ -183,7 +185,8 @@ const am = v => (v > 0 ? "+" : "−") + Math.abs(v);
 const pct = v => `${v >= 0 ? "+" : "−"}${Math.abs(100 * v).toFixed(1)}%`;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
 const clock = ms => new Date(ms).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
-const LABEL = { pts:"PTS", reb:"REB", ast:"AST", tpm:"3PM", rec:"REC", yds:"YDS", td:"TD" };
+const LABEL = { pts:"PTS", reb:"REB", ast:"AST", tpm:"3PM", rec:"REC", yds:"YDS", td:"TD",
+                att:"PASS ATT", cmp:"CMP", pyds:"PASS YDS", ptd:"PASS TD" };
 const SOC = () => LEAGUE === "soccer";
 
 // Shown on screen: the tab is visible and, inside the site's tab frame, that
@@ -313,7 +316,7 @@ function render() {
   }
   document.getElementById("foot").innerHTML =
     (SOC() ? `Soccer: favourite to win + favourite’s corners Under + underdog’s corners Over, with and without a goals Over. Fair value is the legs’ unrelated price adjusted for how much more often the whole slip hits (×1.25 to ×1.61, from 17,934 top-five-league matches). Those are league averages and corner books are often wide, so treat rows as leads. ` : "") +
-    (LEAGUE === "nfl" ? `NFL: receptions, receiving yards and anytime touchdown for WRs, TEs and RBs (no rushing props). ` : "") +
+    (LEAGUE === "nfl" ? `NFL: receptions, receiving yards and anytime touchdown for WRs, TEs and RBs, and pass attempts, completions, passing yards and passing touchdowns for QBs (no rushing props). Two legs only. ` : "") +
     (LEAGUE === "nba" ? `NBA: one slip a player, his main-line Points + Threes. Nothing else is asked, to keep the number of requests Novig’s pricers see down. ` : "") +
     `Fair value: each leg is Novig’s own exchange book at that line, devigged worst case, joined with the player’s shrunk correlation` +
     `${S.data ? ` (data ${S.data})` : ""}. Novig: the multiplier on its slip, its public quote after the 10% parlay fee. ` +
