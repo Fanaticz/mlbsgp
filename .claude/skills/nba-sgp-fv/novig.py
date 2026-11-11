@@ -35,7 +35,8 @@ TYPES = {"pts": "POINTS", "reb": "REBOUNDS", "ast": "ASSISTS", "tpm": "THREE_POI
 # anytime touchdown: any TD the player scores.
 NFL_TYPES = {"rec": "RECEPTIONS", "yds": "RECEIVING_YARDS", "td": "TOUCHDOWNS",
              "att": "PASSING_ATTEMPTS", "cmp": "PASSING_COMPLETIONS", "pyds": "PASSING_YARDS",
-             "ptd": "PASSING_TOUCHDOWNS"}
+             "ptd": "PASSING_TOUCHDOWNS", "car": "RUSHING_ATTEMPTS", "ryds": "RUSHING_YARDS",
+             "rry": "RUSHING_AND_RECEIVING_YARDS"}
 ALL_TYPES = {**TYPES, **NFL_TYPES}
 STAT = {v: k for k, v in ALL_TYPES.items()}
 MAX_SPREAD = 0.04  # ask - bid on the Over, in probability

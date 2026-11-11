@@ -64,6 +64,14 @@ for the starter, and a backup's two kneel-downs aren't a game of his. The
 0.02-0.05 hold on tau was checked out of sample for receivers only; for QBs
 it is carried over, which keeps every QB close to the position average.
 
+Rushing
+-------
+Running backs also get carries (CAR), rushing yards (RYDS) and rushing +
+receiving yards (RRY): RYDS-TD, RRY-TD, CAR-TD, RYDS-REC and RYDS-YDS, shrunk
+toward the average of backs with 8+ carries a game. QBs get RYDS-TD (TD = his
+rushing TDs, the anytime-TD market) and PYDS-RYDS. CAR-RYDS and RYDS-RRY are
+left out: one is nearly the other, and books don't parlay them.
+
 Regular-season games only, every game the player appeared in (ESPN lists games
 with zero targets too, so a quiet game or an early injury exit stays in: a
 prop stands once the player takes a snap).
@@ -105,7 +113,8 @@ POSITIONS = {"WR": "WR", "TE": "TE", "RB": "RB", "FB": "RB", "QB": "QB"}  # rost
 # Game-log columns by ESPN's stat `names` (column order differs by position:
 # an RB's log lists rushing first).
 COLS = {"rec": "receptions", "tgt": "receivingTargets", "yds": "receivingYards",
-        "rec_td": "receivingTouchdowns", "rush_td": "rushingTouchdowns"}
+        "rec_td": "receivingTouchdowns", "rush_td": "rushingTouchdowns",
+        "car": "rushingAttempts", "ryds": "rushingYards"}
 QB_COLS = {"att": "passingAttempts", "cmp": "completions", "pyds": "passingYards",
            "ptd": "passingTouchdowns", "int": "interceptions", "ryds": "rushingYards",
            "rush_td": "rushingTouchdowns"}
@@ -114,14 +123,19 @@ QB_MIN_ATT = 10  # fewer pass attempts: a relief appearance, not a game of his
 # The three pairs: (key, continuous stat -> normal scores, count stat -> polyserial).
 PAIRS = (("rec_yds", "yds", "rec"), ("rec_td", "rec", "td"), ("yds_td", "yds", "td"))
 QB_PAIRS = (("att_cmp", "att", "cmp"), ("att_pyds", "pyds", "att"), ("cmp_pyds", "pyds", "cmp"),
-            ("att_ptd", "att", "ptd"), ("cmp_ptd", "cmp", "ptd"), ("pyds_ptd", "pyds", "ptd"))
+            ("att_ptd", "att", "ptd"), ("cmp_ptd", "cmp", "ptd"), ("pyds_ptd", "pyds", "ptd"),
+            ("ryds_td", "ryds", "td"), ("pyds_ryds", "pyds", "ryds"))
+# Running backs, on top of PAIRS. rry = rushing + receiving yards.
+RUSH_PAIRS = (("ryds_td", "ryds", "td"), ("rry_td", "rry", "td"), ("car_td", "car", "td"),
+              ("ryds_rec", "ryds", "rec"), ("ryds_yds", "ryds", "yds"))
+RUSH_KEYS = {k for k, _, _ in RUSH_PAIRS}
 
 
 def pairs_of(group: str) -> tuple:
-    return QB_PAIRS if group == "QB" else PAIRS
+    return QB_PAIRS if group == "QB" else PAIRS + RUSH_PAIRS if group == "RB" else PAIRS
 
 
-SHRINK_POOL = {"min_games": 20, "min_tgt": 3.0, "min_att": 20.0}
+SHRINK_POOL = {"min_games": 20, "min_tgt": 3.0, "min_att": 20.0, "min_car": 8.0}
 SHRINK_TAU = (0.02, 0.05)  # floor, cap
 RHO_CLAMP = 0.99
 
@@ -238,14 +252,16 @@ def regular_season_games(sess: requests.Session, aid: str, season: int, qb: bool
                         continue
                     row = {"att": att, "cmp": val("cmp") or 0.0, "pyds": pyds, "ptd": val("ptd") or 0.0,
                            "int": val("int") or 0.0, "ryds": val("ryds") or 0.0,
-                           "rush_td": val("rush_td") or 0.0}
+                           "rush_td": val("rush_td") or 0.0, "td": val("rush_td") or 0.0}
                 else:
                     rec, yds = val("rec"), val("yds")
                     if rec is None or yds is None:
                         continue
                     rush_td = val("rush_td") or 0.0
                     row = {"rec": rec, "yds": yds, "tgt": val("tgt") or 0.0,
-                           "td": (val("rec_td") or 0.0) + rush_td, "rush_td": rush_td}
+                           "td": (val("rec_td") or 0.0) + rush_td, "rush_td": rush_td,
+                           "car": val("car") or 0.0, "ryds": val("ryds") or 0.0}
+                    row["rry"] = row["ryds"] + yds
                 if eid:
                     seen.add(eid)
                 m = meta_all.get(eid) or {}
@@ -348,9 +364,13 @@ def _pair(est: dict | None) -> dict:
 SEASON_MIN_GAMES_R = 8  # fewer games in a season: box stats only, no r (5 games can land on 0.99)
 
 
-def _box(games: list[dict], qb: bool) -> dict:
+def _box(games: list[dict], group: str) -> dict:
     """Per-game averages over these games."""
     n = len(games)
+    qb = group == "QB"
+    if group == "RB":
+        return {**_box(games, ""), "car_mean": round(sum(g["car"] for g in games) / n, 1),
+                "ryds_mean": round(sum(g["ryds"] for g in games) / n, 1)}
     if qb:
         return {"att_mean": round(sum(g["att"] for g in games) / n, 1),
                 "cmp_mean": round(sum(g["cmp"] for g in games) / n, 1),
@@ -369,7 +389,7 @@ def _season_stats(games: list[dict], group: str) -> dict:
     one = {0: games}
     return {
         "games": n,
-        **_box(games, group == "QB"),
+        **_box(games, group),
         **{key: _pair(copula_r(one, kx, ky, None) if n >= SEASON_MIN_GAMES_R else None)
            for key, kx, ky in pairs_of(group)},
     }
@@ -412,7 +432,8 @@ def process_player(sess: requests.Session, aid: str, info: dict, seasons: list[i
             row = {"s": yr, "wk": g["week"], "d": g["date"], "opp": g["opp"], "loc": g["loc"],
                    "res": g["res"],
                    **{k: _i(g[k]) for k in (("att", "cmp", "pyds", "ptd", "int", "ryds") if qb
-                                            else ("tgt", "rec", "yds", "td"))}}
+                                            else ("tgt", "rec", "yds", "td", "car", "ryds")
+                                            if info["group"] == "RB" else ("tgt", "rec", "yds", "td"))}}
             if g["rush_td"]:
                 row["rtd"] = _i(g["rush_td"])
             if g["tm"] is not None:
@@ -430,7 +451,7 @@ def process_player(sess: requests.Session, aid: str, info: dict, seasons: list[i
         "n_games": n,
         "effective_n": None if n_eff is None else round(n_eff, 1),
         "games_by_season": {str(yr): len(g) for yr, g in sorted(by_year.items())},
-        **_box(allg, qb),
+        **_box(allg, info["group"]),
         **({} if qb else {"td_rate_weighted": round(wmean(lambda g: 1.0 if g["td"] >= 1 else 0.0), 3)}),
         **pairs,
         "by_season": {str(yr): _season_stats(g, info["group"]) for yr, g in sorted(by_year.items()) if len(g) >= 3},
@@ -461,6 +482,8 @@ def add_shrinkage(players: list[dict]) -> dict:
             return False
         if p["group"] == "QB":
             return p["att_mean"] >= SHRINK_POOL["min_att"]
+        if key in RUSH_KEYS:
+            return p.get("car_mean", 0.0) >= SHRINK_POOL["min_car"]
         return p["tgt_mean"] >= SHRINK_POOL["min_tgt"]
 
     def fit(pool: list[dict]) -> tuple[float, float]:
@@ -574,7 +597,8 @@ def main() -> None:
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
         "source": "ESPN NFL public API",
         "seasons": seasons,
-        "scope": "regular-season games, WR / TE / RB / QB on current rosters; TD = receiving + rushing; "
+        "scope": "regular-season games, WR / TE / RB / QB on current rosters; TD = receiving + rushing "
+                 "(a QB's: rushing); RBs also carries, rushing yards and rushing + receiving yards; "
                  f"a QB's games are those with {QB_MIN_ATT}+ pass attempts",
         "weighting": {
             "scheme": "per-game season weights (recency tilt); weighted Pearson, Kish "

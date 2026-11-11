@@ -2,6 +2,13 @@
 
 ## 2026-11-11 session
 
+### NFL: rushing props in the correlation data and the Novig scanner
+- **Data**: running backs now carry carries, rushing yards and rushing + receiving yards in their game logs, with five more copula r's shrunk toward the average of the 41 backs at 8+ carries a game: RUSH YDS·TD +0.49, RUSH+REC YDS·TD +0.51, CAR·TD +0.37, RUSH YDS·REC −0.03, RUSH YDS·REC YDS +0.01. QBs get RUSH YDS·TD +0.30 (his rushing TDs) and PASS YDS·RUSH YDS −0.03.
+- On those backs' 1,439 games, both legs at his median line and 1+ TD hit as often as the copula says: 28.1% vs 27.9% (rush yards), 28.1% vs 28.4% (rush + rec yards), 24.8% vs 24.9% (carries); unrelated legs would be about 20%.
+- **Scanner**: the NFL board also asks rushing yards, rushing + receiving yards and carries, each with anytime TD, for backs, and rushing yards + anytime TD for QBs. Novig refuses carries + rushing yards and rushing yards + rushing-and-receiving yards ("Invalid parlay combination"), so those aren't asked.
+- **Fix**: the anytime-TD leg is the 0.5 line only. When that book was too wide the scanner fell back to 2+ TDs (a +1850 leg) and priced the slip off it.
+- Novig test quotes, 11-11: it prices two-player parlays (QB passing yards + his receiver's yards) and a player prop with the game total, spread or team total.
+
 ### NFL: quarterbacks in the correlation data and the Novig scanner
 - **Data** (`scripts/nfl_fetch_correlations.py` → `public/data/nfl_correlations.json`): QBs on current rosters are now in the file (60 of them, `group: "QB"`), with their game logs (attempts, completions, passing yards, passing TDs, interceptions, rushing yards) and six copula r's: `att_cmp`, `att_pyds`, `cmp_pyds`, `att_ptd`, `cmp_ptd`, `pyds_ptd`. Same method as the receivers; only games with 10+ pass attempts count, and each r is shrunk toward the average of the 28 QBs with 20+ games at 20+ attempts. The daily refresh picks them up.
 - **Position averages**: ATT·CMP +0.88, CMP·PASS YDS +0.76, ATT·PASS YDS +0.67, PASS YDS·PASS TD +0.43, CMP·PASS TD +0.25, ATT·PASS TD +0.11. On those 28 QBs' 993 games, both legs Over at each QB's median lines (2+ pass TDs) hit as often as the copula says: 37.6% vs 37.8%, 35.6% vs 35.8%, 34.0% vs 34.5%, 31.8% vs 31.0%, 25.4% vs 26.1%, 24.3% vs 24.4%. The 0.02–0.05 hold on the between-player spread was tested out of sample for receivers only and is carried over, so every QB sits within about 0.01 of the average.

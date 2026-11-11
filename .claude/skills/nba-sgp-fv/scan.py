@@ -7,7 +7,7 @@ player, ranked by EV at what Novig's slip pays.
   python3 scan.py --tier 1        # Points + Threes only (about 2 minutes)
   python3 scan.py --max 120       # stop after 120 quotes
   python3 scan.py --min-ev 3      # print only rows at +3% or better
-  python3 scan.py --league nfl    # NFL: receptions, receiving yards, anytime TD; QB passing
+  python3 scan.py --league nfl    # NFL: receiving, rushing and QB passing props
   python3 scan.py --json          # one JSON object per line as quotes land
                                   # (server.js reads this for the Scanner page)
 
@@ -55,8 +55,9 @@ on Receptions·Yards, Receptions·TD and Yards·TD (TD = Novig's TOUCHDOWNS 0.5,
 any touchdown, as the data counts receiving + rushing), then the three
 together (--scope all). Quarterbacks: Over + Over at main lines on pass
 attempts, completions, passing yards and passing TDs, every pair with r at
-least --min-r (attempts + passing TDs, about 0.11, falls under it). Rushing
-props aren't priced: the data has no r for them.
+least --min-r (attempts + passing TDs, about 0.11, falls under it), and
+rushing yards with his anytime TD. Running backs: rushing yards, rushing +
+receiving yards and carries, each with anytime TD.
 
 Soccer (--league soccer): for every open match with team-corners books it
 asks Max's shape, favourite to win (3-way) + favourite's corners Under +
@@ -90,13 +91,17 @@ import sgp  # noqa: E402  joint, american, prob, load
 
 STATS = ("pts", "reb", "ast", "tpm")
 LABEL = {"pts": "PTS", "reb": "REB", "ast": "AST", "tpm": "3PM", "rec": "REC", "yds": "YDS", "td": "TD",
-         "att": "PASS ATT", "cmp": "CMP", "pyds": "PASS YDS", "ptd": "PASS TD"}
+         "att": "PASS ATT", "cmp": "CMP", "pyds": "PASS YDS", "ptd": "PASS TD",
+         "car": "CAR", "ryds": "RUSH YDS", "rry": "RUSH+REC YDS"}
 PAIRS = [("pts", "reb"), ("pts", "ast"), ("reb", "ast"), ("reb", "tpm"), ("ast", "tpm")]
-NFL_STATS = ("rec", "yds", "td", "att", "cmp", "pyds", "ptd")
+NFL_STATS = ("rec", "yds", "td", "att", "cmp", "pyds", "ptd", "car", "ryds", "rry")
 NFL_PAIRS = {("rec", "yds"): "rec_yds", ("rec", "td"): "rec_td", ("yds", "td"): "yds_td",
              # quarterbacks (the data has these pairs for QBs only)
              ("att", "cmp"): "att_cmp", ("att", "pyds"): "att_pyds", ("cmp", "pyds"): "cmp_pyds",
-             ("att", "ptd"): "att_ptd", ("cmp", "ptd"): "cmp_ptd", ("pyds", "ptd"): "pyds_ptd"}
+             ("att", "ptd"): "att_ptd", ("cmp", "ptd"): "cmp_ptd", ("pyds", "ptd"): "pyds_ptd",
+             # running backs, and a QB's rushing yards with his anytime TD. Novig won't
+             # parlay carries with rushing yards, or rushing yards with rushing + receiving.
+             ("ryds", "td"): "ryds_td", ("rry", "td"): "rry_td", ("car", "td"): "car_td"}
 NFL_DATA = os.path.join(HERE, "..", "..", "..", "public", "data", "nfl_correlations.json")
 
 
@@ -173,8 +178,9 @@ def nfl_candidates(markets, by, a):
         if not p:
             continue
         _, rows = novig.ladder(markets, nm)
+        # Anytime TD is the 0.5 line only: 2+ TDs is a longshot the r wasn't fit for.
         main = {s: main_line(v) for s in NFL_STATS
-                for v in [[r for r in rows.get(s, []) if usable(r, a.max_spread)]] if v}
+                for v in [[r for r in rows.get(s, []) if usable(r, a.max_spread) and (s != "td" or r["line"] == 0.5)]] if v}
         starts = min((r["starts"] for v in rows.values() for r in v), default=None)
         ctx[p["athlete_id"]] = (p, main, starts)
         for x, y in NFL_PAIRS:
