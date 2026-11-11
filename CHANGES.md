@@ -1,5 +1,10 @@
 # Changes
 
+## 2026-11-12 session
+
+### Novig Scan: three-leg slips for the big-stat players
+The NBA tab now always asks three-leg slips for Luka Doncic, Stephen Curry, Victor Wembanyama, Shai Gilgeous-Alexander, Ty Jerome, Jayson Tatum and Nikola Jokic, plus anyone whose points main line is 26.5 or higher (Jalen Brunson on the 11-11 slate). Each gets every three of points, rebounds, assists and threes, all Overs at main lines: four slips a player, 32 extra quotes on that slate. They are asked whatever the player's two-leg price, and fold under his "more" chip. The list is `STARS` in `scan.py`; `--star-pts` moves the points cutoff and `--no-stars` turns them off. Checked with a dry run on stand-in prices; no real pass has been run.
+
 ## 2026-11-11 session
 
 ### Novig Scan: the hide button shows when bets are hidden

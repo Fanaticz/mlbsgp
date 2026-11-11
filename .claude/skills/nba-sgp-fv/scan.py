@@ -88,6 +88,7 @@ quarter Kelly, 1u = 1% of bankroll = --unit dollars.
 """
 import argparse
 import concurrent.futures
+import itertools
 import json
 import math
 import os
@@ -664,6 +665,49 @@ def triples(rows, ctx, stats, rfun, a):
     return out
 
 
+# Max's big-stat players (11-12): their three-leg slips are always asked, at
+# main lines, whatever their two-leg price. --star-pts adds anyone whose points
+# main line is that high, so the list needn't name every star.
+STARS = ("Luka Doncic", "Stephen Curry", "Victor Wembanyama", "Shai Gilgeous-Alexander", "Ty Jerome",
+         "Jayson Tatum", "Nikola Jokic")
+
+
+def star_triples(ctx, rfun, a):
+    """Every three-stat Over slip at main lines (points, rebounds, assists,
+    threes: up to four a player) for the STARS and the --star-pts scorers."""
+    names = {novig.norm(n) for n in STARS}
+    out = []
+    for p, main, starts in ctx.values():
+        pts = main.get("pts")
+        if novig.norm(p["name"]) not in names and not (pts and a.star_pts and pts["line"] >= a.star_pts):
+            continue
+        for trio in itertools.combinations([s for s in STATS if s in main], 3):
+            legs = [leg(s, main[s], 1) for s in trio]
+            rs = [rfun(p, x, y) for x, y in ((trio[0], trio[1]), (trio[0], trio[2]), (trio[1], trio[2]))]
+            if any(r is None for r in rs):
+                continue
+            # k threes are 3k points: when the threes leg alone clears the
+            # points line the slip is just the other two legs.
+            forced = "pts" in trio and "tpm" in trio and 3 * (math.floor(main["tpm"]["line"]) + 1) > main["pts"]["line"]
+            try:
+                if forced:
+                    rest = [L for L in legs if L["stat"] != "pts"]
+                    j = sgp.joint(rfun(p, rest[0]["stat"], rest[1]["stat"]), rest[0]["p"], rest[1]["p"])
+                else:
+                    j = price.tri_joint([L["p"] for L in legs], [[1, rs[0], rs[1]], [rs[0], 1, rs[2]], [rs[1], rs[2], 1]])
+            except (ValueError, ZeroDivisionError, OverflowError):
+                continue
+            if not 0 < j < 1:
+                continue
+            out.append({"key": ",".join(L["id"] for L in legs), "tier": 4, "player": p["name"], "id": p["athlete_id"],
+                        "team": p.get("team_abbr") or "", "starts": starts, "legs": legs,
+                        "label": " · ".join(leg_text(L) for L in legs), "r": min(rs), "j": j, "forced": forced,
+                        "devig_r": None, "star": True,
+                        "rough": max(L["width"] for L in legs) > novig.MAX_SPREAD + 1e-9})
+    out.sort(key=lambda c: -c["j"])
+    return out
+
+
 class Pace:
     """Novig's limit is a 10-request burst per IP, then one a second."""
 
@@ -757,6 +801,13 @@ def scan(a, emit):
                 emit({"type": "more", "add": len(up), "players": len({c["id"] for c in up + kept})})
         list(pool.map(one, up + kept))
         cands = first + up + kept
+        if a.league == "nba" and a.scope != "ladder" and a.stars:
+            asked_keys = {c["key"] for c in cands}
+            more = [c for c in star_triples(ctx, rfun, a) if c["key"] not in asked_keys]
+            if more:
+                emit({"type": "more", "add": len(more)})
+                cands = cands + more
+                list(pool.map(one, more))
         if a.tri and a.tier in (0, 4):
             more = triples([c for c in rows if go(c)], ctx, stats, rfun, a)
             emit({"type": "more", "add": len(more)})
@@ -795,6 +846,10 @@ def main():
                     help="ask a player's other combos only if his best main-line PTS+3PM EV%% is above this (-100 = everyone)")
     ap.add_argument("--no-books", action="store_true",
                     help="don't cap shifted legs at DK's and FanDuel's one-way prices")
+    ap.add_argument("--no-stars", dest="stars", action="store_false",
+                    help="NBA: skip the three-leg main-line slips always asked for the STARS list")
+    ap.add_argument("--star-pts", type=float, default=26.5,
+                    help="NBA: also ask those three-leg slips for anyone whose points main line is this high (0 = the list only)")
     ap.add_argument("--ladder-fix", action="store_true", help="scale higher-line joints by LADDER_FIX (off: plain model)")
     ap.add_argument("--no-dd", dest="dd", action="store_false", help="skip the build-your-own double-doubles")
     ap.add_argument("--no-ladder", dest="ladder", action="store_false", help="skip the higher-line combos")

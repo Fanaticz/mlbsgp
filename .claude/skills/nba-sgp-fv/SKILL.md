@@ -209,6 +209,13 @@ slip). In that band the 11-11 pass had 61 slips, 8 above fair and 3 at +10%
 or better (Pritchard 25+ / 3+ at 11.31x against +640, Curry 27+ / 7+ and
 26+ / 7+); most of the +10% slips were at +1200 and longer.
 
+**Star three-leg slips** (Max, 11-12) ride on every NBA pass except the
+ladder: for `STARS` in scan.py (Doncic, Curry, Wembanyama, Gilgeous-Alexander,
+Jerome, Tatum, Jokic) and anyone whose points main line is `--star-pts`
+(26.5) or higher, every three of points, rebounds, assists and threes, all
+Overs at main lines: four slips a player, 32 quotes on the 11-11 slate. Not
+gated. `--no-stars` skips them; add a name to `STARS` to add a player.
+
 `python3 .claude/skills/nba-sgp-fv/scan.py` prices every open pregame
 player's same-player 2-leg combos (fair from Novig's legs, as `odds novig`)
 against Novig's slip price and prints them best EV first: Points + Threes
