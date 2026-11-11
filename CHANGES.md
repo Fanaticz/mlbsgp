@@ -2,8 +2,8 @@
 
 ## 2026-11-11 session
 
-### Novig Scan: QK on the phone layout
-The quarter-Kelly stake in units (QK, 1u = $250) was a desktop-only column. On a phone each row now reads Fair · Novig · QK · Wager · Age.
+### Novig Scan: QK instead of the dollar wager
+The row shows the quarter-Kelly stake in units (QK) and no dollar amount, on desktop and phone: Fair · Novig · QK · Age. QK had been a desktop-only column and the phone showed the wager in dollars.
 
 ### Novig Scan: NFL rows are not grouped
 On the NFL board every combo is its own row with the player's name, sorted by EV; nothing folds under a "+N more" chip. NBA and soccer keep one card per player / match.
