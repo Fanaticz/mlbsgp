@@ -248,6 +248,22 @@ Build-your-own double-doubles (10+ with 10+ on points, rebounds, assists;
 ladder. First test 11-10: 2 of 34 above fair, and Novig prices them in line
 with its own DOUBLE_DOUBLE market, so expect little.
 
+`--league nfl --scope ladder` (the page's **NFL Ladder** tab, 11-11): each
+player's yards lines above his main line (receiving, rushing, passing;
+one-way lines included) with anytime TD, receptions or passing TDs at its own
+main line, kept to slips with a fair of +500 to +800 (about 195 on a
+Wednesday board, 3 to 4 minutes). The yards leg is Novig's own book where
+that line is tight, else shifted from the main line by `nfl_shift.py`: a
+gamma through the main line at the spread DK's and FanDuel's own ladders
+imply (CV 1.07 at an 8-yard receiving line down to 0.52 at 85; rushing 0.93
+to 0.46; passing about 0.3), with 15% of the normal above the line. The main
+line is Novig's when it has a tight one within 15 points of even money, else
+DK's or FanDuel's two-way line (`books.py`, which also caps the leg at both
+books' one-way price). Game logs: the normal gave 60-71% of the real hit
+rate at twice the main line, the gamma 95-126%. Not gated, and r is the
+player's shrunk copula r, fitted at median lines. No real pass had been run
+when this was written: check the first plays against another book.
+
 `--league nfl` scans NFL instead: Over + Over on Receptions·Yards,
 Receptions·TD and Yards·TD (TD = Novig's TOUCHDOWNS 0.5, any touchdown) for
 the WRs, TEs and RBs in `public/data/nfl_correlations.json`, then the three

@@ -2,6 +2,16 @@
 
 ## 2026-11-11 session
 
+### NFL Ladder: higher yards lines, one-way lines included
+A new board on the Novig Scan page (`scan.py --league nfl --scope ladder`), the NFL version of the NBA ladder. The NBA one is now labelled "NBA Ladder".
+
+- **What it asks**: each player's yards lines above his main line with the partner leg at its own main line: receiving yards + anytime TD, receiving yards + receptions, rushing yards + anytime TD, passing yards + passing TDs. Only slips with a fair value of +500 to +800 (195 slips on 89 players on Wednesday's board; all lines would be 1,208).
+- **Why it needed a model**: on Novig 500 of 1,376 receiving-yards lines were one-way and only 106 had a book within 4c (rushing 295 of 695, passing 108 of 306).
+- **The yards leg** (`nfl_shift.py`): a gamma curve through the main line. Game logs (5,000 receiving and 1,400 rushing player-games, priced from prior games): at twice the main line a bell curve gave 60-71% of the real hit rate and at three times 29-38%; the gamma 95-126%. The spread comes from DK's and FanDuel's own ladders (4,000 one-way prices over 14 games): near the main line it depends on the line's level and little else (receiving 1.07 x the mean at an 8-yard line down to 0.52 at 85; rushing 0.93 to 0.46; passing about 0.3). With it the gamma sits under both books' prices by 0-25% across the whole ladder; the bell curve is off by 2x to 50x in the tail. A leg above the main keeps 15% bell curve, since the gamma ran slightly high beyond 1.8x.
+- **The main line** is Novig's when it has a tight book within 15 points of even money; otherwise DK's or FanDuel's two-way line, devigged (101 of the 195 slips on Wednesday). The row's detail shows which ("from DK 37.5").
+- **Guards**: a line Novig has a tight two-way book on is priced from that book, not the model. A shifted leg stays under Novig's ask, over its bid and under DK's / FanDuel's one-way price on that line (`books.py` now pulls NFL yards: 21 seconds for the week, kept 4 minutes).
+- Checked on stand-in prices in a browser (desktop and phone); no real pass has been run.
+
 ### Novig Scan: Ladder kept to slips with a fair value of +500 to +800
 Max's call: fair values of +2000 are modelled too far from the main line to trust. The Ladder tab now asks a ladder slip only when its fair value is between +500 and +800 (`scan.py --ladder-fair 500 800`; `0 0` asks every slip). On the 11-11 slate that is about 60 ladder slips after the 43 main-line asks, under two minutes, where the full ladder was 476. In that band the ungated pass had 8 slips above fair and 3 at +10% or better (Pritchard 25+ PTS · 3+ 3PM at 11.31x against a fair of +640; Curry 27+ and 26+ PTS · 7+ 3PM at +27% and +20%). Most of what priced at +10% or better was at +1200 and longer (59 of 81 slips).
 

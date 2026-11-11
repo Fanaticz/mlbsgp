@@ -36,6 +36,14 @@ FD = "https://sbapi.nj.sportsbook.fanduel.com/api"
 FD_KEY = os.environ.get("FD_API_KEY", "FhMFpcPWXMeyZxOx")  # the public site's own key
 FD_TABS = {"player-points": "pts", "player-rebounds": "reb", "player-assists": "ast", "player-threes": "tpm"}
 DK_SUB = {"Points": "pts", "Rebounds": "reb", "Assists": "ast", "Threes": "tpm"}
+# NFL yards (11-11): both books post 10-yard milestones as one-way Overs and a
+# two-way main line. The main line is kept too ("main:yds": [line, P(over)]),
+# for players Novig has no tight main line on (most of them before Saturday).
+DK_NFL_LEAGUE = "88808"
+DK_NFL = {"Receiving Yards": "yds", "Rushing Yards": "ryds", "Passing Yards": "pyds"}
+FD_NFL_TABS = {"receiving-props": ("RECEIVING_YARDS", "yds"), "rushing-props": ("RUSHING_YARDS", "ryds"),
+               "passing-props": ("PASSING_YARDS", "pyds")}
+NFL_DAYS = 6.5   # this week's games only
 TTL = 240
 CACHE = os.path.join(tempfile.gettempdir(), "nba_sgp_books.json")
 # (implied chance under this, usual margin, least margin), first match wins
@@ -60,11 +68,55 @@ def _fd_get(path):
         return json.load(r)
 
 
-def fd_events():
-    """[(event id, name)] for today's real NBA games (no futures, no sims)."""
-    ev = _fd_get(f"content-managed-page?page=CUSTOM&customPageId=nba&_ak={FD_KEY}&timezone=America/New_York")
+def fd_events(league="nba"):
+    """[(event id, name)] for today's real NBA games (no futures, no sims), or
+    this week's NFL games."""
+    ev = _fd_get(f"content-managed-page?page=CUSTOM&customPageId={league}&_ak={FD_KEY}&timezone=America/New_York")
+    soon = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() + NFL_DAYS * 86400))
     return [(str(e["eventId"]), e["name"]) for e in ev["attachments"]["events"].values()
-            if " @ " in e["name"] and "(" not in e["name"]]
+            if " @ " in e["name"] and "(" not in e["name"] and (league == "nba" or e.get("openDate", "") <= soon)]
+
+
+def _pair(d, stat, line, side, q):
+    """Collect a two-way main line; once both sides are in, store its devig."""
+    m = d.setdefault("_m:" + stat, {})
+    m[side] = (line, q)
+    if "over" in m and "under" in m and m["over"][0] == m["under"][0]:
+        d["main:" + stat] = [m["over"][0], m["over"][1] / (m["over"][1] + m["under"][1]), m["over"][1] + m["under"][1] - 1]
+
+
+def fd_game_nfl(event_id):
+    out = {}
+    for tab, (word, stat) in FD_NFL_TABS.items():
+        try:
+            markets = _fd_get(f"event-page?_ak={FD_KEY}&eventId={event_id}&tab={tab}")["attachments"].get("markets", {})
+        except Exception:
+            continue
+        for m in markets.values():
+            mt = m["marketType"]
+            alt = re.fullmatch(rf"PLAYER_[A-Z]+_ALT_{word}(_[A-Z]+)?", mt)
+            main = re.fullmatch(rf"PLAYER_[A-Z]+_{word}(_[A-Z]+)?", mt)
+            if m.get("marketStatus") != "OPEN" or not (alt or main):
+                continue
+            for rn in m["runners"]:
+                try:
+                    q = implied(rn["winRunnerOdds"]["americanDisplayOdds"]["americanOdds"])
+                except (KeyError, TypeError):
+                    continue
+                if rn.get("runnerStatus") != "ACTIVE":
+                    continue
+                if alt:
+                    mm = re.fullmatch(r"(.+) (\d+)\+ Yards", rn["runnerName"])
+                    if mm:
+                        d = out.setdefault(novig.norm(mm.group(1)), {}).setdefault(stat, {})
+                        line = str(int(mm.group(2)) - 0.5)
+                        d[line] = min(q, d.get(line, 1.0))
+                else:
+                    name, _, side = rn["runnerName"].rpartition(" ")
+                    if side.lower() in ("over", "under") and rn.get("handicap"):
+                        _pair(out.setdefault(novig.norm(name), {}), stat, float(rn["handicap"]), side.lower(), q)
+        time.sleep(0.2)
+    return out
 
 
 def fd_game(event_id):
@@ -119,12 +171,33 @@ def _dk():
     return _DK[0]
 
 
-def dk_events():
+def dk_events(league="nba"):
     api = _dk()
     if not api:
         return []
-    return [(str(e["id"]), e["name"]) for e in api.get_games_nba()["events"]
-            if not e.get("isLive") and e.get("status") == "NOT_STARTED"]
+    if league == "nba":
+        return [(str(e["id"]), e["name"]) for e in api.get_games_nba()["events"]
+                if not e.get("isLive") and e.get("status") == "NOT_STARTED"]
+    soon = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() + NFL_DAYS * 86400))
+    evs = api._get_with_retry(f"{api.DK_LEAGUES}/{DK_NFL_LEAGUE}").json().get("events", [])
+    return [(str(api._ev_id(e)), e.get("name", "")) for e in evs
+            if e.get("status") == "NOT_STARTED" and str(api._ev_start(e)) <= soon]
+
+
+def dk_game_nfl(event_id):
+    out = {}
+    for p in _dk().get_markets(event_id).get("props", []):
+        if p.get("isDisabled"):
+            continue
+        mt = p["marketType"]
+        if mt.endswith(" Milestones") and mt[:-11] in DK_NFL:
+            d = out.setdefault(novig.norm(p["player"]), {}).setdefault(DK_NFL[mt[:-11]], {})
+            line = str(p["points"] - 0.5)
+            d[line] = min(implied(p["oddsAmerican"]), d.get(line, 1.0))
+        elif mt.endswith(" O/U") and mt[:-4] in DK_NFL and p["outcomeType"] in ("Over", "Under"):
+            _pair(out.setdefault(novig.norm(p["player"]), {}), DK_NFL[mt[:-4]], float(p["points"]),
+                  p["outcomeType"].lower(), implied(p["oddsAmerican"]))
+    return out
 
 
 def dk_game(event_id):
@@ -146,23 +219,26 @@ def _cache():
         return {}
 
 
-def load(team=None):
+def load(team=None, league="nba"):
     """{book: {player key: {stat: {line: implied}}}} for the game `team` (his
     team's full name) plays in, or for every game. A book that fails is left
-    out: the other still caps."""
+    out: the other still caps. NFL also carries each two-way main line as
+    "main:<stat>": [line, P(over), hold]."""
     c, now, out, dirty = _cache(), time.time(), {}, False
-    for book, events, game in (("fd", fd_events, fd_game), ("dk", dk_events, dk_game)):
+    games = {"fd": fd_game if league == "nba" else fd_game_nfl, "dk": dk_game if league == "nba" else dk_game_nfl}
+    for book, events in (("fd", fd_events), ("dk", dk_events)):
+        game = games[book]
         try:
-            evs = c.get(f"{book}:events")
+            evs = c.get(f"{league}:{book}:events")
             if not evs or now - evs["at"] > TTL:
-                evs = c[f"{book}:events"] = {"at": now, "list": events()}
+                evs = c[f"{league}:{book}:events"] = {"at": now, "list": events(league)}
                 dirty = True
             for eid, name in evs["list"]:
                 if team and nick(team) not in {nick(t) for t in name.split(" @ ")}:
                     continue
-                g = c.get(f"{book}:{eid}")
+                g = c.get(f"{league}:{book}:{eid}")
                 if not g or now - g["at"] > TTL:
-                    g = c[f"{book}:{eid}"] = {"at": now, "players": game(eid)}
+                    g = c[f"{league}:{book}:{eid}"] = {"at": now, "players": game(eid)}
                     dirty = True
                 out.setdefault(book, {}).update(g["players"])
         except Exception as e:  # noqa: BLE001  a book being down must not stop a price
@@ -176,6 +252,17 @@ def load(team=None):
         except OSError:
             pass
     return out
+
+
+def main_line(ladders, player, stat):
+    """(line, P(over), 'DK 54.5') from a book's two-way main line: the book
+    with the lower hold, or None."""
+    key, best = novig.norm(player), None
+    for book in ("dk", "fd"):
+        m = ladders.get(book, {}).get(key, {}).get("main:" + stat)
+        if m and abs(m[1] - 0.5) <= 0.15 and (best is None or m[2] < best[0][2]):
+            best = (m, book)
+    return (best[0][0], best[0][1], f"{NAME[best[1]]} {best[0][0]:g}") if best else None
 
 
 def margins(book, q):

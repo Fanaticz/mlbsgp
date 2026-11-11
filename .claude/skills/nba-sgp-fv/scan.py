@@ -5,6 +5,7 @@ player, ranked by EV at what Novig's slip pays.
   python3 scan.py                 # main-line Points + Threes, one slip a player
   python3 scan.py --scope all     # everything listed below (many more quotes)
   python3 scan.py --scope ladder  # NBA shooters' higher lines only, one-way lines included
+  python3 scan.py --league nfl --scope ladder   # NFL: higher yards lines + TD / receptions / passing TDs
   python3 scan.py --tier 1        # Points + Threes only (about 2 minutes)
   python3 scan.py --max 120       # stop after 120 quotes
   python3 scan.py --min-ev 3      # print only rows at +3% or better
@@ -219,6 +220,84 @@ def nfl_candidates(markets, by, a):
                         "devig_r": sgp.devig_r(j, la["p"], lb["p"]),
                         "rough": max(la["width"], lb["width"]) > novig.MAX_SPREAD + 1e-9})
     out.sort(key=lambda c: -c["j"] / (c["legs"][0]["p"] * c["legs"][1]["p"]))
+    return (out[:a.max] if a.max else out), ctx
+
+
+# NFL ladder: a yards line above the main line (one-way lines included) with
+# the partner leg at its own main line.
+NFL_LADDER = (("yds", "td"), ("yds", "rec"), ("ryds", "td"), ("pyds", "ptd"))
+
+
+def nfl_ladder_candidates(markets, by, a):
+    """NFL ladder (--scope ladder): for each player, every yards line Novig
+    lists above his main line, with anytime TD (a QB: passing TDs; a receiver
+    also receptions) at its main line. The yards leg is shifted from the main
+    line with nfl_shift (a gamma at the spread the books' own ladders imply)
+    unless Novig has a tight two-way book on that line. The main line is
+    Novig's when it has a tight one near even money, else DK's or FanDuel's
+    two-way line. A shifted leg is held under Novig's ask, over its bid, and
+    under DK's / FanDuel's one-way price on that line."""
+    import nfl_shift
+    lad = None
+    if BOOKS["on"]:
+        import books
+        lad = books.load(league="nfl")
+    key = {novig.norm(n): n for n in by}
+    out, ctx = [], {}
+    for nm in sorted({novig.player_name(m) for m in markets}):
+        p = by.get(key.get(novig.norm(nm), ""))
+        if not p:
+            continue
+        _, rows = novig.ladder(markets, nm)
+        tight = {s: [r for r in rows.get(s, []) if usable(r, a.max_spread) and (s != "td" or r["line"] == 0.5)]
+                 for s in NFL_STATS}
+        main = {s: main_line(v) for s, v in tight.items() if v}
+        starts = min((r["starts"] for v in rows.values() for r in v), default=None)
+        ctx[p["athlete_id"]] = (p, main, starts)
+        for y, z in NFL_LADDER:
+            r = nfl_r(p, y, z)
+            if r is None or r < a.min_r or z not in main or not rows.get(y):
+                continue
+            if y in main and abs(main[y]["fo"] - 0.5) <= 0.15:
+                m_line, m_p, m_w, src = main[y]["line"], main[y]["fo"], main[y]["spread"], None
+            else:
+                bm = lad and books.main_line(lad, nm, y)
+                if not bm:
+                    continue
+                m_line, m_p, src = bm
+                m_w = 0.0
+            lz = leg(z, main[z], 1)
+            for row in rows[y]:
+                if row["line"] <= m_line or "over" not in row["ids"] or row["line"] > 3 * m_line + 0.5:
+                    continue
+                if usable(row, a.max_spread):
+                    po, frm, width = row["fo"], None, row["spread"]
+                else:
+                    try:
+                        po = nfl_shift.over(y, m_line, m_p, row["line"])
+                    except (ValueError, ZeroDivisionError, OverflowError):
+                        continue
+                    asks = [x["ask"] for x in rows[y] if x["line"] <= row["line"] and x["ask"] is not None]
+                    bids = [x["bid"] for x in rows[y] if x["line"] >= row["line"] and x["bid"] is not None]
+                    cap = lad and books.check(lad, nm, y, row["line"])[0]
+                    po = min([po] + asks + ([cap] if cap else []))
+                    po, frm, width = max([po] + bids), m_line, m_w
+                if not 0 < po < 1:
+                    continue
+                ly = {"stat": y, "side": "over", "line": row["line"], "p": po, "fair": sgp.american(po),
+                      "width": width, "id": row["ids"]["over"], "from": frm}
+                if src and frm is not None:
+                    ly["src"] = src
+                j = sgp.joint(r, po, lz["p"])
+                if a.ladder_fair and not a.ladder_fair[0] <= sgp.american(j) <= a.ladder_fair[1]:
+                    continue
+                out.append({"key": f"{ly['id']},{lz['id']}", "tier": 2, "player": p["name"], "id": p["athlete_id"],
+                            "team": p.get("team_abbr") or "", "starts": starts, "legs": [ly, lz],
+                            "label": f"{leg_text(ly)} · {leg_text(lz)}", "r": r, "j": j, "forced": False,
+                            "devig_r": None if frm is not None else sgp.devig_r(j, po, lz["p"]),
+                            "model": frm is not None, "fix": 1.0,
+                            "rough": max(width, lz["width"]) > novig.MAX_SPREAD + 1e-9})
+    out.sort(key=lambda c: -c["r"])
     return (out[:a.max] if a.max else out), ctx
 
 
@@ -618,6 +697,9 @@ def scan(a, emit):
     elif a.league == "nfl":
         d = json.load(open(NFL_DATA))
         cands, ctx = [], {}
+        if a.scope == "ladder":
+            cands, ctx = nfl_ladder_candidates(novig.fetch("NFL", NFL_STATS), {p["name"]: p for p in d["players"]}, a)
+            a.kind = "ladder"
         if a.kind in ("all", "props"):
             cands, ctx = nfl_candidates(novig.fetch("NFL", NFL_STATS), {p["name"]: p for p in d["players"]}, a)
         if a.kind in ("all", "stacks"):
@@ -690,7 +772,9 @@ def main():
                          "three-leg slips. all: also the second threes milestone, higher lines, other pairs, "
                          "double- and triple-doubles and three legs. ladder (NBA): the shooters at --ladder-r or better, "
                          "main-line Points + Threes first, then every higher points line Novig lists (to main + 15, "
-                         "one-way lines included) with threes at main to + 3, for those whose main line is above --gate")
+                         "one-way lines included) with threes at main to + 3, for those whose main line is above --gate. "
+                         "ladder (NFL): each player's yards lines above his main line with anytime TD, receptions or "
+                         "passing TDs at its main line")
     ap.add_argument("--tier", type=int, default=0, choices=(0, 1, 2, 3), help="one two-leg group only (default: all, then three legs)")
     ap.add_argument("--tri", type=int, default=12, help="two-leg rows to extend to three legs (0 = none)")
     ap.add_argument("--tri-min-ev", type=float, default=-6.0, help="only extend two-leg rows at this EV%% or better")
@@ -735,9 +819,11 @@ def main():
     if a.ladder_3s is None:
         a.ladder_3s = 3 if a.scope == "ladder" else 2
     if a.scope == "ladder":
-        if a.league != "nba":
-            raise SystemExit("--scope ladder is NBA only")
-        a.tri, a.dd, a.ladder, a.tier = 0, False, True, 1
+        if a.league == "soccer":
+            raise SystemExit("--scope ladder is NBA and NFL only")
+        a.tri, a.dd, a.ladder = 0, False, True
+        if a.league == "nba":
+            a.tier = 1
     if a.scope == "main":
         # Max, 11-10: every quote is an auction the pricers see, and plays were
         # being repriced while the wider scans ran. One ask per player.
