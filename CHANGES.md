@@ -2,6 +2,11 @@
 
 ## 2026-11-11 session
 
+### Novig Scan: rows drop off when their game starts
+The board kept the last pass until the next Fetch, so after tip-off it still listed slips on games already under way. A row now disappears once its game has started (the status line counts them: "12 hidden, game started"), and when every game on the board has started it says to press Fetch for the next slate. A Fetch already prices only games still to come, so after tonight's last tip it prices tomorrow's.
+
+Checked and not built: adding the game's spread or total to an NBA Points + Threes slip. On 138 shooter-seasons (8,552 games) points + threes Over with his team beating its usual margin hits 1.13x as often as if the margin were unrelated; Novig's quote on six test slips charged 1.19x for the team's spread (1.13x to 1.41x) and 1.19x for the game Over. The third leg costs about 5% of EV plus the larger parlay fee.
+
 ### Novig Scan: QK instead of the dollar wager
 The row shows the quarter-Kelly stake in units (QK) and no dollar amount, on desktop and phone: Fair · Novig · QK · Age. QK had been a desktop-only column and the phone showed the wager in dollars.
 

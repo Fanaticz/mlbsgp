@@ -235,7 +235,12 @@ function detail(c) {
 function render() {
   if (!S) return;
   const st = document.getElementById("status"), rowsEl = document.getElementById("rows");
-  const all = S.rows.slice().sort((a, b) => b.ev - a.ev);
+  // A game that has started can't be bet pregame: its rows drop off the board
+  // as it tips, and the next Fetch prices whatever is still to come (tomorrow's
+  // slate once tonight's last game is under way).
+  const nowMs = S.now + (Date.now() - GOT);
+  const started = S.rows.filter(c => c.starts && c.starts <= nowMs).length;
+  const all = S.rows.filter(c => !c.starts || c.starts > nowMs).sort((a, b) => b.ev - a.ev);
   const plays = all.filter(c => c.ev * 100 >= MINEV);
   const q = document.getElementById("search").value.trim().toLowerCase();
   let rows = all;
@@ -275,6 +280,7 @@ function render() {
   } else if (S.finished) {
     const since = S.now + (Date.now() - GOT) - S.finished;
     st.innerHTML = `Saved from ${clock(Date.now() - since)} (${ago(since)}) · ${S.total} combos · ${n}` +
+      (started ? ` · ${started} hidden, game started` : "") +
       (S.busy ? ` · a ${BOARD[S.busy] || S.busy} pass is running` : since > 20 * 60000 ? " · prices are old: Fetch before betting" : "");
   } else {
     st.textContent = S.busy ? `A ${BOARD[S.busy] || S.busy} pass is running. Press Fetch when it finishes.` : "Press Fetch to scan.";
@@ -287,6 +293,7 @@ function render() {
       q ? "No combo for that name." :
       !all.length ? (S.scanning ? "Pricing the slate. Rows appear as Novig answers (about one a second)." :
         !S.finished ? "Nothing fetched yet. Press <b>Fetch</b> to price the slate." :
+        started ? "Every game on this board has started. Press <b>Fetch</b> to price the next slate." :
         SOC() ? "No open match has two-sided books on both teams’ corners right now. They usually appear a day or two before kickoff." :
         `Nothing to price right now: no player has two Novig books tight enough.${S.wide ? "" : ` They tighten ${LEAGUE.startsWith("nfl") ? "toward the weekend" : "through the day"}; tick <b>Wide books</b> for rough numbers.`}`) :
       `No combo at ${MINEV > 0 ? "+" : ""}${MINEV}% or better right now. Best of ${all.length}: ${esc(best.player)}, ${esc(best.label)} at ${pct(best.ev)}. <b>All combos</b> shows the rest.`
