@@ -37,7 +37,13 @@ NFL_TYPES = {"rec": "RECEPTIONS", "yds": "RECEIVING_YARDS", "td": "TOUCHDOWNS",
              "att": "PASSING_ATTEMPTS", "cmp": "PASSING_COMPLETIONS", "pyds": "PASSING_YARDS",
              "ptd": "PASSING_TOUCHDOWNS", "car": "RUSHING_ATTEMPTS", "ryds": "RUSHING_YARDS",
              "rry": "RUSHING_AND_RECEIVING_YARDS"}
-ALL_TYPES = {**TYPES, **NFL_TYPES}
+# NHL skater props (scan.py --league nhl). Points and assists share the NBA's
+# market types, so they share its keys. Novig lists no blocked-shots market
+# for the NHL yet (11-12: PLAYER_GOALS, ASSISTS, POINTS, SHOTS_ON_GOAL,
+# POWER_PLAY_POINTS, SAVES, FIRST_GOAL_SCORER); BLOCKS is in its vocabulary and
+# empty for the league, so it is asked for and priced the day it appears.
+NHL_TYPES = {"g": "PLAYER_GOALS", "ast": "ASSISTS", "pts": "POINTS", "sog": "SHOTS_ON_GOAL", "blk": "BLOCKS"}
+ALL_TYPES = {**TYPES, **NFL_TYPES, **NHL_TYPES}
 STAT = {v: k for k, v in ALL_TYPES.items()}
 MAX_SPREAD = 0.04  # ask - bid on the Over, in probability
 SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}

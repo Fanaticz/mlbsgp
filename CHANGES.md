@@ -2,6 +2,22 @@
 
 ## 2026-11-12 session
 
+### Novig Scan: NHL tab
+A new board on the Novig Scan page (`scan.py --league nhl`) and an NHL page under Correlations (`public/nhl.html`, the NHL button in the sport bar).
+
+- **What it asks**: for each skater, Yes + Yes on goals + shots on goal, goals + assists and assists + shots on goal, each stat at its main line (the Novig line nearest even money), as "N+" legs. 1+ goal with 1+ shot is just the goal leg, so goals go with 2+ shots. About 135 slips on a ten-game slate with tight books, 200 with Wide books.
+- **Points and blocked shots are not on the board.** Novig refuses any slip with a skater's points and another of his stats ("Invalid parlay combination": tried with goals, assists and shots, Over and Under), and it lists no blocked-shots market for the NHL. Both are in the data and on the Correlations page; `--nhl-points` asks the points pairs if Novig ever opens them, and blocked shots are asked for (market type `BLOCKS`) the day they appear.
+- **Novig's market types** (league `NHL`): `PLAYER_GOALS`, `ASSISTS`, `POINTS`, `SHOTS_ON_GOAL`. Also listed and not used: `POWER_PLAY_POINTS`, `SAVES`, `FIRST_GOAL_SCORER`.
+- **History** (`scripts/nhl_fetch_correlations.py --moneypuck`): MoneyPuck's game-by-game skater files for 2025-26 and 2026-27, 57,723 skater-games, kept in `public/data/nhl_game_logs.json`. Only the all-situations rows, regular season. The files are on `peter-tanner.com` (the same path on `moneypuck.com` is a 404). Columns: `I_F_goals`, `I_F_primaryAssists` + `I_F_secondaryAssists`, `I_F_shotsOnGoal`, `shotsBlockedByPlayer`, `icetime` (seconds).
+- **Nightly** (the daily refresh workflow, same script with no flag): ESPN box scores for games since the last day read, one row per skater per date, then the correlations rebuilt. Stats are read by key (`shotsTotal` is shots on goal; the label SOG is shootout goals).
+- **Joining the two**: by name, and by forward / defence where two skaters share one (both Elias Petterssons are Canucks). MoneyPuck's files drop accented letters outright ("Tim Sttzle", "Juraj Slafkovsk"), so an ESPN name also matches a skater on the same team whose name is his with up to three letters missing, or who has the same surname and initial. Anyone still unmatched is added and printed.
+- **Checked**: on the three days both sources cover (16 games, 576 skater rows) 571 rows are identical and 5 differ by one shot or one block; none was unmatched. Connor Bedard on 11-05 at Tampa Bay reads 0 G, 0 A, 4 SOG, 0 BLK, 18:05, and his last eight games match ESPN's game log stat for stat.
+- **The correlation** is fitted to the two legs' hit-or-miss record at the exact lines (the Gaussian-copula r that gives the both-hit rate, which is what the scanner's joint formula takes; the same kind of r the NFL touchdown pairs carry), one r for each pair of lines, hits measured against the skater's own rate that season. Games of 10+ minutes only, 40 of them needed (606 skaters).
+- **What the numbers say**: goals with shots on goal is 0.29 to 0.57 depending on the lines (1+ goal · 3+ shots: 0.41 forwards, 0.34 defencemen). Goals with assists is about -0.03 and assists with shots about 0.01, so those two slips are priced as near-unrelated legs. Skaters differ from each other by no more than their own samples' noise (spread 0.22, noise 0.22 on goals · shots), so each skater's r is shrunk almost all the way to his position's average. Predicted both-hit rates are within 0 to 5% of the actual ones across 46,000 skater-games.
+- **First quotes** (16 real ones, goals + shots, 11-12): every slip came back under fair, -15% to -34% after the 10% fee. No full pass has been run.
+- Fair value, EV and quarter Kelly are the scanner's existing code. Units are $500 on this board (`--unit`, 250 on the others).
+
+
 ### NFL Ladder: a fair value can't be shorter than DK's or FanDuel's one-way price
 Max caught Amon-Ra St. Brown 130+ YDS · 8+ REC at a fair of +513 while DraftKings sold 130+ yards alone at +610. A slip can't be likelier than one of its legs, and a one-way price already has margin in it, so the fair value had to be longer than +610.
 

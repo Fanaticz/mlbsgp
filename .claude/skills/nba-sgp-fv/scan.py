@@ -11,6 +11,7 @@ player, ranked by EV at what Novig's slip pays.
   python3 scan.py --min-ev 3      # print only rows at +3% or better
   python3 scan.py --league nfl    # NFL: a player's own props, QB + receiver stacks, props + game lines
   python3 scan.py --league nfl --kind stacks   # one kind only: props, stacks or lines
+  python3 scan.py --league nhl    # NHL: a skater's goals, assists, points and shots on goal, every pair
   python3 scan.py --json          # one JSON object per line as quotes land
                                   # (server.js reads this for the Scanner page)
 
@@ -72,6 +73,20 @@ is at least --line-r. Both use league-wide r's by role (position and targets
 or carries a game) from public/data/nfl_stack_correlations.json, ten
 seasons of nflverse; each player gets his --per highest-r combos of each.
 
+NHL (--league nhl): skaters in public/data/nhl_correlations.json (40+ games
+of 10+ minutes; scripts/nhl_fetch_correlations.py, history from
+MoneyPuck.com). Yes + Yes on every pair of a skater's stats Novig will
+parlay and has tight books for, each stat at its main line (--scope all:
+every tight line): goals + shots on goal, goals + assists, assists + shots
+on goal. Novig refuses any slip with a skater's points and another of his
+stats ("Invalid parlay combination", 11-12), so points pairs are not asked
+unless --nhl-points; it lists no blocked-shots market. A pair where one leg
+forces the other is moved up a line or dropped: 1+ goal is 1+ shot on goal,
+so goals go with 2+ shots. The r is the copula correlation of the two legs'
+hit / miss indicators at those exact lines, shrunk toward the skater's
+position. Every pair is asked whatever its r (--min-r to cut): goals + shots
+runs 0.3 to 0.6, the assists pairs about zero. Stakes at $500 a unit.
+
 Soccer (--league soccer): for every open match with team-corners books it
 asks Max's shape, favourite to win (3-way) + favourite's corners Under +
 underdog's corners Over, alone and with goals Over 1.5 or Over 2.5. A
@@ -106,7 +121,8 @@ import sgp  # noqa: E402  joint, american, prob, load
 STATS = ("pts", "reb", "ast", "tpm")
 LABEL = {"pts": "PTS", "reb": "REB", "ast": "AST", "tpm": "3PM", "rec": "REC", "yds": "YDS", "td": "TD",
          "att": "PASS ATT", "cmp": "CMP", "pyds": "PASS YDS", "ptd": "PASS TD",
-         "car": "CAR", "ryds": "RUSH YDS", "rry": "RUSH+REC YDS"}
+         "car": "CAR", "ryds": "RUSH YDS", "rry": "RUSH+REC YDS",
+         "g": "G", "sog": "SOG", "blk": "BLK"}
 PAIRS = [("pts", "reb"), ("pts", "ast"), ("reb", "ast"), ("reb", "tpm"), ("ast", "tpm")]
 NFL_STATS = ("rec", "yds", "td", "att", "cmp", "pyds", "ptd", "car", "ryds", "rry")
 NFL_PAIRS = {("rec", "yds"): "rec_yds", ("rec", "td"): "rec_td", ("yds", "td"): "yds_td",
@@ -123,6 +139,103 @@ def nfl_r(p, x, y):
     """The player's shrunk copula r for the pair, or None when he has too few games."""
     k = NFL_PAIRS.get((x, y)) or NFL_PAIRS.get((y, x))
     return ((p.get(k) or {}).get("shrunk") or {}).get("r")
+
+
+NHL_STATS = ("g", "ast", "pts", "sog", "blk")
+NHL_PAIRS = [(x, y) for i, x in enumerate(NHL_STATS) for y in NHL_STATS[i + 1:]]
+NHL_PART_OF = {"g": ("pts", "sog"), "ast": ("pts",)}   # n goals are n points and n shots on goal
+NHL_DATA = os.path.join(HERE, "..", "..", "..", "public", "data", "nhl_correlations.json")
+
+
+def nhl_nested(x, lx, y, ly):
+    """One leg forces the other: n+ goals with n+ (or fewer) points or shots."""
+    return (y in NHL_PART_OF.get(x, ()) and ly <= lx) or (x in NHL_PART_OF.get(y, ()) and lx <= ly)
+
+
+# Novig's spelling -> the data's (ESPN's), where no rule finds it.
+NHL_ALIAS = {"nicholaspaul": "nickpaul", "timstuetzle": "timstutzle", "yurovdanila": "danilayurov",
+             "yegorchinakhov": "egorchinakhov"}
+
+
+def nhl_find(d):
+    """A lookup from Novig's name to the one skater it means, or None: the
+    full name, else the same surname with one first name a short form of the
+    other ("Alex Wennberg" for "Alexander Wennberg"; "Andre Lee" is not
+    "Anders Lee")."""
+    by, last = {}, {}
+    for p in d["players"]:
+        by.setdefault(novig.norm(p["name"]), []).append(p)
+        w = p["name"].split()
+        last.setdefault(novig.norm(w[-1]), []).append((novig.norm(w[0]), p))
+
+    def find(name):
+        key = novig.norm(name)
+        hits = by.get(NHL_ALIAS.get(key, key))
+        if not hits:
+            w = name.split()
+            first = novig.norm(w[0])
+            hits = [p for f, p in last.get(novig.norm(w[-1]), []) if len(w) > 1 and min(len(f), len(first)) >= 3
+                    and (f.startswith(first) or first.startswith(f))]
+        return hits[0] if len(hits) == 1 else None
+    return find
+
+
+def nhl_r(d, p, x, lx, y, ly):
+    """(r, games behind it) for the pair at these exact lines: the skater's
+    shrunk r, or his position's average when a leg is one he almost never or
+    almost always hits. (None, 0) when the data has neither."""
+    k = f"{lx}|{ly}"
+    own = (p["pairs"].get(f"{x}_{y}") or {}).get(k)
+    if own:
+        return own[0], p["n_games"]
+    prior = ((d["shrinkage"]["priors"].get(p["grp"]) or {}).get(f"{x}_{y}") or {}).get(k)
+    return (prior["r"], 0) if prior else (None, 0)
+
+
+def nhl_candidates(markets, d, a):
+    """NHL: Yes + Yes on every pair of a skater's goals, assists, shots on goal
+    and blocked shots (points too with --nhl-points: Novig refuses those) with
+    r at least --min-r, each stat at its main line (--scope all: every tight
+    line), nested pairs moved up or left out. Most lift over independent legs
+    first."""
+    find = nhl_find(d)
+    out, ctx = [], {}
+    for nm in sorted({novig.player_name(m) for m in markets}):
+        p = find(nm)
+        if not p:   # not in the data (under 40 games), or two skaters of that name
+            continue
+        _, rows = novig.ladder(markets, nm)
+        tight = {s: [r for r in rows.get(s, []) if usable(r, a.max_spread)] for s in NHL_STATS}
+        main = {s: main_line(v) for s, v in tight.items() if v}
+        starts = min((r["starts"] for v in rows.values() for r in v), default=None)
+        ctx[p["athlete_id"]] = (p, main, starts)
+        for x, y in NHL_PAIRS:
+            if x not in main or y not in main or ("pts" in (x, y) and not a.nhl_points):
+                continue
+            if a.scope == "all":
+                picks = [(rx, ry) for rx in tight[x] for ry in tight[y] if not nhl_nested(x, rx["line"], y, ry["line"])]
+            else:
+                rx, ry = main[x], main[y]
+                if nhl_nested(x, rx["line"], y, ry["line"]):
+                    # Move the stat that contains the other up to its first line that isn't forced.
+                    if y in NHL_PART_OF.get(x, ()):
+                        ry = next((r for r in tight[y] if r["line"] > rx["line"]), None)
+                    else:
+                        rx = next((r for r in tight[x] if r["line"] > ry["line"]), None)
+                picks = [(rx, ry)] if rx and ry else []
+            for rx, ry in picks:
+                r, n = nhl_r(d, p, x, rx["line"], y, ry["line"])
+                if r is None or r < a.min_r:
+                    continue
+                la, lb = leg(x, rx, 1), leg(y, ry, 1)
+                j = sgp.joint(r, la["p"], lb["p"])
+                out.append({"key": f"{la['id']},{lb['id']}", "tier": 2, "player": p["name"], "id": p["athlete_id"],
+                            "team": p.get("team_abbr") or "", "starts": starts, "legs": [la, lb],
+                            "label": f"{leg_text(la)} · {leg_text(lb)}", "r": r, "j": j, "forced": False,
+                            "devig_r": sgp.devig_r(j, la["p"], lb["p"]), "games": n,
+                            "rough": max(la["width"], lb["width"]) > novig.MAX_SPREAD + 1e-9})
+    out.sort(key=lambda c: -c["j"] / (c["legs"][0]["p"] * c["legs"][1]["p"]))
+    return (out[:a.max] if a.max else out), ctx
 
 
 # actual / modelled hit rate of both legs, by (points above main rounded to 2, threes above main):
@@ -768,6 +881,10 @@ def scan(a, emit):
         if a.kind in ("all", "lines"):
             cands = cands + nflx_candidates(a, True)
         stats, rfun = NFL_STATS, nfl_r
+    elif a.league == "nhl":
+        d = json.load(open(NHL_DATA))
+        cands, ctx = nhl_candidates(novig.fetch("NHL", NHL_STATS), d, a)
+        stats, rfun, a.tri = (), None, 0
     else:
         d, by = sgp.load()
         cands, ctx = candidates(novig.fetch(), d, by, a)
@@ -835,7 +952,7 @@ def scan(a, emit):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--league", default="nba", choices=("nba", "nfl", "soccer"))
+    ap.add_argument("--league", default="nba", choices=("nba", "nfl", "nhl", "soccer"))
     ap.add_argument("--kind", default="all", choices=("all", "props", "stacks", "lines"),
                     help="NFL: one kind of slip only (default: a player's own props, then stacks, then game lines)")
     ap.add_argument("--per", type=int, default=3, help="NFL stacks / lines: combos asked per player of each kind, highest r first")
@@ -869,17 +986,24 @@ def main():
     ap.add_argument("--ladder-fix", action="store_true", help="scale higher-line joints by LADDER_FIX (off: plain model)")
     ap.add_argument("--no-dd", dest="dd", action="store_false", help="skip the build-your-own double-doubles")
     ap.add_argument("--no-ladder", dest="ladder", action="store_false", help="skip the higher-line combos")
-    ap.add_argument("--min-r", type=float, default=0.15, help="smallest r for an Over + Over on the other pairs")
+    ap.add_argument("--min-r", type=float, default=None,
+                    help="smallest r for an Over + Over on the other pairs (0.15; NHL: no floor)")
+    ap.add_argument("--nhl-points", action="store_true",
+                    help="NHL: also ask pairs with the skater's points (Novig refused them on 11-12)")
     ap.add_argument("--max-spread", type=float, default=novig.MAX_SPREAD, help="widest Novig book for a leg (prob)")
     ap.add_argument("--alt-spread", type=float, default=0.08, help="widest book for the second threes milestone")
     ap.add_argument("--workers", type=int, default=3, help="quotes in flight at once")
-    ap.add_argument("--unit", type=float, default=250.0, help="dollars per unit, 1u = 1%% of bankroll")
+    ap.add_argument("--unit", type=float, default=None, help="dollars per unit, 1u = 1%% of bankroll (250; NHL 500)")
     ap.add_argument("--kelly", type=float, default=0.25, help="Kelly fraction (default quarter)")
     ap.add_argument("--min-ev", type=float, default=None, help="print only rows at this EV%% or better")
     ap.add_argument("--top", type=int, default=25, help="rows to print (default 25; 0 = all)")
     ap.add_argument("--json", action="store_true", help="stream events as JSON lines instead of a table")
     a = ap.parse_args()
     BOOKS["on"] = not a.no_books
+    if a.unit is None:
+        a.unit = 500.0 if a.league == "nhl" else 250.0
+    if a.min_r is None:
+        a.min_r = -1.0 if a.league == "nhl" else 0.15
     if a.gate is None:
         # Ladder scope asks down to a main line 10% under fair: on the ungated
         # pass of 11-11, players at -10% to 0% held 46 of the 81 ladder slips
@@ -897,6 +1021,8 @@ def main():
         a.ladder_3s = 3 if a.scope == "ladder" else 2
     if a.scope == "ladder":
         if a.league == "soccer":
+            raise SystemExit("--scope ladder is NBA and NFL only")
+        if a.league == "nhl":
             raise SystemExit("--scope ladder is NBA and NFL only")
         a.tri, a.dd, a.ladder = 0, False, True
         if a.league == "nba":

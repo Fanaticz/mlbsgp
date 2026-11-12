@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>NHL Skater Correlations</title>
+<style>
+  :root {
+    --bg:#0f1419; --panel:#1a2129; --line:#2a333d; --txt:#e6edf3;
+    --muted:#8b98a5; --accent:#f5a623; --pos:#3fb950; --neg:#f85149;
+  }
+  * { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+    font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  header { padding:18px 22px 10px; border-bottom:1px solid var(--line); }
+  h1 { margin:0 0 4px; font-size:19px; }
+  .sub { color:var(--muted); font-size:12.5px; max-width:1100px; }
+  .sub a { color:inherit; }
+  .controls { display:flex; flex-wrap:wrap; gap:12px; align-items:center; padding:12px 22px;
+    border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:5; }
+  .toggle { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .toggle button { background:transparent; color:var(--muted); border:0; padding:7px 14px; font-size:13px; cursor:pointer; }
+  .toggle button.on { background:var(--accent); color:#1a1a1a; font-weight:600; }
+  input[type=search], input[type=number], select { background:var(--panel); border:1px solid var(--line);
+    color:var(--txt); border-radius:8px; padding:7px 10px; font-size:13px; }
+  input[type=search] { width:180px; }
+  input[type=number] { width:70px; margin-left:4px; }
+  label.muted, .muted { color:var(--muted); font-size:12.5px; }
+  .count { color:var(--muted); font-size:12.5px; margin-left:auto; }
+  .back { color:var(--muted); font-size:12.5px; text-decoration:none; }
+  .back:hover { color:var(--txt); }
+  .priors { padding:10px 22px; border-bottom:1px solid var(--line); display:flex; flex-wrap:wrap; gap:6px 10px; font-size:12px; color:var(--muted); }
+  .priors span { background:var(--panel); border:1px solid var(--line); border-radius:7px; padding:3px 8px; white-space:nowrap; }
+  .priors b { color:var(--txt); }
+  .wrap { overflow-x:auto; padding:0 12px 60px; }
+  table { border-collapse:collapse; width:100%; min-width:1180px; }
+  th, td { padding:7px 9px; text-align:right; white-space:nowrap; }
+  th { position:sticky; top:0; background:var(--panel); color:var(--muted); font-weight:600; font-size:11.5px;
+    text-transform:uppercase; letter-spacing:.03em; cursor:pointer; border-bottom:1px solid var(--line); user-select:none; }
+  th:hover { color:var(--txt); }
+  th.sorted::after { content:" \25BC"; font-size:9px; }
+  th.sorted.asc::after { content:" \25B2"; }
+  td.l, th.l { text-align:left; }
+  tbody tr { border-bottom:1px solid #20272f; }
+  tbody tr.prow { cursor:pointer; }
+  tbody tr.prow:hover { background:#161d24; }
+  .name { font-weight:600; }
+  .team { color:var(--muted); font-size:12px; }
+  .r { font-weight:600; }
+  .r small { display:block; color:var(--muted); font-weight:400; font-size:10.5px; }
+  .hi { color:var(--pos); } .lo { color:var(--neg); } .zero { color:var(--muted); }
+  tr.drow > td { padding:0; background:#10161c; text-align:left; white-space:normal; }
+  .detail { padding:12px 16px 16px; position:sticky; left:0; width:min(100%, calc(100vw - 24px)); }
+  .detail h3 { margin:0 0 6px; font-size:13px; }
+  .grid { display:flex; flex-wrap:wrap; gap:14px 26px; align-items:flex-start; }
+  table.subt { width:auto; min-width:0; }
+  table.subt th { position:static; background:transparent; cursor:default; font-size:10.5px; padding:4px 10px; }
+  table.subt td { padding:4px 10px; border-bottom:1px solid #20272f; }
+  .scroll { overflow-x:auto; max-width:100%; }
+  .err { color:var(--neg); padding:20px 22px; }
+  @media (max-width: 700px) {
+    header { padding:12px 14px 8px; }
+    .controls { position:static; padding:10px 14px; }
+    input[type=search], input[type=number], select { font-size:16px; }
+    input[type=search] { flex:1 1 100%; width:auto; }
+    .count { margin-left:0; width:100%; }
+    .priors { padding:8px 14px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>NHL skater correlations</h1>
+  <div class="sub" id="meta">Loading…</div>
+</header>
+<div class="controls">
+  <div class="toggle" id="grp">
+    <button data-g="" class="on">All</button>
+    <button data-g="F">Forwards</button>
+    <button data-g="D">Defence</button>
+  </div>
+  <input type="search" id="search" placeholder="Filter by name or team…" />
+  <label class="muted">Min games <input type="number" id="ming" value="40" min="40" step="10" /></label>
+  <a class="back" href="nba_scan.html">Novig scan →</a>
+  <span class="count" id="count"></span>
+</div>
+<div class="priors" id="priors"></div>
+<div class="wrap">
+  <table id="tbl">
+    <thead><tr id="head"></tr></thead>
+    <tbody id="body"></tbody>
+  </table>
+</div>
+<script>
+// Data: public/data/nhl_correlations.json (scripts/nhl_fetch_correlations.py).
+// Each pair of stats carries one r per pair of lines: the copula correlation
+// of the two legs' hit / miss record at those exact lines, shrunk toward the
+// skater's position. A column shows the pair at the skater's own main lines
+// (each stat's line nearest a 50% hit rate, moved up where one leg would
+// force the other); the open row shows every pair of lines.
+const STATS = ["g", "ast", "pts", "sog", "blk"];
+const LAB = { g:"G", ast:"AST", pts:"PTS", sog:"SOG", blk:"BLK" };
+const PAIRS = [];
+STATS.forEach((x, i) => STATS.slice(i + 1).forEach(y => PAIRS.push([x, y])));
+const PART_OF = { g:["pts", "sog"], ast:["pts"] };
+const nested = (x, lx, y, ly) => ((PART_OF[x] || []).includes(y) && ly <= lx) || ((PART_OF[y] || []).includes(x) && lx <= ly);
+let D = null, LOGS = null, GRP = "", SORT = { k:"sog_mean", asc:false };
+const OPEN = new Set();
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
+const sg = v => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(2);
+const cls = v => v >= 0.15 ? "hi" : v <= -0.10 ? "lo" : Math.abs(v) < 0.05 ? "zero" : "";
+const plus = line => `${Math.floor(line) + 1}+`;
+const am = p => p >= 0.5 ? "−" + Math.round(100 * p / (1 - p)) : "+" + Math.round(100 * (1 - p) / p);
+
+// Standard normal quantile (Acklam) and the copula's both-hit chance
+// (Plackett: p1 p2 + the integral of the bivariate density from 0 to r).
+function nppf(p) {
+  const a = [-39.69683028665376, 220.9460984245205, -275.9285104469687, 138.357751867269, -30.66479806614716, 2.506628277459239],
+        b = [-54.47609879822406, 161.5858368580409, -155.6989798598866, 66.80131188771972, -13.28068155288572],
+        c = [-0.007784894002430293, -0.3223964580411365, -2.400758277161838, -2.549732539343734, 4.374664141464968, 2.938163982698783],
+        d = [0.007784695709041462, 0.3224671290700398, 2.445134137142996, 3.754408661907416];
+  if (p < 0.02425) { const q = Math.sqrt(-2 * Math.log(p));
+    return (((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) / ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1); }
+  if (p > 1 - 0.02425) return -nppf(1 - p);
+  const q = p - 0.5, r = q * q;
+  return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5]) * q / (((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);
+}
+function joint(r, pa, pb) {
+  const x = nppf(pa), y = nppf(pb), n = 200, h = r / n;
+  let tot = 0;
+  for (let i = 0; i <= n; i++) {
+    const rho = i * h, q = 1 - rho * rho;
+    tot += Math.exp(-(x * x - 2 * rho * x * y + y * y) / (2 * q)) / (2 * Math.PI * Math.sqrt(q)) * (i === 0 || i === n ? 1 : i % 2 ? 4 : 2);
+  }
+  return pa * pb + tot * h / 3;
+}
+
+// The pair at the skater's main lines: {lx, ly, v:[shrunk, own, w, p1, p2]} or null.
+function mainOf(p, x, y) {
+  const all = p.pairs[`${x}_${y}`];
+  if (!all) return null;
+  let best = null;
+  for (const [k, v] of Object.entries(all)) {
+    const [lx, ly] = k.split("|").map(Number);
+    if (nested(x, lx, y, ly)) continue;
+    const off = Math.abs(v[3] - 0.5) + Math.abs(v[4] - 0.5);
+    if (!best || off < best.off) best = { lx, ly, v, off };
+  }
+  return best;
+}
+
+function head() {
+  const cols = [["name", "Skater", "l"], ["team_abbr", "Team", "l"], ["n_games", "GP"], ["toi_mean", "TOI"],
+                ["g_mean", "G"], ["ast_mean", "A"], ["pts_mean", "P"], ["sog_mean", "SOG"], ["blk_mean", "BLK"]]
+    .concat(PAIRS.map(([x, y]) => [`r:${x}_${y}`, `${LAB[x]}·${LAB[y]}`]));
+  document.getElementById("head").innerHTML = cols.map(([k, t, c]) =>
+    `<th data-k="${k}" class="${c || ""}${SORT.k === k ? " sorted" + (SORT.asc ? " asc" : "") : ""}">${t}</th>`).join("");
+  document.querySelectorAll("#head th").forEach(th => th.onclick = () => {
+    SORT = { k: th.dataset.k, asc: SORT.k === th.dataset.k ? !SORT.asc : th.classList.contains("l") };
+    head(); render();
+  });
+}
+
+function detail(p) {
+  const blocks = PAIRS.map(([x, y]) => {
+    const all = p.pairs[`${x}_${y}`];
+    if (!all) return "";
+    const rows = Object.entries(all).map(([k, v]) => {
+      const [lx, ly] = k.split("|").map(Number), j = joint(v[0], v[3], v[4]);
+      return `<tr><td class="l">${plus(lx)} ${LAB[x]} · ${plus(ly)} ${LAB[y]}</td><td class="r ${cls(v[0])}">${sg(v[0])}</td>` +
+        `<td class="muted">${sg(v[1])}</td><td>${(100 * v[3]).toFixed(0)}%</td><td>${(100 * v[4]).toFixed(0)}%</td>` +
+        `<td>${(100 * j).toFixed(1)}%</td><td>${am(j)}</td><td class="muted">${(j / (v[3] * v[4])).toFixed(2)}×</td></tr>`;
+    }).join("");
+    return `<div><h3>${LAB[x]} · ${LAB[y]}</h3><div class="scroll"><table class="subt"><thead><tr><th class="l">Legs</th><th>r</th><th>own</th>` +
+      `<th>hit 1</th><th>hit 2</th><th>both</th><th>fair</th><th>vs unrelated</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  }).join("");
+  let log = `<div class="muted">Loading game log…</div>`;
+  if (LOGS) {
+    const g = ((LOGS.players[p.key] || {}).games || []).slice(-15).reverse();
+    log = `<div><h3>Last ${g.length} games</h3><div class="scroll"><table class="subt"><thead><tr><th class="l">Date</th><th class="l">Team</th><th>G</th><th>A</th><th>P</th><th>SOG</th><th>BLK</th><th>TOI</th></tr></thead><tbody>` +
+      g.map(r => `<tr><td class="l">${String(r[0]).replace(/(\d{4})(\d\d)(\d\d)/, "$1-$2-$3")}</td><td class="l">${esc(r[1])}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[2] + r[3]}</td><td>${r[4]}</td><td>${r[5]}</td><td>${Math.floor(r[6] / 60)}:${String(r[6] % 60).padStart(2, "0")}</td></tr>`).join("") +
+      `</tbody></table></div></div>`;
+  }
+  return `<div class="detail"><div class="muted" style="margin-bottom:10px">r: shrunk toward ${p.grp === "D" ? "defencemen" : "forwards"} · own: his games alone (${p.n_games} of 10+ minutes) · hit: how often he cleared each leg · both: the chance of both at those hit rates and r, and its fair odds. In the scanner the hit rates come from Novig’s book, not from here.</div><div class="grid">${log}${blocks}</div></div>`;
+}
+
+function render() {
+  if (!D) return;
+  const q = document.getElementById("search").value.trim().toLowerCase();
+  const ming = parseFloat(document.getElementById("ming").value) || 0;
+  let rows = D.players.filter(p => (!GRP || p.grp === GRP) && p.n_games >= ming &&
+    (!q || p.name.toLowerCase().includes(q) || (p.team_abbr || "").toLowerCase() === q));
+  const val = p => {
+    if (SORT.k.startsWith("r:")) { const m = mainOf(p, ...SORT.k.slice(2).split("_")); return m ? m.v[0] : -9; }
+    return p[SORT.k];
+  };
+  rows.sort((a, b) => { const x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * (SORT.asc ? 1 : -1); });
+  document.getElementById("count").textContent = `${rows.length} skaters`;
+  document.getElementById("body").innerHTML = rows.map(p => {
+    const rs = PAIRS.map(([x, y]) => {
+      const m = mainOf(p, x, y);
+      return m ? `<td class="r ${cls(m.v[0])}">${sg(m.v[0])}<small>${plus(m.lx)} · ${plus(m.ly)}</small></td>` : `<td class="muted">—</td>`;
+    }).join("");
+    return `<tr class="prow" data-k="${esc(p.key)}"><td class="l name">${esc(p.name)} <span class="team">${esc(p.position)}</span></td>` +
+      `<td class="l team">${esc(p.team_abbr || "")}</td><td>${p.n_games}</td><td>${p.toi_mean.toFixed(1)}</td>` +
+      `<td>${p.g_mean.toFixed(2)}</td><td>${p.ast_mean.toFixed(2)}</td><td>${p.pts_mean.toFixed(2)}</td><td>${p.sog_mean.toFixed(2)}</td><td>${p.blk_mean.toFixed(2)}</td>${rs}</tr>` +
+      (OPEN.has(p.key) ? `<tr class="drow"><td colspan="${9 + PAIRS.length}">${detail(p)}</td></tr>` : "");
+  }).join("");
+  document.querySelectorAll("tr.prow").forEach(tr => tr.onclick = () => {
+    const k = tr.dataset.k;
+    OPEN.has(k) ? OPEN.delete(k) : OPEN.add(k);
+    if (!LOGS && LOGS !== false) {
+      LOGS = false;   // asked for
+      fetch("data/nhl_game_logs.json").then(r => r.json()).then(j => { LOGS = j; render(); }).catch(() => {});
+    }
+    render();
+  });
+}
+
+function priors() {
+  const show = [["g_sog", "0.5|2.5"], ["g_sog", "0.5|1.5"], ["g_ast", "0.5|0.5"], ["ast_sog", "0.5|2.5"], ["pts_sog", "0.5|2.5"],
+                ["g_pts", "0.5|1.5"], ["ast_pts", "0.5|1.5"], ["g_blk", "0.5|0.5"], ["sog_blk", "2.5|0.5"]];
+  const P = D.shrinkage.priors;
+  document.getElementById("priors").innerHTML = `<span style="border:0;background:none;padding-left:0">Position averages (F / D):</span>` + show.map(([k, ln]) => {
+    const [x, y] = k.split("_"), [lx, ly] = ln.split("|").map(Number);
+    const f = ((P.F || {})[k] || {})[ln], d = ((P.D || {})[k] || {})[ln];
+    return `<span>${plus(lx)} ${LAB[x]} · ${plus(ly)} ${LAB[y]} <b>${f ? sg(f.r) : "—"}</b> / <b>${d ? sg(d.r) : "—"}</b></span>`;
+  }).join("");
+}
+
+fetch("data/nhl_correlations.json").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(j => {
+  D = j;
+  const thru = String(j.through).replace(/(\d{4})(\d\d)(\d\d)/, "$1-$2-$3");
+  document.getElementById("meta").innerHTML =
+    `${j.n_players} skaters with 40+ games of 10+ minutes, ${j.seasons.map(s => `${s}-${String(s + 1).slice(2)}`).join(" and ")}, through ${thru}. ` +
+    `Each r is fitted to the two legs’ hit-or-miss record at the lines shown (a goal with 3+ shots on goal, not goals against shots as counts), ` +
+    `with hits measured against the skater’s own rate that season, then shrunk toward the average for his position. ` +
+    `One skater’s 40 to 100 games carry about as much noise as skaters differ, so most values sit close to the position average. ` +
+    `Pairs where one leg forces the other (1+ goal with 1+ point or 1+ shot) are left out. ` +
+    `Data: <a href="https://moneypuck.com" target="_blank" rel="noopener">MoneyPuck.com</a>; games since the last MoneyPuck load from ESPN box scores.`;
+  priors(); head(); render();
+}).catch(e => { document.querySelector(".wrap").innerHTML = `<div class="err">Couldn’t load the NHL data (${esc(e.message)}).</div>`; });
+document.getElementById("search").oninput = render;
+document.getElementById("ming").oninput = render;
+document.querySelectorAll("#grp button").forEach(b => b.onclick = () => {
+  GRP = b.dataset.g;
+  document.querySelectorAll("#grp button").forEach(o => o.classList.toggle("on", o === b));
+  render();
+});
+</script>
+</body>
+</html>

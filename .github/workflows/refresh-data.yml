@@ -1,4 +1,4 @@
-# Daily data refresh: MLB pitcher correlation data + NBA and NFL correlations.
+# Daily data refresh: MLB pitcher correlation data + NBA, NFL and NHL correlations.
 #
 # Pulls new box scores from ESPN's public APIs, rebuilds the derived JSON in
 # public/data/, and commits the result to the default branch. Dedupe against
@@ -7,7 +7,7 @@
 #
 # 11:00 UTC = 6/7am ET, after even the latest West Coast games are final.
 # If nothing changed (off-day, off-season), no commit is made.
-name: Refresh MLB + NBA + NFL data
+name: Refresh MLB + NBA + NFL + NHL data
 
 on:
   schedule:
@@ -70,6 +70,15 @@ jobs:
         continue-on-error: true
         run: python scripts/nfl_stack_correlations.py
 
+      # New NHL games from ESPN box scores, appended to the skater history
+      # (public/data/nhl_game_logs.json, seeded from MoneyPuck.com), then the
+      # milestone correlations rebuilt. A game is one row per skater per date,
+      # so a rerun never counts one twice; with ESPN down the history is left
+      # as it is and the correlations rebuilt from it.
+      - name: Refresh NHL skater logs and correlations
+        continue-on-error: true
+        run: python scripts/nhl_fetch_correlations.py
+
       - name: Commit and push if data changed
         run: |
           git add espn-2026-pitcher-supplement.json public/data/*.json
@@ -79,7 +88,7 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Daily data refresh: MLB pitchers + NBA/NFL correlations [skip ci]"
+          git commit -m "Daily data refresh: MLB pitchers + NBA/NFL/NHL correlations [skip ci]"
           # The run takes ~25 min, and a commit landing on main in the
           # meantime rejects a plain push. Rebase onto it (this run's fresh
           # data wins a conflict) and retry.

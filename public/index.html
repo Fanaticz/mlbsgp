@@ -291,6 +291,7 @@ h1 em{color:var(--ac);font-style:normal;}
   <button class="sport-btn" id="sportBtnNbaTm" type="button" onclick="setSport('nbatm')" aria-pressed="false"><span class="sport-dot"></span>NBA TEAMMATES</button>
   <button class="sport-btn" id="sportBtnNbaScan" style="display:none" type="button" onclick="setSport('nbascan')" aria-pressed="false"><span class="sport-dot"></span>NOVIG SCAN</button>
   <button class="sport-btn" id="sportBtnNfl" type="button" onclick="setSport('nfl')" aria-pressed="false"><span class="sport-dot"></span>NFL</button>
+  <button class="sport-btn" id="sportBtnNhl" type="button" onclick="setSport('nhl')" aria-pressed="false"><span class="sport-dot"></span>NHL</button>
   <!--
   <button class="sport-btn" id="sportBtnWorldcup" type="button" onclick="setSport('worldcup')" aria-pressed="false"><span class="sport-dot"></span>SOCCER</button>
   -->
@@ -758,6 +759,15 @@ h1 em{color:var(--ac);font-style:normal;}
 </div>
 <div id="page-nfl" class="page" style="padding:0">
   <iframe id="nflFrame" title="NFL Correlations" data-src="nfl.html"
+    style="width:100%;height:calc(100vh - 132px);min-height:560px;border:0;display:block;background:#0f1419"></iframe>
+</div>
+<!-- NHL skater correlations tab (?sport=nhl): goals, assists, points, shots on
+     goal and blocked shots, every pair, per pair of milestone lines.
+     Self-contained page (public/nhl.html, data from
+     scripts/nhl_fetch_correlations.py; history from MoneyPuck.com) in a
+     lazily-sourced iframe. -->
+<div id="page-nhl" class="page" style="padding:0">
+  <iframe id="nhlFrame" title="NHL Correlations" data-src="nhl.html"
     style="width:100%;height:calc(100vh - 132px);min-height:560px;border:0;display:block;background:#0f1419"></iframe>
 </div>
 <div class="tm-overlay" id="tmOverlay" onclick="tmClose()"></div>
@@ -3446,17 +3456,18 @@ function getRawCorr(rc,leg1,leg2){if(!rc)return null;var s1=statOf(leg1);var s2=
    keep behaving exactly as before. NBA side is a shell in this phase —
    its page content fills in during Phase 3. */
 function getSportFromUrl(){
-  var m = window.location.search.match(/[?&]sport=(mlb|nba|tennis|worldcup|nbacorr|nbaqtr|nbatm|nbascan|nfl)(?:&|$)/i);
+  var m = window.location.search.match(/[?&]sport=(mlb|nba|tennis|worldcup|nbacorr|nbaqtr|nbatm|nbascan|nfl|nhl)(?:&|$)/i);
   return m ? m[1].toLowerCase() : 'nbacorr';
 }
 function setSport(sport){
-  if(sport !== 'nba' && sport !== 'tennis' && sport !== 'worldcup' && sport !== 'nbacorr' && sport !== 'nbaqtr' && sport !== 'nbatm' && sport !== 'nbascan' && sport !== 'nfl') sport = 'mlb';
+  if(sport !== 'nba' && sport !== 'tennis' && sport !== 'worldcup' && sport !== 'nbacorr' && sport !== 'nbaqtr' && sport !== 'nbatm' && sport !== 'nbascan' && sport !== 'nfl' && sport !== 'nhl') sport = 'mlb';
   document.body.classList.toggle('sport-mlb', sport==='mlb');
   document.body.classList.toggle('sport-nba', sport==='nba');
   document.body.classList.toggle('sport-tennis', sport==='tennis');
   document.body.classList.toggle('sport-worldcup', sport==='worldcup');
   document.body.classList.toggle('sport-nbacorr', sport==='nbacorr');
   document.body.classList.toggle('sport-nfl', sport==='nfl');
+  document.body.classList.toggle('sport-nhl', sport==='nhl');
   document.body.classList.toggle('sport-nbaqtr', sport==='nbaqtr');
   document.body.classList.toggle('sport-nbatm', sport==='nbatm');
   document.body.classList.toggle('sport-nbascan', sport==='nbascan');
@@ -3483,6 +3494,8 @@ function setSport(sport){
   if(btnNbaScan){btnNbaScan.classList.toggle('active', sport==='nbascan'); btnNbaScan.setAttribute('aria-pressed', sport==='nbascan');}
   var btnNfl=document.getElementById('sportBtnNfl');
   if(btnNfl){btnNfl.classList.toggle('active', sport==='nfl'); btnNfl.setAttribute('aria-pressed', sport==='nfl');}
+  var btnNhl=document.getElementById('sportBtnNhl');
+  if(btnNhl){btnNhl.classList.toggle('active', sport==='nhl'); btnNhl.setAttribute('aria-pressed', sport==='nhl');}
   if(btnMlb){btnMlb.classList.toggle('active', sport==='mlb'); btnMlb.setAttribute('aria-pressed', sport==='mlb');}
   if(btnNba){btnNba.classList.toggle('active', sport==='nba'); btnNba.setAttribute('aria-pressed', sport==='nba');}
   if(btnTns){btnTns.classList.toggle('active', sport==='tennis'); btnTns.setAttribute('aria-pressed', sport==='tennis');}
@@ -3531,6 +3544,10 @@ function setSport(sport){
     var al = document.getElementById('appLoading'); if(al) al.style.display = 'none';
     var nf=document.getElementById('page-nfl'); if(nf) nf.classList.add('active');
     var ff=document.getElementById('nflFrame'); if(ff && !ff.getAttribute('src') && ff.dataset.src) ff.setAttribute('src', ff.dataset.src);
+  } else if(sport === 'nhl'){
+    var al = document.getElementById('appLoading'); if(al) al.style.display = 'none';
+    var nh=document.getElementById('page-nhl'); if(nh) nh.classList.add('active');
+    var fh=document.getElementById('nhlFrame'); if(fh && !fh.getAttribute('src') && fh.dataset.src) fh.setAttribute('src', fh.dataset.src);
   } else {
     var remembered = window._MLB_LAST_PAGE || 'global';
     var el = document.getElementById('page-' + remembered) || document.getElementById('page-global');
@@ -3552,6 +3569,7 @@ function setSport(sport){
     else if(sport === 'nbatm') u.searchParams.set('sport','nbatm');
     else if(sport === 'nbascan') u.searchParams.set('sport','nbascan');
     else if(sport === 'nfl') u.searchParams.set('sport','nfl');
+    else if(sport === 'nhl') u.searchParams.set('sport','nhl');
     else u.searchParams.delete('sport');
     window.history.replaceState({}, '', u.toString());
   } catch(_){}
