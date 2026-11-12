@@ -279,7 +279,11 @@ together. No rushing props (no r for them). NFL books are thin until late in
 the week.
 `--league soccer` prices Max's corners shape (favourite 3-way win +
 favourite corners Under + underdog corners Over, with and without goals Over
-1.5 / 2.5) on every open match with team-corners books. Fair = the legs'
+1.5 / 2.5) on every open match with team-corners books. Each leg's fair
+value is Pinnacle's no-vig price on that line (`pinnacle.py`, two calls for
+the whole board; `python3 pinnacle.py Albania` prints one match), or the
+middle of Novig's own book where Pinnacle has no such line (row marked ~ if
+that book is wide). Corner lines Pinnacle prices are preferred. Fair = the legs'
 product x a measured lift (`SOCCER_LIFT` in scan.py: x1.25 to x1.61 from
 17,934 top-five-league matches, football-data.co.uk). Checks: 11-06 Venezia
 with Over 2.5 paid 17.24x on Novig (other books 8.2x to 9.9x) against about

@@ -2,6 +2,14 @@
 
 ## 2026-11-12 session
 
+### Novig Scan: soccer legs priced off Pinnacle
+- **Why**: the soccer board took each leg's fair value from the middle of Novig's own book, and corner books there run 10c to 16c wide. Albania v Finland (Albania win + Albania U4.5 corners + Finland O3.5 corners, 8.06x on Novig) showed fair +618 and +12.2%. Pinnacle offered Albania Under 4.5 at +107 (48.3% before any margin) where Novig's middle said 49%; with Pinnacle's legs the slip is about +720 fair and -1%.
+- **Now** (`pinnacle.py`, new; `soccer_candidates` in `scan.py`): each leg (3-way win, goals Over, both corner legs) is Pinnacle's no-vig price on the same line. Two-way lines use the same worst-case devig as everywhere else; the 3-way is devigged in proportion. Where Pinnacle has no such line the leg stays on Novig's book, and only those legs can mark a row ~. A team's corner line is the one nearest 50/50 among the lines Pinnacle prices, if any.
+- **Matching**: same kickoff (10 min), both team names close ("Türkiye" / "Turkiye", "Republic of Ireland" / "Ireland"), and Pinnacle's 3-way price within 6 points of Novig's, else the match is left on Novig's books. On today's board 169 of 260 legs were on Pinnacle; the gaps are mostly Over 1.5 where Pinnacle lists no 1.5.
+- **Cost**: two Pinnacle calls a pass (public guest API, standard library), nothing more asked of Novig. If Pinnacle doesn't answer the board is priced as before.
+- **Page**: open a row to see each leg as "Pinnacle -141, Novig's book says +104". The footnote says where fair values come from.
+- **The lift was re-measured** on 19,761 top-five-league matches (football-data.co.uk, 2015-16 to now): 1.29 to 1.41 for home favourites at 40-48%, and 1.38 using each match's own expected corners (team-season rates), so `SOCCER_LIFT` (1.33 there) is left as it is. Club matches, not internationals.
+
 ### Novig Scan: NHL Lines board, and a goal with a linemate's assist
 - **NHL Lines** (a new board; `scan.py --league nhl --kind lines`): a skater's points at his main line with his team's moneyline, the puck line (-1.5 or +1.5, whichever his team has), the game total and his team's total, on the side that goes with his points, where r is 0.25 or better. Up to four slips a skater: 108 on a four-game board with tight books, so about 300 on a full night. It is its own board so the NHL tab's pass stays short. `--line-stats g ast sog` adds other legs.
 - **The numbers** (`public/data/nhl_line_correlations.json`; the Game lines view on the NHL Correlations page): league-wide by position and ice time, not per skater. A forward with 16.8+ minutes: 1+ point with his team's total over 2.5 is 0.52, with a win 0.38, with -1.5 0.36, with the game over 5.5 0.32. Defencemen run about 0.10 lower. Shots on goal with any game line is 0.00 to 0.08.

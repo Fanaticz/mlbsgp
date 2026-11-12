@@ -108,7 +108,10 @@ Soccer (--league soccer): for every open match with team-corners books it
 asks Max's shape, favourite to win (3-way) + favourite's corners Under +
 underdog's corners Over, alone and with goals Over 1.5 or Over 2.5. A
 leading favourite sits back and the underdog chases, so the legs hit
-together more often than unrelated legs would. Fair value = the legs'
+together more often than unrelated legs would. Each leg's fair value is
+Pinnacle's no-vig price on that line (pinnacle.py), or the middle of
+Novig's own book where Pinnacle has no such line (marked ~ when that book
+is wide: corner books often are). Fair value = the legs'
 product times SOCCER_LIFT, measured on 17,934 top-five-league matches
 (2015-16 on, football-data.co.uk: results, corners, closing odds) with
 corner lines nearest 50/50: x1.25 to x1.33 with no goals leg, x1.31 to
@@ -759,8 +762,16 @@ SOCCER_LEAGUES = ("EPL", "Serie A", "La Liga", "Bundesliga", "Ligue 1", "Champio
 
 def soccer_candidates(a):
     """Favourite ML + goals Over + favourite corners Under + underdog corners
-    Over, per match, against the unrelated-legs price."""
+    Over, per match, against the unrelated-legs price. Each leg's fair value
+    is Pinnacle's no-vig price on that line where it has one (pinnacle.py),
+    else the middle of Novig's own book."""
     out, failed = [], []
+    try:
+        import pinnacle
+        pin = pinnacle.board()
+    except Exception as e:
+        pin = []
+        print(f"Pinnacle didn't answer ({type(e).__name__}): leg fair values from Novig's own books", file=sys.stderr)
     for lg in SOCCER_LEAGUES:
         try:
             items = novig.catalog({"league": lg, "eventStatus": "OPEN_PREGAME",
@@ -788,30 +799,49 @@ def soccer_candidates(a):
                 continue
             fav, dog = (m["desc"].replace(" MONEYLINE_3_WAY_WIN", "") for m in wins[:2])
 
-            def corners(team):
+            game, fside = pinnacle.match(pin, fav, dog, wins[0]["starts"] / 1000, wins[0]["p"][0]) if pin else (None, None)
+            dside = "away" if fside == "home" else "home"
+
+            def crn(m, side, way):
+                return game and game["corners"].get((side, float(m["strike"])), {}).get(way)
+
+            def corners(team, side):
+                """The team's line nearest 50/50: among the lines Pinnacle prices
+                if it has any (by its price), else by Novig's book."""
                 v = [m for m in ms if m["type"] == "TEAM_TOTAL_CORNERS" and m["desc"].startswith(team + " ") and m["width"] <= 0.30]
+                sharp = [m for m in v if crn(m, side, "over")]
+                if sharp:
+                    return min(sharp, key=lambda m: abs(crn(m, side, "over")[0] - 0.5))
                 return min(v, key=lambda m: abs(m["p"][0] - 0.5) + m["width"]) if v else None
-            fc, dc = corners(fav), corners(dog)
+            fc, dc = corners(fav, fside), corners(dog, dside)
             if not fc or not dc:
                 continue
 
-            def L(m, i, stat, text):
-                return {"stat": stat, "side": "under" if i else "over", "line": float(m["strike"] or 0), "p": m["p"][i],
-                        "fair": sgp.american(m["p"][i]), "width": m["width"], "id": m["ids"][i], "text": text}
-            base = [L(wins[0], 0, "ml", f"{fav} win"), L(fc, 1, "crn", f"{fav} U{fc['strike']} corners"),
-                    L(dc, 0, "crn", f"{dog} O{dc['strike']} corners")]
+            def L(m, i, stat, text, sharp=None):
+                """sharp: Pinnacle's (fair chance, American price) on this leg, or None."""
+                leg = {"stat": stat, "side": "under" if i else "over", "line": float(m["strike"] or 0), "p": m["p"][i],
+                       "fair": sgp.american(m["p"][i]), "width": m["width"], "id": m["ids"][i], "text": text}
+                if sharp:
+                    leg.update(p=sharp[0], fair=sgp.american(sharp[0]), sharp=True, novig_p=m["p"][i],
+                               books=f"Pinnacle {sharp[1]:+d}, Novig's book says {sgp.american(m['p'][i]):+d}")
+                return leg
+            base = [L(wins[0], 0, "ml", f"{fav} win", game and game["ml"][fside]),
+                    L(fc, 1, "crn", f"{fav} U{fc['strike']} corners", crn(fc, fside, "under")),
+                    L(dc, 0, "crn", f"{dog} O{dc['strike']} corners", crn(dc, dside, "over"))]
             shapes = [(None, base)]
             for line in ("1.5", "2.5"):
                 t = next((m for m in ms if m["type"] == "TOTAL" and m["strike"] == line and m["width"] <= 0.30), None)
                 if t:
-                    shapes.append((line, [base[0], L(t, 0, "tot", f"Over {line}")] + base[1:]))
+                    shapes.append((line, [base[0], L(t, 0, "tot", f"Over {line}",
+                                                     game and game["goals"].get(float(line), {}).get("over"))] + base[1:]))
             for goals, legs in shapes:
                 unrelated = math.prod(x["p"] for x in legs)
                 lift = next(v for top, v in SOCCER_LIFT[goals] if base[0]["p"] <= top)
                 out.append({"key": ",".join(x["id"] for x in legs), "tier": 5, "player": f"{fav} v {dog}", "id": eid,
                             "team": lg, "starts": wins[0]["starts"], "legs": legs, "label": " · ".join(x["text"] for x in legs),
                             "r": None, "j": min(unrelated * lift, 0.99), "forced": False, "devig_r": None,
-                            "lift": lift, "unrelated_x": 1 / unrelated, "rough": max(x["width"] for x in legs) > novig.MAX_SPREAD + 1e-9})
+                            "lift": lift, "unrelated_x": 1 / unrelated, "sharp": sum(1 for x in legs if x.get("sharp")),
+                            "rough": any(x["width"] > novig.MAX_SPREAD + 1e-9 for x in legs if not x.get("sharp"))})
     if failed and not out:
         raise SystemExit("Novig's catalog didn't answer for " + ", ".join(failed))
     return (out[:a.max] if a.max else out), {}
