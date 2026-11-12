@@ -75,17 +75,16 @@ seasons of nflverse; each player gets his --per highest-r combos of each.
 
 NHL (--league nhl): skaters in public/data/nhl_correlations.json (40+ games
 of 10+ minutes; scripts/nhl_fetch_correlations.py, history from
-MoneyPuck.com). Yes + Yes on every pair of a skater's stats Novig will
-parlay and has tight books for, each stat at its main line (--scope all:
-every tight line): goals + shots on goal, goals + assists, assists + shots
-on goal. Novig refuses any slip with a skater's points and another of his
+MoneyPuck.com). Yes + Yes on goals + shots on goal, each at its main line
+(--scope all: every tight line). Novig refuses any slip with a skater's points and another of his
 stats ("Invalid parlay combination", 11-12), so points pairs are not asked
 unless --nhl-points; it lists no blocked-shots market. A pair where one leg
 forces the other is moved up a line or dropped: 1+ goal is 1+ shot on goal,
 so goals go with 2+ shots. The r is the copula correlation of the two legs'
 hit / miss indicators at those exact lines, shrunk toward the skater's
-position. Every pair is asked whatever its r (--min-r to cut): goals + shots
-runs 0.3 to 0.6, the assists pairs about zero. Stakes at $500 a unit.
+position. Goals + shots runs 0.3 to 0.6. Goals + assists and assists +
+shots on goal are about zero, under --min-r (NHL: 0.10), so they are not
+asked (Max, 11-12); --min-r -1 asks them. Stakes at $500 a unit.
 
 Soccer (--league soccer): for every open match with team-corners books it
 asks Max's shape, favourite to win (3-way) + favourite's corners Under +
@@ -987,7 +986,7 @@ def main():
     ap.add_argument("--no-dd", dest="dd", action="store_false", help="skip the build-your-own double-doubles")
     ap.add_argument("--no-ladder", dest="ladder", action="store_false", help="skip the higher-line combos")
     ap.add_argument("--min-r", type=float, default=None,
-                    help="smallest r for an Over + Over on the other pairs (0.15; NHL: no floor)")
+                    help="smallest r for an Over + Over on the other pairs (0.15; NHL 0.10)")
     ap.add_argument("--nhl-points", action="store_true",
                     help="NHL: also ask pairs with the skater's points (Novig refused them on 11-12)")
     ap.add_argument("--max-spread", type=float, default=novig.MAX_SPREAD, help="widest Novig book for a leg (prob)")
@@ -1003,7 +1002,7 @@ def main():
     if a.unit is None:
         a.unit = 500.0 if a.league == "nhl" else 250.0
     if a.min_r is None:
-        a.min_r = -1.0 if a.league == "nhl" else 0.15
+        a.min_r = 0.10 if a.league == "nhl" else 0.15
     if a.gate is None:
         # Ladder scope asks down to a main line 10% under fair: on the ungated
         # pass of 11-11, players at -10% to 0% held 46 of the 81 ladder slips
