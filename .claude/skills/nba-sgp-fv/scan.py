@@ -86,6 +86,15 @@ position. Goals + shots runs 0.3 to 0.6. Goals + assists and assists +
 shots on goal are about zero, under --min-r (NHL: 0.10), so they are not
 asked (Max, 11-12); --min-r -1 asks them. Stakes at $500 a unit.
 
+The same NHL pass then asks teammates (--kind mates for these alone): one
+skater's leg with a teammate's in the same game, Yes + Yes at main lines,
+from public/data/nhl_teammate_correlations.json (the games both played 10+
+minutes for the same team). Points + points, a goal + the other's points,
+shots on goal + the other's points or shots, wherever r is at least
+--mate-r (0.20), at most --per (3) slips led by one skater. Two teammates'
+points run 0.15 on average and 0.3 to 0.4 for linemates; a skater's shots
+with a teammate's points or shots is about 0, so those fall under the cut.
+
 Soccer (--league soccer): for every open match with team-corners books it
 asks Max's shape, favourite to win (3-way) + favourite's corners Under +
 underdog's corners Over, alone and with goals Over 1.5 or Over 2.5. A
@@ -235,6 +244,72 @@ def nhl_candidates(markets, d, a):
                             "rough": max(la["width"], lb["width"]) > novig.MAX_SPREAD + 1e-9})
     out.sort(key=lambda c: -c["j"] / (c["legs"][0]["p"] * c["legs"][1]["p"]))
     return (out[:a.max] if a.max else out), ctx
+
+
+NHL_MATES = os.path.join(HERE, "..", "..", "..", "public", "data", "nhl_teammate_correlations.json")
+# (skater A's stat, teammate B's stat). Points + points once per pair; the rest both ways round.
+NHL_MATE_KINDS = (("pts", "pts"), ("g", "pts"), ("sog", "pts"), ("sog", "sog"))
+
+
+def nhl_mate_r(M, a, b, x, lx, y, ly):
+    """(r, games together) for A's leg with teammate B's: the pair's own
+    shrunk r when they have 40+ games together, else the average for their
+    positions at the lower of their ice times. (None, 0) with neither."""
+    kind, lines = f"{x}_{y}", f"{lx}|{ly}"
+    pair = M["pairs"].get(f"{a['key']}>{b['key']}") or {}
+    own = (pair.get(kind) or {}).get(lines)
+    if own:
+        return own[0], pair["n"]
+    prior = ((M["priors"]["values"].get(a["grp"] + b["grp"]) or {}).get(kind) or {}).get(lines)
+    return (price.interp(prior["knots"], min(a["toi_mean"], b["toi_mean"])), 0) if prior else (None, 0)
+
+
+def nhl_mate_candidates(markets, d, a):
+    """NHL teammates: one skater's leg with a teammate's, Yes + Yes at main
+    lines: points + points, a goal + the other's points, shots on goal + the
+    other's points or shots, wherever r is at least --mate-r. Linemates'
+    points run 0.3 to 0.4; a skater's shots say nothing about a teammate's
+    points (r about 0), so the shots slips fall under the cut. Each skater
+    leads at most --per slips, highest r first."""
+    M = json.load(open(NHL_MATES))
+    find = nhl_find(d)
+    sides = {}   # (event, team) -> [(skater, main lines, starts)]
+    for nm in sorted({novig.player_name(m) for m in markets}):
+        p = find(nm)
+        if not p:
+            continue
+        _, rows = novig.ladder(markets, nm)
+        main = {s: main_line(v) for s in ("pts", "g", "sog")
+                for v in [[r for r in rows.get(s, []) if usable(r, a.max_spread) and (s != "g" or r["line"] == 0.5)]] if v}
+        if not main:
+            continue
+        eid = next(m["eventId"] for m in markets if novig.player_name(m) == nm)
+        starts = min(r["starts"] for v in rows.values() for r in v)
+        sides.setdefault((eid, p.get("team_abbr")), []).append((p, main, starts))
+    out = []
+    for group in sides.values():
+        for i, (pa, ma, starts) in enumerate(group):
+            mine = []
+            for k, (pb, mb, _) in enumerate(group):
+                if k == i:
+                    continue
+                for x, y in NHL_MATE_KINDS:
+                    if x not in ma or y not in mb or (x == y and k < i):
+                        continue
+                    r, n = nhl_mate_r(M, pa, pb, x, ma[x]["line"], y, mb[y]["line"])
+                    if r is None or r < a.mate_r:
+                        continue
+                    la, lb = leg(x, ma[x], 1), leg(y, mb[y], 1)
+                    la["text"], lb["text"] = leg_text(la), f"{pb['name'].split()[-1]} {leg_text(lb)}"
+                    j = sgp.joint(r, la["p"], lb["p"])
+                    mine.append({"key": f"{la['id']},{lb['id']}", "tier": 2, "player": f"{pa['name']} + {pb['name']}",
+                                 "id": pa["athlete_id"], "team": pa.get("team_abbr") or "", "starts": starts,
+                                 "legs": [la, lb], "kind": "mate", "label": f"{la['text']} · {lb['text']}",
+                                 "r": r, "j": j, "forced": False, "devig_r": sgp.devig_r(j, la["p"], lb["p"]),
+                                 "games": n, "rough": max(la["width"], lb["width"]) > novig.MAX_SPREAD + 1e-9})
+            out += sorted(mine, key=lambda c: -c["r"])[:a.per]
+    out.sort(key=lambda c: -c["r"])
+    return out[:a.max] if a.max else out
 
 
 # actual / modelled hit rate of both legs, by (points above main rounded to 2, threes above main):
@@ -882,7 +957,10 @@ def scan(a, emit):
         stats, rfun = NFL_STATS, nfl_r
     elif a.league == "nhl":
         d = json.load(open(NHL_DATA))
-        cands, ctx = nhl_candidates(novig.fetch("NHL", NHL_STATS), d, a)
+        markets = novig.fetch("NHL", NHL_STATS)
+        cands, ctx = nhl_candidates(markets, d, a) if a.kind in ("all", "props") else ([], {})
+        if a.kind in ("all", "mates"):
+            cands = cands + nhl_mate_candidates(markets, d, a)
         stats, rfun, a.tri = (), None, 0
     else:
         d, by = sgp.load()
@@ -952,8 +1030,9 @@ def scan(a, emit):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--league", default="nba", choices=("nba", "nfl", "nhl", "soccer"))
-    ap.add_argument("--kind", default="all", choices=("all", "props", "stacks", "lines"),
-                    help="NFL: one kind of slip only (default: a player's own props, then stacks, then game lines)")
+    ap.add_argument("--kind", default="all", choices=("all", "props", "stacks", "lines", "mates"),
+                    help="NFL: one kind of slip only (default: a player's own props, then stacks, then game lines). "
+                         "NHL: props (a skater's own goals + shots) or mates (two teammates)")
     ap.add_argument("--per", type=int, default=3, help="NFL stacks / lines: combos asked per player of each kind, highest r first")
     ap.add_argument("--line-r", type=float, default=0.25, help="NFL lines: smallest |r| between a prop and a game line")
     ap.add_argument("--scope", default="main", choices=("main", "ladder", "all"),
@@ -987,6 +1066,7 @@ def main():
     ap.add_argument("--no-ladder", dest="ladder", action="store_false", help="skip the higher-line combos")
     ap.add_argument("--min-r", type=float, default=None,
                     help="smallest r for an Over + Over on the other pairs (0.15; NHL 0.10)")
+    ap.add_argument("--mate-r", type=float, default=0.20, help="NHL teammates: smallest r for a slip across two skaters")
     ap.add_argument("--nhl-points", action="store_true",
                     help="NHL: also ask pairs with the skater's points (Novig refused them on 11-12)")
     ap.add_argument("--max-spread", type=float, default=novig.MAX_SPREAD, help="widest Novig book for a leg (prob)")

@@ -75,6 +75,10 @@
   <div class="sub" id="meta">Loading…</div>
 </header>
 <div class="controls">
+  <div class="toggle" id="view">
+    <button data-v="skaters" class="on">Skaters</button>
+    <button data-v="mates">Teammates</button>
+  </div>
   <div class="toggle" id="grp">
     <button data-g="" class="on">All</button>
     <button data-g="F">Forwards</button>
@@ -185,8 +189,40 @@ function detail(p) {
   return `<div class="detail"><div class="muted" style="margin-bottom:10px">r: shrunk toward ${p.grp === "D" ? "defencemen" : "forwards"} · own: his games alone (${p.n_games} of 10+ minutes) · hit: how often he cleared each leg · both: the chance of both at those hit rates and r, and its fair odds. In the scanner the hit rates come from Novig’s book, not from here.</div><div class="grid">${log}${blocks}</div></div>`;
 }
 
+// Teammates: one row per pair on the same team today with 40+ games together.
+// public/data/nhl_teammate_correlations.json, keys "A>B", lines "A's|B's".
+let VIEW = "skaters", M = null;
+function renderMates() {
+  const el = document.getElementById("body");
+  document.getElementById("priors").style.display = "none";
+  if (!M) { el.innerHTML = `<tr><td class="l muted">Loading teammates…</td></tr>`; return; }
+  const q = document.getElementById("search").value.trim().toLowerCase();
+  const ming = parseFloat(document.getElementById("ming").value) || 0;
+  const cell = v => v ? `<td class="r ${cls(v[0])}">${sg(v[0])}</td><td class="muted">${sg(v[1])}</td>` : `<td class="muted">—</td><td class="muted">—</td>`;
+  const rows = [];
+  for (const [k, v] of Object.entries(M.pairs)) {
+    const [a, b] = k.split(">"), A = M.skaters[a], B = M.skaters[b];
+    const pp = (v.pts_pts || {})["0.5|0.5"];
+    if (a > b || !pp || v.n < ming || (GRP && (A.grp !== GRP || B.grp !== GRP))) continue;
+    if (q && !A.name.toLowerCase().includes(q) && !B.name.toLowerCase().includes(q) && A.team.toLowerCase() !== q) continue;
+    rows.push({ A, B, v, pp, ab: (v.g_pts || {})["0.5|0.5"], ba: ((M.pairs[`${b}>${a}`] || {}).g_pts || {})["0.5|0.5"] });
+  }
+  rows.sort((x, y) => y.pp[0] - x.pp[0]);
+  document.getElementById("count").textContent = `${rows.length} pairs`;
+  document.getElementById("head").innerHTML = `<th class="l">Skater A</th><th class="l">Skater B</th><th class="l">Team</th><th>Games together</th><th>TOI</th>` +
+    `<th>1+ PTS · 1+ PTS</th><th>own</th><th>A goal · B 1+ PTS</th><th>own</th><th>B goal · A 1+ PTS</th><th>own</th><th>both 1+ PTS</th><th>fair</th>`;
+  el.innerHTML = rows.slice(0, 600).map(r => {
+    const j = joint(r.pp[0], r.pp[3], r.pp[4]);
+    return `<tr><td class="l name">${esc(r.A.name)} <span class="team">${esc(r.A.pos)}</span></td><td class="l name">${esc(r.B.name)} <span class="team">${esc(r.B.pos)}</span></td>` +
+      `<td class="l team">${esc(r.A.team)}</td><td>${r.v.n}</td><td>${r.v.toi.toFixed(1)}</td>${cell(r.pp)}${cell(r.ab)}${cell(r.ba)}` +
+      `<td>${(100 * j).toFixed(1)}%</td><td>${am(j)}</td></tr>`;
+  }).join("") + (rows.length > 600 ? `<tr><td class="l muted" colspan="13">${rows.length - 600} more: filter by name or team.</td></tr>` : "");
+}
+
 function render() {
   if (!D) return;
+  if (VIEW === "mates") return renderMates();
+  document.getElementById("priors").style.display = "";
   const q = document.getElementById("search").value.trim().toLowerCase();
   const ming = parseFloat(document.getElementById("ming").value) || 0;
   let rows = D.players.filter(p => (!GRP || p.grp === GRP) && p.n_games >= ming &&
@@ -238,9 +274,17 @@ fetch("data/nhl_correlations.json").then(r => { if (!r.ok) throw new Error(r.sta
     `with hits measured against the skater’s own rate that season, then shrunk toward the average for his position. ` +
     `One skater’s 40 to 100 games carry about as much noise as skaters differ, so most values sit close to the position average. ` +
     `Pairs where one leg forces the other (1+ goal with 1+ point or 1+ shot) are left out. ` +
+    `Teammates: two skaters’ legs in the games both played for the same team, shrunk toward the average for their positions and ice time; r is the shrunk value, own is the pair’s games alone. ` +
     `Data: <a href="https://moneypuck.com" target="_blank" rel="noopener">MoneyPuck.com</a>; games since the last MoneyPuck load from ESPN box scores.`;
   priors(); head(); render();
 }).catch(e => { document.querySelector(".wrap").innerHTML = `<div class="err">Couldn’t load the NHL data (${esc(e.message)}).</div>`; });
+document.querySelectorAll("#view button").forEach(b => b.onclick = () => {
+  VIEW = b.dataset.v;
+  document.querySelectorAll("#view button").forEach(o => o.classList.toggle("on", o === b));
+  if (VIEW === "mates" && !M) fetch("data/nhl_teammate_correlations.json").then(r => r.json()).then(j => { M = j; render(); }).catch(() => {});
+  if (VIEW === "skaters") head();
+  render();
+});
 document.getElementById("search").oninput = render;
 document.getElementById("ming").oninput = render;
 document.querySelectorAll("#grp button").forEach(b => b.onclick = () => {

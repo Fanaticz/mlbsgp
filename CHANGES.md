@@ -2,6 +2,16 @@
 
 ## 2026-11-12 session
 
+### Novig Scan: NHL teammates
+The NHL tab now also asks slips across two teammates (`scan.py --league nhl`, or `--kind mates` for these alone), and the NHL Correlations page has a Teammates view.
+
+- **What it asks**: one skater's points (or his goal) with a teammate's points in the same game, Yes + Yes at main lines, where their r is 0.20 or better (`--mate-r`), at most three slips led by one skater. 31 slips on a four-game board, so about 80 on a full night, after the goals + shots slips.
+- **Shots with a teammate's points were asked for and are not on the board.** Across 4,205 pairs with 40+ games together, one skater's shots on goal with a teammate's points is 0.01 (forwards), and shots with shots 0.01; pairs don't differ beyond noise. Those slips would be priced as unrelated legs, so they fall under the cut. `--mate-r -1` asks them.
+- **Two teammates' points**: 0.15 on average, more for skaters with more ice time (0.11 / 0.13 / 0.22 by thirds for two forwards), and pairs really differ (spread 0.11 beyond noise), which is linemates. A goal with a teammate's points is 0.10.
+- **The data** (`public/data/nhl_teammate_correlations.json`, built by the same nightly script): the games both skaters played 10+ minutes for the same team, 40 needed, same hit-or-miss r as the skater file. Each pair is shrunk toward the average for the two positions at the pair's ice time; box scores don't say who skates together, so the pair's own games are what separate linemates. A pair without 40 games together gets that average. Only skaters on the same team today are kept.
+- **How far to trust a pair's own number**: tested by fitting on every other game and predicting the rest (957 forward pairs). The pair's own r (0.73 for the top 3%) over-predicted both-hit games by 12%; the shrunk r (0.28) under-predicted by 8%; the average alone by 13%. A two-group fit (linemates and the rest) did no better than the plain shrink. The top pairs are the known lines: Connor + Scheifele 0.41 (own 0.83), Suzuki + Caufield 0.36, Hughes + Bratt 0.35.
+- **Novig quotes them**: points + points, shots + points, shots + shots and a goal + points all priced for two teammates (and for opponents). Eight real points + points quotes came back at -10% to -20% after the fee. No full pass has been run.
+
 ### Novig Scan: NHL tab
 A new board on the Novig Scan page (`scan.py --league nhl`) and an NHL page under Correlations (`public/nhl.html`, the NHL button in the sport bar).
 

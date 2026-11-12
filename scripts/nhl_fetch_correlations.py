@@ -613,6 +613,127 @@ def build(logs: dict) -> dict:
     }
 
 
+# --- teammates -----------------------------------------------------------------
+
+MATE_OUT = os.path.join(DATA, "nhl_teammate_correlations.json")
+# (first skater's stat, his teammate's stat): the lines read for each.
+MATE_KINDS = (("pts", "pts"), ("g", "pts"), ("sog", "pts"), ("sog", "sog"))
+MATE_LINES = {"pts": (0.5, 1.5), "g": (0.5,), "sog": (1.5, 2.5, 3.5)}
+MATE_OWN = {"pts_pts", "g_pts"}     # kinds where pairs really differ; the shots kinds are the average for everyone
+MATE_MARGIN = (0.10, 0.90)
+MATE_TAU = (0.02, 0.15)
+MATE_BINS = 3
+
+
+def _interp(knots: list, x: float) -> float:
+    if x <= knots[0][0]:
+        return knots[0][1]
+    for (x0, y0), (x1, y1) in zip(knots, knots[1:]):
+        if x <= x1:
+            return y0 if x1 == x0 else y0 + (y1 - y0) * (x - x0) / (x1 - x0)
+    return knots[-1][1]
+
+
+def build_teammates(logs: dict, this_season: int) -> dict:
+    """Two teammates' legs in the same game: skater A's points, goal or shots
+    with skater B's points or shots. Same r as build(): the copula correlation
+    of the two legs' hit / miss record at exact lines, over the games both
+    played 10+ minutes for the same team, hits centred on each skater's rate
+    that season. Shrunk toward the average for the two positions at the
+    pair's ice time (the lower of the two averages: first-line skaters share
+    more of the same goals), since box scores don't say who skates together.
+    Pairs on the same team today with 40+ shared games get their own r."""
+    by_game: dict = {}
+    for key, p in logs["players"].items():
+        for g in p["games"]:
+            if g[TOI] >= MIN_TOI:
+                by_game.setdefault((g[D], g[TM]), []).append((key, g))
+    shared: dict = {}
+    for rows in by_game.values():
+        for ka, ga in rows:
+            for kb, gb in rows:
+                if ka != kb:
+                    shared.setdefault((ka, kb), []).append((ga, gb))
+    P = logs["players"]
+    now = {k: p.get("team") or p["games"][-1][TM] for k, p in P.items() if p["games"]}
+
+    def val(g, s):
+        return g[G] + g[A] if s == "pts" else g[S] if s == "sog" else g[G]
+
+    est: dict = {}   # (kind, lines, groups) -> [(pair, p1, p2, r, neff, cov)]
+    for (ka, kb), v in shared.items():
+        if len(v) < MIN_GAMES:
+            continue
+        w = np.array([SEASON_WEIGHT.get(this_season - season_of(ga[D]), 0.5) for ga, _ in v])
+        yrs = np.array([season_of(ga[D]) for ga, _ in v])
+        neff = float(w.sum() ** 2 / (w * w).sum())
+        cov = min(sum(ga[TOI] for ga, _ in v), sum(gb[TOI] for _, gb in v)) / len(v) / 60
+        cache: dict = {}
+
+        def leg(i, s, line):
+            if (i, s, line) not in cache:
+                x = np.array([val(r[i], s) > line for r in v], dtype=float)
+                c = x.copy()
+                for yr in set(yrs.tolist()):
+                    m = yrs == yr
+                    c[m] -= x[m].mean()
+                cache[i, s, line] = (float((w * x).sum() / w.sum()), c)
+            return cache[i, s, line]
+        for x, y in MATE_KINDS:
+            for lx in MATE_LINES[x]:
+                for ly in MATE_LINES[y]:
+                    (p1, c1), (p2, c2) = leg(0, x, lx), leg(1, y, ly)
+                    if not (MATE_MARGIN[0] <= p1 <= MATE_MARGIN[1] and MATE_MARGIN[0] <= p2 <= MATE_MARGIN[1]):
+                        continue
+                    p11 = p1 * p2 + float((w * c1 * c2).sum() / w.sum())
+                    eps = 0.25 / len(v)
+                    p11 = min(max(p11, max(0.0, p1 + p2 - 1) + eps), min(p1, p2) - eps)
+                    est.setdefault((f"{x}_{y}", f"{lx}|{ly}", P[ka]["grp"] + P[kb]["grp"]), []).append(
+                        [(ka, kb), p1, p2, p11, neff, cov, len(v)])
+    priors: dict = {}
+    pairs: dict = {}
+    for (kind, lines, grps), pool in sorted(est.items()):
+        if len(pool) < 3 * POOL_MIN:
+            continue
+        rs = tetrachoric([e[1] for e in pool], [e[2] for e in pool], [e[3] for e in pool])
+        for e, r in zip(pool, rs):
+            e[3] = float(r)
+        pool.sort(key=lambda e: e[5])
+        knots = []
+        for i in range(MATE_BINS):
+            b = pool[i * len(pool) // MATE_BINS:(i + 1) * len(pool) // MATE_BINS]
+            knots.append((round(b[len(b) // 2][5], 2), round(statistics.mean(e[3] for e in b), 4)))
+        v = [noise(e[1], e[2], _interp(knots, e[5]), e[4]) for e in pool]
+        spread = statistics.mean((e[3] - _interp(knots, e[5])) ** 2 for e in pool)
+        tau2 = min(max(spread - statistics.mean(v), MATE_TAU[0] ** 2), MATE_TAU[1] ** 2)
+        priors.setdefault(grps, {}).setdefault(kind, {})[lines] = {
+            "knots": knots, "tau": round(math.sqrt(tau2), 4), "pool_n": len(pool)}
+        if kind not in MATE_OWN:
+            continue
+        for e, nz in zip(pool, v):
+            ka, kb = e[0]
+            if now.get(ka) != now.get(kb):
+                continue   # no longer teammates
+            m = _interp(knots, e[5])
+            wt = tau2 / (tau2 + nz)
+            # [shrunk r, own r, weight on own, hit rate leg 1, hit rate leg 2]
+            pairs.setdefault(f"{ka}>{kb}", {"n": e[6], "toi": round(e[5], 1)}).setdefault(kind, {})[lines] = [
+                round(wt * e[3] + (1 - wt) * m, 4), round(e[3], 3), round(wt, 3), round(e[1], 3), round(e[2], 3)]
+    names = {k: {"name": P[k].get("espn_name") or P[k]["name"], "team": now[k], "grp": P[k]["grp"], "pos": P[k]["pos"]}
+             for pk in pairs for k in pk.split(">")}
+    return {
+        "generated_at": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
+        "credit": "Data: MoneyPuck.com",
+        "scope": f"two skaters on the same team today, {MIN_GAMES}+ games together of {MIN_TOI // 60}+ minutes each",
+        "kinds": {"pts_pts": "A's points with B's points", "g_pts": "A's goal with B's points",
+                  "sog_pts": "A's shots on goal with B's points", "sog_sog": "A's shots on goal with B's"},
+        "pair_values": "[shrunk r, own r, weight on own, hit rate leg 1, hit rate leg 2]; key 'A>B', lines 'A's|B's'",
+        "priors": {"by": "the two positions (A's then B's), then the lower of the two skaters' average ice time "
+                         "(minutes): knots are (ice time, r)", "values": priors},
+        "skaters": names, "n_pairs": len(pairs), "pairs": pairs,
+    }
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--moneypuck", type=int, nargs="*", default=None, metavar="SEASON",
@@ -648,6 +769,16 @@ def main() -> None:
     out = build(logs)
     with open(OUT, "w", encoding="utf-8") as f:
         json.dump(out, f, separators=(",", ":"))
+    mates = build_teammates(logs, season_of(out["through"]))
+    with open(MATE_OUT, "w", encoding="utf-8") as f:
+        json.dump(mates, f, separators=(",", ":"))
+    mp = mates["priors"]["values"]
+    print(f"NHL teammates: {mates['n_pairs']} ordered pairs with their own r")
+    for grps in ("FF", "FD", "DF", "DD"):
+        print(f"  {grps}: " + "  ".join(
+            f"{k} {ln} " + "/".join(f"{r:+.2f}" for _, r in mp[grps][k][ln]["knots"]) + f" (tau {mp[grps][k][ln]['tau']:.2f})"
+            for k, ln in (("pts_pts", "0.5|0.5"), ("g_pts", "0.5|0.5"), ("sog_pts", "2.5|0.5"), ("sog_sog", "2.5|2.5"))
+            if ln in mp.get(grps, {}).get(k, {})))
     pri = out["shrinkage"]["priors"]
     print(f"NHL correlations: {out['n_players']} skaters with {MIN_GAMES}+ games, through {out['through']}")
     show = (("g_sog", "0.5|2.5"), ("g_ast", "0.5|0.5"), ("g_pts", "0.5|1.5"), ("ast_pts", "0.5|1.5"),
