@@ -72,7 +72,7 @@ jobs:
 
       # New NHL games from ESPN box scores, appended to the skater history
       # (public/data/nhl_game_logs.json, seeded from MoneyPuck.com), then the
-      # milestone correlations rebuilt (each skater's own pairs, and teammates'). A game is one row per skater per date,
+      # milestone correlations rebuilt (each skater's own pairs, teammates', and points with game lines). A game is one row per skater per date,
       # so a rerun never counts one twice; with ESPN down the history is left
       # as it is and the correlations rebuilt from it.
       - name: Refresh NHL skater logs and correlations

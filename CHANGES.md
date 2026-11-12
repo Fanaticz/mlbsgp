@@ -2,6 +2,14 @@
 
 ## 2026-11-12 session
 
+### Novig Scan: NHL Lines board, and a goal with a linemate's assist
+- **NHL Lines** (a new board; `scan.py --league nhl --kind lines`): a skater's points at his main line with his team's moneyline, the puck line (-1.5 or +1.5, whichever his team has), the game total and his team's total, on the side that goes with his points, where r is 0.25 or better. Up to four slips a skater: 108 on a four-game board with tight books, so about 300 on a full night. It is its own board so the NHL tab's pass stays short. `--line-stats g ast sog` adds other legs.
+- **The numbers** (`public/data/nhl_line_correlations.json`; the Game lines view on the NHL Correlations page): league-wide by position and ice time, not per skater. A forward with 16.8+ minutes: 1+ point with his team's total over 2.5 is 0.52, with a win 0.38, with -1.5 0.36, with the game over 5.5 0.32. Defencemen run about 0.10 lower. Shots on goal with any game line is 0.00 to 0.08.
+- **Scores**: final scores for all 1,604 games in the history from ESPN's scoreboard (`scores` in `nhl_game_logs.json`; the nightly step adds each day's). Every score equals the team's skater goals, or one more (140 shootout wins). Results are the raw outcome (won, won by two, more than 5.5 goals), each measured against the skater's own season, not against a closing line.
+- **Shots with a teammate's points, looked at again**: split by how tied the two skaters' points are. For linemates (176 forward pairs whose points move together) 3+ shots with the other's 1+ point is 0.06, and with his assist 0.08; for other teammates it is -0.02. That moves a fair price by about 3%, so those slips are still not asked.
+- **What is there**: a goal with a linemate's assist, 0.41 for those forward pairs against 0.05 for other teammates. The NHL tab's teammates now ask a skater's goal with a teammate's 1+ assist (and assists with assists) on the same 0.20 cut: 16 more slips on the four-game board.
+- Novig quotes a skater's points with all four game lines. Ten real quotes came back at -14% to -55% after the fee. No full pass has been run.
+
 ### Novig Scan: NHL teammates
 The NHL tab now also asks slips across two teammates (`scan.py --league nhl`, or `--kind mates` for these alone), and the NHL Correlations page has a Teammates view.
 

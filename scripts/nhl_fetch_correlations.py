@@ -354,6 +354,7 @@ def rosters(sess: requests.Session, logs: dict, idx: dict, by_espn: dict, report
     for t in teams:
         tm = t.get("team") or {}
         abbr = TEAM.get(tm.get("abbreviation") or "", tm.get("abbreviation") or "")
+        logs.setdefault("teams", {})[abbr] = tm.get("displayName") or abbr
         rd = get_json(sess, f"{ESPN}/teams/{tm.get('id')}/roster") or {}
         for grp in rd.get("athletes") or []:
             for a in grp.get("items") or []:
@@ -365,6 +366,44 @@ def rosters(sess: requests.Session, logs: dict, idx: dict, by_espn: dict, report
                           report, create=False)
                 if p is not None:
                     p["team"] = abbr
+
+
+def note_scores(logs: dict, events: list) -> int:
+    """Final scores of completed games into logs['scores'][date][team] =
+    [goals for, goals against] (a shootout win counts one goal, as totals
+    are settled). Dates are US Eastern, teams in the history's codes."""
+    n = 0
+    for e in events:
+        if not ((e.get("status") or {}).get("type") or {}).get("completed"):
+            continue
+        try:
+            comp = e["competitions"][0]["competitors"]
+            (ta, sa), (tb, sb) = ((TEAM.get(c["team"]["abbreviation"], c["team"]["abbreviation"]), int(c["score"]))
+                                  for c in comp)
+        except (KeyError, IndexError, ValueError, TypeError):
+            continue
+        date = dt.datetime.fromisoformat(e["date"].replace("Z", "+00:00")).astimezone(ET).strftime("%Y%m%d")
+        day = logs.setdefault("scores", {}).setdefault(date, {})
+        n += ta not in day
+        day[ta], day[tb] = [sa, sb], [sb, sa]
+    return n
+
+
+def backfill_scores(logs: dict) -> None:
+    """Scores for every game date in the history that has none yet (one
+    scoreboard request a date; a first run reads about 230)."""
+    import concurrent.futures as cf
+    have = logs.get("scores") or {}
+    want = sorted({str(g[D]) for p in logs["players"].values() for g in p["games"]} - set(have))
+    if not want:
+        return
+    sess = requests.Session()
+    sess.headers.update({"User-Agent": "mlbsgp-nhl-correlations"})
+    with cf.ThreadPoolExecutor(max_workers=6) as ex:
+        boards = list(ex.map(lambda ds: get_json(sess, f"{ESPN}/scoreboard?dates={ds}&limit=100"), want))
+    n = sum(note_scores(logs, [e for e in (sb or {}).get("events") or [] if (e.get("season") or {}).get("type") == 2])
+            for sb in boards)
+    print(f"Scores: {n} games on {len(want)} dates ({sum(b is None for b in boards)} dates failed)", file=sys.stderr)
 
 
 def espn(logs: dict, since: str | None, until: str | None) -> dict:
@@ -399,6 +438,7 @@ def espn(logs: dict, since: str | None, until: str | None) -> dict:
             report["failed"].append(f"scoreboard {ds}")
             break   # stop here: the next run starts from the last day read
         events = [e for e in sb.get("events") or [] if (e.get("season") or {}).get("type") == 2]
+        note_scores(logs, events)
         pending = False
         for e in events:
             if not ((e.get("status") or {}).get("type") or {}).get("completed"):
@@ -617,9 +657,9 @@ def build(logs: dict) -> dict:
 
 MATE_OUT = os.path.join(DATA, "nhl_teammate_correlations.json")
 # (first skater's stat, his teammate's stat): the lines read for each.
-MATE_KINDS = (("pts", "pts"), ("g", "pts"), ("sog", "pts"), ("sog", "sog"))
-MATE_LINES = {"pts": (0.5, 1.5), "g": (0.5,), "sog": (1.5, 2.5, 3.5)}
-MATE_OWN = {"pts_pts", "g_pts"}     # kinds where pairs really differ; the shots kinds are the average for everyone
+MATE_KINDS = (("pts", "pts"), ("g", "pts"), ("g", "ast"), ("ast", "ast"), ("sog", "pts"), ("sog", "ast"), ("sog", "sog"))
+MATE_LINES = {"pts": (0.5, 1.5), "g": (0.5,), "ast": (0.5,), "sog": (1.5, 2.5, 3.5)}
+MATE_OWN = {"pts_pts", "g_pts", "g_ast", "ast_ast"}     # kinds where pairs really differ; the shots kinds are the average for everyone
 MATE_MARGIN = (0.10, 0.90)
 MATE_TAU = (0.02, 0.15)
 MATE_BINS = 3
@@ -658,7 +698,7 @@ def build_teammates(logs: dict, this_season: int) -> dict:
     now = {k: p.get("team") or p["games"][-1][TM] for k, p in P.items() if p["games"]}
 
     def val(g, s):
-        return g[G] + g[A] if s == "pts" else g[S] if s == "sog" else g[G]
+        return g[G] + g[A] if s == "pts" else g[S] if s == "sog" else g[A] if s == "ast" else g[G]
 
     est: dict = {}   # (kind, lines, groups) -> [(pair, p1, p2, r, neff, cov)]
     for (ka, kb), v in shared.items():
@@ -726,11 +766,95 @@ def build_teammates(logs: dict, this_season: int) -> dict:
         "credit": "Data: MoneyPuck.com",
         "scope": f"two skaters on the same team today, {MIN_GAMES}+ games together of {MIN_TOI // 60}+ minutes each",
         "kinds": {"pts_pts": "A's points with B's points", "g_pts": "A's goal with B's points",
+                  "g_ast": "A's goal with B's assists", "ast_ast": "A's assists with B's",
+                  "sog_ast": "A's shots on goal with B's assists",
                   "sog_pts": "A's shots on goal with B's points", "sog_sog": "A's shots on goal with B's"},
         "pair_values": "[shrunk r, own r, weight on own, hit rate leg 1, hit rate leg 2]; key 'A>B', lines 'A's|B's'",
         "priors": {"by": "the two positions (A's then B's), then the lower of the two skaters' average ice time "
                          "(minutes): knots are (ice time, r)", "values": priors},
         "skaters": names, "n_pairs": len(pairs), "pairs": pairs,
+    }
+
+
+# --- game lines ----------------------------------------------------------------
+
+LINE_OUT = os.path.join(DATA, "nhl_line_correlations.json")
+LINE_STATS = {"pts": (0.5, 1.5), "g": (0.5,), "ast": (0.5,), "sog": (1.5, 2.5, 3.5)}
+# A game-line outcome, from his team's side: win (overtime and shootout
+# included, as the moneyline is), the puck line both ways, the game total and
+# his team's total.
+LINE_EVENTS = ([("win", None, lambda f, a: f > a), ("m15", None, lambda f, a: f - a >= 2),
+                ("p15", None, lambda f, a: f - a >= -1)]
+               + [("over", L, (lambda L: lambda f, a: f + a > L)(L)) for L in (4.5, 5.5, 6.5, 7.5)]
+               + [("tt", L, (lambda L: lambda f, a: f > L)(L)) for L in (1.5, 2.5, 3.5, 4.5)])
+LINE_MIN_GAMES = 20
+LINE_BINS = 3
+
+
+def build_lines(logs: dict) -> dict:
+    """A skater's leg with a game line: league-wide r by role (forwards and
+    defencemen, each in thirds by average ice time), as the NFL file does by
+    position and volume. Every game of 10+ minutes with a final score; the
+    leg's hit and the line's outcome are each centred on that skater's rate
+    that season (his team's, for the line), so a good team's season of wins
+    and points can't pass for a same-game correlation. Thresholds are the raw
+    result (won, won by 2+, more than 5.5 goals), not against a closing line."""
+    scores = logs.get("scores") or {}
+    roles: dict = {"F": [], "D": []}
+    for p in logs["players"].values():
+        games = [(g, scores.get(str(g[D]), {}).get(g[TM])) for g in p["games"] if g[TOI] >= MIN_TOI]
+        games = [(g, sc) for g, sc in games if sc]
+        if len(games) >= LINE_MIN_GAMES:
+            roles[p["grp"]].append((sum(g[TOI] for g, _ in games) / len(games) / 60, games))
+    table = []
+    for grp, members in roles.items():
+        members.sort(key=lambda m: m[0])
+        for b in range(LINE_BINS):
+            part = members[b * len(members) // LINE_BINS:(b + 1) * len(members) // LINE_BINS]
+            if not part:
+                continue
+            lo = part[0][0] if b else 0.0
+            hi = members[(b + 1) * len(members) // LINE_BINS][0] if b < LINE_BINS - 1 else None
+            cols: dict = {}
+            for _, games in part:
+                yrs = np.array([season_of(g[D]) for g, _ in games])
+                f = np.array([sc[0] for _, sc in games]); a = np.array([sc[1] for _, sc in games])
+                vals = {"g": np.array([g[G] for g, _ in games]), "ast": np.array([g[A] for g, _ in games]),
+                        "sog": np.array([g[S] for g, _ in games])}
+                vals["pts"] = vals["g"] + vals["ast"]
+
+                def cen(x):
+                    c = x.astype(float)
+                    for yr in set(yrs.tolist()):
+                        m = yrs == yr
+                        c[m] -= c[m].mean()
+                    return c
+                legs = {(s, ln): vals[s] > ln for s, lns in LINE_STATS.items() for ln in lns}
+                evs = {(n, L): fn(f, a) for n, L, fn in LINE_EVENTS}
+                cl = {k: cen(v) for k, v in legs.items()}
+                ce = {k: cen(v) for k, v in evs.items()}
+                for lk in legs:
+                    for ek in evs:
+                        c = cols.setdefault((lk, ek), [0.0, 0.0, 0.0, 0])
+                        c[0] += legs[lk].sum(); c[1] += evs[ek].sum(); c[2] += float((cl[lk] * ce[ek]).sum()); c[3] += len(games)
+            for ((s, ln), (ev, L)), (h1, h2, cov, n) in cols.items():
+                p1, p2 = h1 / n, h2 / n
+                if not (0.03 <= p1 <= 0.97 and 0.03 <= p2 <= 0.97):
+                    continue
+                r = float(tetrachoric([p1], [p2], [p1 * p2 + cov / n])[0])
+                table.append({"grp": grp, "min": round(lo, 2), "max": None if hi is None else round(hi, 2),
+                              "stat": s, "line": ln, "ev": ev, "strike": L, "r": round(r, 4), "n": n,
+                              "p_leg": round(p1, 3), "p_ev": round(p2, 3)})
+    return {
+        "generated_at": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
+        "credit": "Data: MoneyPuck.com; scores from ESPN",
+        "scope": f"games of {MIN_TOI // 60}+ minutes with a final score, skaters with {LINE_MIN_GAMES}+ of them; "
+                 "league-wide by position and ice time (minutes, min <= his average < max)",
+        "events": {"win": "his team wins (overtime and shootout included)", "m15": "his team wins by 2 or more (-1.5)",
+                   "p15": "his team wins or loses by 1 (+1.5)", "over": "game total over the strike",
+                   "tt": "his team's goals over the strike"},
+        "teams": logs.get("teams") or {},
+        "game": table,
     }
 
 
@@ -759,6 +883,7 @@ def main() -> None:
         save_logs(logs)
     elif not a.no_fetch:
         rep = espn(logs, a.since, a.until)
+        backfill_scores(logs)
         save_logs(logs)
         print(f"ESPN: {rep['games']} games, {rep['rows']} skater rows: {rep['new']} new, {rep['same']} already in the "
               f"history and equal, {len(rep['differs'])} that differ", file=sys.stderr)
@@ -769,6 +894,14 @@ def main() -> None:
     out = build(logs)
     with open(OUT, "w", encoding="utf-8") as f:
         json.dump(out, f, separators=(",", ":"))
+    lines = build_lines(logs)
+    with open(LINE_OUT, "w", encoding="utf-8") as f:
+        json.dump(lines, f, separators=(",", ":"))
+    print(f"NHL game lines: {len(lines['game'])} role r's")
+    for grp in ("F", "D"):
+        top = [e for e in lines["game"] if e["grp"] == grp and e["max"] is None and e["stat"] == "pts" and e["line"] == 0.5]
+        print(f"  {grp}, most ice time, 1+ point: " + "  ".join(
+            f"{e['ev']}{'' if e['strike'] is None else ' ' + format(e['strike'], 'g')} {e['r']:+.2f}" for e in top))
     mates = build_teammates(logs, season_of(out["through"]))
     with open(MATE_OUT, "w", encoding="utf-8") as f:
         json.dump(mates, f, separators=(",", ":"))
@@ -777,7 +910,7 @@ def main() -> None:
     for grps in ("FF", "FD", "DF", "DD"):
         print(f"  {grps}: " + "  ".join(
             f"{k} {ln} " + "/".join(f"{r:+.2f}" for _, r in mp[grps][k][ln]["knots"]) + f" (tau {mp[grps][k][ln]['tau']:.2f})"
-            for k, ln in (("pts_pts", "0.5|0.5"), ("g_pts", "0.5|0.5"), ("sog_pts", "2.5|0.5"), ("sog_sog", "2.5|2.5"))
+            for k, ln in (("pts_pts", "0.5|0.5"), ("g_ast", "0.5|0.5"), ("ast_ast", "0.5|0.5"), ("sog_pts", "2.5|0.5"))
             if ln in mp.get(grps, {}).get(k, {})))
     pri = out["shrinkage"]["priors"]
     print(f"NHL correlations: {out['n_players']} skaters with {MIN_GAMES}+ games, through {out['through']}")

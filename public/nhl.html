@@ -78,6 +78,7 @@
   <div class="toggle" id="view">
     <button data-v="skaters" class="on">Skaters</button>
     <button data-v="mates">Teammates</button>
+    <button data-v="lines">Game lines</button>
   </div>
   <div class="toggle" id="grp">
     <button data-g="" class="on">All</button>
@@ -219,9 +220,32 @@ function renderMates() {
   }).join("") + (rows.length > 600 ? `<tr><td class="l muted" colspan="13">${rows.length - 600} more: filter by name or team.</td></tr>` : "");
 }
 
+// Game lines: league-wide r of a skater's leg with a game-line outcome, by
+// position and ice time (public/data/nhl_line_correlations.json).
+let GL = null;
+function renderLines() {
+  const el = document.getElementById("body");
+  document.getElementById("priors").style.display = "none";
+  if (!GL) { el.innerHTML = `<tr><td class="l muted">Loading game lines…</td></tr>`; return; }
+  const evs = [["win", null, "Win"], ["m15", null, "−1.5"], ["p15", null, "+1.5"], ["over", 5.5, "Over 5.5"], ["over", 6.5, "Over 6.5"],
+               ["tt", 2.5, "Team o2.5"], ["tt", 3.5, "Team o3.5"]];
+  const legs = [["pts", 0.5], ["pts", 1.5], ["g", 0.5], ["ast", 0.5], ["sog", 2.5]];
+  const roles = [];
+  for (const e of GL.game) if (!roles.some(r => r.grp === e.grp && r.min === e.min) && (!GRP || e.grp === GRP)) roles.push({ grp: e.grp, min: e.min, max: e.max });
+  document.getElementById("head").innerHTML = `<th class="l">Skaters</th><th class="l">Leg</th>` + evs.map(e => `<th>${e[2]}</th>`).join("");
+  document.getElementById("count").textContent = `${GL.game.length} values`;
+  el.innerHTML = roles.map(r => legs.map(([s, ln]) =>
+    `<tr><td class="l name">${r.grp === "D" ? "Defence" : "Forwards"} <span class="team">${r.max == null ? `${r.min.toFixed(1)}+ min` : `${r.min ? r.min.toFixed(1) : "under"}${r.min ? "–" : " "}${r.max.toFixed(1)} min`}</span></td>` +
+    `<td class="l">${plus(ln)} ${LAB[s]}</td>` + evs.map(([ev, k]) => {
+      const e = GL.game.find(x => x.grp === r.grp && x.min === r.min && x.stat === s && x.line === ln && x.ev === ev && x.strike === k);
+      return e ? `<td class="r ${cls(e.r)}">${sg(e.r)}</td>` : `<td class="muted">—</td>`;
+    }).join("") + `</tr>`).join("")).join("");
+}
+
 function render() {
   if (!D) return;
   if (VIEW === "mates") return renderMates();
+  if (VIEW === "lines") return renderLines();
   document.getElementById("priors").style.display = "";
   const q = document.getElementById("search").value.trim().toLowerCase();
   const ming = parseFloat(document.getElementById("ming").value) || 0;
@@ -275,6 +299,7 @@ fetch("data/nhl_correlations.json").then(r => { if (!r.ok) throw new Error(r.sta
     `One skater’s 40 to 100 games carry about as much noise as skaters differ, so most values sit close to the position average. ` +
     `Pairs where one leg forces the other (1+ goal with 1+ point or 1+ shot) are left out. ` +
     `Teammates: two skaters’ legs in the games both played for the same team, shrunk toward the average for their positions and ice time; r is the shrunk value, own is the pair’s games alone. ` +
+    `Game lines: a skater’s leg with his team winning, the puck line, the game total and his team’s total, league-wide by position and ice time (scores from ESPN). ` +
     `Data: <a href="https://moneypuck.com" target="_blank" rel="noopener">MoneyPuck.com</a>; games since the last MoneyPuck load from ESPN box scores.`;
   priors(); head(); render();
 }).catch(e => { document.querySelector(".wrap").innerHTML = `<div class="err">Couldn’t load the NHL data (${esc(e.message)}).</div>`; });
@@ -282,6 +307,7 @@ document.querySelectorAll("#view button").forEach(b => b.onclick = () => {
   VIEW = b.dataset.v;
   document.querySelectorAll("#view button").forEach(o => o.classList.toggle("on", o === b));
   if (VIEW === "mates" && !M) fetch("data/nhl_teammate_correlations.json").then(r => r.json()).then(j => { M = j; render(); }).catch(() => {});
+  if (VIEW === "lines" && !GL) fetch("data/nhl_line_correlations.json").then(r => r.json()).then(j => { GL = j; render(); }).catch(() => {});
   if (VIEW === "skaters") head();
   render();
 });
