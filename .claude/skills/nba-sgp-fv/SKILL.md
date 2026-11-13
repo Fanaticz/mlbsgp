@@ -273,8 +273,9 @@ player's shrunk copula r, fitted at median lines. No real pass had been run
 when this was written: check the first plays against another book.
 
 `--kind team` (NBA) is the NBA Team board: a player's main-line Over with
-his game's spread or first-half spread on the side that goes with it (and
-his Under with the other side), then six slips across each game's own lines.
+his game's spread on the side that goes with it (and his Under with the
+other side), priced at the fitted r less one standard error, then six slips
+across each game's own lines.
 The r is league-wide for a player with that line on a team with tonight's
 spread, from `public/data/nba_line_correlations.json`
 (`scripts/nba_line_correlations.py`: four seasons of box scores against

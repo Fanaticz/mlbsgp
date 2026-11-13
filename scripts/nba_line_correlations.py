@@ -36,6 +36,12 @@ as a 10-point favourite, -0.27, and with it as an underdog, +0.4), so each
 role has r in seven bands of his team's spread and a straight-line fit,
 r = a + b x spread, which the board reads at tonight's spread (held
 between lo and hi, the average spreads of the outermost bands with games).
+The fit's standard error at a spread x is sqrt(a_se^2 + ((x - x0) b_se)^2);
+the board prices at the fit less one of those. Fitted on three seasons and
+tested on the fourth, each in turn (11-13): slips at a fit r of 0.42+ hit
+30.5% of the time where the fit said 31.5% and the fit less one standard
+error 30.3%; in every other group the plain fit was within 1% and the
+haircut 2.5% to 5% under.
 """
 import argparse
 import concurrent.futures as cf
@@ -304,6 +310,7 @@ def build():
                 se_b = math.sqrt(1 / sxx) if sxx > 0 else 9.0
                 props.append({"stat": s, "min": lo, "max": hi, "ev": e, "all": every, "by_spread": bands,
                               "fit": {"a": round(wy / w - slope_r * wx / w, 4), "b": round(slope_r, 5), "b_se": round(se_b, 5),
+                                      "x0": round(wx / w, 3), "a_se": round(math.sqrt(1 / w), 4),
                                       "lo": round(min(p[0] for p in pts), 2), "hi": round(max(p[0] for p in pts), 2)}})
     out.update(player_seasons=seasons, prop_events=PROP_EVENTS, spread_bands=SPREAD_BANDS, spread_cap=SPREAD_CAP, props=props)
     json.dump(out, open(OUT, "w"), indent=1)

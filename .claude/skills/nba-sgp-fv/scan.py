@@ -61,36 +61,49 @@ wider than --max-spread are skipped, not guessed.
 
 NBA Team (--league nba --kind team): slips with a game line in them
 (nba_team_candidates). A player's main-line Over on points, rebounds,
-assists, threes or points + rebounds + assists with the game's spread or
-first-half spread on the side that goes with it, and his Under with the
-other side. The r is league-wide for a player with that line on a team with
-tonight's spread (public/data/nba_line_correlations.json, built by
+assists, threes or points + rebounds + assists with the game's spread on
+the side that goes with it, and his Under with the other side. The r is
+league-wide for a player with that line on a team with tonight's spread
+(public/data/nba_line_correlations.json, built by
 scripts/nba_line_correlations.py from four seasons of box scores against
 closing lines), and it turns on who is favoured: a 20-to-25-point scorer's
 Over goes with his team covering at +0.42 as an 8-point underdog, +0.19 in
 a pick'em and -0.08 as a 10-point favourite; a 25-point scorer on a
 12-point favourite is -0.26, so his Over is asked with the other team
-covering. Asked where |r| is at least --line-r (0.30 here; 0.15 when the
-prop goes against his own team covering), each player's
---per (3) highest pairings, players at 20+ minutes a game only.
---team-lines adds his team's total, the other team's, the game total or
-the first half's. Then six slips across each game's own lines
-(NBA_GAME_SHAPES: team totals with each other and with the game total, the
-underdog's moneyline + Under, the favourite's first-half moneyline + his
-moneyline) at each shape's measured r. A team total takes Pinnacle's
-no-vig price on the same line where Novig's own book is wider than
---max-spread.
+covering. Asked where the fitted |r| is at least --line-r (0.42 here; 0.15
+when the prop goes against his own team covering, and then only on a
+favourite of 11 or more), and priced at the fit less one standard error;
+each player's --per (3) highest pairings, players at 20+ minutes a game
+only. His role in the data comes from the line and its price (nba_role).
+--team-lines adds the first-half spread, his team's total, the other
+team's, the game total or the first half's. Then six slips across each
+game's own lines (NBA_GAME_SHAPES: team totals with each other and with the
+game total, the underdog's moneyline + Under, the favourite's first-half
+moneyline + his moneyline) at each shape's measured r. A team total takes
+Pinnacle's no-vig price on the same line where Novig's own book is wider
+than --max-spread.
 Tested 11-13 on nine games, about 700 quotes. Game lines alone (99 quotes,
 33 shapes on three games): Novig's quote before its fee sits on the
 measured r (favourite covers + his team total Over 0.62 quoted, 0.58
 measured), so after the 10% fee every shape's median was under fair, -5% to
 -12%. A prop with a team total (206 quotes) or a game total (18): medians
 -6.4% and -4.6%, none at +3%. A prop with the spread is the exception,
-because Novig's r for it barely moves with who is favoured: at r 0.42 or
-better (a main scorer on a team getting 8 or more, or a star on a
-favourite of 10 or more) 35 of 38 quotes over two passes were above fair,
-median +4.8%; at r 0.30 to 0.42, 29 of 68, median about -1%; under 0.30,
-12 of 54, median -4%.
+because Novig's r for it barely moves with who is favoured. Priced at the
+fit less one standard error: at a fitted r of 0.42 or better (a main scorer
+on a team getting 8 or more) 33 of 42 quotes over two passes were above
+fair, median +2.0%; a star's prop against his own team covering as a
+favourite of 11+, 5 of 6, median +5.3%; at 0.30 to 0.42, 8 of 45, median
+-4.0%; with the first-half spread, 3 of 16, median -3.6%.
+The r's were checked the same day (Max: is Wembanyama's right?). A rolling
+line (his previous 15 games) in place of the season median gives the same
+r's. Fitted on three seasons and tested on the fourth, each in turn, the
+plain fit was within 1% of the share of slips that hit in every group but
+the top one (0.42+: 30.5% hit, the fit said 31.5%, the fit less one
+standard error 30.3%), and held at every size of spread on the underdog
+side for points and PRA. The favourite side is real from 11 points
+(28.8% hit at 11 to 14, unrelated legs 24.2%) and absent at 8 to 11 (26.9%
+against 26.6%), which a straight line misses. Threes were in the wrong
+role for 26 of 83 players when the role was read off the line alone.
 
 NFL (--league nfl): WRs, TEs and RBs in public/data/nfl_correlations.json,
 whose shrunk r's are already copula correlations. Over + Over at main lines
@@ -1366,8 +1379,9 @@ NBA_LINES = os.path.join(HERE, "..", "..", "..", "public", "data", "nba_line_cor
 NBA_TEAM = {"GS": "GSW", "NY": "NYK", "SA": "SAS", "NO": "NOP", "UTAH": "UTA", "WSH": "WAS"}   # the data's (ESPN's) code -> Novig's
 NBA_TEAM_STATS = ("pts", "reb", "ast", "tpm", "pra")
 NBA_MIN_GAMES = 400        # a spread band with fewer games than this uses the all-games r
-NBA_AGAINST_R = 0.15       # a prop that goes against his own team covering (a star on a big favourite) is asked from here:
-#                            Novig prices those as going with it, so the gap is wider than the r (Wembanyama, 11-13: +9% to +15% at -0.26)
+NBA_AGAINST_R = 0.15       # a prop that goes against his own team covering (a star on a big favourite) is asked from here,
+NBA_AGAINST_SPREAD = 11.0  # and only when his team is favoured by this much: on held-out seasons those slips hit 28.8% at 11 to 14
+#                            points and 27.4% beyond (unrelated legs: 24.2%, 20.3%), but 26.9% at 8 to 11 (unrelated 26.6%)
 NBA_MIN_MINUTES = 20.0     # the prop + line r's are measured on players at 20+ minutes a game: nobody under it is asked
 # Slips across one game's own lines: the six that came nearest fair of the 33
 # asked on three games (11-13). (shape in the data, its legs.)
@@ -1382,16 +1396,40 @@ NBA_PROP_LINES = {"cover": ("cover", "cover", "mine"), "h1cover": ("h1cover", "h
                   "opp_tt": ("tt", "tt", "theirs"), "over": ("over", "tot", None), "h1over": ("h1over", "h1tot", None)}
 
 
-def nba_prop_r(T, stat, line, ev, my_spread):
-    """(r, player-games behind it) between a player's Over at about his
-    median and a game line going his team's way, for a player whose line is
-    `line` on a team with this spread (negative: favoured): the role's
-    straight-line fit of r on the spread. (None, 0) with no such role."""
+def nba_role(stat, row):
+    """His expected count tonight, which picks his role in the data (roles
+    there are season averages). Points and PRA: his main line + 0.5. The
+    low counts (rebounds, assists, threes): the Poisson mean whose chance of
+    clearing the line is the Over's fair value, since a 2.5 threes line at
+    +150 is a 2.3-a-game shooter and one at -110 a 2.9."""
+    if stat in ("pts", "pra"):
+        return row["line"] + 0.5
+    need, lo, hi = math.floor(row["line"]) + 1, 0.01, 60.0
+    for _ in range(40):
+        mu = (lo + hi) / 2
+        term = cdf = math.exp(-mu)
+        for k in range(1, need):
+            term *= mu / k
+            cdf += term
+        lo, hi = (mu, hi) if 1 - cdf < row["fo"] else (lo, mu)
+    return (lo + hi) / 2
+
+
+def nba_prop_r(T, stat, avg, ev, my_spread):
+    """(the fitted r, the r to price at, player-games behind it) between a
+    player's Over at about his median and a game line going his team's way,
+    for a player averaging `avg` on a team with this spread (negative:
+    favoured): the role's straight-line fit of r on the spread, and that
+    fit less one standard error (toward unrelated). (None, None, 0) with no
+    such role."""
     for e in T["props"]:
-        if e["stat"] == stat and e["ev"] == ev and e["min"] <= line < e["max"]:
+        if e["stat"] == stat and e["ev"] == ev and e["min"] <= avg < e["max"]:
             f = e["fit"]
-            return f["a"] + f["b"] * max(f["lo"], min(f["hi"], my_spread)), e["all"]["n"]
-    return None, 0
+            x = max(f["lo"], min(f["hi"], my_spread))
+            r = f["a"] + f["b"] * x
+            se = math.hypot(f["a_se"], (x - f["x0"]) * f["b_se"])
+            return r, math.copysign(max(abs(r) - se, 0.0), r), e["all"]["n"]
+    return None, None, 0
 
 
 def nba_team_candidates(d, by, a):
@@ -1536,8 +1574,13 @@ def nba_team_candidates(d, by, a):
                 for ev, (kind, stat, whose) in NBA_PROP_LINES.items():
                     if ev not in a.team_lines:
                         continue
-                    r, n = nba_prop_r(T, s, main["line"], ev, my_spread)
-                    if r is None or (abs(r) < a.line_r and not (kind.endswith("cover") and r <= -NBA_AGAINST_R)):
+                    fit, r, n = nba_prop_r(T, s, nba_role(s, main), ev, my_spread)
+                    if fit is None:
+                        continue
+                    if fit < 0 and kind.endswith("cover"):   # goes against his own team covering
+                        if fit > -NBA_AGAINST_R or my_spread > -NBA_AGAINST_SPREAD:
+                            continue
+                    elif abs(fit) < a.line_r:
                         continue
                     who = {"mine": me, "theirs": them}.get(whose)
                     for over in (1, -1):   # his Over with the side that goes with it, his Under with the other
@@ -1552,7 +1595,7 @@ def nba_team_candidates(d, by, a):
                         la = leg(s, main, over)
                         la["text"] = leg_text(la)
                         mine.append(row(g, eid, [la, lb], abs(r), n, kind, p["name"], p["athlete_id"], team=team, role=True,
-                                        line=ev, spread=my_spread))
+                                        line=ev, spread=my_spread, fit_r=abs(fit)))
             # His --per highest-r pairings (a stat with a line), each as its Over and its Under slip.
             best = sorted({(c["legs"][0]["stat"], c["line"]): c["r"] for c in mine}.items(), key=lambda kv: -kv[1])[:a.per]
             out += [c for c in mine if (c["legs"][0]["stat"], c["line"]) in dict(best)]
@@ -1987,15 +2030,15 @@ def main():
                          "NBA: team (the NBA Team board: a player's prop with a game line, and slips across a game's own lines)")
     ap.add_argument("--team", default="all", choices=("all", "props", "game"),
                     help="NBA Team board: props (a player's prop + a game line) or game (a game's own lines) only")
-    ap.add_argument("--team-lines", nargs="+", default=["cover", "h1cover"], choices=tuple(NBA_PROP_LINES),
-                    help="NBA Team board: the game lines a prop is asked with (default: the spread and the first-half "
-                         "spread; his team's total, the other team's, the game total and the first half's were all "
-                         "5%% to 8%% under fair on 11-13)")
+    ap.add_argument("--team-lines", nargs="+", default=["cover"], choices=tuple(NBA_PROP_LINES),
+                    help="NBA Team board: the game lines a prop is asked with (default: the spread; the first-half "
+                         "spread, his team's total, the other team's, the game total and the first half's were all "
+                         "3%% to 8%% under fair on 11-13)")
     ap.add_argument("--per", type=int, default=None,
                     help="NFL stacks / lines / three legs, NHL teammates: combos asked per player of each kind, highest r first "
                          "(3; NHL lines 4: moneyline, puck line, total and team total)")
     ap.add_argument("--line-r", type=float, default=None,
-                    help="NFL / NHL lines, NBA Team: smallest |r| between a prop and a game line (0.25; NBA Team 0.30)")
+                    help="NFL / NHL lines, NBA Team: smallest |r| between a prop and a game line (0.25; NBA Team 0.42)")
     ap.add_argument("--scope", default="main", choices=("main", "ladder", "all"),
                     help="main (default): NBA asks one slip a player, his main-line Points + Threes, and NFL asks no "
                          "three-leg slips. all: also the second threes milestone, higher lines, other pairs, "
@@ -2064,9 +2107,10 @@ def main():
     if a.min_r is None:
         a.min_r = 0.10 if a.league == "nhl" else 0.15
     if a.line_r is None:
-        # NBA Team, 11-13: prop + spread slips at r under 0.30 ran a median
-        # 4% under fair (12 of 54 above it); from 0.30 up, 64 of 106.
-        a.line_r = 0.30 if a.kind == "team" else 0.25
+        # NBA Team, 11-13, priced at the fit less one standard error: prop +
+        # spread slips at a fitted r of 0.42 or better were above fair on 33 of
+        # 42 quotes (median +2.0%); at 0.30 to 0.42, 8 of 45 (median -4.0%).
+        a.line_r = 0.42 if a.kind == "team" else 0.25
     if a.gate is None:
         # Ladder scope asks down to a main line 10% under fair: on the ungated
         # pass of 11-11, players at -10% to 0% held 46 of the 81 ladder slips

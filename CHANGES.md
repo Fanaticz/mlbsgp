@@ -16,6 +16,27 @@ Max, 11-13: have it scan by itself, cycling NBA, NFL, CBB and CFB, with one tab 
 - **Changed**: this is the first thing that quotes Novig without Fetch being pressed. It is off until switched on, and asks to confirm.
 - **Checked** with a stand-in for `scan.py` (three rows a board): the cycle went NBA then NFL a minute later, the All tab listed both boards' rows above Min EV, off stopped it. Not run against Novig from here.
 
+### NBA Team: the prop + spread correlations checked, and priced one standard error down
+Max, 11-13: is the correlation on Wembanyama 28+ PTS with GSW +12.5 right (board +10.3%; DraftKings pays +232 on the 28.5 version)? Checked three ways, then every prop + spread r on the board.
+
+- **A rolling line changes nothing.** Each leg re-measured as "over the median of his previous 15 games" instead of his season median: every role and spread band within noise of before (25-point scorers on a 10+ favourite: -0.27 both ways; 20-to-25 on a 10.5+ underdog: +0.47 both ways).
+- **Held-out seasons.** The fit made on three seasons, tested on the fourth, each in turn: the share of slips where both legs hit.
+
+| Slips (Over + the side the fit says) | Player-games | Hit | The fit said | Fit less 1 SE | Unrelated legs |
+|---|---|---|---|---|---|
+| Fitted r 0.42+ | 3,113 | 30.5% | 31.5% | 30.3% | 23.6% |
+| 0.30 to 0.42 | 8,243 | 29.7% | 29.8% | 28.8% | 24.2% |
+| 0.15 to 0.30 | 79,864 | 28.0% | 27.9% | 27.3% | 24.8% |
+| Against his own team covering (r -0.15 or lower) | 1,692 | 27.9% | 28.0% | 26.6% | 24.4% |
+
+- **So the star-on-a-big-favourite r is real**, not half as I had guessed from DraftKings' price: at 11 to 14 points those slips hit 28.8% (unrelated 24.2%), beyond 14 27.4% (20.3%). But at 8 to 11 points they hit 26.9% against 26.6% unrelated: nothing there, and the straight-line fit said 29.7%.
+- **Three changes** (`scan.py`):
+  1. Every prop + line fair value uses the fitted r less one standard error of the fit at that spread (`nba_prop_r`; the file now carries `x0` and `a_se`). That matches the top group on held-out seasons and is 2.5% to 5% conservative in the others. Wembanyama at -12.5: -0.26 fitted, -0.19 used; a 22-point scorer at +12.5: +0.51 fitted, +0.44 used. The open row shows both.
+  2. A prop against his own team covering is asked only on a favourite of 11 or more.
+  3. A player's role comes from his line and its price, not the line alone (`nba_role`): a 2.5 threes line at +150 is a 2.3-a-game shooter (r +0.16 with an 8.5-point underdog covering), not a 2.9 one (+0.27). 26 of 83 players' threes, 11 of 96 rebounds and 9 of 84 assists were in the wrong role; points and PRA are unchanged.
+- **Tonight's quotes at the new numbers**: fitted r 0.42+, 33 of 42 above fair, median +2.0% (was 35 of 38, +4.8%); a star against his own team covering on a favourite of 11+, 5 of 6, median +5.3%; 0.30 to 0.42, 8 of 45, median -4.0%; with the first-half spread, 3 of 16, median -3.6%. So the board now asks from 0.42 (`--line-r`) and the full-game spread only (`--team-lines cover h1cover` brings the first half back): about a third as many prop slips. The Wembanyama row goes from +10.3% to about +5.7%.
+- Not settled: DraftKings and Fanatics price that pairing near unrelated, and their SGP margin is a guess on my part (10% to 20%), so their own r is somewhere from 0 to +0.10 where the history says 0.19 to 0.26. Wembanyama's own games as a favourite of 8+ (33) lean the same way but are too few to count.
+
 ### Novig Scan: NBA Team tab (a prop with the spread, and a game's own lines)
 Max, 11-13: the Points + Threes edge looks gone; expand NBA to team props. A new board, **NBA Team**, on the scanner page (`scan.py --league nba --kind team`; `nbateam` in `server.js`).
 
