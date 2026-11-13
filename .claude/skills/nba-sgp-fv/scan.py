@@ -166,6 +166,11 @@ favourite's first-half spread + his spread. A leg takes Pinnacle's price
 only on the same line; a game Pinnacle doesn't list gets the first two
 slips only. The margin is close to unrelated to the total (r 0.01 in a close
 game, 0.10 at a 30-point spread), so there is no underdog-moneyline slip.
+The correlations on this board are measured, not modelled: each shape's
+copula r on 17,319 games of 2023-24 to 2025-26 against closing lines, by
+size of spread (scripts/cbb_line_correlations.py): underdog covers + his
+team total Under -0.61, a team total Under + game Under +0.83, both team
+totals Under +0.37, first-half spread + spread +0.63, spread + total -0.04.
 Tested 11-13: 89 quotes on Novig's own books, none above fair, median -10%;
 106 quotes with Pinnacle's team totals and first halves, 5 above fair,
 median -9.5%. The four Pinnacle shapes asked here were the best of 27 by

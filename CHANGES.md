@@ -2,17 +2,26 @@
 
 ## 2026-11-13 session
 
-### CBB underdog spread + his team total Under, checked on last season
-The board's top rows were all this one shape at +10% to +27%, and DraftKings and Novig both price it longer than the model, so it was measured (the note below, written before this, guessed the model was generous: it is not).
+### Novig Scan: CBB board on measured correlations (three seasons)
+The CBB board's correlations were modelled from each game's alt ladders. They are now measured: how often the two legs of each slip shape hit together, on 17,319 games.
 
-- **Data**: 2,135 games from 49 days of 2025-26 (every other day, Dec 1 to Mar 7), final scores from ESPN's scoreboard with DraftKings' closing spread and total (ESPN's odds feed). Each team's total line taken as (total ± spread) / 2.
-- **Underdog covers and stays under his own total: 15.6% of games** (± 0.8; legs 52.0% and 50.0%), a correlation of -0.43 between the two legs, which is +460 at two even-money legs. The model uses about -0.56 (+564 on Tennessee State), so its fair values on this shape are on the long side of what happened. Spreads of 12 or more: 17.4% ± 1.9.
-- **Why it has to be near there**: both teams under their totals happened 31.7% of the time (the two scores are 0.40 correlated: sd of the margin 11.1, of the total 16.8), and in half of those the favourite misses his total by more than the underdog does, which is this slip. Half of 31.7% is 15.9%.
-- **Other shapes, same games**: favourite's team total Under + game Under 41.4% (r +0.62); both team totals Under 31.7% (r +0.26); a spread with the total 22% to 25% (r -0.05, unrelated).
-- Not measured: actual posted team-total lines (the Pinnacle leg on the board), other seasons. The model is left as it is.
+- **Data** (`scripts/cbb_line_correlations.py --fetch 2024 2025 2026`; `public/data/cbb_game_lines.json`): every Division I final of 2023-24, 2024-25 and 2025-26 from ESPN's scoreboard, with halftime scores, and DraftKings' closing spread and total from ESPN's odds feed (one call a game; 17,342 of 18,835 games have a line). Posted team totals and first-half spreads aren't in the feed: a team's total is (total -/+ spread) / 2, the first-half spread 0.546 x the spread (the fitted slope).
+- **What was measured** (`public/data/cbb_line_correlations.json`): for each shape, overall and in four spread bands (under 6, 6 to 12, 12 to 20, 20+), the share of games both legs hit and the Gaussian-copula r that reproduces it. The board (`cfb_candidates`, `--league cbb`) takes the r for the game's spread band (the all-games r under 400 games) and applies it to each leg's real price; the detail line shows the games behind it. A shape not in the file keeps the model's r, as does CFB.
+
+| Shape | Both hit | r measured | r the model used |
+|---|---|---|---|
+| Underdog covers + his team total Under | 14.4% (± 0.3) | -0.61 (20+ spreads -0.55) | about -0.56 |
+| Favourite's team total Under + game Under | 40.2% | +0.83 | about +0.80 |
+| Both team totals Under | 30.1% | +0.37 (0.29 to 0.41 by band) | 0.22 to 0.38 |
+| First-half spread + game spread | 35.1% | +0.63 | +0.71 |
+| Spread + total, same way | 24.1% to 24.6% | -0.04 (20+ spreads +0.14) | 0.00 to 0.11 |
+
+- **Effect**: the underdog shape's fair values get about 4% longer (two even-money legs: +586, where the model said about +560), and the first-half shape about 5% longer. On a 36-quote pass the underdog rows that had shown +13% to +27% came back +3% to +9%.
+- **A mistake corrected**: the first cut of this (one season, 2,135 games) converted hit rates to r with `sgp.devig_r`, which is the devig tool's own scale, about two thirds of the copula r. It reported -0.43 for the underdog shape and +460 at even legs, and called the model conservative and the team total Under + Under shape 12% too generous. Both were wrong: on the right scale that season is -0.61 too, and Under + Under is +0.83. The script solves `sgp.joint` for r directly.
+- Still not measured: posted team-total lines (the board's Pinnacle leg), and other books' closers.
 
 ### Novig Scan: CBB underdog slip is two legs
-The three-leg slip (underdog's spread + Under + underdog's team total Under) had a leg that adds nothing: Tennessee State +27.5 with its team total Under 63.5 caps the game at 154, under the 157.5 total. DraftKings refuses the third leg for that reason, and Novig quoted it at its two-leg price. The board now asks the two legs alone. Its fair value leans on how tied the two teams' scores are (0.22 to 0.35 from the alt ladders): that slip showed +546 fair where DraftKings paid +600 and Novig's raw quote was +609, which both fit a tie nearer 0.1 to 0.2. Treat a green row on this shape as unconfirmed.
+The three-leg slip (underdog's spread + Under + underdog's team total Under) had a leg that adds nothing: Tennessee State +27.5 with its team total Under 63.5 caps the game at 154, under the 157.5 total. DraftKings refuses the third leg for that reason, and Novig quoted it at its two-leg price. The board now asks the two legs alone. Its correlation is now measured: see the entry above.
 
 ### Novig Scan: CBB team totals and first half, priced off Pinnacle
 - **Why**: the CBB board could not ask a team-total or first-half slip, because Novig's own books on those are 6c to 28c wide. Pinnacle posts both for college basketball (three team-total lines a team, a first-half spread and total ladder, first-half team totals and moneyline).

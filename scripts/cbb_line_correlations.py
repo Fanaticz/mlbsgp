@@ -33,7 +33,7 @@ import urllib.request
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 sys.path.insert(0, os.path.join(ROOT, ".claude", "skills", "nba-ast-pts-sgp"))
-import sgp  # noqa: E402  devig_r, joint
+import sgp  # noqa: E402  joint
 
 GAMES = os.path.join(ROOT, "public", "data", "cbb_game_lines.json")
 OUT = os.path.join(ROOT, "public", "data", "cbb_line_correlations.json")
@@ -51,6 +51,20 @@ def get(url):
             if i == 3:
                 return None
             time.sleep(1 + 2 * i)
+
+
+def copula_r(j, a, b):
+    """The Gaussian-copula r at which legs hitting a and b of the time both
+    hit j of the time (sgp.joint, solved by bisection). Not sgp.devig_r:
+    that is the devig tool's own scale, about two thirds of this."""
+    lo, hi = -0.999, 0.999
+    for _ in range(50):
+        mid = (lo + hi) / 2
+        if sgp.joint(mid, a, b) < j:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
 
 
 def day(d):
@@ -131,9 +145,9 @@ def build():
         if n < 150:
             return None
         pa, pb, j = sum(x for x, _ in v) / n, sum(y for _, y in v) / n, sum(x and y for x, y in v) / n
-        r, se = sgp.devig_r(j, pa, pb), math.sqrt(j * (1 - j) / n)
+        r, se = copula_r(j, pa, pb), math.sqrt(j * (1 - j) / n)
         return {"n": n, "pa": round(pa, 4), "pb": round(pb, 4), "both": round(j, 4), "se": round(se, 4), "r": round(r, 3),
-                "r_lo": round(sgp.devig_r(max(j - 2 * se, 1e-4), pa, pb), 3), "r_hi": round(sgp.devig_r(j + 2 * se, pa, pb), 3)}
+                "r_lo": round(copula_r(max(j - 2 * se, 1e-4), pa, pb), 3), "r_hi": round(copula_r(j + 2 * se, pa, pb), 3)}
     out = {"generated_at": time.strftime("%Y-%m-%d"), "games": len(G), "first_half_slope": round(slope, 3),
            "days": [rows[0][0], max(r[0] for r in rows)], "buckets": BUCKETS, "shapes": {}}
     for name, legs in shapes.items():
