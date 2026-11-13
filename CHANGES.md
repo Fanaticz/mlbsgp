@@ -2,6 +2,15 @@
 
 ## 2026-11-13 session
 
+### CBB underdog spread + his team total Under, checked on last season
+The board's top rows were all this one shape at +10% to +27%, and DraftKings and Novig both price it longer than the model, so it was measured (the note below, written before this, guessed the model was generous: it is not).
+
+- **Data**: 2,135 games from 49 days of 2025-26 (every other day, Dec 1 to Mar 7), final scores from ESPN's scoreboard with DraftKings' closing spread and total (ESPN's odds feed). Each team's total line taken as (total ± spread) / 2.
+- **Underdog covers and stays under his own total: 15.6% of games** (± 0.8; legs 52.0% and 50.0%), a correlation of -0.43 between the two legs, which is +460 at two even-money legs. The model uses about -0.56 (+564 on Tennessee State), so its fair values on this shape are on the long side of what happened. Spreads of 12 or more: 17.4% ± 1.9.
+- **Why it has to be near there**: both teams under their totals happened 31.7% of the time (the two scores are 0.40 correlated: sd of the margin 11.1, of the total 16.8), and in half of those the favourite misses his total by more than the underdog does, which is this slip. Half of 31.7% is 15.9%.
+- **Other shapes, same games**: favourite's team total Under + game Under 41.4% (r +0.62); both team totals Under 31.7% (r +0.26); a spread with the total 22% to 25% (r -0.05, unrelated).
+- Not measured: actual posted team-total lines (the Pinnacle leg on the board), other seasons. The model is left as it is.
+
 ### Novig Scan: CBB underdog slip is two legs
 The three-leg slip (underdog's spread + Under + underdog's team total Under) had a leg that adds nothing: Tennessee State +27.5 with its team total Under 63.5 caps the game at 154, under the 157.5 total. DraftKings refuses the third leg for that reason, and Novig quoted it at its two-leg price. The board now asks the two legs alone. Its fair value leans on how tied the two teams' scores are (0.22 to 0.35 from the alt ladders): that slip showed +546 fair where DraftKings paid +600 and Novig's raw quote was +609, which both fit a tie nearer 0.1 to 0.2. Treat a green row on this shape as unconfirmed.
 
