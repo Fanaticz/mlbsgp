@@ -2,6 +2,9 @@
 
 ## 2026-11-13 session
 
+### Novig Scan: one line for a bet on a row, instead of two badges
+Max, 11-13 (phone screenshot): a row he had bet showed the same amount twice, once after the tip time (the player's total) and once after the legs (this slip), crowding both lines. A bet row now has a green left edge and one line of its own under the numbers: "✓ You bet $200 at 6.23x" (each bet listed when there are several). A player's first row shows a grey line instead when the money is on another of his slips. Neither badge is drawn any more. "Hide my bets" hides the line and the edge. Checked in a phone-sized and a desktop browser with a stand-in board.
+
 ### Novig Scan: a typed stake saves when the keyboard is closed
 Max, 11-13 (iPhone): typed a stake under "I bet this", pressed the keyboard's check mark, nothing saved. The check mark only closes the keyboard; it sends no Enter, and the row was then redrawn without the stake. Leaving the bet form with a stake above zero now saves it (moving between the stake and price boxes does not; Save and Enter save once, as before). Checked in a phone-sized browser: closing the keyboard saved one bet, Save saved one, Enter saved one, an empty stake saved nothing.
 

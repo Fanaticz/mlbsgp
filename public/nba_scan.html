@@ -90,7 +90,12 @@
   .betform .mine { color:var(--pos); }
   .betform .x { padding:1px 7px; color:var(--muted); margin-left:2px; }
   #hidebets { background:none; border:1px solid var(--line); color:var(--muted); border-radius:8px; padding:7px 11px; font-size:13px; cursor:pointer; }
-  body.nobets .mybets, body.nobets .bet, body.nobets .betform { display:none; }
+  .betline { grid-column:1 / -1; padding-top:5px; font-size:12.5px; color:var(--pos); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .betline b { font-variant-numeric:tabular-nums; }
+  .betline.other { color:var(--muted); }
+  .row.has { box-shadow:inset 3px 0 0 var(--pos); }
+  body.nobets .mybets, body.nobets .bet, body.nobets .betline, body.nobets .betform { display:none; }
+  body.nobets .row.has { box-shadow:none; }
   body.nobets #hidebets { border-color:var(--accent); color:var(--accent); font-weight:600; }
   .tag { flex:none; margin-right:7px; border:1px solid var(--line); border-radius:5px; padding:0 5px; font-size:10.5px;
     font-weight:600; color:var(--accent); white-space:nowrap; letter-spacing:.02em; }
@@ -349,6 +354,15 @@ async function bets(body) {
 const liveBets = () => BETS.filter(b => (b.starts ? b.starts + 5 * 3600000 : b.at + 86400000) > Date.now());
 const betsOn = player => liveBets().filter(b => b.player === player);
 const total = list => list.reduce((s, b) => s + b.stake, 0);
+// A row's own line for what I have down: on this slip (green, with a green
+// edge on the row), or, on a player's first row, on his other slips (grey).
+function betLine(c, sub) {
+  const mine = liveBets().filter(b => b.key === c.key);
+  if (mine.length) return `<div class="betline">✓ You bet <b>${usd(total(mine))}</b>` +
+    (mine.length === 1 ? (mine[0].x ? ` at ${mine[0].x.toFixed(2)}x` : "") : ` in ${mine.length} bets: ${mine.map(b => usd(b.stake) + (b.x ? ` at ${b.x.toFixed(2)}x` : "")).join(", ")}`) + `</div>`;
+  const rest = sub ? [] : betsOn(c.player);
+  return rest.length ? `<div class="betline other">${usd(total(rest))} on ${rest.length === 1 ? "another slip of his" : `${rest.length} other slips of his`}: ${esc(rest.map(b => b.label).join("; "))}</div>` : "";
+}
 function betStrip() {
   const el = document.getElementById("mybets"), live = liveBets();
   document.body.classList.toggle("nobets", HIDEBETS);
@@ -530,19 +544,18 @@ function render() {
     }</div>`;
   } else {
     const one = (c, sub, others) =>
-      `<div class="row${sub ? " sub" : ""}${isOld(c) ? " old" : ""}" data-k="${esc(rk(c))}">` +
+      `<div class="row${sub ? " sub" : ""}${isOld(c) ? " old" : ""}${liveBets().some(b => b.key === c.key) ? " has" : ""}" data-k="${esc(rk(c))}">` +
       `<div class="who">${sub ? "" : `${c.board ? `<span class="tag">${BOARD[c.board]}</span>` : ""}<b>${esc(c.player)}</b><small>${esc(c.team)}${c.starts ? " · " + tip(c.starts) : ""}</small>` +
-        (betsOn(c.player).length ? `<span class="bet" title="What you have on ${esc(c.player)}">${usd(total(betsOn(c.player)))}</span>` : "") +
         (others && others.length ? `<button type="button" class="more" data-g="${esc(c.id)}">${GOPEN.has(c.id) ? "hide" :
           `+${others.length} more${others[0].ev > c.ev ? `, to ${pct(others[0].ev)}` : ""}`}</button>` : "")}</div>` +
-      `<div class="legs">${esc(c.label)}${liveBets().some(b => b.key === c.key) ? `<span class="bet" title="You have this slip">${usd(total(liveBets().filter(b => b.key === c.key)))}</span>` : ""}${c.model ? `<span class="rough" title="A higher line: fair value is modelled from the main line, not read off a book.">*</span>` : ""}${c.rough ? `<span class="rough" title="A leg sits on a Novig book wider than 4¢: rough fair value. Check sharp odds.">~</span>` : ""}</div>` +
+      `<div class="legs">${esc(c.label)}${c.model ? `<span class="rough" title="A higher line: fair value is modelled from the main line, not read off a book.">*</span>` : ""}${c.rough ? `<span class="rough" title="A leg sits on a Novig book wider than 4¢: rough fair value. Check sharp odds.">~</span>` : ""}</div>` +
       `<div class="num fair"><span class="lab">Fair</span>${am(c.fair)}</div>` +
       `<div class="num"><span class="lab">Novig</span>${c.slip_x.toFixed(2)}x</div>` +
       `<div class="num ev ${c.ev >= 0 ? "pos" : "neg"}">${pct(c.ev)}</div>` +
       `<div class="num qk"><span class="lab">QK</span>${c.qk > 0 ? c.qk.toFixed(2) + "u" : "—"}</div>` +
       `<div class="num rr">${c.r === null ? "" : (c.r >= 0 ? "+" : "−") + Math.abs(c.r).toFixed(2)}</div>` +
       `<div class="num"><span class="lab">Age</span>${age(c)}<button type="button" class="re${BUSY.has(c.key) ? " spin" : ""}" data-re="${esc(rk(c))}" title="Price this slip again: today’s leg prices and a new Novig quote"${BUSY.has(c.key) ? " disabled" : ""}>↻</button></div>` +
-      (OPEN.has(rk(c)) ? detail(c) : "") + `</div>`;
+      betLine(c, sub) + (OPEN.has(rk(c)) ? detail(c) : "") + `</div>`;
     rowsEl.innerHTML = cards.map(({ head, others }) =>
       one(head, false, others) + (GOPEN.has(head.id) ? others.map(c => one(c, true)).join("") : "")).join("");
     rowsEl.querySelectorAll(".more").forEach(b => b.onclick = e => {
