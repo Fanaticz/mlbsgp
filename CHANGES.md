@@ -2,6 +2,13 @@
 
 ## 2026-11-13 session
 
+### NFL: spread and moneyline correlations by underdog / favourite
+- **What was wrong**: Cam Ward 21+ CMP · 34+ PASS ATT · JAX -10.5 showed fair +306 and +22.5% at Novig's 4.97x, while Fanatics paid +335 and DK +320 on the same slip. The board used one r for a QB's attempts against his team covering (-0.39, all games). For underdogs it is far weaker: an underdog is already expected to trail, and its attempts line says so.
+- **Measured** (ten seasons, each fitted within 3-point bands of the closing spread): QB attempts · his team covering -0.44 as a favourite of 3.5+, -0.39 within a field goal, -0.15 as an underdog of 3.5+; completions -0.29 / -0.19 / -0.02. A lead back's carries · covering go the other way: +0.22 as a favourite, +0.54 / +0.53 otherwise. Touchdown props and everything with a total show no split.
+- **Three legs, checked on the games**: attempts Over + completions Over + the other team covering hit 78% as often as the old model said for underdogs of 7+ (459 games), 82% for underdogs of 3.5 to 6.5, 102% for favourites. With the per-side r's: 96% to 99% on every side.
+- **Now** (`nfl_stack_correlations.py`: `side` dog / even / fav rows for the spread, moneyline and their first-half versions, 210 → 570 rows; `side_of` and `line_r` in `scan.py`): a slip with one of those four lines uses the r for his team's side of Novig's main spread (its moneyline when the spread book is wide). Totals and team totals are unchanged.
+- **Ward's slip** reprices to +375 fair: +4.7% at Novig's 4.97x and -8% at Fanatics' +335. With attempts · cover at -0.15 it is under the 0.25 cut, so the board no longer asks it. Each per-side r carries about ±0.08, more than the all-games ones (±0.04).
+
 ### Novig Scan: three-leg NFL slips folded into the NFL tab
 The NFL 3-Leg tab is gone (Max, 11-13): the NFL tab's one Fetch now also asks the three-leg slips, on the same board. The pair filter has "Three legs: all", the four shapes and the seven kinds of line, each marked "3:". `scan.py --league nfl --kind tri` still asks them alone.
 

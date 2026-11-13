@@ -41,6 +41,16 @@ priced off the moneyline's own fair value needs. It lands on the cover r
 (0.50), as it should: winning and covering are one margin cut at two
 places. The first half's leader is fitted the same way (ties left out).
 
+Underdogs and favourites: with the spread, the moneyline and their first-
+half versions, a volume prop's r depends on which side his team is. A QB's
+pass attempts against his team covering: -0.44 as a favourite of 3.5+,
+-0.39 within a field goal, -0.15 as an underdog of 3.5+ (an underdog is
+already expected to trail, and its attempts line says so). A lead back's
+carries with covering: +0.22 as a favourite, +0.54 otherwise. So each of
+those four lines also gets one fit per side (`side`: dog, even, fav), fitted
+within 3-point bands of the closing spread like the moneyline. Totals show
+no such split and keep one r.
+
 First halves: halftime scores are ESPN's (its scoreboard's line scores, one
 call a week, joined on the ESPN game id nflverse carries). There are no
 closing first-half lines in nflverse, so the first-half total is cut at the
@@ -106,6 +116,10 @@ GAME = (("pyds", ("QB",), None), ("ptd", ("QB",), None), ("att", ("QB",), None),
         ("ryds", ("RB",), "car"), ("car", ("RB",), "car"), ("rry", ("RB",), "car"), ("td", ("RB",), "car"))
 LINES = ("over", "cover", "tt", "win", "h1over", "h1cover", "h1win")
 BANDED = ("win", "h1win")   # no closing number to cut at: fitted within bands of the closing spread
+# Lines whose r depends on whether his team is the underdog: one more fit per
+# side of the closing spread (points his team is favoured by).
+SIDED = ("cover", "win", "h1cover", "h1win")
+SIDES = {"dog": lambda sp: sp <= -3.5, "even": lambda sp: -3.5 < sp < 3.5, "fav": lambda sp: sp >= 3.5}
 ESPN = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
 
 
@@ -332,7 +346,7 @@ def check(groups: list[list[tuple[float, float]]], sx: str, sy: str, r: float) -
     return {"actual": round(sum(c[3] for c in cuts) / games, 4), "model": round(model / games, 4)}
 
 
-def buckets(rows: list[tuple[float, list]], edges: tuple, sx: str, sy: str) -> list[dict]:
+def buckets(rows: list[tuple[float, list]], edges: tuple, sx: str, sy: str, bands: bool = False) -> list[dict]:
     """rows = (volume, group's pairs). One fit per volume bucket, thin buckets
     merged downward (the top bucket into the one below it)."""
     bins = [[lo, None, []] for lo in edges]
@@ -351,7 +365,7 @@ def buckets(rows: list[tuple[float, list]], edges: tuple, sx: str, sy: str) -> l
         i -= 1
     out = []
     for lo, hi, groups in bins:
-        if sx in BANDED:
+        if bands or sx in BANDED:
             f = fit(banded(groups, sy))
             if f:
                 out.append({"min": lo, "max": hi, **f, "groups": len(groups), "check": None})
@@ -408,7 +422,22 @@ def main() -> None:
                     if len(d) >= MIN_GROUP:
                         rows.append((vol[key][by] if by else 1.0, d))
                 for b in buckets(rows, EDGES[by] if by else (0.0,), line, sy):
-                    game.append({"line": line, "stat": sy, "pos": pos, "by": by, **b})
+                    game.append({"line": line, "stat": sy, "pos": pos, "by": by, "side": None, **b})
+                if line not in SIDED:
+                    continue
+                for side, on in SIDES.items():
+                    rows = []
+                    for key, games in ps.items():
+                        if games[0]["p"]["pos"] != pos:
+                            continue
+                        # (line, stat, spread) for his whole season, so the stat is cut at his
+                        # season median; games on the other sides carry line 0 and are left out.
+                        d = [(g["ln"][line] if on(g["ln"]["sp"]) else 0.0, g["p"][sy], g["ln"]["sp"])
+                             for g in games if g["ln"] and line in g["ln"]]
+                        if len(d) >= MIN_GROUP:
+                            rows.append((vol[key][by] if by else 1.0, d))
+                    for b in buckets(rows, EDGES[by] if by else (0.0,), line, sy, bands=True):
+                        game.append({"line": line, "stat": sy, "pos": pos, "by": by, "side": side, **b})
 
     payload = {
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -419,7 +448,9 @@ def main() -> None:
         "method": "Gaussian-copula r that reproduces how often both legs hit at each group's median lines "
                   "(anytime TD 1+, passing TDs 2+, game lines at the closing number); role = position and "
                   "that season's targets or carries a game; check = the same at upper-third lines. "
-                  "win and h1win are fitted within 3-point bands of the closing spread; the first-half "
+                  "win and h1win are fitted within 3-point bands of the closing spread; rows with a side "
+                  "(dog: underdog of 3.5+, fav: favourite of 3.5+, even: between) are the spread and "
+                  "moneyline lines fitted on those games alone, the same way; the first-half "
                   "total and spread are cut at straight-line fits on the closing total and spread",
         "lines": {"over": "game total Over the closing total", "cover": "his team covers the closing spread",
                   "tt": "his team Over its implied total, (total -/+ spread) / 2",
@@ -448,7 +479,7 @@ def main() -> None:
         show(b, f"{b['qb']}·{b['stat']} {b['pos']} {rng(b)} {b['by']}/g")
     print("Prop with a game line")
     for b in game:
-        show(b, f"{b['stat']}·{b['line']} {b['pos']}" + (f" {rng(b)} {b['by']}/g" if b["by"] else ""))
+        show(b, f"{b['stat']}·{b['line']} {b['pos']}" + (f" {rng(b)} {b['by']}/g" if b["by"] else "") + (f" {b['side']}" if b["side"] else ""))
     print(f"Wrote {args.out}")
 
 
