@@ -2,6 +2,15 @@
 
 ## 2026-11-13 session
 
+### Novig Scan: CFB team-total and first-half slips
+The CFB board asked five slips a game in two families (underdog moneyline + Under, spread + total) and left Novig's team-total and first-half books unused (Max, 11-13: "not many CFB markets").
+
+- **Five more shapes a game**, ten at most (`LINE_BOARDS["cfb"]["own"]` in `scan.py`): the underdog's spread + his team total Under, the favourite's team total Under + Under, both team totals Under, the favourite's first-half spread + his spread, the first-half Under + Under. The first four are the CBB board's shapes; the first-half total is new (`TOTAL_1H`).
+- **Fair value**: every leg is Novig's own book, 4c wide or less, not Pinnacle (the CBB board uses Pinnacle because Novig's college basketball team-total books are wide; in football they are tight). Correlations are the same per-game model: first half with full game 0.71, a team total with the game total about 0.75, underdog covering with his own total Under about -0.65. Modelled, not measured on college football results.
+- **Size**: 560 slips on 61 games tonight (was about 290), so a full Saturday scan is about ten minutes. Of 134 open games, about half have only a tight moneyline and are skipped.
+- **Page**: two more CFB filters, "With a team total" and "First half + game".
+- **Checked**: a 30-quote pass priced every new shape. The new ones came back -2.9% to -7.5% (the three above fair were all underdog moneyline slips), in line with the 11-13 test that left them out: expect more rows, few above fair.
+
 ### NBA Ladder: DraftKings no longer asked
 The DraftKings pull for NBA never worked (Max, 11-13), so `books.py` no longer tries it: NBA shifted legs (the Ladder tab and `price.py`) are capped by Novig's ask and FanDuel's one-way price only. The Ladder tab's red "DraftKings prices did not load" note is gone with it; it still warns when FanDuel fails. NFL Ladder is unchanged and still asks both books.
 

@@ -283,7 +283,7 @@ moneyline), from the role r's in `public/data/nfl_stack_correlations.json`.
 It ends with three-leg slips (`--kind tri` asks those alone): three of a player's props, two with a game line, QB + receiver + a
 game line, or three props across the two.
 `--league cfb` asks college football slips across one game's lines (Novig
-lists no college player props): underdog moneyline + Under, spread + total.
+lists no college player props): underdog moneyline + Under, spread + total, team-total Unders, first half + game.
 Fair values are modelled per game; see scan.py's docstring.
 `--league cbb` is the same for college basketball: spread + total only.
 `--league soccer` prices Max's corners shape (favourite 3-way win +

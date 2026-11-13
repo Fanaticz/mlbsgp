@@ -147,7 +147,11 @@ College football (--league cfb): Novig lists no player props for NCAAF, only
 game lines, so the slips are across a game's own lines: the underdog's
 moneyline + the game Under (main line, and the Under nearest +230), those two
 with the underdog's team total Over, the favourite's spread + Over and the
-underdog's spread + Under. Five asks a game at most. The correlation comes
+underdog's spread + Under; then, on Novig's own team-total and first-half
+books (tight on about half a Saturday's games): the underdog's spread + his
+team total Under, the favourite's team total Under + Under, both team totals
+Under, the favourite's first-half spread + his spread, and the first-half
+Under + Under. Ten asks a game at most. The correlation comes
 from a two-score model fitted to that game's own ladders: the margin's and
 the total's spread (sd) from Novig's alt spreads and alt totals, the two
 teams' scores tied by what those two sds imply, and the margin tied to the
@@ -1097,8 +1101,10 @@ CFB_KAPPA = 0.5            # corr(favourite's margin, total) = CFB_KAPPA x sprea
 # too short to fit, and whether the underdog-moneyline slips are asked.
 # pin: team-total and first-half legs take Pinnacle's no-vig price (Novig's
 # books on those are too wide in college basketball), and the slips with them are asked.
-LINE_BOARDS = {"cfb": {"league": "NCAAF", "sd": (14.6, 15.0), "dogml": True, "pin": False},
-               "cbb": {"league": "NCAAB", "sd": (12.0, 16.5), "dogml": False, "pin": True}}
+# own: the same slips, and the first-half total's, on Novig's own team-total
+# and first-half books (tight in college football).
+LINE_BOARDS = {"cfb": {"league": "NCAAF", "sd": (14.6, 15.0), "dogml": True, "pin": False, "own": True},
+               "cbb": {"league": "NCAAB", "sd": (12.0, 16.5), "dogml": False, "pin": True, "own": False}}
 CBB_LINES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "public", "data", "cbb_line_correlations.json")
 CBB_MIN_GAMES = 400        # a spread band with fewer games than this uses the all-games r
 CFB_MIN_DOG = 0.10         # no underdog-moneyline slips on a longer shot than this
@@ -1124,7 +1130,8 @@ def cfb_candidates(a):
     board = LINE_BOARDS[a.league]
     items = novig.catalog({"league": board["league"], "eventStatus": "OPEN_PREGAME",
                            "marketType": "MONEY,SPREAD,TOTAL" + (",TEAM_TOTAL" if board["dogml"] or board["pin"] else "")
-                                         + (",SPREAD_1H" if board["pin"] else "")})
+                                         + (",SPREAD_1H" if board["pin"] or board["own"] else "")
+                                         + (",TOTAL_1H" if board["own"] else "")})
     pin = []
     if board["pin"]:
         try:
@@ -1199,9 +1206,10 @@ def cfb_candidates(a):
                     L.update(stat="cover", team=tm, line=float(ln), text=("1H " if half else "") + o["name"])
                     des = "home" if tm == home else "away"
                     key = (1 if half else 0, "spread", None, float(ln) if des == "home" else -float(ln))
-                elif typ == "TOTAL":
-                    L.update(stat="tot", team=None, side="over" if i == 0 else "under", text=f"{'Over' if i == 0 else 'Under'} {L['line']:g}")
-                    key, des = (0, "total", None, L["line"]), L["side"]
+                elif typ in ("TOTAL", "TOTAL_1H"):
+                    L.update(stat="tot", team=None, side="over" if i == 0 else "under",
+                             text=f"{'1H ' if half else ''}{'Over' if i == 0 else 'Under'} {L['line']:g}")
+                    key, des = (1 if half else 0, "total", None, L["line"]), L["side"]
                 elif typ == "TEAM_TOTAL" and o.get("subjectId") in sub:
                     tm = sub[o["subjectId"]]
                     L.update(stat="tt", team=tm, side="over" if i == 0 else "under",
@@ -1292,13 +1300,15 @@ def cfb_candidates(a):
         dog_tt = pick("tt", dog)
         shapes = [("dogml", None, [dog_ml, under]), ("dogml", None, [dog_ml, under_alt]), ("dogml", None, [dog_ml, under, dog_tt]),
                   ("cover", "fav_cover+over", [pick("cover", fav), pick("tot")]), ("cover", "dog_cover+under", [pick("cover", dog), under])]
-        if board["pin"]:
+        if board["pin"] or board["own"]:
             fav_ttu, dog_ttu = pick("tt", fav, "under"), pick("tt", dog, "under")
             # The underdog covering with his own total Under: no game Under leg,
             # since those two all but force it (63.5 + 63.5 + 27.5 is under a 157.5 total).
             shapes += [("tt", "dog_cover+dog_tt_under", [pick("cover", dog), dog_ttu]), ("tt", "fav_tt_under+under", [fav_ttu, under]),
                        ("tt", "fav_tt_under+dog_tt_under", [fav_ttu, dog_ttu]),
                        ("half", "fav_1h_cover+fav_cover", [pick("cover", fav, half=True), pick("cover", fav)])]
+        if board["own"]:
+            shapes += [("half", "1h_under+under", [pick("tot", side="under", half=True), under])]
         for kind, shape, ls in shapes:
             if any(L is None for L in ls) or len({L["id"] for L in ls}) < len(ls):
                 continue
