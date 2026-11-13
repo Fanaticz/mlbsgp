@@ -4,8 +4,9 @@
   stack  a quarterback's passing with one of his own receivers or backs
          (passing yards + his WR's receiving yards, passing TDs + anytime TD)
   game   a player's prop with the game's closing total, his team's closing
-         spread, or his team's implied total (QB passing yards + game Over,
-         RB rushing yards + his team covering)
+         spread, his team's implied total, his team winning, or the first
+         half's total, spread and leader (QB passing yards + game Over, RB
+         rushing yards + his team covering)
 
 scripts/nfl_fetch_correlations.py covers one player's own props, per player.
 These are league-wide numbers by role instead: a QB-receiver pair shares a
@@ -30,9 +31,27 @@ slip of two legs near their main lines, priced with this r, hits as often as
 it did over these seasons; `check` in the output is the same comparison at
 harder lines (each stat's upper third), which the fit never saw.
 
+Winning (the moneyline) has no closing number to cut at: a favourite wins
+more often, and a favourite's back also carries more, so cutting "won" at a
+player's season average counts the spread itself as correlation (a lead
+back's carries: 0.59 that way, 0.47 with his team covering). It is fitted
+within games of about the same closing spread instead (3-point bands), the
+stat still cut at the player's own season median, which gives the r a slip
+priced off the moneyline's own fair value needs. It lands on the cover r
+(0.50), as it should: winning and covering are one margin cut at two
+places. The first half's leader is fitted the same way (ties left out).
+
+First halves: halftime scores are ESPN's (its scoreboard's line scores, one
+call a week, joined on the ESPN game id nflverse carries). There are no
+closing first-half lines in nflverse, so the first-half total is cut at the
+straight-line fit of first-half points on the closing total (about half of
+it) and the first-half spread at the same fit of the halftime margin on the
+closing spread (about 0.57 of it).
+
 Sources (nflverse-data releases, public):
   stats_player/stats_player_week_{season}.csv   weekly player stats
   schedules/games.csv                           results, closing spread / total
+  site.api.espn.com .../nfl/scoreboard          halftime scores
 
 Usage:
   python3 scripts/nfl_stack_correlations.py              # last 10 seasons
@@ -44,6 +63,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import concurrent.futures
 import csv
 import datetime as dt
 import io
@@ -56,6 +76,7 @@ import time
 import urllib.request
 from statistics import NormalDist
 
+HALF = {}   # what load() found for the first halves, for the output file
 REL = "https://github.com/nflverse/nflverse-data/releases/download"
 ND = NormalDist()
 
@@ -70,7 +91,8 @@ COLS = {"att": ("attempts",), "cmp": ("completions",), "pyds": ("passing_yards",
         "yds": ("receiving_yards",), "td": ("rushing_tds", "receiving_tds"),
         "rry": ("rushing_yards", "receiving_yards")}
 # A leg's line inside a group: a fixed count, or the group's median.
-FIXED = {"td": 0.5, "ptd": 1.5, "over": 0.0, "cover": 0.0, "tt": 0.0}
+FIXED = {"td": 0.5, "ptd": 1.5, "over": 0.0, "cover": 0.0, "tt": 0.0,
+         "win": 0.0, "h1over": 0.0, "h1cover": 0.0, "h1win": 0.0}
 
 # (QB stat, teammate's stat, teammate positions, role volume)
 STACKS = (("pyds", "yds", ("WR", "TE", "RB"), "tgt"), ("pyds", "rec", ("WR", "TE", "RB"), "tgt"),
@@ -82,7 +104,9 @@ GAME = (("pyds", ("QB",), None), ("ptd", ("QB",), None), ("att", ("QB",), None),
         ("ryds", ("QB",), None),
         ("yds", ("WR", "TE", "RB"), "tgt"), ("rec", ("WR", "TE", "RB"), "tgt"), ("td", ("WR", "TE"), "tgt"),
         ("ryds", ("RB",), "car"), ("car", ("RB",), "car"), ("rry", ("RB",), "car"), ("td", ("RB",), "car"))
-LINES = ("over", "cover", "tt")
+LINES = ("over", "cover", "tt", "win", "h1over", "h1cover", "h1win")
+BANDED = ("win", "h1win")   # no closing number to cut at: fitted within bands of the closing spread
+ESPN = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
 
 
 def fetch(path: str, cache: str | None) -> str:
@@ -112,11 +136,53 @@ def num(v) -> float:
         return 0.0
 
 
+def halves(seasons: list[int], cache: str | None) -> dict:
+    """{ESPN game id: (home, away) points at halftime} for finished regular-
+    season games. A week ESPN doesn't answer for is left out."""
+    name = os.path.join(cache, "espn_halves.json") if cache else None
+    if name and os.path.exists(name):
+        return json.load(open(name, encoding="utf-8"))
+
+    def week(yw):
+        url = f"{ESPN}?dates={yw[0]}&seasontype=2&week={yw[1]}"
+        for attempt in range(4):
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "nfl-stack-correlations"})
+                with urllib.request.urlopen(req, timeout=40) as r:
+                    return json.load(r).get("events", [])
+            except Exception:  # noqa: BLE001
+                time.sleep(2 * (attempt + 1))
+        print(f"  no ESPN scoreboard for {yw[0]} week {yw[1]}", file=sys.stderr)
+        return []
+
+    out = {}
+    with concurrent.futures.ThreadPoolExecutor(8) as pool:
+        for events in pool.map(week, [(y, w) for y in seasons for w in range(1, 19)]):
+            for e in events:
+                c = e["competitions"][0]
+                if not c["status"]["type"]["completed"]:
+                    continue
+                q = {t["homeAway"]: [x["value"] for x in t.get("linescores", [])] for t in c["competitors"]}
+                if len(q.get("home", [])) >= 4 and len(q.get("away", [])) >= 4:
+                    out[e["id"]] = (sum(q["home"][:2]), sum(q["away"][:2]))
+    if name:
+        os.makedirs(cache, exist_ok=True)
+        json.dump(out, open(name, "w", encoding="utf-8"))
+    return out
+
+
+def ols(xs: list[float], ys: list[float]) -> tuple[float, float]:
+    """(intercept, slope) of the straight-line fit of ys on xs."""
+    mx, my = statistics.mean(xs), statistics.mean(ys)
+    b = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sum((x - mx) ** 2 for x in xs)
+    return my - b * mx, b
+
+
 def load(seasons: list[int], cache: str | None):
     """(team-games, lines): team-games[(game_id, team)] = that team's players,
     each {id, name, pos, season, stats...}; lines[(game_id, team)] = how the
     game landed against the closing numbers, from that team's side."""
-    lines = {}
+    lines, games = {}, []
     for g in csv.DictReader(io.StringIO(fetch("schedules/games.csv", cache))):
         try:
             res, tot, sp, tl = float(g["result"]), float(g["total"]), float(g["spread_line"]), float(g["total_line"])
@@ -126,8 +192,25 @@ def load(seasons: list[int], cache: str | None):
         if g.get("game_type") != "REG":
             continue
         # result = home - away; spread_line = points the home team is favoured by.
-        lines[(g["game_id"], g["home_team"])] = {"over": tot - tl, "cover": res - sp, "tt": hs - (tl + sp) / 2}
-        lines[(g["game_id"], g["away_team"])] = {"over": tot - tl, "cover": sp - res, "tt": as_ - (tl - sp) / 2}
+        # "sp" is the closing spread from the team's side, for the banded fits.
+        lines[(g["game_id"], g["home_team"])] = {"over": tot - tl, "cover": res - sp, "tt": hs - (tl + sp) / 2,
+                                                 "win": res, "sp": sp}
+        lines[(g["game_id"], g["away_team"])] = {"over": tot - tl, "cover": sp - res, "tt": as_ - (tl - sp) / 2,
+                                                 "win": -res, "sp": -sp}
+        if int(g["season"]) in seasons:
+            games.append((g, sp, tl))
+    # First halves, cut at stand-ins for the closing first-half lines.
+    half = halves(seasons, cache)
+    have = [(g, sp, tl, half[g["espn"]]) for g, sp, tl in games if g.get("espn") in half]
+    if len(have) >= 500:
+        t0, t1 = ols([tl for _, _, tl, _ in have], [h + a for _, _, _, (h, a) in have])
+        _, s1 = ols([sp for _, sp, _, _ in have], [h - a for _, _, _, (h, a) in have])
+        for g, sp, tl, (h, a) in have:
+            lines[(g["game_id"], g["home_team"])].update(h1over=h + a - (t0 + t1 * tl), h1cover=h - a - s1 * sp, h1win=h - a)
+            lines[(g["game_id"], g["away_team"])].update(h1over=h + a - (t0 + t1 * tl), h1cover=s1 * sp - (h - a), h1win=a - h)
+        HALF.update(games=len(have), of=len(games), total=(round(t0, 2), round(t1, 3)), spread=round(s1, 3))
+    else:
+        print(f"  halftime scores for only {len(have)} of {len(games)} games: no first-half lines", file=sys.stderr)
     teams = collections.defaultdict(list)
     for yr in seasons:
         try:
@@ -192,6 +275,25 @@ def cut(pairs: list[tuple[float, float]], sx: str, sy: str, q: float = 0.5):
     return n, a, b, sum(x > lx and y > ly for x, y in pairs)
 
 
+def banded(groups: list[list[tuple]], sy: str) -> list[tuple]:
+    """Cuts for a line with no closing number (won, led at the half): one per
+    3-point band of the closing spread, across every group. The stat is cut
+    at each group's own median; ties on the line are left out."""
+    cells = collections.defaultdict(lambda: [0, 0, 0, 0])
+    for g in groups:
+        ly = line_of([y for _, y, _ in g], sy)
+        for x, y, sp in g:
+            if x == 0:
+                continue
+            c = cells[max(-4, min(4, round(sp / 3)))]
+            c[0] += 1
+            c[1] += x > 0
+            c[2] += y > ly
+            c[3] += x > 0 and y > ly
+    return [(n, a / n, b / n, both) for n, a, b, both in cells.values()
+            if n >= 50 and 0.05 <= a / n <= 0.95 and 0.05 <= b / n <= 0.95]
+
+
 def fit(cuts: list[tuple]) -> dict | None:
     """The r that reproduces the games both legs hit, with a rough standard error."""
     if not cuts:
@@ -249,6 +351,11 @@ def buckets(rows: list[tuple[float, list]], edges: tuple, sx: str, sy: str) -> l
         i -= 1
     out = []
     for lo, hi, groups in bins:
+        if sx in BANDED:
+            f = fit(banded(groups, sy))
+            if f:
+                out.append({"min": lo, "max": hi, **f, "groups": len(groups), "check": None})
+            continue
         f = fit([c for g in groups for c in [cut(g, sx, sy)] if c])
         if f:
             out.append({"min": lo, "max": hi, **f, "check": check(groups, sx, sy, f["r"])})
@@ -268,6 +375,8 @@ def main() -> None:
     teams, lines = load(seasons, args.cache)
     if len(teams) < 500:
         sys.exit("Too few games from nflverse; refusing to overwrite the data file.")
+    if not HALF and os.path.exists(args.out) and json.load(open(args.out, encoding="utf-8")).get("halves"):
+        sys.exit("No halftime scores from ESPN; refusing to drop the first-half lines from the data file.")
     ps = groups_of(teams, lines)
     vol = {k: {v: sum(g["p"][v] for g in rows) / len(rows) for v in EDGES} for k, rows in ps.items()}
 
@@ -294,7 +403,8 @@ def main() -> None:
                 for key, games in ps.items():
                     if games[0]["p"]["pos"] != pos:
                         continue
-                    d = [(g["ln"][line], g["p"][sy]) for g in games if g["ln"]]
+                    d = [(g["ln"][line], g["p"][sy]) + ((g["ln"]["sp"],) if line in BANDED else ())
+                         for g in games if g["ln"] and line in g["ln"]]
                     if len(d) >= MIN_GROUP:
                         rows.append((vol[key][by] if by else 1.0, d))
                 for b in buckets(rows, EDGES[by] if by else (0.0,), line, sy):
@@ -302,14 +412,21 @@ def main() -> None:
 
     payload = {
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
-        "source": "nflverse-data (stats_player_week, schedules)",
+        "source": "nflverse-data (stats_player_week, schedules); halftime scores from ESPN's scoreboard",
+        "halves": HALF,
         "seasons": seasons,
         "team_games": len(teams),
         "method": "Gaussian-copula r that reproduces how often both legs hit at each group's median lines "
                   "(anytime TD 1+, passing TDs 2+, game lines at the closing number); role = position and "
-                  "that season's targets or carries a game; check = the same at upper-third lines",
+                  "that season's targets or carries a game; check = the same at upper-third lines. "
+                  "win and h1win are fitted within 3-point bands of the closing spread; the first-half "
+                  "total and spread are cut at straight-line fits on the closing total and spread",
         "lines": {"over": "game total Over the closing total", "cover": "his team covers the closing spread",
-                  "tt": "his team Over its implied total, (total -/+ spread) / 2"},
+                  "tt": "his team Over its implied total, (total -/+ spread) / 2",
+                  "win": "his team wins (the moneyline)",
+                  "h1over": "first-half points Over the first-half total",
+                  "h1cover": "his team covers the first-half spread",
+                  "h1win": "his team leads at the half (ties left out)"},
         "stack": stack,
         "game": game,
     }

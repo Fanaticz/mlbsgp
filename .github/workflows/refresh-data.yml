@@ -65,7 +65,8 @@ jobs:
         run: python scripts/nfl_fetch_correlations.py --workers 16
 
       # League-wide QB + receiver and prop + game-line correlations from
-      # nflverse. Leaves the file alone if nflverse returns too little.
+      # nflverse (halftime scores from ESPN, for the first-half lines). Leaves
+      # the file alone if nflverse returns too little or ESPN nothing.
       - name: Refresh NFL stack and game-line correlations
         continue-on-error: true
         run: python scripts/nfl_stack_correlations.py

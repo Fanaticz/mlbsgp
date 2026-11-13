@@ -11,6 +11,7 @@ player, ranked by EV at what Novig's slip pays.
   python3 scan.py --min-ev 3      # print only rows at +3% or better
   python3 scan.py --league nfl    # NFL: a player's own props, QB + receiver stacks, props + game lines
   python3 scan.py --league nfl --kind stacks   # one kind only: props, stacks or lines
+  python3 scan.py --league nfl --kind tri      # NFL three-leg slips (its own pass)
   python3 scan.py --league nhl    # NHL: a skater's goals, assists, points and shots on goal, every pair
   python3 scan.py --json          # one JSON object per line as quotes land
                                   # (server.js reads this for the Scanner page)
@@ -66,12 +67,27 @@ receiving yards and carries, each with anytime TD.
 The same NFL pass then asks two kinds of slip across markets (--kind picks
 one). Stacks: a QB's passing Over with one of his own receivers' Over:
 passing yards + receiving yards, passing TDs + anytime TD, completions +
-receptions, passing yards + anytime TD. Lines: a player's prop Over with the game total, his team's
-spread or his team's total, on whichever side goes with it (RB rushing yards
-+ his team covering; QB pass attempts + the other team covering), where |r|
-is at least --line-r. Both use league-wide r's by role (position and targets
-or carries a game) from public/data/nfl_stack_correlations.json, ten
-seasons of nflverse; each player gets his --per highest-r combos of each.
+receptions, passing yards + anytime TD. Lines: a player's prop Over with a game line, on whichever
+side goes with it (RB rushing yards + his team covering; QB pass attempts +
+the other team covering), where |r| is at least --line-r. The game lines are
+the total, his team's spread, moneyline and team total, and the first
+half's total, spread and moneyline. Both use league-wide r's by role
+(position and targets or carries a game) from
+public/data/nfl_stack_correlations.json, ten seasons of nflverse. A stack
+gets his --per highest-r combos; lines get his best prop with each kind of
+line, and his --per highest over the total, spread and team total.
+The moneyline's r is measured within games of the same closing spread and
+comes out as the spread's (winning and covering are one margin); first-half
+r's run about three quarters of the full game's for scoring props and about
+the same for a back's carries and yards.
+
+NFL three legs (--kind tri, its own pass): every leg at its main line, all
+three pulling the same way. Three of a player's own props; two of them with
+a game line; a QB's passing Over, his receiver's Over and a game line; a QB
+leg with two of the receiver's, or two QB legs with one. The joint is the
+three-leg Gaussian copula on the three pair r's (the player's own for his
+two props, role r's across players and with lines). Each player leads his
+--per (3) best by lift, at most two of a shape and one of each line kind.
 
 NHL (--league nhl): skaters in public/data/nhl_correlations.json (40+ games
 of 10+ minutes; scripts/nhl_fetch_correlations.py, history from
@@ -615,7 +631,10 @@ STACK_PROPS = ("pyds", "ptd", "cmp", "att", "yds", "rec", "td", "ryds", "car", "
 # QB stat + teammate's stat asked by default; --scope all adds the weaker two.
 STACK_PAIRS = (("pyds", "yds"), ("ptd", "td"), ("cmp", "rec"), ("pyds", "td"))
 STACK_MORE = (("pyds", "rec"), ("ptd", "yds"))
-LINE_TYPES = {"over": "TOTAL", "cover": "SPREAD", "tt": "TEAM_TOTAL"}
+# Game lines a prop is asked with, and Novig's market type for each. "win" is
+# the moneyline; the h1 ones are the first half's total, spread and moneyline.
+LINE_TYPES = {"over": "TOTAL", "cover": "SPREAD", "win": "MONEY", "tt": "TEAM_TOTAL",
+              "h1over": "TOTAL_1H", "h1cover": "SPREAD_1H", "h1win": "MONEY_1H"}
 
 
 def role_r(table, vol, **match):
@@ -643,21 +662,18 @@ def two_way(m):
             "volume": m["volume"]}
 
 
-def nflx_candidates(a, game):
-    """NFL bets across two markets in one game, priced with league-wide role
-    correlations (scripts/nfl_stack_correlations.py, nflverse):
-      stacks (game=False)  a QB's passing Over + one of his own receivers' Over
-      lines (game=True)    a player's prop Over + the game total, his team's
-                           spread or team total, on the side that goes with it
-                           (QB pass attempts Over goes with the OTHER team covering)
-    Each player gets his --per highest-r combos of each kind."""
+def nfl_slate(a, game):
+    """This week's NFL board for the slips across markets: (the role
+    correlations, {eventId: {"teams": (away, home), "lines": {market type:
+    [two_way rows on tight books]}}}, {eventId: {team: [(player, his main
+    lines by stat, start time)]}}, vol(player, "tgt_mean" | "car_mean"))."""
     d, S = json.load(open(NFL_DATA)), json.load(open(STACK_DATA))
     cur = str(max(d["seasons"]))
     by = {novig.norm(p["name"]): p for p in d["players"]}
     types = [novig.ALL_TYPES[s] for s in STACK_PROPS] + (list(LINE_TYPES.values()) if game else ["TOTAL"])
     items = novig.catalog({"league": "NFL", "eventStatus": "OPEN_PREGAME", "marketType": ",".join(types)})
     props = [m for m in items if m["marketType"] in novig.STAT]
-    events = {}   # eventId -> {"teams": (away, home), "lines": {type: [two_way rows]}}
+    events = {}
     for m in items:
         if m["marketType"] in novig.STAT:
             continue
@@ -672,7 +688,7 @@ def nflx_candidates(a, game):
         s = (p.get("by_season") or {}).get(cur) or {}
         return (s if s.get("games", 0) >= 3 else p).get(k)
 
-    people = {}   # eventId -> team -> [(player, main lines, starts)]
+    people = {}
     for nm in sorted({novig.player_name(m) for m in props}):
         p = by.get(novig.norm(nm))
         if not p:
@@ -686,6 +702,60 @@ def nflx_candidates(a, game):
             continue   # no tight book, or he has changed teams since the data was built
         starts = min(r["starts"] for v in rows.values() for r in v)
         people.setdefault(eid, {}).setdefault(p["team_abbr"], []).append((p, main, starts))
+    return S, events, people, vol
+
+
+def prop_leg(p, s, main, who=""):
+    L = leg(s, main[s], 1)
+    L["text"] = f"{who}{leg_text(L)}"
+    return L
+
+
+def line_r(S, vol, p, s, line):
+    """The role's r between his stat and a game line. A back's rushing and
+    his TD go by his carries, everything else by targets; a QB has one role."""
+    by_ = None if p["group"] == "QB" else "car" if p["group"] == "RB" and s in ("ryds", "car", "rry", "td") else "tgt"
+    return role_r(S["game"], by_ and vol(p, by_ + "_mean"), line=line, stat=s, pos=p["group"], by=by_)
+
+
+def line_leg(ev, p, team, line, side):
+    """The game-line leg nearest 50/50 on a tight book, or None. side > 0 is
+    the Over, or his team (covering, winning, leading at the half); side < 0
+    the Under, or the other team."""
+    ms = ev["lines"].get(LINE_TYPES[line], [])
+    if line == "tt":
+        ms = [m for m in ms if m["desc"].startswith(p.get("team_name") or "?")]
+    if not ms:
+        return None
+    m = min(ms, key=lambda m: (abs(m["p"][0] - 0.5) + m["spread"], -m["volume"]))
+    half = " 1H" if line.startswith("h1") else ""
+    if line in ("cover", "win", "h1cover", "h1win"):
+        want = team if side > 0 else next(t for t in ev["teams"] if t != team)
+        i = next((i for i, n in enumerate(m["names"]) if n.split()[0] == want), None)
+        if i is None:
+            return None
+        text = m["names"][i] + half + (" moneyline" if line.endswith("win") else "")
+    else:
+        i = 0 if side > 0 else 1
+        what = team + " team total" if line == "tt" else " @ ".join(ev["teams"]) + half
+        text = f"{what} {'Over' if i == 0 else 'Under'} {m['strike']:g}"
+    return {"stat": line, "side": "over" if i == 0 else "under", "line": m["strike"], "p": m["p"][i],
+            "fair": sgp.american(m["p"][i]), "width": m["spread"], "id": m["ids"][i], "text": text}
+
+
+def nflx_candidates(a, game):
+    """NFL bets across two markets in one game, priced with league-wide role
+    correlations (scripts/nfl_stack_correlations.py, nflverse):
+      stacks (game=False)  a QB's passing Over + one of his own receivers' Over
+      lines (game=True)    a player's prop Over + a game line on the side that
+                           goes with it: the game total, his team's spread,
+                           moneyline or team total, or the first half's total,
+                           spread or moneyline (QB pass attempts Over goes
+                           with the OTHER team covering or winning)
+    Stacks: his --per highest-r combos. Lines: for each kind of line his
+    highest-r prop, and his --per highest over the total, spread and team
+    total whatever the prop."""
+    S, events, people, vol = nfl_slate(a, game)
 
     def row(p, starts, la, lb, r, kind, tier):
         j = sgp.joint(r, la["p"], lb["p"])
@@ -694,11 +764,6 @@ def nflx_candidates(a, game):
                 "label": f"{la['text']} · {lb['text']}", "r": r, "j": j, "forced": False,
                 "devig_r": sgp.devig_r(j, la["p"], lb["p"]),
                 "rough": max(la["width"], lb["width"]) > novig.MAX_SPREAD + 1e-9}
-
-    def prop(p, s, main, who=""):
-        L = leg(s, main[s], 1)
-        L["text"] = f"{who}{leg_text(L)}"
-        return L
 
     out = []
     for eid, sides in people.items():
@@ -717,37 +782,142 @@ def nflx_candidates(a, game):
                     for qs, ts in STACK_PAIRS + (STACK_MORE if a.scope == "all" else ()):
                         r = role_r(S["stack"], vol(p, "tgt_mean"), qb=qs, stat=ts, pos=p["group"], by="tgt")
                         if qs in qmain and ts in main and r is not None and r >= a.min_r:
-                            mine.append(row(p, starts, prop(qb, qs, qmain, who), prop(p, ts, main), r, "stack", 7))
+                            mine.append(row(p, starts, prop_leg(qb, qs, qmain, who), prop_leg(p, ts, main), r, "stack", 7))
                     out += sorted(mine, key=lambda c: -c["r"])[:a.per]
                 continue
-            opp = next(t for t in ev["teams"] if t != team)
             for p, main, starts in ps:
                 mine = []
                 for s in main:
-                    for line, typ in LINE_TYPES.items():
-                        # A back's rushing and his TD go by his carries, everything else by targets.
-                        by_ = None if p["group"] == "QB" else "car" if p["group"] == "RB" and s in ("ryds", "car", "rry", "td") else "tgt"
-                        r = role_r(S["game"], by_ and vol(p, by_ + "_mean"), line=line, stat=s, pos=p["group"], by=by_)
+                    for line in LINE_TYPES:
+                        r = line_r(S, vol, p, s, line)
                         if r is None or abs(r) < a.line_r:
                             continue
-                        ms = ev["lines"].get(typ, [])
-                        if line == "tt":
-                            ms = [m for m in ms if m["desc"].startswith(p.get("team_name") or "?")]
-                        if not ms:
-                            continue
-                        m = min(ms, key=lambda m: (abs(m["p"][0] - 0.5) + m["spread"], -m["volume"]))
-                        if line == "cover":   # his team's side when r > 0, the other team's when r < 0
-                            i = next(i for i, n in enumerate(m["names"]) if n.split()[0] == (team if r > 0 else opp))
-                            text = m["names"][i]
-                        else:
-                            i = 0 if r > 0 else 1
-                            what = " @ ".join(ev["teams"]) if line == "over" else team + " team total"
-                            text = f"{what} {'Over' if i == 0 else 'Under'} {m['strike']:g}"
-                        lb = {"stat": line, "side": "over" if i == 0 else "under", "line": m["strike"], "p": m["p"][i],
-                              "fair": sgp.american(m["p"][i]), "width": m["spread"], "id": m["ids"][i], "text": text}
-                        mine.append(row(p, starts, prop(p, s, main), lb, abs(r), line, 8))
-                out += sorted(mine, key=lambda c: -c["r"])[:a.per]
+                        lb = line_leg(ev, p, team, line, r)   # his team's side when r > 0, the other when r < 0
+                        if lb:
+                            mine.append(row(p, starts, prop_leg(p, s, main), lb, abs(r), line, 8))
+                mine.sort(key=lambda c: -c["r"])
+                keep = {c["key"] for c in [c for c in mine if c["kind"] in ("over", "cover", "tt")][:a.per]}
+                for line in LINE_TYPES:   # and his best prop with each kind of line
+                    keep |= {c["key"] for c in [c for c in mine if c["kind"] == line][:1]}
+                out += [c for c in mine if c["key"] in keep]
     out.sort(key=lambda c: -c["j"] / (c["legs"][0]["p"] * c["legs"][1]["p"]))
+    return out[:a.max] if a.max else out
+
+
+def tri_safe(ps, rs):
+    """Three legs' joint from their pairwise r's (legs a, b, c: r_ab, r_ac,
+    r_bc). Role r's come from different samples, so three of them needn't be
+    a possible set: shrink them together until they are. Never above the
+    tightest pair's own joint."""
+    rab, rac, rbc = rs
+    while 1 + 2 * rab * rac * rbc - rab ** 2 - rac ** 2 - rbc ** 2 < 0.02:
+        rab, rac, rbc = 0.97 * rab, 0.97 * rac, 0.97 * rbc
+    j = price.tri_joint(ps, [[1, rab, rac], [rab, 1, rbc], [rac, rbc, 1]])
+    return min(j, sgp.joint(rab, ps[0], ps[1]), sgp.joint(rac, ps[0], ps[2]), sgp.joint(rbc, ps[1], ps[2]))
+
+
+def nfl_tri_candidates(a):
+    """NFL three-leg slips (--kind tri, the NFL 3-Leg board), every leg at
+    its main line and all three pulling the same way:
+      own3       three of one player's props (receptions + yards + TD; a
+                 QB's completions + passing yards + passing TDs)
+      pairline   two of his props + a game line
+      stackline  a QB's passing Over + his receiver's Over + a game line
+      stack3     a QB's passing Over + two of one receiver's props, or two
+                 of the QB's props + one of the receiver's
+    The game line is any of LINE_TYPES, on the side that goes with both
+    props (each at r 0.10 or better with it, one at --line-r). Pair r's: the
+    player's own (nfl_correlations.json) for two of his props, the league-wide
+    role r's (nfl_stack_correlations.json) across a QB and his receiver or
+    with a game line. Each player leads his --per best by lift over unrelated
+    legs, at most two of one shape and one of each kind of game line."""
+    S, events, people, vol = nfl_slate(a, True)
+    lift = {}
+
+    def pair_lift(r, la, lb):
+        k = (la["id"], lb["id"])
+        if k not in lift:
+            lift[k] = sgp.joint(r, la["p"], lb["p"]) / (la["p"] * lb["p"])
+        return lift[k]
+
+    def own_r(p, x, y):
+        r = nfl_r(p, x, y)
+        return r if r is not None and r >= 0 else None
+
+    def with_line(ev, team, pa, la, pb, lb, rab):
+        """(legs, pair r's, kind of line) for the two prop legs with each
+        game line that goes the same way as both."""
+        for line in LINE_TYPES:
+            ra, rb = line_r(S, vol, pa, la["stat"], line), line_r(S, vol, pb, lb["stat"], line)
+            if ra is None or rb is None:
+                continue
+            side = 1 if ra + rb > 0 else -1
+            if min(ra * side, rb * side) < 0.10 or max(ra * side, rb * side) < a.line_r:
+                continue
+            lc = line_leg(ev, pa, team, line, side)
+            if lc:
+                yield [la, lb, lc], (rab, ra * side, rb * side), line
+
+    out, seen = [], set()
+    for eid, sides in people.items():
+        ev = events[eid]
+        for team, ps in sides.items():
+            qbs = [x for x in ps if x[0]["group"] == "QB"]
+            qb, qmain, _ = max(qbs, key=lambda x: x[0].get("att_mean") or 0) if qbs else (None, {}, None)
+            who = qb["name"].split()[-1] + " " if qb else ""
+            for p, main, starts in ps:
+                L = {s: prop_leg(p, s, main) for s in main}
+                own = [(x, y, r) for x, y in itertools.combinations(main, 2) for r in [own_r(p, x, y)] if r is not None]
+                rown = {frozenset(k[:2]): k[2] for k in own}
+                mine = []   # (shape, kind of line, legs, pair r's)
+                for x, y, z in itertools.combinations(main, 3):
+                    rs = [rown.get(frozenset(k)) for k in ((x, y), (x, z), (y, z))]
+                    if None not in rs and max(rs) >= a.min_r:
+                        mine.append(("own3", None, [L[x], L[y], L[z]], tuple(rs)))
+                for x, y, r in own:
+                    if r >= a.min_r:
+                        mine += [("pairline", line, legs, rs) for legs, rs, line in with_line(ev, team, p, L[x], p, L[y], r)]
+                if qb and p is not qb:
+                    Q = {s: prop_leg(qb, s, qmain, who) for s in qmain}
+                    st = {(qs, ts): r for qs, ts in STACK_PAIRS + STACK_MORE if qs in Q and ts in L
+                          for r in [role_r(S["stack"], vol(p, "tgt_mean"), qb=qs, stat=ts, pos=p["group"], by="tgt")]
+                          if r is not None and r >= a.min_r}
+                    for (qs, ts), r in st.items():
+                        mine += [("stackline", line, legs, rs) for legs, rs, line in with_line(ev, team, qb, Q[qs], p, L[ts], r)]
+                    for (qs, t1), r1 in st.items():
+                        for (q2, t2), r2 in st.items():
+                            if q2 == qs and t1 < t2 and frozenset((t1, t2)) in rown:   # one QB leg, two of the receiver's
+                                mine.append(("stack3", None, [Q[qs], L[t1], L[t2]], (r1, r2, rown[frozenset((t1, t2))])))
+                            rq = own_r(qb, qs, q2) if t2 == t1 and qs < q2 else None   # two QB legs, one of his
+                            if rq is not None:
+                                mine.append(("stack3", None, [Q[qs], Q[q2], L[t1]], (rq, r1, r2)))
+                # Ranked on the product of the three pair lifts (quick, and
+                # close); the exact three-leg joint is worked out for the kept.
+                def rough(c):
+                    (la, lb, lc), (rab, rac, rbc) = c[2], c[3]
+                    return pair_lift(rab, la, lb) * pair_lift(rac, la, lc) * pair_lift(rbc, lb, lc)
+                shapes, lines_used, n = {}, set(), 0
+                for shape, line, legs, rs in sorted(mine, key=lambda c: -rough(c)):
+                    ids = frozenset(x["id"] for x in legs)
+                    if n >= a.per or shapes.get(shape, 0) >= 2 or line in lines_used or ids in seen:
+                        continue
+                    try:
+                        j = tri_safe([x["p"] for x in legs], rs)
+                    except (ValueError, ZeroDivisionError, OverflowError):
+                        continue
+                    if not 0 < j < 1:
+                        continue
+                    seen.add(ids)
+                    n += 1
+                    shapes[shape] = shapes.get(shape, 0) + 1
+                    if line:
+                        lines_used.add(line)
+                    out.append({"key": ",".join(x["id"] for x in legs), "tier": 9, "player": p["name"], "id": p["athlete_id"],
+                                "team": p.get("team_abbr") or "", "starts": starts, "legs": legs, "kind": shape, "line": line,
+                                "label": " · ".join(x["text"] for x in legs), "r": min(rs), "rs": [round(r, 3) for r in rs],
+                                "j": j, "forced": False, "devig_r": None,
+                                "rough": max(x["width"] for x in legs) > novig.MAX_SPREAD + 1e-9})
+    out.sort(key=lambda c: -c["j"] / (c["legs"][0]["p"] * c["legs"][1]["p"] * c["legs"][2]["p"]))
     return out[:a.max] if a.max else out
 
 
@@ -1089,6 +1259,8 @@ def scan(a, emit):
             cands = cands + nflx_candidates(a, False)
         if a.kind in ("all", "lines"):
             cands = cands + nflx_candidates(a, True)
+        if a.kind == "tri":   # its own pass: the NFL 3-Leg board
+            cands = nfl_tri_candidates(a)
         stats, rfun = NFL_STATS, nfl_r
     elif a.league == "nhl":
         d = json.load(open(NHL_DATA))
@@ -1174,11 +1346,12 @@ def scan(a, emit):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--league", default="nba", choices=("nba", "nfl", "nhl", "soccer"))
-    ap.add_argument("--kind", default="all", choices=("all", "props", "stacks", "lines", "mates"),
-                    help="NFL: one kind of slip only (default: a player's own props, then stacks, then game lines). "
+    ap.add_argument("--kind", default="all", choices=("all", "props", "stacks", "lines", "tri", "mates"),
+                    help="NFL: one kind of slip only (default: a player's own props, then stacks, then game lines; "
+                         "tri is its own pass, the three-leg slips). "
                          "NHL: props (a skater's own goals + shots), mates (two teammates) or lines (points + a game line)")
     ap.add_argument("--per", type=int, default=None,
-                    help="NFL stacks / lines, NHL teammates: combos asked per player of each kind, highest r first "
+                    help="NFL stacks / lines / three legs, NHL teammates: combos asked per player of each kind, highest r first "
                          "(3; NHL lines 4: moneyline, puck line, total and team total)")
     ap.add_argument("--line-r", type=float, default=0.25, help="NFL / NHL lines: smallest |r| between a prop and a game line")
     ap.add_argument("--scope", default="main", choices=("main", "ladder", "all"),
@@ -1248,6 +1421,8 @@ def main():
         a.ladder_pts = 15 if a.scope == "ladder" else 10
     if a.ladder_3s is None:
         a.ladder_3s = 3 if a.scope == "ladder" else 2
+    if a.kind == "tri" and (a.league != "nfl" or a.scope == "ladder"):
+        raise SystemExit("--kind tri is NFL only (and not with --scope ladder)")
     if a.scope == "ladder":
         if a.league == "soccer":
             raise SystemExit("--scope ladder is NBA and NFL only")

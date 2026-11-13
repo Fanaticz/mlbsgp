@@ -2,6 +2,15 @@
 
 ## 2026-11-13 session
 
+### Novig Scan: NFL 3-Leg board, moneyline and first-half lines
+- **NFL tab, game lines**: a prop was asked with the game total, the spread and the team total only. It is now also asked with his team's **moneyline** and the **first half's total, spread and moneyline** (Novig's `MONEY`, `TOTAL_1H`, `SPREAD_1H`, `MONEY_1H`), on the side that goes with the prop. Each player gets his best prop with each kind of line (r 0.25 or better), plus what he was asked before. The pair filter has the four new kinds.
+- **NFL 3-Leg** (a new board; `scan.py --league nfl --kind tri`): three legs at main lines, all pulling the same way. Four shapes: three of a player's own props (receptions + yards + TD); two of his props + a game line; his QB's passing Over + his Over + a game line; three props across him and his QB. The line is any of the seven above. Each player leads up to three slips, the ones with most lift over unrelated legs, at most two of a shape and one per kind of line. The filter picks a shape or a kind of line; an open row shows the three pair r's.
+- **The numbers** (`scripts/nfl_stack_correlations.py`, same file, 90 → 210 prop + line rows): a prop moves with the moneyline as it does with the spread. Cut at a player's season win rate, a lead back's carries with a win reads 0.59, but that counts the spread itself (favourites run more); within games of the same closing spread it is 0.50, against 0.47 with covering. So the moneyline leg is priced off its own fair value with that r. First half: a lead back's carries 0.43 with the 1H spread (0.47 full game), rushing yards 0.39 (0.38); QB passing TDs 0.45 with the 1H total (0.62 full), passing yards 0.26 (0.41).
+- **First-half data**: halftime scores for all 2,520 games from ESPN's scoreboard (finals match nflverse in every game). nflverse has no closing first-half lines, so the 1H total is cut at a straight-line fit on the closing total (0.28 + 0.50 x) and the 1H spread at 0.57 x the closing spread. The script leaves the file alone if ESPN gives no halftime scores.
+- **Three-leg fair value**: the three-way Gaussian copula on the three pair r's: the player's own for two of his props, role r's across players and with lines. Role r's carry about ±0.05 each, so these fair values are rougher than two-leg ones, roughly ±5%.
+- **Size**: on today's board (Friday, tight books) the NFL tab asks 445 prop + line slips where it asked 254, about 3.5 minutes more; NFL 3-Leg asks 394, about 8 minutes. A pass is now killed at 30 minutes, not 20.
+- **Checked**: Novig priced all 20 test slips, every new kind (prop + moneyline, each first-half line, all four three-leg shapes). 3 came back above fair (Braelon Allen TD + rushing yards + NYJ 1H moneyline +12.5%), 17 below, most by 3% to 20%. Both boards fetched and rendered in a browser on passes capped at 14 and 42 quotes; no full pass has been run.
+
 ### Novig Scan: stop a pass
 A pass could not be interrupted: with one running (up to 20 minutes), Fetch was greyed out on every board until it finished.
 

@@ -277,6 +277,12 @@ Receptions·TD and Yards·TD (TD = Novig's TOUCHDOWNS 0.5, any touchdown) for
 the WRs, TEs and RBs in `public/data/nfl_correlations.json`, then the three
 together. No rushing props (no r for them). NFL books are thin until late in
 the week.
+The same pass asks QB + receiver stacks and a prop with a game line (the
+total, spread, moneyline, team total, and the first half's total, spread and
+moneyline), from the role r's in `public/data/nfl_stack_correlations.json`.
+`--league nfl --kind tri` (the page's **NFL 3-Leg** tab) asks three-leg
+slips: three of a player's props, two with a game line, QB + receiver + a
+game line, or three props across the two.
 `--league soccer` prices Max's corners shape (favourite 3-way win +
 favourite corners Under + underdog corners Over, with and without goals Over
 1.5 / 2.5) on every open match with team-corners books. Each leg's fair
