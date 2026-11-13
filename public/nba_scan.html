@@ -38,7 +38,7 @@
 
   .board { padding:0 12px 24px; }
   .row, .head { display:grid; align-items:center; gap:0 12px; padding:9px 10px;
-    grid-template-columns:minmax(190px,1.5fr) minmax(170px,1.3fr) repeat(5, minmax(62px,.55fr)) 46px; }
+    grid-template-columns:minmax(190px,1.5fr) minmax(170px,1.3fr) repeat(6, minmax(58px,.5fr)) 46px; }
   .head { position:sticky; top:53px; background:var(--panel); color:var(--muted); font-weight:600; font-size:11px;
     text-transform:uppercase; letter-spacing:.03em; border-bottom:1px solid var(--line); z-index:4; }
   .head .num, .row .num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
@@ -117,13 +117,13 @@
     input[type=search], input[type=number] { font-size:16px; }
     .board { padding:0 6px 24px; }
     .head { display:none; }
-    .row { grid-template-columns:repeat(4, minmax(0,1fr)); gap:5px 8px; padding:11px 8px; }
-    .who { grid-column:1 / span 3; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .ev { grid-column:4; grid-row:1; font-size:17px; }
+    .row { grid-template-columns:repeat(4, minmax(0,1fr)) auto; gap:5px 8px; padding:11px 8px; }
+    .who { grid-column:1 / span 4; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ev { grid-column:5; grid-row:1; font-size:17px; }
     .legs { grid-column:1 / -1; font-size:15px; }
     .row.sub { padding-left:20px; }
     .row.sub .who { display:none; }
-    .row.sub .legs { grid-column:1 / span 3; grid-row:1; padding-left:0; }
+    .row.sub .legs { grid-column:1 / span 4; grid-row:1; padding-left:0; }
     .row .num:not(.ev) { font-size:14px; }
     .foot { font-size:11.5px; }
     .row .num:not(.ev) { text-align:left; }
@@ -184,7 +184,7 @@
 <div class="board">
   <div class="head">
     <div>Player</div><div>Legs</div><div class="num">Fair</div><div class="num">Novig</div>
-    <div class="num">EV</div><div class="num">QK</div><div class="num">r</div><div class="num">Age</div>
+    <div class="num">EV</div><div class="num">QK</div><div class="num" title="Quarter Kelly in dollars, at $500 a unit">QK $</div><div class="num">r</div><div class="num">Age</div>
   </div>
   <div id="rows"></div>
 </div>
@@ -315,6 +315,7 @@ const clock = ms => new Date(ms).toLocaleTimeString([], { hour:"numeric", minute
 const LABEL = { pts:"PTS", reb:"REB", ast:"AST", tpm:"3PM", rec:"REC", yds:"YDS", td:"TD",
                 att:"PASS ATT", cmp:"CMP", pyds:"PASS YDS", ptd:"PASS TD",
                 car:"CAR", ryds:"RUSH YDS", rry:"RUSH+REC YDS", g:"G", sog:"SOG", blk:"BLK", pra:"PTS+REB+AST" };
+const UNIT = 500;   // dollars a unit, for the QK $ column
 const SOC = () => LEAGUE === "soccer";
 const ALL = () => LEAGUE === "all";
 // A row's key on this page: on the All tab two boards can hold the same key.
@@ -552,6 +553,7 @@ function render() {
       `<div class="num"><span class="lab">Novig</span>${c.slip_x.toFixed(2)}x</div>` +
       `<div class="num ev ${c.ev >= 0 ? "pos" : "neg"}">${pct(c.ev)}</div>` +
       `<div class="num qk"><span class="lab">QK</span>${c.qk > 0 ? c.qk.toFixed(2) + "u" : "—"}</div>` +
+      `<div class="num"><span class="lab">QK $</span>${c.qk > 0 ? "$" + Math.round(c.qk * UNIT).toLocaleString() : "—"}</div>` +
       `<div class="num rr">${c.r === null ? "" : (c.r >= 0 ? "+" : "−") + Math.abs(c.r).toFixed(2)}</div>` +
       `<div class="num"><span class="lab">Age</span>${age(c)}<button type="button" class="re${BUSY.has(c.key) ? " spin" : ""}" data-re="${esc(rk(c))}" title="Price this slip again: today’s leg prices and a new Novig quote"${BUSY.has(c.key) ? " disabled" : ""}>↻</button></div>` +
       betLine(c, sub) + (OPEN.has(rk(c)) ? detail(c) : "") + `</div>`;

@@ -2,6 +2,9 @@
 
 ## 2026-11-13 session
 
+### Novig Scan: QK in dollars
+A "QK $" column beside QK on every board (Max, 11-13): the quarter-Kelly stake at $500 a unit, to the dollar (0.84u is $420); a dash where QK is zero. `UNIT` in `public/nba_scan.html` sets the unit.
+
 ### Novig Scan: one line for a bet on a row, instead of two badges
 Max, 11-13 (phone screenshot): a row he had bet showed the same amount twice, once after the tip time (the player's total) and once after the legs (this slip), crowding both lines. A bet row now has a green left edge and one line of its own under the numbers: "✓ You bet $200 at 6.23x" (each bet listed when there are several). A player's first row shows a grey line instead when the money is on another of his slips. Neither badge is drawn any more. "Hide my bets" hides the line and the edge. Checked in a phone-sized and a desktop browser with a stand-in board.
 
