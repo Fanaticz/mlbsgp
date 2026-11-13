@@ -1143,7 +1143,14 @@ def cfb_candidates(a):
         if not v:
             return None
         band = next((b for (lo, hi), b in zip(measured["buckets"], v["by_spread"]) if lo <= spread < hi), None)
-        return band if band and band["n"] >= CBB_MIN_GAMES else v["all"]
+        # A spread band's own r only where it is a real difference: enough
+        # games, and the all-games r outside the band's two-sigma range. The
+        # 20+ band of underdog covers + his total Under read -0.55 on 1,271
+        # games against -0.61 overall (range -0.65 to -0.43; 30+ spreads alone
+        # -0.65), which put every big underdog at the top of the board on noise.
+        if band and band["n"] >= CBB_MIN_GAMES and not band["r_lo"] <= v["all"]["r"] <= band["r_hi"]:
+            return band
+        return v["all"]
     games = {}
     for m in items:
         games.setdefault(m["eventId"], []).append(m)

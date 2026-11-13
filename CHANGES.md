@@ -2,6 +2,9 @@
 
 ## 2026-11-13 session
 
+### Novig Scan: CBB big underdogs no longer float to the top
+Max, 11-13: the plays were all large spreads with the underdog's own total Under. The 20+ spread band had its own r for that shape, -0.55 on 1,271 games, where every other band is -0.61 to -0.62. That gap is inside the band's noise (two-sigma range -0.65 to -0.43; spreads of 30+ alone read -0.65; by season -0.50, -0.56, -0.57), and it made a big underdog's slip look about 6% better than a small one's at the same prices. A spread band's r is now used only when the all-games r is outside the band's two-sigma range; otherwise the all-games r. On today's file that leaves one band on its own number: spread + total at 20+ points (+0.14 against -0.04).
+
 ### Novig Scan: CBB board on measured correlations (three seasons)
 The CBB board's correlations were modelled from each game's alt ladders. They are now measured: how often the two legs of each slip shape hit together, on 17,319 games.
 
