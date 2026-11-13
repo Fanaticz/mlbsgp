@@ -50,6 +50,11 @@
   .who { display:flex; align-items:baseline; min-width:0; }
   .who b { flex:none; }
   .who small { flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+  .re { margin-left:6px; background:none; border:1px solid var(--line); color:var(--muted); border-radius:999px; width:24px; height:24px;
+        padding:0; font-size:13px; line-height:1; cursor:pointer; vertical-align:middle; }
+  .re:hover { color:var(--txt); border-color:var(--muted); }
+  .re.spin { animation:respin 0.9s linear infinite; opacity:.6; }
+  @keyframes respin { to { transform:rotate(360deg); } }
   .more { flex:none; margin-left:8px; background:none; border:1px solid var(--line); color:var(--muted); border-radius:999px;
     padding:1px 9px; font-size:11.5px; cursor:pointer; white-space:nowrap; }
   .row.sub { background:#12181f; }
@@ -110,6 +115,7 @@
     .row .num:not(.ev) { font-size:14px; }
     .foot { font-size:11.5px; }
     .row .num:not(.ev) { text-align:left; }
+    .re { width:32px; height:32px; font-size:16px; margin-left:8px; }
     .lab { display:block; font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; font-weight:400; }
     .rr { display:none; }
     .foot { padding:4px 14px 60px; }
@@ -202,6 +208,29 @@ function pairOpts() {
   document.getElementById("corr").href = CORR[LEAGUE] || "nba.html";
 }
 const OPEN = new Set();    // expanded rows, by key
+const BUSY = new Set();    // rows being priced again (their refresh button)
+// One slip again: the server re-reads its legs' books and asks Novig for a
+// new quote on it alone. The row is replaced in place.
+async function requote(key) {
+  if (BUSY.size || !S) return;
+  BUSY.add(key); render();
+  const league = LEAGUE, wide = WIDE;
+  try {
+    const r = await fetch("/api/nba/novig-requote", { method: "POST", headers: { "X-Scan-Key": KEY, "Content-Type": "application/json" },
+                                                      body: JSON.stringify({ league, wide, key }) });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.row && S && league === LEAGUE) {
+      const i = S.rows.findIndex(c => c.key === key);
+      if (i >= 0) S.rows[i] = j.row;
+      S.now = j.now; GOT = Date.now();
+    } else if (!r.ok) {
+      NOTE = `Could not refresh that slip: ${j.error || r.status}.`;
+      setTimeout(() => { NOTE = ""; render(); }, 6000);
+    }
+  } catch (_) { NOTE = "Could not refresh that slip: no connection."; setTimeout(() => { NOTE = ""; render(); }, 6000); }
+  BUSY.delete(key); render();
+}
+let NOTE = "";             // a short message under the status line
 const GOPEN = new Set();   // players whose other rows are unfolded
 // The passcode (the server's NOVIG_SCAN_KEY), kept on this device once entered.
 const KEYLS = "nbaScanKey";
@@ -392,6 +421,7 @@ function render() {
   } else {
     st.textContent = S.busy ? `A ${BOARD[S.busy] || S.busy} pass is running. Wait for it, or stop it and fetch this board.` : "Press Fetch to scan.";
   }
+  if (NOTE) st.appendChild(Object.assign(document.createElement("div"), { textContent: NOTE, style: "color:var(--accent)" }));
   // Ladder boards lean on DK's and FanDuel's prices: say so when one didn't load.
   if (LEAGUE.endsWith("ladder") && S.books && (S.finished || S.scanning) && !S.error) {
     const miss = ["dk", "fd"].filter(b => !S.books[b]);
@@ -427,7 +457,7 @@ function render() {
       `<div class="num ev ${c.ev >= 0 ? "pos" : "neg"}">${pct(c.ev)}</div>` +
       `<div class="num qk"><span class="lab">QK</span>${c.qk > 0 ? c.qk.toFixed(2) + "u" : "—"}</div>` +
       `<div class="num rr">${c.r === null ? "" : (c.r >= 0 ? "+" : "−") + Math.abs(c.r).toFixed(2)}</div>` +
-      `<div class="num"><span class="lab">Age</span>${age(c)}</div>` +
+      `<div class="num"><span class="lab">Age</span>${age(c)}<button type="button" class="re${BUSY.has(c.key) ? " spin" : ""}" data-re="${c.key}" title="Price this slip again: today’s leg prices and a new Novig quote"${BUSY.has(c.key) ? " disabled" : ""}>↻</button></div>` +
       (OPEN.has(c.key) ? detail(c) : "") + `</div>`;
     rowsEl.innerHTML = cards.map(({ head, others }) =>
       one(head, false, others) + (GOPEN.has(head.id) ? others.map(c => one(c, true)).join("") : "")).join("");
@@ -437,6 +467,7 @@ function render() {
       GOPEN.has(g) ? GOPEN.delete(g) : GOPEN.add(g);
       render();
     });
+    rowsEl.querySelectorAll("[data-re]").forEach(b => b.onclick = e => { e.stopPropagation(); requote(b.dataset.re); });
     rowsEl.querySelectorAll("[data-add]").forEach(b => b.onclick = () => {
       const c = S.rows.find(r => r.key === b.dataset.add), f = b.closest(".betform");
       const stake = parseFloat(f.querySelector(".stake").value), x = parseFloat(f.querySelector(".px").value);

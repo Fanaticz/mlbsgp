@@ -2604,6 +2604,41 @@ function nvBetsAuth(req, res) {
   if ((req.get('X-Scan-Key') || '') !== NV_SCAN_KEY) { setTimeout(() => res.status(403).json({ error: 'wrong passcode' }), 800); return false; }
   return true;
 }
+// POST /api/nba/novig-requote { league, wide, key } — price one row of a
+// board again (the refresh button on a row): scan.py --requote re-reads the
+// legs' books and asks Novig for a new quote on that one slip. One at a time;
+// it may run beside a pass (one more quote inside Novig's per-IP limit).
+let NV_REQUOTE = false;
+app.post('/api/nba/novig-requote', (req, res) => {
+  if (!nvBetsAuth(req, res)) return;
+  const { league, wide, key } = req.body || {};
+  const B = NV_BOARDS.get(`${league}:${wide ? 1 : 0}`), row = B && B.rows.get(String(key));
+  if (!row) return res.status(404).json({ error: 'that slip is no longer on the board' });
+  if (NV_REQUOTE) return res.status(429).json({ error: 'another slip is being refreshed' });
+  NV_REQUOTE = true;
+  const lg = { ladder: 'nba', nflladder: 'nfl', nhllines: 'nhl' }[league] || league;
+  const args = [NV_SCAN_PY, '--requote', '--league', lg].concat(wide ? ['--max-spread', '0.08'] : []);
+  let out = '', err = '', done = false;
+  const finish = (code, body) => { if (done) return; done = true; NV_REQUOTE = false; clearTimeout(timer); res.status(code).json(body); };
+  let proc;
+  try { proc = require('child_process').spawn(PYTHON, args, { stdio: ['pipe', 'pipe', 'pipe'] }); }
+  catch (e) { return finish(502, { error: 'could not start: ' + e.message }); }
+  const timer = setTimeout(() => { proc.kill(); finish(504, { error: 'Novig did not answer' }); }, 90 * 1000);
+  proc.stdout.on('data', c => { out += c; });
+  proc.stderr.on('data', c => { err = (err + c).slice(-2000); });
+  proc.on('error', e => finish(502, { error: 'could not start: ' + e.message }));
+  proc.on('close', () => {
+    let r = null;
+    try { r = JSON.parse(out.trim().split('\n').pop()); } catch (_) { /* not JSON */ }
+    if (!r || r.error || !r.key) return finish(502, { error: (r && r.error) || err.trim().split('\n').pop() || 'no answer' });
+    r.type = 'row';
+    if (B.rows.has(r.key)) { B.rows.set(r.key, r); B.seen.add(r.key); nvSaveBoards(); }
+    finish(200, { row: r, now: Date.now() });
+  });
+  proc.stdin.on('error', () => {});
+  proc.stdin.end(JSON.stringify(row));
+});
+
 app.get('/api/nba/novig-bets', (req, res) => { if (nvBetsAuth(req, res)) res.json({ bets: nvBets(), epoch: NV_BETS_EPOCH }); });
 app.post('/api/nba/novig-bets', (req, res) => {
   if (!nvBetsAuth(req, res)) return;
