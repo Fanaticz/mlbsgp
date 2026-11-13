@@ -2,6 +2,14 @@
 
 ## 2026-11-13 session
 
+### Novig Scan: CBB team totals and first half, priced off Pinnacle
+- **Why**: the CBB board could not ask a team-total or first-half slip, because Novig's own books on those are 6c to 28c wide. Pinnacle posts both for college basketball (three team-total lines a team, a first-half spread and total ladder, first-half team totals and moneyline).
+- **`pinnacle.lines(league)`** (new; `NCAAB` 493, `NCAAF` 880): every pregame game's two-way lines for the game and the first half, alt lines included, devigged worst case. Two calls a pass. `college_match` pairs a game with Novig's by tip time (10 min) and both names (Novig's short code or the full name from its team-total market): 50 of 55 games matched tonight.
+- **The board now asks up to six slips a game** (296 on tonight's 55 games, about five minutes): the two spread + total slips as before, then the underdog's spread + Under + the underdog's team total Under, the favourite's team total Under + Under, both team totals Under, and the favourite's first-half spread + his spread. A team-total or first-half leg is priced only where Pinnacle has that exact line. Open a row to see "Pinnacle -114, Novig's book says -124".
+- **Tested first on 106 quotes over four games** (Georgia at UNC, Georgetown at Clemson, Pitt at Butler, Tennessee State at Tennessee), 27 shapes: 5 above fair, median -9.5%. Four of the five were Under slips in Pitt at Butler, where Novig priced every Over pairing rich and every Under pairing cheap (its pricers had the total higher than its own book), so that is a line that moved, not a correlation Novig misprices. The four shapes kept are the best by median: -1.7% (underdog spread + Under + his team total Under), -5.9% (first-half spread + spread), -7.2% and -8.0%. A team's total Over with the other's Under ran -18% to -20%.
+- **Model**: a first-half leg is half the game (half the variance, the halves unrelated), which gives 0.71 between a first-half spread and the game's; Novig's quotes implied 0.68 to 0.82. A team total with the game total is about 0.8, the two team totals 0.2 to 0.4 with each other.
+- CFB is unchanged: Novig's own team-total books are tight there. Bookmaker was not tried: this session could not open its lines site.
+
 ### Novig Scan: pick the game or slate to fetch
 A full NFL pass is about 1,480 slips and Novig allows one quote a second per IP, so it takes about 27 minutes however the quotes are sent. A picker beside Fetch (every board) now limits a pass to one game or one slate.
 
