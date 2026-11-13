@@ -2,6 +2,12 @@
 
 ## 2026-11-13 session
 
+### Novig Scan: NHL and NHL Lines tabs hidden
+The two NHL buttons are hidden on the scanner page (Max, 11-13); a browser that last had one open lands on NBA. The boards, the script's `--league nhl` and the NHL Correlations page are untouched: remove `hidden` from the two buttons in `public/nba_scan.html` to bring them back.
+
+- **Why**: about 800 test slips on NYR @ VAN and NSH @ VGK (11-13), fair values from two seasons of game logs and scores. 435 two-leg slips across every pairing Novig lists (same skater, teammates, opponents, props with each game line, lines with each other, Overs and Unders): none above fair, best -5%, typically -12% to -25%. 306 three-leg slips: one above fair (+16.7%, a skater's no goal + his team's total Under + the other team -1.5), which did not repeat on about 65 more slips of that shape (-13% to -25%).
+- Novig charges correlation on every NHL pairing, including unrelated ones (two opposing skaters' props: measured 0.00, priced about -15%), and prices real ones above the measured r (a point with his team's moneyline: 0.36 measured, about 0.64 charged).
+
 ### Novig Scan: CBB big underdogs no longer float to the top
 Max, 11-13: the plays were all large spreads with the underdog's own total Under. The 20+ spread band had its own r for that shape, -0.55 on 1,271 games, where every other band is -0.61 to -0.62. That gap is inside the band's noise (two-sigma range -0.65 to -0.43; spreads of 30+ alone read -0.65; by season -0.50, -0.56, -0.57), and it made a big underdog's slip look about 6% better than a small one's at the same prices. A spread band's r is now used only when the all-games r is outside the band's two-sigma range; otherwise the all-games r. On today's file that leaves one band on its own number: spread + total at 20+ points (+0.14 against -0.04).
 

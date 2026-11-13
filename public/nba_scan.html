@@ -135,8 +135,8 @@
     <button data-league="ladder" title="NBA shooters' higher lines, one-way lines included">NBA Ladder</button>
     <button data-league="nfl">NFL</button>
     <button data-league="nflladder" title="NFL: higher yards lines with a touchdown, receptions or passing TDs">NFL Ladder</button>
-    <button data-league="nhl" title="NHL: a skater's goals with his shots on goal, and two teammates' points">NHL</button>
-    <button data-league="nhllines" title="NHL: a skater's points with the moneyline, puck line, game total or his team's total">NHL Lines</button>
+    <button data-league="nhl" hidden title="NHL: a skater's goals with his shots on goal, and two teammates' points">NHL</button>
+    <button data-league="nhllines" hidden title="NHL: a skater's points with the moneyline, puck line, game total or his team's total">NHL Lines</button>
     <button data-league="soccer">Soccer</button>
     <button data-league="cfb" title="College football: slips across one game's lines (moneyline, spread, total, team total)">CFB</button>
     <button data-league="cbb" title="College basketball: a game's spread with its total">CBB</button>
@@ -283,7 +283,8 @@ const LS = "nbaNovigScan";
 try {
   const v = JSON.parse(localStorage.getItem(LS) || "{}");
   if (v.mode === "all") MODE = "all";
-  if (PAIR_OPTS[v.league]) LEAGUE = v.league;
+  // NHL and NHL Lines are hidden (11-13): ~800 test slips, none above fair.
+  if (PAIR_OPTS[v.league] && !v.league.startsWith("nhl")) LEAGUE = v.league;
   WIDE = !!v.wide;
   if (Number.isFinite(v.minev)) MINEV = v.minev;
 } catch (_) {}
