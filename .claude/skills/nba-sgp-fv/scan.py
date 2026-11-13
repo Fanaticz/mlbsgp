@@ -9,9 +9,9 @@ player, ranked by EV at what Novig's slip pays.
   python3 scan.py --tier 1        # Points + Threes only (about 2 minutes)
   python3 scan.py --max 120       # stop after 120 quotes
   python3 scan.py --min-ev 3      # print only rows at +3% or better
-  python3 scan.py --league nfl    # NFL: a player's own props, QB + receiver stacks, props + game lines
-  python3 scan.py --league nfl --kind stacks   # one kind only: props, stacks or lines
-  python3 scan.py --league nfl --kind tri      # NFL three-leg slips (its own pass)
+  python3 scan.py --league nfl    # NFL: a player's own props, QB + receiver stacks, props + game lines, three legs
+  python3 scan.py --league nfl --kind stacks   # one kind only: props, stacks, lines or tri
+  python3 scan.py --league nfl --kind tri      # NFL three-leg slips alone
   python3 scan.py --league nhl    # NHL: a skater's goals, assists, points and shots on goal, every pair
   python3 scan.py --json          # one JSON object per line as quotes land
                                   # (server.js reads this for the Scanner page)
@@ -81,7 +81,7 @@ comes out as the spread's (winning and covering are one margin); first-half
 r's run about three quarters of the full game's for scoring props and about
 the same for a back's carries and yards.
 
-NFL three legs (--kind tri, its own pass): every leg at its main line, all
+NFL three legs (the same pass; --kind tri for these alone): every leg at its main line, all
 three pulling the same way. Three of a player's own props; two of them with
 a game line; a QB's passing Over, his receiver's Over and a game line; a QB
 leg with two of the receiver's, or two QB legs with one. The joint is the
@@ -817,7 +817,7 @@ def tri_safe(ps, rs):
 
 
 def nfl_tri_candidates(a):
-    """NFL three-leg slips (--kind tri, the NFL 3-Leg board), every leg at
+    """NFL three-leg slips (part of the NFL pass; --kind tri alone), every leg at
     its main line and all three pulling the same way:
       own3       three of one player's props (receptions + yards + TD; a
                  QB's completions + passing yards + passing TDs)
@@ -1259,8 +1259,8 @@ def scan(a, emit):
             cands = cands + nflx_candidates(a, False)
         if a.kind in ("all", "lines"):
             cands = cands + nflx_candidates(a, True)
-        if a.kind == "tri":   # its own pass: the NFL 3-Leg board
-            cands = nfl_tri_candidates(a)
+        if a.kind in ("all", "tri"):   # three legs, asked with the rest of the NFL tab
+            cands = cands + nfl_tri_candidates(a)
         stats, rfun = NFL_STATS, nfl_r
     elif a.league == "nhl":
         d = json.load(open(NHL_DATA))
@@ -1347,8 +1347,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--league", default="nba", choices=("nba", "nfl", "nhl", "soccer"))
     ap.add_argument("--kind", default="all", choices=("all", "props", "stacks", "lines", "tri", "mates"),
-                    help="NFL: one kind of slip only (default: a player's own props, then stacks, then game lines; "
-                         "tri is its own pass, the three-leg slips). "
+                    help="NFL: one kind of slip only (default: a player's own props, stacks, game lines, "
+                         "then tri, the three-leg slips). "
                          "NHL: props (a skater's own goals + shots), mates (two teammates) or lines (points + a game line)")
     ap.add_argument("--per", type=int, default=None,
                     help="NFL stacks / lines / three legs, NHL teammates: combos asked per player of each kind, highest r first "

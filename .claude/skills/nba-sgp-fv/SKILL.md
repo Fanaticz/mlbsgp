@@ -280,8 +280,7 @@ the week.
 The same pass asks QB + receiver stacks and a prop with a game line (the
 total, spread, moneyline, team total, and the first half's total, spread and
 moneyline), from the role r's in `public/data/nfl_stack_correlations.json`.
-`--league nfl --kind tri` (the page's **NFL 3-Leg** tab) asks three-leg
-slips: three of a player's props, two with a game line, QB + receiver + a
+It ends with three-leg slips (`--kind tri` asks those alone): three of a player's props, two with a game line, QB + receiver + a
 game line, or three props across the two.
 `--league soccer` prices Max's corners shape (favourite 3-way win +
 favourite corners Under + underdog corners Over, with and without goals Over
