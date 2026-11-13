@@ -1094,6 +1094,8 @@ CFB_KAPPA = 0.5            # corr(favourite's margin, total) = CFB_KAPPA x sprea
 # books on those are too wide in college basketball), and the slips with them are asked.
 LINE_BOARDS = {"cfb": {"league": "NCAAF", "sd": (14.6, 15.0), "dogml": True, "pin": False},
                "cbb": {"league": "NCAAB", "sd": (12.0, 16.5), "dogml": False, "pin": True}}
+CBB_LINES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "public", "data", "cbb_line_correlations.json")
+CBB_MIN_GAMES = 400        # a spread band with fewer games than this uses the all-games r
 CFB_MIN_DOG = 0.10         # no underdog-moneyline slips on a longer shot than this
 
 
@@ -1125,6 +1127,18 @@ def cfb_candidates(a):
             pin = pinnacle.lines(board["league"])
         except Exception as e:
             print(f"Pinnacle didn't answer ({type(e).__name__}): no team-total or first-half slips", file=sys.stderr)
+    # Measured leg-pair correlations by shape and size of spread
+    # (scripts/cbb_line_correlations.py); a shape not in it keeps the model's r.
+    measured = {}
+    if a.league == "cbb" and os.path.exists(CBB_LINES):
+        measured = json.load(open(CBB_LINES))
+
+    def measured_r(shape, spread):
+        v = (measured.get("shapes") or {}).get(shape)
+        if not v:
+            return None
+        band = next((b for (lo, hi), b in zip(measured["buckets"], v["by_spread"]) if lo <= spread < hi), None)
+        return band if band and band["n"] >= CBB_MIN_GAMES else v["all"]
     games = {}
     for m in items:
         games.setdefault(m["eventId"], []).append(m)
@@ -1264,25 +1278,29 @@ def cfb_candidates(a):
             dog_ml = None
         under, under_alt = pick("tot", side="under"), pick("tot", side="under", target=0.30, within=0.08)
         dog_tt = pick("tt", dog)
-        shapes = [("dogml", [dog_ml, under]), ("dogml", [dog_ml, under_alt]), ("dogml", [dog_ml, under, dog_tt]),
-                  ("cover", [pick("cover", fav), pick("tot")]), ("cover", [pick("cover", dog), under])]
+        shapes = [("dogml", None, [dog_ml, under]), ("dogml", None, [dog_ml, under_alt]), ("dogml", None, [dog_ml, under, dog_tt]),
+                  ("cover", "fav_cover+over", [pick("cover", fav), pick("tot")]), ("cover", "dog_cover+under", [pick("cover", dog), under])]
         if board["pin"]:
             fav_ttu, dog_ttu = pick("tt", fav, "under"), pick("tt", dog, "under")
             # The underdog covering with his own total Under: no game Under leg,
             # since those two all but force it (63.5 + 63.5 + 27.5 is under a 157.5 total).
-            shapes += [("tt", [pick("cover", dog), dog_ttu]), ("tt", [fav_ttu, under]), ("tt", [fav_ttu, dog_ttu]),
-                       ("half", [pick("cover", fav, half=True), pick("cover", fav)])]
-        for kind, ls in shapes:
+            shapes += [("tt", "dog_cover+dog_tt_under", [pick("cover", dog), dog_ttu]), ("tt", "fav_tt_under+under", [fav_ttu, under]),
+                       ("tt", "fav_tt_under+dog_tt_under", [fav_ttu, dog_ttu]),
+                       ("half", "fav_1h_cover+fav_cover", [pick("cover", fav, half=True), pick("cover", fav)])]
+        for kind, shape, ls in shapes:
             if any(L is None for L in ls) or len({L["id"] for L in ls}) < len(ls):
                 continue
             R = [[1.0 if i == j else corr(x, y) for j, y in enumerate(ls)] for i, x in enumerate(ls)]
+            seen = measured_r(shape, abs(mu_m)) if shape and len(ls) == 2 else None
+            if seen:
+                R[0][1] = R[1][0] = seen["r"]
             j = sgp.joint(R[0][1], ls[0]["p"], ls[1]["p"]) if len(ls) == 2 else both_scores(ls)
             out.append({"key": ",".join(L["id"] for L in ls), "tier": 9, "player": name, "id": eid, "team": board["league"],
                         "starts": ms[0]["startsTs"], "legs": [dict(L) for L in ls], "kind": kind,
                         "label": " · ".join(L["text"] for L in ls), "forced": False,
                         "r": min(R[i][k] for i in range(len(ls)) for k in range(i)), "j": j,
                         "devig_r": sgp.devig_r(j, ls[0]["p"], ls[1]["p"]) if len(ls) == 2 else None,
-                        "sharp": sum(1 for L in ls if L.get("sharp")),
+                        "sharp": sum(1 for L in ls if L.get("sharp")), **({"games": seen["n"]} if seen else {}),
                         "rough": any(L["width"] > novig.MAX_SPREAD + 1e-9 for L in ls if not L.get("sharp"))})
     out.sort(key=lambda c: c["starts"])
     return (out[:a.max] if a.max else out), {}
