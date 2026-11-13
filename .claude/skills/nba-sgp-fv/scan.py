@@ -500,7 +500,7 @@ def shifted(p, stat, row, main):
         po = min(po, row["ask"])
     if row is not main and row.get("bid") is not None:   # and a buyer there is a floor
         po = max(po, row["bid"])
-    if row is not main and BOOKS["on"]:   # DK / FanDuel one-way price, least margin out: a ceiling
+    if row is not main and BOOKS["on"]:   # FanDuel one-way price, least margin out: a ceiling
         if BOOKS["ladders"] is None:
             import books
             BOOKS["ladders"], BOOKS["check"] = books.load(), books.check
@@ -510,7 +510,7 @@ def shifted(p, stat, row, main):
     out = {"stat": stat, "side": "over", "line": row["line"], "p": po, "fair": sgp.american(po),
            "width": main["spread"], "id": row["ids"]["over"], "from": None if row is main else main["line"]}
     if book_text:
-        out["books"] = book_text   # shown in the open row: "DK +552 · FD +600"
+        out["books"] = book_text   # shown in the open row: "FD +600"
     return out
 
 

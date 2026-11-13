@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """DraftKings' and FanDuel's one-way Over ladders, as a ceiling on a shifted leg.
 
-  python3 books.py "Payton Pritchard"          # both books' ladders for him
+  python3 books.py "Payton Pritchard"          # FanDuel's ladder for him
   python3 books.py "Payton Pritchard" pts 24.5 # one line: prices and the ceiling
 
 Both books post every milestone ("25+ Points") as a one-way Over. The true
@@ -16,8 +16,9 @@ Novig's tight two-way price on the same line (about 60 lines per cell):
   Over under 15%        1.44      1.13       1.29      1.05
 
 FanDuel: the public site API (event-page tabs). DraftKings: dk_api.py at the
-repo root (needs curl_cffi); when it can't load or DK refuses, FanDuel alone
-is used. One game's pull is kept for TTL seconds in the temp directory, so a
+repo root (needs curl_cffi), for NFL only; when it can't load or DK refuses,
+FanDuel alone is used. NBA is FanDuel alone: the DK pull never worked there
+(Max, 11-13), so it is no longer tried. One game's pull is kept for TTL seconds in the temp directory, so a
 second slip on the same game costs nothing.
 """
 import json
@@ -35,7 +36,6 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), 
 FD = "https://sbapi.nj.sportsbook.fanduel.com/api"
 FD_KEY = os.environ.get("FD_API_KEY", "FhMFpcPWXMeyZxOx")  # the public site's own key
 FD_TABS = {"player-points": "pts", "player-rebounds": "reb", "player-assists": "ast", "player-threes": "tpm"}
-DK_SUB = {"Points": "pts", "Rebounds": "reb", "Assists": "ast", "Threes": "tpm"}
 # NFL yards (11-11): both books post 10-yard milestones as one-way Overs and a
 # two-way main line. The main line is kept too ("main:yds": [line, P(over)]),
 # for players Novig has no tight main line on (most of them before Saturday).
@@ -173,13 +173,11 @@ def _dk():
     return _DK[0]
 
 
-def dk_events(league="nba"):
+def dk_events(league="nfl"):
+    """This week's NFL games on DraftKings."""
     api = _dk()
     if not api:
         return []
-    if league == "nba":
-        return [(str(e["id"]), e["name"]) for e in api.get_games_nba()["events"]
-                if not e.get("isLive") and e.get("status") == "NOT_STARTED"]
     soon = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() + NFL_DAYS * 86400))
     evs = api._get_with_retry(f"{api.DK_LEAGUES}/{DK_NFL_LEAGUE}").json().get("events", [])
     return [(str(api._ev_id(e)), e.get("name", "")) for e in evs
@@ -202,17 +200,6 @@ def dk_game_nfl(event_id):
     return out
 
 
-def dk_game(event_id):
-    out = {}
-    for p in _dk().get_markets(event_id, nba_only=True).get("props", []):
-        if p.get("isDisabled") or not p["marketType"].endswith("Milestones") or p["subcategory"] not in DK_SUB:
-            continue
-        d = out.setdefault(novig.norm(p["player"]), {}).setdefault(DK_SUB[p["subcategory"]], {})
-        line = str(p["points"] - 0.5)
-        d[line] = min(implied(p["oddsAmerican"]), d.get(line, 1.0))
-    return out
-
-
 def _cache():
     try:
         with open(CACHE) as f:
@@ -224,11 +211,11 @@ def _cache():
 def load(team=None, league="nba"):
     """{book: {player key: {stat: {line: implied}}}} for the game `team` (his
     team's full name) plays in, or for every game. A book that fails is left
-    out: the other still caps. NFL also carries each two-way main line as
-    "main:<stat>": [line, P(over), hold]."""
+    out: the other still caps. NBA asks FanDuel only. NFL also carries each
+    two-way main line as "main:<stat>": [line, P(over), hold]."""
     c, now, out, dirty = _cache(), time.time(), {}, False
-    games = {"fd": fd_game if league == "nba" else fd_game_nfl, "dk": dk_game if league == "nba" else dk_game_nfl}
-    for book, events in (("fd", fd_events), ("dk", dk_events)):
+    games = {"fd": fd_game if league == "nba" else fd_game_nfl, "dk": dk_game_nfl}
+    for book, events in (("fd", fd_events), ("dk", dk_events))[:1 if league == "nba" else 2]:
         game = games[book]
         try:
             evs = c.get(f"{league}:{book}:events")
@@ -317,7 +304,7 @@ def main():
     if len(hits) != 1:
         raise SystemExit(f"player {sys.argv[1]!r}: {'no match' if not hits else 'ambiguous: ' + ', '.join(hits)}")
     lad = load(by[hits[0]].get("team_name"))
-    stats = [sys.argv[2].lower()] if len(sys.argv) > 2 else list(DK_SUB.values())
+    stats = [sys.argv[2].lower()] if len(sys.argv) > 2 else list(FD_TABS.values())
     print(f"{hits[0]} · one-way Overs · {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime())}")
     for s in stats:
         lines = sorted({float(x) for b in lad.values() for x in b.get(novig.norm(hits[0]), {}).get(s, {})})

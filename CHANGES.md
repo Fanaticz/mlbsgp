@@ -2,6 +2,9 @@
 
 ## 2026-11-13 session
 
+### NBA Ladder: DraftKings no longer asked
+The DraftKings pull for NBA never worked (Max, 11-13), so `books.py` no longer tries it: NBA shifted legs (the Ladder tab and `price.py`) are capped by Novig's ask and FanDuel's one-way price only. The Ladder tab's red "DraftKings prices did not load" note is gone with it; it still warns when FanDuel fails. NFL Ladder is unchanged and still asks both books.
+
 ### Novig Scan: NHL and NHL Lines tabs hidden
 The two NHL buttons are hidden on the scanner page (Max, 11-13); a browser that last had one open lands on NBA. The boards, the script's `--league nhl` and the NHL Correlations page are untouched: remove `hidden` from the two buttons in `public/nba_scan.html` to bring them back.
 

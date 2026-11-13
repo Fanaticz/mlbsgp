@@ -174,8 +174,8 @@ def leg_prob(p, leg):
             po, note = hi, note + f", capped at Novig's {hi:.1%} ask"
         if lo is not None and po < lo:
             po, note = lo, note + f", raised to Novig's {lo:.1%} bid"
-        # DK's and FanDuel's one-way price on this exact line, margin out, is
-        # a ceiling too (books.py).
+        # FanDuel's one-way price on this exact line, margin out, is a
+        # ceiling too (books.py).
         cap, _, text = leg.get("book", (None, None, ""))
         if cap is not None and po > cap:
             po, note = cap, note + f", capped by {text} ({cap:.1%} with the least margin out)"
@@ -338,7 +338,7 @@ def main():
     ap.add_argument("--unit", type=float, default=250.0, help="dollars per unit, 1u = 1%% of bankroll")
     ap.add_argument("--kelly", type=float, default=0.25, help="Kelly fraction (default quarter)")
     ap.add_argument("--no-books", action="store_true",
-                    help="don't cap a shifted leg at DK's and FanDuel's one-way price on its line")
+                    help="don't cap a shifted leg at FanDuel's one-way price on its line")
     ap.add_argument("--novig-spread", type=float, default=novig.MAX_SPREAD,
                     help="widest Novig market (ask - bid, probability) to price a novig leg from")
     args = ap.parse_args()

@@ -460,9 +460,9 @@ function render() {
   if (S.events && S.events.length && (S.scanning || S.finished || S.stopped)) st.appendChild(Object.assign(document.createElement("div"),
     { textContent: `Last pass: ${S.events.length === 1 ? "one game" : S.events.length + " games"} only. Other games’ rows are from earlier passes (see Age).` }));
   if (NOTE) st.appendChild(Object.assign(document.createElement("div"), { textContent: NOTE, style: "color:var(--accent)" }));
-  // Ladder boards lean on DK's and FanDuel's prices: say so when one didn't load.
+  // Ladder boards lean on FanDuel's prices (NFL: DK's too): say so when one didn't load.
   if (LEAGUE.endsWith("ladder") && S.books && (S.finished || S.scanning) && !S.error) {
-    const miss = ["dk", "fd"].filter(b => !S.books[b]);
+    const miss = (LEAGUE === "ladder" ? ["fd"] : ["dk", "fd"]).filter(b => !S.books[b]);   // NBA asks FanDuel only
     if (miss.length) st.innerHTML += ` · <span style="color:var(--neg)">${miss.map(b => b === "dk" ? "DraftKings" : "FanDuel").join(" and ")} prices did not load` +
       `${S.books.errors && S.books.errors[miss[0]] ? ` (${esc(S.books.errors[miss[0]])})` : ""}: fair values are not capped by ${miss.length === 2 ? "either book" : "that book"}</span>`;
   }

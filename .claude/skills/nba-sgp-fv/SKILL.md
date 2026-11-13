@@ -159,17 +159,17 @@ QK=1.38u
   lowest ask at that line or below, no lower than the highest bid at that
   line or above (a one-way line gives one of the two; the note says when it
   bit). Score legs shift with the normal.
-- **DK and FanDuel ceiling (`books.py`):** every shifted box-stat leg is also
-  checked against both books' one-way Over on its exact line, pulled live
-  (about 4 seconds a game, kept 4 minutes). The leg can't sit above the
-  better book's price with the least margin that book charges taken out
-  (measured against Novig's tight lines: DK 1.02 down to a 15% shot, 1.13
-  under; FanDuel 1.00 to 1.02, 1.05 under 15%). The leg's line in the output
-  ends with the prices (`DK +552 · FD +600`) and says when they capped it.
-  On the 11-11 slate that bit on 230 of 1,106 shifted legs, cutting them a
+- **FanDuel ceiling (`books.py`):** every shifted box-stat leg is also
+  checked against FanDuel's one-way Over on its exact line, pulled live
+  (kept 4 minutes). The leg can't sit above that price with the least margin
+  FanDuel charges taken out (measured against Novig's tight lines: 1.00 to
+  1.02, 1.05 under 15%). The leg's line in the output ends with the price
+  (`FD +600`) and says when it capped it. DraftKings is not asked for NBA:
+  its pull never worked (removed 11-13); NFL still asks both books.
+  On the 11-11 slate, with DK too, that bit on 230 of 1,106 shifted legs, cutting them a
   median 7%. `--no-books` turns it off; a book that can't be reached is left
   out. `python3 .claude/skills/nba-sgp-fv/books.py "Player" [stat [line]]`
-  prints both ladders with "about" (usual margin out) and "no shorter than"
+  prints the ladder with "about" (usual margin out) and "no shorter than"
   (least margin out) fairs. One-way prices are never a fair value by
   themselves and never raise a leg.
 
@@ -197,7 +197,7 @@ asked not to run on his board; use it only if he asks.
 has them; showing both was all overlap), so there is no gate: every higher
 points line Novig lists to main + 15 with threes
 at main to + 3, one-way lines included (`--ladder-pts`, `--ladder-3s`). Those
-legs are shifted from the main line and capped by Novig's ask and by DK's and
+legs are shifted from the main line and capped by Novig's ask and by
 FanDuel's one-way price (Method). Ungated pass of 11-11 (518 quotes, 10
 minutes): 81 ladder slips at +10% or better, 31 on the 11 players whose main
 line was above fair, 46 on the 21 at -10% to 0%, 4 on the 10 under -10%;
