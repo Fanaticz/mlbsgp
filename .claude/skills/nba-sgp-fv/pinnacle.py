@@ -98,6 +98,67 @@ def board():
     return [g for g in games.values() if g["ml"]]
 
 
+COLLEGE = {"NCAAB": 493, "NCAAF": 880}   # Pinnacle's league ids
+
+
+def lines(league):
+    """Every pregame game in a college league, with each two-way line's no-vig
+    price: [{home, away, start (epoch s), mk: {(period, kind, side, points):
+    {designation: (fair chance, American price)}}}]. period 0 is the game, 1
+    the first half. kind 'spread' is keyed by the home team's points
+    (designations home / away), 'total' by the line (over / under),
+    'team_total' by side ('home' / 'away') and line, 'moneyline' by nothing.
+    Two calls, alt lines included."""
+    lg = COLLEGE[league]
+    games = {}
+    for m in get(f"/leagues/{lg}/matchups?brandId=0"):
+        if m.get("type") != "matchup" or m.get("isLive") or m.get("parentId"):
+            continue
+        ps = {p.get("alignment"): p.get("name") for p in m.get("participants", [])}
+        if not ps.get("home") or not ps.get("away"):
+            continue
+        try:
+            start = time.mktime(time.strptime(m["startTime"][:19], "%Y-%m-%dT%H:%M:%S")) - time.timezone
+        except Exception:
+            continue
+        games[m["id"]] = {"home": ps["home"], "away": ps["away"], "start": start, "mk": {}}
+    for mk in get(f"/leagues/{lg}/markets/straight?primaryOnly=false"):
+        g, kind, prices = games.get(mk.get("matchupId")), mk.get("type"), mk.get("prices") or []
+        if not g or mk.get("period") not in (0, 1) or mk.get("status", "open") != "open" or len(prices) != 2:
+            continue
+        a, b = prices
+        if not all(isinstance(x.get("price"), (int, float)) for x in prices):
+            continue
+        fa, fb = sgp.devig_worst(implied(a["price"]), implied(b["price"]))
+        if kind == "spread":
+            pts = next((x.get("points") for x in prices if x.get("designation") == "home"), None)
+            side = None
+        elif kind in ("total", "team_total"):
+            pts, side = a.get("points"), mk.get("side") if kind == "team_total" else None
+        elif kind == "moneyline":
+            pts, side = 0.0, None
+        else:
+            continue
+        if pts is None or (kind == "team_total" and side not in ("home", "away")):
+            continue
+        g["mk"][(mk["period"], kind, side, float(pts))] = {a["designation"]: (fa, int(a["price"])), b["designation"]: (fb, int(b["price"]))}
+    return [g for g in games.values() if g["mk"]]
+
+
+def college_match(games, away, home, start):
+    """Pinnacle's game for Novig's "away @ home", or None: same tip (10 min)
+    and both names close. `away` / `home` are lists of the names Novig uses
+    for each team (its short code and, where it lists a team total, the full name)."""
+    best = (0.0, None)
+    for g in games:
+        if abs(g["start"] - start) > 600:
+            continue
+        s = max(alike(n, g["away"]) for n in away) + max(alike(n, g["home"]) for n in home)
+        if s > best[0]:
+            best = (s, g)
+    return best[1] if best[0] >= 1.3 else None
+
+
 def alike(a, b):
     a, b = novig.norm(a), novig.norm(b)
     if a == b:
