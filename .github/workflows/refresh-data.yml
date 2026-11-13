@@ -58,6 +58,14 @@ jobs:
         continue-on-error: true
         run: python scripts/nba_teammate_logs.py --workers 16
 
+      # New NBA finals with their closing spread and total and their box
+      # scores (ESPN), then the game-line correlations behind the Novig
+      # Scan's NBA Team board rebuilt. A day ESPN doesn't answer for is asked
+      # again on the next run.
+      - name: Refresh NBA game-line correlations
+        continue-on-error: true
+        run: python scripts/nba_line_correlations.py --fetch
+
       # The script exits non-zero rather than overwrite the data file when ESPN
       # returns nothing; that shouldn't block the MLB/NBA commit below.
       - name: Refresh NFL receiving correlations

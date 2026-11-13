@@ -272,6 +272,15 @@ rate at twice the main line, the gamma 95-126%. Not gated, and r is the
 player's shrunk copula r, fitted at median lines. No real pass had been run
 when this was written: check the first plays against another book.
 
+`--kind team` (NBA) is the NBA Team board: a player's main-line Over with
+his game's spread or first-half spread on the side that goes with it (and
+his Under with the other side), then six slips across each game's own lines.
+The r is league-wide for a player with that line on a team with tonight's
+spread, from `public/data/nba_line_correlations.json`
+(`scripts/nba_line_correlations.py`: four seasons of box scores against
+closing lines). The plays are prop + spread in lopsided games; see scan.py's
+docstring for what was tested.
+
 `--league nfl` scans NFL instead: Over + Over on Receptions·Yards,
 Receptions·TD and Yards·TD (TD = Novig's TOUCHDOWNS 0.5, any touchdown) for
 the WRs, TEs and RBs in `public/data/nfl_correlations.json`, then the three

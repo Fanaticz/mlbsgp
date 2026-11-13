@@ -9,6 +9,7 @@ player, ranked by EV at what Novig's slip pays.
   python3 scan.py --tier 1        # Points + Threes only (about 2 minutes)
   python3 scan.py --max 120       # stop after 120 quotes
   python3 scan.py --min-ev 3      # print only rows at +3% or better
+  python3 scan.py --kind team     # NBA Team board: a player's prop with the spread, and a game's own lines
   python3 scan.py --league nfl    # NFL: a player's own props, QB + receiver stacks, props + game lines, three legs
   python3 scan.py --league nfl --kind stacks   # one kind only: props, stacks, lines or tri
   python3 scan.py --league nfl --kind tri      # NFL three-leg slips alone
@@ -57,6 +58,39 @@ allows one a second, so the order is the scan's budget):
      pair in the three has a negative r.
 Under + Under is never asked: Novig rejects it for one player. Legs on books
 wider than --max-spread are skipped, not guessed.
+
+NBA Team (--league nba --kind team): slips with a game line in them
+(nba_team_candidates). A player's main-line Over on points, rebounds,
+assists, threes or points + rebounds + assists with the game's spread or
+first-half spread on the side that goes with it, and his Under with the
+other side. The r is league-wide for a player with that line on a team with
+tonight's spread (public/data/nba_line_correlations.json, built by
+scripts/nba_line_correlations.py from four seasons of box scores against
+closing lines), and it turns on who is favoured: a 20-to-25-point scorer's
+Over goes with his team covering at +0.42 as an 8-point underdog, +0.19 in
+a pick'em and -0.08 as a 10-point favourite; a 25-point scorer on a
+12-point favourite is -0.26, so his Over is asked with the other team
+covering. Asked where |r| is at least --line-r (0.30 here; 0.15 when the
+prop goes against his own team covering), each player's
+--per (3) highest pairings, players at 20+ minutes a game only.
+--team-lines adds his team's total, the other team's, the game total or
+the first half's. Then six slips across each game's own lines
+(NBA_GAME_SHAPES: team totals with each other and with the game total, the
+underdog's moneyline + Under, the favourite's first-half moneyline + his
+moneyline) at each shape's measured r. A team total takes Pinnacle's
+no-vig price on the same line where Novig's own book is wider than
+--max-spread.
+Tested 11-13 on nine games, about 700 quotes. Game lines alone (99 quotes,
+33 shapes on three games): Novig's quote before its fee sits on the
+measured r (favourite covers + his team total Over 0.62 quoted, 0.58
+measured), so after the 10% fee every shape's median was under fair, -5% to
+-12%. A prop with a team total (206 quotes) or a game total (18): medians
+-6.4% and -4.6%, none at +3%. A prop with the spread is the exception,
+because Novig's r for it barely moves with who is favoured: at r 0.42 or
+better (a main scorer on a team getting 8 or more, or a star on a
+favourite of 10 or more) 35 of 38 quotes over two passes were above fair,
+median +4.8%; at r 0.30 to 0.42, 29 of 68, median about -1%; under 0.30,
+12 of 54, median -4%.
 
 NFL (--league nfl): WRs, TEs and RBs in public/data/nfl_correlations.json,
 whose shrunk r's are already copula correlations. Over + Over at main lines
@@ -204,7 +238,7 @@ STATS = ("pts", "reb", "ast", "tpm")
 LABEL = {"pts": "PTS", "reb": "REB", "ast": "AST", "tpm": "3PM", "rec": "REC", "yds": "YDS", "td": "TD",
          "att": "PASS ATT", "cmp": "CMP", "pyds": "PASS YDS", "ptd": "PASS TD",
          "car": "CAR", "ryds": "RUSH YDS", "rry": "RUSH+REC YDS",
-         "g": "G", "sog": "SOG", "blk": "BLK"}
+         "g": "G", "sog": "SOG", "blk": "BLK", "pra": "PTS+REB+AST"}
 PAIRS = [("pts", "reb"), ("pts", "ast"), ("reb", "ast"), ("reb", "tpm"), ("ast", "tpm")]
 NFL_STATS = ("rec", "yds", "td", "att", "cmp", "pyds", "ptd", "car", "ryds", "rry")
 NFL_PAIRS = {("rec", "yds"): "rec_yds", ("rec", "td"): "rec_td", ("yds", "td"): "yds_td",
@@ -1328,6 +1362,204 @@ def cfb_candidates(a):
     return (out[:a.max] if a.max else out), {}
 
 
+NBA_LINES = os.path.join(HERE, "..", "..", "..", "public", "data", "nba_line_correlations.json")
+NBA_TEAM = {"GS": "GSW", "NY": "NYK", "SA": "SAS", "NO": "NOP", "UTAH": "UTA", "WSH": "WAS"}   # the data's (ESPN's) code -> Novig's
+NBA_TEAM_STATS = ("pts", "reb", "ast", "tpm", "pra")
+NBA_MIN_GAMES = 400        # a spread band with fewer games than this uses the all-games r
+NBA_AGAINST_R = 0.15       # a prop that goes against his own team covering (a star on a big favourite) is asked from here:
+#                            Novig prices those as going with it, so the gap is wider than the r (Wembanyama, 11-13: +9% to +15% at -0.26)
+NBA_MIN_MINUTES = 20.0     # the prop + line r's are measured on players at 20+ minutes a game: nobody under it is asked
+# Slips across one game's own lines: the six that came nearest fair of the 33
+# asked on three games (11-13). (shape in the data, its legs.)
+NBA_GAME_SHAPES = (("fav_tt_over+dog_tt_over", (("tt", "fav", "over"), ("tt", "dog", "over"))),
+                   ("fav_tt_under+dog_tt_under", (("tt", "fav", "under"), ("tt", "dog", "under"))),
+                   ("fav_tt_over+over", (("tt", "fav", "over"), ("tot", None, "over"))),
+                   ("fav_tt_under+under", (("tt", "fav", "under"), ("tot", None, "under"))),
+                   ("dog_ml+under", (("ml", "dog", "over"), ("tot", None, "under"))),
+                   ("fav_1h_ml+fav_ml", (("h1ml", "fav", "over"), ("ml", "fav", "over"))))
+# A player's prop with a game line: the line in the data -> (kind on the page, the leg, whose).
+NBA_PROP_LINES = {"cover": ("cover", "cover", "mine"), "h1cover": ("h1cover", "h1cover", "mine"), "tt": ("tt", "tt", "mine"),
+                  "opp_tt": ("tt", "tt", "theirs"), "over": ("over", "tot", None), "h1over": ("h1over", "h1tot", None)}
+
+
+def nba_prop_r(T, stat, line, ev, my_spread):
+    """(r, player-games behind it) between a player's Over at about his
+    median and a game line going his team's way, for a player whose line is
+    `line` on a team with this spread (negative: favoured): the role's
+    straight-line fit of r on the spread. (None, 0) with no such role."""
+    for e in T["props"]:
+        if e["stat"] == stat and e["ev"] == ev and e["min"] <= line < e["max"]:
+            f = e["fit"]
+            return f["a"] + f["b"] * max(f["lo"], min(f["hi"], my_spread)), e["all"]["n"]
+    return None, 0
+
+
+def nba_team_candidates(d, by, a):
+    """NBA Team board (--league nba --kind team): slips with a game line in
+    them. Game lines are Novig's own books (spread, total, moneyline, the
+    first half's); a team total is Novig's book where it is tight and
+    Pinnacle's no-vig price on the same line where it is not.
+
+    props: a player's main-line Over (points, rebounds, assists, threes,
+    points + rebounds + assists) with a game line on the side that goes with
+    it, and his Under with the other side: his team's spread, his team's
+    total, the other team's total, the game total, the first half's spread
+    and total. The r is league-wide for a player with that line on a team
+    with tonight's spread (nba_line_correlations.json), asked where |r| is
+    at least --line-r; each player gets his --per highest, Over and Under.
+
+    game: NBA_GAME_SHAPES across each game's own lines, at each shape's
+    measured r for the game's size of spread."""
+    T = json.load(open(NBA_LINES))
+    items = novig.catalog({"league": "NBA", "eventStatus": "OPEN_PREGAME",
+                           "marketType": "MONEY,SPREAD,TOTAL,TEAM_TOTAL,SPREAD_1H,TOTAL_1H,MONEY_1H"})
+    try:
+        import pinnacle
+        pin = pinnacle.lines("NBA")
+    except Exception as e:
+        pin = []
+        print(f"Pinnacle didn't answer ({type(e).__name__}): team totals on Novig's own books only", file=sys.stderr)
+    by_event = {}
+    for m in items:
+        by_event.setdefault(m["eventId"], []).append(m)
+    games = {}   # event id -> {name, fav, dog, spread, starts, legs: {(stat, whose, side): [leg]}}
+    for eid, ms in by_event.items():
+        name = next((m["description"].rsplit(" t", 1)[0] for m in ms if m["marketType"] == "TOTAL" and " @ " in m["description"]), None)
+        money = next((t for t in (two_way(m) for m in ms if m["marketType"] == "MONEY") if t), None)
+        sps = [t for t in (two_way(m) for m in ms if m["marketType"] == "SPREAD") if t and t["spread"] <= a.max_spread + 1e-9]
+        if not name or not money or not sps:
+            continue
+        f = 0 if money["p"][0] >= 0.5 else 1
+        fav, dog = money["names"][f], money["names"][1 - f]
+        main = min(sps, key=lambda t: (abs(t["p"][0] - 0.5) + t["spread"], -t["volume"]))
+        spread = abs(main["strike"]) if main["p"][0] <= 0.75 else 0.0
+        away, _, home = name.partition(" @ ")
+        sub, full = {}, {}   # Novig's subject id -> the team's code; code -> full name
+        for m in ms:
+            if m["marketType"] == "MONEY":
+                sub.update({o.get("subjectId"): o["name"] for o in m["outcomes"]})
+        for m in ms:
+            if m["marketType"] == "TEAM_TOTAL" and m["outcomes"][0].get("subjectId") in sub:
+                full[sub[m["outcomes"][0]["subjectId"]]] = m["description"].rsplit(" ", 2)[0]
+        pg = pinnacle.college_match(pin, [away] + [full[away]] * (away in full), [home] + [full[home]] * (home in full),
+                                    ms[0]["startsTs"] / 1000) if pin else None
+        legs = {}
+        for m in ms:
+            t, typ = two_way(m), m["marketType"]
+            h1 = "h1" if typ.endswith("_1H") else ""
+            for i, o in enumerate(m["outcomes"]):
+                L = {"id": o["outcomeId"], "line": float(m["strike"]), "side": "over"}
+                if typ.startswith("MONEY"):
+                    k = (h1 + "ml", "fav" if o["name"] == fav else "dog", "over")
+                    L.update(stat=h1 + "ml", text=f"{o['name']} {'1H ' if h1 else ''}moneyline")
+                elif typ.startswith("SPREAD"):
+                    tm, _, ln = o["name"].rpartition(" ")
+                    k = (h1 + "cover", "fav" if tm == fav else "dog", "over")
+                    L.update(stat=h1 + "cover", line=float(ln), text=o["name"] + (" 1H" if h1 else ""))
+                elif typ.startswith("TOTAL"):
+                    side = "over" if i == 0 else "under"
+                    k = (h1 + "tot", None, side)
+                    L.update(stat=h1 + "tot", side=side, text=f"{name}{' 1H' if h1 else ''} {side.capitalize()} {L['line']:g}")
+                elif typ == "TEAM_TOTAL" and o.get("subjectId") in sub:
+                    tm, side = sub[o["subjectId"]], "over" if i == 0 else "under"
+                    k = ("tt", "fav" if tm == fav else "dog", side)
+                    L.update(stat="tt", side=side, text=f"{tm} team total {side.capitalize()} {L['line']:g}")
+                else:
+                    continue
+                sharp = None
+                if typ == "TEAM_TOTAL" and pg and not (t and t["spread"] <= a.max_spread + 1e-9):
+                    sharp = (pg["mk"].get((0, "team_total", "home" if tm == home else "away", L["line"])) or {}).get(side)
+                if sharp:   # src: the page's refresh keeps this fair value instead of re-reading Novig's wide book
+                    L.update(p=sharp[0], fair=sgp.american(sharp[0]), width=0.0, src="pinnacle",
+                             books=f"Pinnacle {sharp[1]:+d}" + (f", Novig's book says {sgp.american(t['p'][i]):+d}" if t else ""))
+                elif t and t["spread"] <= a.max_spread + 1e-9:
+                    L.update(p=t["p"][i], fair=sgp.american(t["p"][i]), width=t["spread"])
+                else:
+                    continue
+                legs.setdefault(k, []).append(L)
+        games[eid] = {"name": name, "fav": fav, "dog": dog, "spread": spread, "starts": ms[0]["startsTs"], "legs": legs}
+
+    def pick(g, k):
+        """The leg of this kind nearest 50/50 (a moneyline: the only one), or None."""
+        v = [L for L in g["legs"].get(k, []) if "ml" in k[0] or abs(L["p"] - 0.5) <= 0.13]
+        return min(v, key=lambda L: abs(L["p"] - 0.5) + L["width"]) if v else None
+
+    def row(g, eid, ls, r, n, kind, who, pid, **more):
+        j = sgp.joint(r, ls[0]["p"], ls[1]["p"])
+        return dict({"key": ",".join(L["id"] for L in ls), "tier": 2, "player": who, "id": pid, "team": "NBA", "starts": g["starts"],
+                     "legs": [dict(L) for L in ls], "kind": kind, "label": " · ".join(L["text"] for L in ls), "r": r, "j": j,
+                     "forced": False, "devig_r": sgp.devig_r(j, ls[0]["p"], ls[1]["p"]), "games": n,
+                     "sharp": sum(1 for L in ls if L.get("src")),
+                     "rough": any(L["width"] > novig.MAX_SPREAD + 1e-9 for L in ls)}, **more)
+
+    out = []
+    if a.team in ("all", "game"):
+        for eid, g in games.items():
+            band = next((i for i, (lo, hi) in enumerate(T["buckets"]) if lo <= g["spread"] < hi), None)
+            for shape, ks in NBA_GAME_SHAPES:
+                ls = [pick(g, k) for k in ks]
+                v = T["shapes"].get(shape)
+                if not v or any(L is None for L in ls) or (shape.startswith("dog_ml") and ls[0]["p"] < CFB_MIN_DOG):
+                    continue
+                m = v["by_spread"][band] if band is not None else None
+                # A spread band's own r only where it is a real difference (see cfb_candidates).
+                if not (m and m["n"] >= NBA_MIN_GAMES and not m["r_lo"] <= v["all"]["r"] <= m["r_hi"]):
+                    m = v["all"]
+                out.append(row(g, eid, ls, m["r"], m["n"], "game", g["name"], eid, shape=shape))
+    if a.team in ("all", "props"):
+        markets = novig.fetch("NBA", NBA_TEAM_STATS)
+        key = {novig.norm(n): n for n in by}
+        for nm in sorted({novig.player_name(m) for m in markets}):
+            p = by.get(key.get(novig.norm(nm)))
+            eid = next(m["eventId"] for m in markets if novig.player_name(m) == nm)
+            g = games.get(eid)
+            team = p and NBA_TEAM.get(p.get("team_abbr"), p.get("team_abbr"))
+            if not g or team not in (g["fav"], g["dog"]):
+                continue   # no lines for his game, or he has changed teams since the data was built
+            now = (p.get("by_season") or {}).get(str(p.get("latest_season"))) or {}
+            if ((now if now.get("games", 0) >= 5 else p).get("min_mean") or 0) < NBA_MIN_MINUTES:
+                # A bench player's numbers go the other way in a blowout (he
+                # plays the fourth quarter): Novig quoted Collier's PRA with
+                # Utah +15.5 as if they moved apart, 11-13.
+                continue
+            me, them = ("fav", "dog") if team == g["fav"] else ("dog", "fav")
+            my_spread = -g["spread"] if me == "fav" else g["spread"]
+            _, rows = novig.ladder(markets, nm)
+            mine = []
+            for s in NBA_TEAM_STATS:
+                ok = [r for r in rows.get(s, []) if usable(r, a.max_spread)]
+                if not ok:
+                    continue
+                main = main_line(ok)
+                if abs(main["fo"] - 0.5) > 0.13:
+                    continue
+                for ev, (kind, stat, whose) in NBA_PROP_LINES.items():
+                    if ev not in a.team_lines:
+                        continue
+                    r, n = nba_prop_r(T, s, main["line"], ev, my_spread)
+                    if r is None or (abs(r) < a.line_r and not (kind.endswith("cover") and r <= -NBA_AGAINST_R)):
+                        continue
+                    who = {"mine": me, "theirs": them}.get(whose)
+                    for over in (1, -1):   # his Over with the side that goes with it, his Under with the other
+                        way = over if r > 0 else -over
+                        if stat in ("cover", "h1cover"):
+                            k = (stat, who if way > 0 else {"fav": "dog", "dog": "fav"}[who], "over")
+                        else:
+                            k = (stat, who, "over" if way > 0 else "under")
+                        lb = pick(g, k)
+                        if not lb:
+                            continue
+                        la = leg(s, main, over)
+                        la["text"] = leg_text(la)
+                        mine.append(row(g, eid, [la, lb], abs(r), n, kind, p["name"], p["athlete_id"], team=team, role=True,
+                                        line=ev, spread=my_spread))
+            # His --per highest-r pairings (a stat with a line), each as its Over and its Under slip.
+            best = sorted({(c["legs"][0]["stat"], c["line"]): c["r"] for c in mine}.items(), key=lambda kv: -kv[1])[:a.per]
+            out += [c for c in mine if (c["legs"][0]["stat"], c["line"]) in dict(best)]
+    out.sort(key=lambda c: (c["starts"], -c["j"] / (c["legs"][0]["p"] * c["legs"][1]["p"])))
+    return out[:a.max] if a.max else out
+
+
 def candidates(markets, d, by, a):
     """(every 2-leg combo worth a quote, in quoting order; {player id: (player,
     his main-line rows by stat)} for the 3-leg pass)."""
@@ -1657,6 +1889,10 @@ def scan(a, emit):
         if a.kind == "lines":
             cands = cands + nhl_line_candidates(markets, d, a)
         stats, rfun, a.tri = (), None, 0
+    elif a.kind == "team":
+        d, by = sgp.load()
+        cands, ctx = nba_team_candidates(d, by, a), {}
+        stats, rfun, a.tri, a.stars = (), None, 0, False
     else:
         d, by = sgp.load()
         cands, ctx = candidates(novig.fetch(), d, by, a)
@@ -1744,14 +1980,22 @@ def scan(a, emit):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--league", default="nba", choices=("nba", "nfl", "nhl", "soccer", "cfb", "cbb"))
-    ap.add_argument("--kind", default="all", choices=("all", "props", "stacks", "lines", "tri", "mates"),
+    ap.add_argument("--kind", default="all", choices=("all", "props", "stacks", "lines", "tri", "mates", "team"),
                     help="NFL: one kind of slip only (default: a player's own props, stacks, game lines, "
                          "then tri, the three-leg slips). "
-                         "NHL: props (a skater's own goals + shots), mates (two teammates) or lines (points + a game line)")
+                         "NHL: props (a skater's own goals + shots), mates (two teammates) or lines (points + a game line). "
+                         "NBA: team (the NBA Team board: a player's prop with a game line, and slips across a game's own lines)")
+    ap.add_argument("--team", default="all", choices=("all", "props", "game"),
+                    help="NBA Team board: props (a player's prop + a game line) or game (a game's own lines) only")
+    ap.add_argument("--team-lines", nargs="+", default=["cover", "h1cover"], choices=tuple(NBA_PROP_LINES),
+                    help="NBA Team board: the game lines a prop is asked with (default: the spread and the first-half "
+                         "spread; his team's total, the other team's, the game total and the first half's were all "
+                         "5%% to 8%% under fair on 11-13)")
     ap.add_argument("--per", type=int, default=None,
                     help="NFL stacks / lines / three legs, NHL teammates: combos asked per player of each kind, highest r first "
                          "(3; NHL lines 4: moneyline, puck line, total and team total)")
-    ap.add_argument("--line-r", type=float, default=0.25, help="NFL / NHL lines: smallest |r| between a prop and a game line")
+    ap.add_argument("--line-r", type=float, default=None,
+                    help="NFL / NHL lines, NBA Team: smallest |r| between a prop and a game line (0.25; NBA Team 0.30)")
     ap.add_argument("--scope", default="main", choices=("main", "ladder", "all"),
                     help="main (default): NBA asks one slip a player, his main-line Points + Threes, and NFL asks no "
                          "three-leg slips. all: also the second threes milestone, higher lines, other pairs, "
@@ -1819,6 +2063,10 @@ def main():
         a.unit = 500.0 if a.league == "nhl" else 250.0
     if a.min_r is None:
         a.min_r = 0.10 if a.league == "nhl" else 0.15
+    if a.line_r is None:
+        # NBA Team, 11-13: prop + spread slips at r under 0.30 ran a median
+        # 4% under fair (12 of 54 above it); from 0.30 up, 64 of 106.
+        a.line_r = 0.30 if a.kind == "team" else 0.25
     if a.gate is None:
         # Ladder scope asks down to a main line 10% under fair: on the ungated
         # pass of 11-11, players at -10% to 0% held 46 of the 81 ladder slips
@@ -1834,6 +2082,8 @@ def main():
         a.ladder_pts = 15 if a.scope == "ladder" else 10
     if a.ladder_3s is None:
         a.ladder_3s = 3 if a.scope == "ladder" else 2
+    if a.kind == "team" and (a.league != "nba" or a.scope == "ladder"):
+        raise SystemExit("--kind team is NBA only (and not with --scope ladder)")
     if a.kind == "tri" and (a.league != "nfl" or a.scope == "ladder"):
         raise SystemExit("--kind tri is NFL only (and not with --scope ladder)")
     if a.scope == "ladder":

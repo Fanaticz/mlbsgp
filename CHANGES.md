@@ -2,6 +2,28 @@
 
 ## 2026-11-13 session
 
+### Novig Scan: NBA Team tab (a prop with the spread, and a game's own lines)
+Max, 11-13: the Points + Threes edge looks gone; expand NBA to team props. A new board, **NBA Team**, on the scanner page (`scan.py --league nba --kind team`; `nbateam` in `server.js`).
+
+- **What was tested first** (nine games, about 700 quotes):
+
+| Kind of slip | Quotes | Median EV | Above fair | At +3% or better |
+|---|---|---|---|---|
+| Game lines only (33 shapes, three games) | 99 | -5% to -12% by shape | 4 | 1 |
+| Prop + his team's total | 206 | -6.4% | 11 | 0 |
+| Prop + game total | 18 | -4.6% | 0 | 0 |
+| Prop + the other team's total | 10 | -3.8% | 1 | 0 |
+| Prop + spread, r 0.42 or better | 38 | **+4.8%** | **35** | 26 |
+| Prop + spread, r 0.30 to 0.42 | 68 | about -1% | 29 | 13 |
+| Prop + spread, r under 0.30 | 54 | about -4% | 12 | 9 |
+
+- **Team props alone are priced right.** Novig's quote before its fee sits on the measured correlation (favourite covers + his team total Over: 0.62 quoted, 0.58 measured; team total Over + game Over: 0.77 against 0.84; spread + total: 0.03 against 0.02), so the 10% fee puts them about 5% under fair. The same with a player's prop and a team total or game total.
+- **A prop with the spread is the exception**, because the true correlation turns on who is favoured and Novig's barely does. A 20-to-25-point scorer's Over with his team covering: +0.46 as an underdog of 6.5 to 10.5 (807 player-games), +0.21 in a close game, -0.13 as a favourite of 10+ (the starters sit the fourth quarter of a blowout). A 25-point scorer on a 10+ favourite: -0.27 (627 player-games). Novig quoted Wembanyama's points with San Antonio -12.5 at -0.10 where the data says -0.26, and Lendeborg's with Golden State +12.5 at +0.16 where it says +0.5. The plays are a main scorer's Over with his underdog team covering (or his Under with the favourite covering), and a star's Under with his big-favourite team covering (or his Over with the underdog covering). They repeated on a second pass 15 minutes later: Lendeborg +12.7% then +11.6%, Acuff +11.2% then +10.5%, Wembanyama +15.2% then +9.4%, Siakam +5.8% then +6.5%.
+- **The board asks**: each player's three strongest pairings of a main-line prop (points, rebounds, assists, threes, points + rebounds + assists) with the spread or first-half spread, Over and Under, where |r| is 0.30 or better (`--line-r`; 0.15 where the prop goes against his own team covering, the star on a big favourite); players at 20+ minutes a game only (a bench player's numbers go the other way in a blowout: Novig priced Collier's PRA with Utah +15.5 as moving apart). Then six slips across each game's own lines, the ones nearest fair of the 33: both team totals Over, both Under, the favourite's team total with the game total (Over, Under), the underdog's moneyline + Under, the favourite's first-half moneyline + his moneyline. About 140 slips on a nine-game night, under three minutes; the game picker narrows it. `--team-lines tt opp_tt over h1over` adds the lines that did not pay.
+- **Data** (`scripts/nba_line_correlations.py`; daily refresh step added): `public/data/nba_game_lines.json`, 4,115 finals of 2023-24 to now with quarter scores and DraftKings' closing spread and total from ESPN; `public/data/nba_game_boxes.json`, every player's line in those games; `public/data/nba_line_correlations.json`, 46 game-line shapes by size of spread (copula r, as the CBB file), and for each prop and role (his average of the stat) its r with six game lines in seven bands of his team's spread plus a straight-line fit, which the board reads at tonight's spread. A player's line isn't in any feed, so the leg is "over his own median that season" (745 player-seasons of 20+ games at 20+ minutes). Team totals and first-half lines are derived from the closing spread and total (first half: 0.600 x the spread, 0.502 x the total).
+- **Team-total legs** take Novig's own book where it is inside 4c and Pinnacle's no-vig price on the same line where it is not (`pinnacle.lines("NBA")`; most NBA team-total books on Novig are 4c to 6c wide). Novig also lists points + rebounds + assists (`novig.EXTRA_TYPES`).
+- **Watch for**: the underdog's moneyline + Under came back +34% and +40% on two games (Novig quoting well under the unrelated price) and at -2% for the same legs on the other pass. Those are one pricer's quote, not a correlation; re-check on the slip. The prop + spread r is a league-wide role number, not the player's own, and the underdog bands for 25-point scorers are thin (211 to 337 player-games), so the fit is held to the spreads it was measured on.
+- Checked: `scan.py --kind team` end to end on tonight's slate twice (345 and 161 slips priced, no refusals: Novig takes every pairing); the page in a browser (below).
 ### Novig Scan: CFB team-total and first-half slips
 The CFB board asked five slips a game in two families (underdog moneyline + Under, spread + total) and left Novig's team-total and first-half books unused (Max, 11-13: "not many CFB markets").
 

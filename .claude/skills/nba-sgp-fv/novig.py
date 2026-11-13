@@ -43,7 +43,8 @@ NFL_TYPES = {"rec": "RECEPTIONS", "yds": "RECEIVING_YARDS", "td": "TOUCHDOWNS",
 # POWER_PLAY_POINTS, SAVES, FIRST_GOAL_SCORER); BLOCKS is in its vocabulary and
 # empty for the league, so it is asked for and priced the day it appears.
 NHL_TYPES = {"g": "PLAYER_GOALS", "ast": "ASSISTS", "pts": "POINTS", "sog": "SHOTS_ON_GOAL", "blk": "BLOCKS"}
-ALL_TYPES = {**TYPES, **NFL_TYPES, **NHL_TYPES}
+EXTRA_TYPES = {"pra": "POINTS_REBOUNDS_ASSISTS"}   # NBA Team board only: the NBA board's own pairs are TYPES
+ALL_TYPES = {**TYPES, **NFL_TYPES, **NHL_TYPES, **EXTRA_TYPES}
 STAT = {v: k for k, v in ALL_TYPES.items()}
 MAX_SPREAD = 0.04  # ask - bid on the Over, in probability
 SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}

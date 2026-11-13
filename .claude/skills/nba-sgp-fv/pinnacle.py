@@ -98,7 +98,7 @@ def board():
     return [g for g in games.values() if g["ml"]]
 
 
-COLLEGE = {"NCAAB": 493, "NCAAF": 880}   # Pinnacle's league ids
+COLLEGE = {"NCAAB": 493, "NCAAF": 880, "NBA": 487}   # Pinnacle's league ids (the NBA Team board reads its team totals the same way)
 
 
 def lines(league):

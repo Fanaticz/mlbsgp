@@ -2489,13 +2489,16 @@ try {
   }
 } catch (_) { /* no saved boards yet */ }
 
-const NV_PY_LEAGUE = league => ({ ladder: 'nba', nflladder: 'nfl', nhllines: 'nhl' }[league] || league);
+const NV_PY_LEAGUE = league => ({ ladder: 'nba', nbateam: 'nba', nflladder: 'nfl', nhllines: 'nhl' }[league] || league);
+// Every board but 'nba' (the default). 'nbateam' is the NBA Team board:
+// scan.py --league nba --kind team.
+const NV_LEAGUES = ['nfl', 'nhl', 'nhllines', 'soccer', 'cfb', 'cbb', 'ladder', 'nflladder', 'nbateam'];
 // GET /api/nba/novig-games?league= — the league's open pregame games for the
 // page's game picker: [{ id, name, starts }]. One catalog read, kept 2 minutes.
 const NV_GAMES = new Map();   // python league -> { at, games }
 app.get('/api/nba/novig-games', (req, res) => {
   if (!nvBetsAuth(req, res)) return;
-  const lg = NV_PY_LEAGUE(['nfl', 'nhl', 'nhllines', 'soccer', 'cfb', 'cbb', 'ladder', 'nflladder'].includes(req.query.league) ? req.query.league : 'nba');
+  const lg = NV_PY_LEAGUE(NV_LEAGUES.includes(req.query.league) ? req.query.league : 'nba');
   const hit = NV_GAMES.get(lg);
   if (hit && Date.now() - hit.at < 120000) return res.json({ games: hit.games });
   require('child_process').execFile(PYTHON, [NV_SCAN_PY, '--games', '--league', lg], { timeout: 60000, maxBuffer: 4e6 }, (e, out) => {
@@ -2518,7 +2521,8 @@ function startNovigScan(league, wide, events) {
   // included), fair values shifted from the main line (scan.py --scope ladder).
   const args = [NV_SCAN_PY, '--json'].concat(league === 'ladder' ? ['--league', 'nba', '--scope', 'ladder'] :
     league === 'nflladder' ? ['--league', 'nfl', '--scope', 'ladder'] :
-    league === 'nhllines' ? ['--league', 'nhl', '--kind', 'lines'] : ['--league', league]).concat(wide ? ['--max-spread', '0.08', '--alt-spread', '0.10'] : [])
+    league === 'nhllines' ? ['--league', 'nhl', '--kind', 'lines'] :
+    league === 'nbateam' ? ['--league', 'nba', '--kind', 'team'] : ['--league', league]).concat(wide ? ['--max-spread', '0.08', '--alt-spread', '0.10'] : [])
     .concat(events.length ? ['--events', ...events] : []);
   let proc;
   try {
@@ -2571,7 +2575,7 @@ function startNovigScan(league, wide, events) {
   NV_RUN = { proc, key, stop: () => { end('', true); proc.kill(); } };
 }
 
-// GET /api/nba/novig-scan?league=nba|ladder|nfl|nflladder|nhl|nhllines|soccer|cfb|cbb[&wide=1][&now=1][&stop=1][&events=id,id] — that
+// GET /api/nba/novig-scan?league=nba|ladder|nbateam|nfl|nflladder|nhl|nhllines|soccer|cfb|cbb[&wide=1][&now=1][&stop=1][&events=id,id] — that
 // board's last pass (or the one running), and what else is running.
 // stop=1 ends the pass that is running, whichever board it is on; with now=1
 // this board's pass then starts in its place.
@@ -2586,7 +2590,7 @@ app.get('/api/nba/novig-scan', (req, res) => {
     return setTimeout(() => res.status(403).json({ error: 'wrong passcode' }), 800);  // slows guessing
   }
   const wide = req.query.wide === '1';
-  const league = ['nfl', 'nhl', 'nhllines', 'soccer', 'cfb', 'cbb', 'ladder', 'nflladder'].includes(req.query.league) ? req.query.league : 'nba';
+  const league = NV_LEAGUES.includes(req.query.league) ? req.query.league : 'nba';
   const key = `${league}:${wide ? 1 : 0}`, B = nvBoard(key), now = Date.now();
   // One pass at a time (Novig's limit is per IP), and only when asked.
   if (req.query.stop === '1' && NV_RUN) NV_RUN.stop();

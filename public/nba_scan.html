@@ -133,6 +133,7 @@
   <div class="toggle" id="league">
     <button data-league="nba" class="on">NBA</button>
     <button data-league="ladder" title="NBA shooters' higher lines, one-way lines included">NBA Ladder</button>
+    <button data-league="nbateam" title="NBA: a player's prop with his game's spread, total or a team total, and slips across a game's own lines">NBA Team</button>
     <button data-league="nfl">NFL</button>
     <button data-league="nflladder" title="NFL: higher yards lines with a touchdown, receptions or passing TDs">NFL Ladder</button>
     <button data-league="nhl" hidden title="NHL: a skater's goals with his shots on goal, and two teammates' points">NHL</button>
@@ -198,6 +199,8 @@ const PAIR_OPTS = {
         ["3", "Three legs: all"], ["k:own3", "3: his own props"], ["k:pairline", "3: two props + a game line"], ["k:stackline", "3: QB + receiver + a game line"], ["k:stack3", "3: QB + receiver, three props"],
         ["l:over", "3: with the game total"], ["l:cover", "3: with the spread"], ["l:win", "3: with the moneyline"], ["l:tt", "3: with a team total"],
         ["l:h1over", "3: with the 1H total"], ["l:h1cover", "3: with the 1H spread"], ["l:h1win", "3: with the 1H moneyline"]],
+  nbateam: [["k:cover", "Prop + spread"], ["k:h1cover", "Prop + 1H spread"], ["k:tt", "Prop + team total"], ["k:over", "Prop + game total"],
+            ["k:h1over", "Prop + 1H total"], ["k:game", "Game lines only"]],
   nhl: [["g,sog", "Own: GOALS + SOG"], ["k:mate", "Teammates"]],
   nhllines: [["k:win", "Points + moneyline"], ["k:cover", "Points + puck line"], ["k:over", "Points + game total"], ["k:tt", "Points + team total"]],
   soccer: [["n3", "Win + corners"], ["n4", "With a goals leg"]],
@@ -296,9 +299,9 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", "
 const clock = ms => new Date(ms).toLocaleTimeString([], { hour:"numeric", minute:"2-digit" });
 const LABEL = { pts:"PTS", reb:"REB", ast:"AST", tpm:"3PM", rec:"REC", yds:"YDS", td:"TD",
                 att:"PASS ATT", cmp:"CMP", pyds:"PASS YDS", ptd:"PASS TD",
-                car:"CAR", ryds:"RUSH YDS", rry:"RUSH+REC YDS", g:"G", sog:"SOG", blk:"BLK" };
+                car:"CAR", ryds:"RUSH YDS", rry:"RUSH+REC YDS", g:"G", sog:"SOG", blk:"BLK", pra:"PTS+REB+AST" };
 const SOC = () => LEAGUE === "soccer";
-const BOARD = { nba:"NBA", ladder:"NBA Ladder", nfl:"NFL", nflladder:"NFL Ladder", nhl:"NHL", nhllines:"NHL Lines", soccer:"soccer", cfb:"CFB", cbb:"CBB" };
+const BOARD = { nba:"NBA", ladder:"NBA Ladder", nbateam:"NBA Team", nfl:"NFL", nflladder:"NFL Ladder", nhl:"NHL", nhllines:"NHL Lines", soccer:"soccer", cfb:"CFB", cbb:"CBB" };
 
 // My bets: what I have down, kept on the server (same list on every device).
 let BETS = [], BETS_AT = 0;
@@ -383,7 +386,8 @@ function detail(c) {
   const tech = [
     c.model ? `r ${sg(c.r)} · modelled from the main line${c.fix > 1 ? `, ×${c.fix.toFixed(2)} for fat tails` : ""}` :
     c.r === null ? `unrelated legs ${c.unrelated_x.toFixed(2)}x, hits ×${c.lift.toFixed(2)} as often` : c.rs ? `pair r’s ${c.rs.map(sg).join(" / ")}` : c.legs.length === 3 ? `lowest pair r ${sg(c.r)}` : `r ${sg(c.r)} · devig r ${sg(c.devig_r)}`,
-    c.games != null ? (c.games ? `${c.games} games${c.kind === "mate" ? " together" : ""}` : c.role ? "league-wide r for his position and ice time" : "position average r") : null,
+    c.games != null ? (LEAGUE === "nbateam" ? (c.role ? `league-wide r for a player with that line${c.spread ? ` on a team ${c.spread < 0 ? "favoured by" : "getting"} ${Math.abs(c.spread)}` : " in an even game"} (${c.games.toLocaleString()} player-games)` : `${c.games.toLocaleString()} games`) :
+      c.games ? `${c.games} games${c.kind === "mate" ? " together" : ""}` : c.role ? "league-wide r for his position and ice time" : "position average r") : null,
     `books ${c.legs.map(L => (100 * L.width).toFixed(1)).join(" / ")}¢`,
     `quote ${c.raw_x.toFixed(2)}x before fee`,
     c.qk > 0 ? `${c.qk.toFixed(2)}u` : null,
@@ -426,7 +430,7 @@ function render() {
   const byId = new Map();
   // NFL shows every row on its own (a player's props, stacks and game-line
   // slips are different bets, not versions of one).
-  const cardOf = c => LEAGUE === "nfl" || LEAGUE.startsWith("nhl") ? c.key : c.id;
+  const cardOf = c => LEAGUE === "nfl" || LEAGUE === "nbateam" || LEAGUE.startsWith("nhl") ? c.key : c.id;
   for (const c of rows) (byId.get(cardOf(c)) || byId.set(cardOf(c), []).get(cardOf(c))).push(c);
   const mainOf = g => g.find(c => c.main) ||
     g.filter(c => c.tier === 1).sort((a, b) => Math.abs(a.legs[1].p - 0.5) - Math.abs(b.legs[1].p - 0.5))[0];
@@ -479,6 +483,7 @@ function render() {
         started ? "Every game on this board has started. Press <b>Fetch</b> to price the next slate." :
         LEAGUE === "cfb" ? "No open game has tight two-sided books on its lines right now. Saturday’s slate fills in through the week." :
         LEAGUE === "cbb" ? `No open game has tight two-sided books on both its spread and its total right now.${S.wide ? "" : " Tick <b>Wide books</b> for rough numbers."}` :
+        LEAGUE === "nbateam" ? `No open game has a tight spread book and a player whose prop goes with it strongly enough right now.${S.wide ? "" : " Tick <b>Wide books</b> for rough numbers."}` :
         SOC() ? "No open match has two-sided books on both teams’ corners right now. They usually appear a day or two before kickoff." :
         `Nothing to price right now: no player has two Novig books tight enough.${S.wide ? "" : ` They tighten ${LEAGUE.startsWith("nfl") ? "toward the weekend" : LEAGUE.startsWith("nhl") ? "toward puck drop" : "through the day"}; tick <b>Wide books</b> for rough numbers.`}`) :
       `No combo at ${MINEV > 0 ? "+" : ""}${MINEV}% or better right now. Best of ${all.length}: ${esc(best.player)}, ${esc(best.label)} at ${pct(best.ev)}. <b>All combos</b> shows the rest.`
@@ -533,8 +538,9 @@ function render() {
     (LEAGUE === "nflladder" ? `NFL Ladder: each player’s yards lines above his main line (receiving, rushing, passing; one-way lines included), with his anytime touchdown, receptions or passing touchdowns at its own main line, where the slip’s fair value is between +500 and +800. Rows marked * have a yards leg shifted from the main line (Novig’s when it has a tight one, else DraftKings’ or FanDuel’s) with a curve fitted to those books’ own ladders, held under Novig’s ask and under both books’ one-way price on that line. ` : "") +
     (LEAGUE === "nhl" ? `NHL: a skater’s goals with his shots on goal, each at its main line as “N+ · Yes” legs (1+ goal goes with 2+ shots, since a goal is a shot). Goals with assists and assists with shots are not asked: those legs are close to unrelated. Novig refuses any slip with a skater’s points and another of his stats, and lists no blocked shots. Then teammates: one skater’s points with a teammate’s points, or his goal with a teammate’s assist or points, in the same game, where their correlation is 0.20 or better, up to three slips led by one skater. It comes from the games the two both played for the same team (40 needed, else the average for their positions and ice time): about 0.15 for any two teammates, 0.3 to 0.4 for linemates. A skater’s shots with a teammate’s points is about zero (0.05 for linemates), so those slips are not asked. Points with game lines are on the NHL Lines tab. Skaters need 40 games of 10+ minutes. The correlation is fitted to the two legs’ hit-or-miss record at those exact lines and shrunk toward the skater’s position: goals with shots runs 0.3 to 0.6. Units are $500. Data: <a href="https://moneypuck.com" target="_blank" rel="noopener" style="color:inherit">MoneyPuck.com</a>, new games from ESPN box scores. ` : "") +
     (LEAGUE === "nhllines" ? `NHL Lines: a skater’s points at his main line with his team’s moneyline, the puck line (−1.5 or +1.5, whichever his team has), the game total and his team’s total, on the side that goes with his points, where the correlation is 0.25 or better. The correlation is league-wide for his position and ice time, not his own: a top forward’s point runs about 0.5 with his team’s total over, 0.38 with a win and 0.32 with the game over, measured on the raw result (won, won by two, over 5.5) across 1,600 games. Skaters need 40 games of 10+ minutes. Units are $500. Data: <a href="https://moneypuck.com" target="_blank" rel="noopener" style="color:inherit">MoneyPuck.com</a>, scores from ESPN. ` : "") +
+    (LEAGUE === "nbateam" ? `NBA Team: slips with a game line in them. A player’s main-line Over (points, rebounds, assists, threes, or points + rebounds + assists) with his game’s spread or first-half spread on the side that goes with it, and his Under with the other side; players at 20+ minutes a game, each one’s three strongest pairings, where the correlation is 0.30 or better (0.15 when his prop goes against his own team covering). The correlation is league-wide, not his own: for a player with that line on a team with tonight’s spread, from four seasons of box scores against closing lines (open a row for the count). It turns on who is favoured: a 20-to-25-point scorer’s Over goes with his team covering at +0.42 as an 8-point underdog, +0.19 in a pick’em and −0.08 as a 10-point favourite, and a 25-point scorer on a 12-point favourite is −0.26, so his Over is asked with the other team covering. Novig’s price for these barely moves with who is favoured, which is where the plays are: on 11-13, slips at 0.42 or better were above fair on 35 of 38 quotes (median +4.8%); close games were not. Then six slips across each game’s own lines (team totals with each other and with the game total, the underdog’s moneyline with the Under, the favourite’s first-half moneyline with his moneyline) at each one’s measured correlation on 4,115 games: Novig prices those right before its fee, so they sit about 5% under fair unless a quote is off. A team total priced off Pinnacle says so in the open row. Fair value: each leg is Novig’s own exchange book at that line, devigged worst case, joined at that correlation${S.data ? ` (data ${S.data})` : ""}. ` : "") +
     (LEAGUE === "nba" ? `NBA: one slip a player, his main-line Points + Threes, to keep the number of requests Novig’s pricers see down. The big-stat players (Doncic, Curry, Wembanyama, Gilgeous-Alexander, Jerome, Tatum, Jokic, and anyone whose points line is 26.5 or higher) also get their three-leg slips asked at main lines: every three of points, rebounds, assists and threes, folded under the player’s “more” chip. ` : "") +
-    (SOC() || LEAGUE === "cfb" || LEAGUE === "cbb" ? `` : `Fair value: each leg is Novig’s own exchange book at that line, devigged worst case, joined with the player’s shrunk correlation${LEAGUE === "nfl" ? " (for a slip across two players or with a game line: the league-wide correlation for his role, position and targets or carries a game, from ten seasons of nflverse games against closing lines)" : ""}` +
+    (SOC() || LEAGUE === "cfb" || LEAGUE === "cbb" || LEAGUE === "nbateam" ? `` : `Fair value: each leg is Novig’s own exchange book at that line, devigged worst case, joined with the player’s shrunk correlation${LEAGUE === "nfl" ? " (for a slip across two players or with a game line: the league-wide correlation for his role, position and targets or carries a game, from ten seasons of nflverse games against closing lines)" : ""}` +
     `${S.data ? ` (data ${S.data})` : ""}. `) + `Novig: the multiplier on its slip, its public quote after the 10% parlay fee. ` +
     `Quotes move by a few percent between asks and last about 30 seconds, so a row is a lead to re-check on the slip, and against sharp odds, before betting. ` +
     `Nothing is asked of Novig until you press Fetch; the last pass for each league stays here until then.`;
