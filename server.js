@@ -2489,8 +2489,28 @@ try {
   }
 } catch (_) { /* no saved boards yet */ }
 
-function startNovigScan(league, wide) {
+const NV_PY_LEAGUE = league => ({ ladder: 'nba', nflladder: 'nfl', nhllines: 'nhl' }[league] || league);
+// GET /api/nba/novig-games?league= — the league's open pregame games for the
+// page's game picker: [{ id, name, starts }]. One catalog read, kept 2 minutes.
+const NV_GAMES = new Map();   // python league -> { at, games }
+app.get('/api/nba/novig-games', (req, res) => {
+  if (!nvBetsAuth(req, res)) return;
+  const lg = NV_PY_LEAGUE(['nfl', 'nhl', 'nhllines', 'soccer', 'cfb', 'cbb', 'ladder', 'nflladder'].includes(req.query.league) ? req.query.league : 'nba');
+  const hit = NV_GAMES.get(lg);
+  if (hit && Date.now() - hit.at < 120000) return res.json({ games: hit.games });
+  require('child_process').execFile(PYTHON, [NV_SCAN_PY, '--games', '--league', lg], { timeout: 60000, maxBuffer: 4e6 }, (e, out) => {
+    let games = null;
+    try { games = JSON.parse(String(out).trim().split('\n').pop()); } catch (_) { /* not JSON */ }
+    if (e || !Array.isArray(games)) return res.status(502).json({ error: 'could not read Novig\'s games' });
+    NV_GAMES.set(lg, { at: Date.now(), games });
+    res.json({ games });
+  });
+});
+
+// events: Novig event ids picked on the page (the game picker); empty = the whole board.
+function startNovigScan(league, wide, events) {
   if (NV_RUN) return;
+  events = events || [];
   const key = `${league}:${wide ? 1 : 0}`, B = nvBoard(key);
   // wide: also price legs on books up to 8c (10c for the second threes
   // milestone); the page flags those rows as rough.
@@ -2498,7 +2518,8 @@ function startNovigScan(league, wide) {
   // included), fair values shifted from the main line (scan.py --scope ladder).
   const args = [NV_SCAN_PY, '--json'].concat(league === 'ladder' ? ['--league', 'nba', '--scope', 'ladder'] :
     league === 'nflladder' ? ['--league', 'nfl', '--scope', 'ladder'] :
-    league === 'nhllines' ? ['--league', 'nhl', '--kind', 'lines'] : ['--league', league]).concat(wide ? ['--max-spread', '0.08', '--alt-spread', '0.10'] : []);
+    league === 'nhllines' ? ['--league', 'nhl', '--kind', 'lines'] : ['--league', league]).concat(wide ? ['--max-spread', '0.08', '--alt-spread', '0.10'] : [])
+    .concat(events.length ? ['--events', ...events] : []);
   let proc;
   try {
     proc = require('child_process').spawn(PYTHON, args, { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -2507,7 +2528,7 @@ function startNovigScan(league, wide) {
     return;
   }
   let live = true;   // false once the pass has ended or been stopped
-  Object.assign(B, { started: Date.now(), total: 0, done: 0, error: null, stopped: 0, seen: new Set() });
+  Object.assign(B, { started: Date.now(), total: 0, done: 0, error: null, stopped: 0, seen: new Set(), events });
   const timer = setTimeout(() => { if (NV_RUN && NV_RUN.proc === proc) proc.kill(); }, NV_SCAN_MAX_MS);
   let buf = '', err = '', ok = false;
   const onEvent = e => {
@@ -2537,7 +2558,8 @@ function startNovigScan(league, wide) {
     } else if (ok) {
       B.finished = Date.now();
       // A combo this pass didn't price is gone: its line moved or closed.
-      for (const k of [...B.rows.keys()]) if (!B.seen.has(k)) B.rows.delete(k);
+      // A pass of picked games says nothing about the other games' rows.
+      for (const [k, r] of [...B.rows]) if (!B.seen.has(k) && (!events.length || events.includes(r.event))) B.rows.delete(k);
     } else {
       B.error = (why || err.trim().split('\n').pop() || 'scan stopped early').slice(0, 300);
     }
@@ -2549,7 +2571,7 @@ function startNovigScan(league, wide) {
   NV_RUN = { proc, key, stop: () => { end('', true); proc.kill(); } };
 }
 
-// GET /api/nba/novig-scan?league=nba|ladder|nfl|nflladder|nhl|nhllines|soccer|cfb[&wide=1][&now=1][&stop=1] — that
+// GET /api/nba/novig-scan?league=nba|ladder|nfl|nflladder|nhl|nhllines|soccer|cfb|cbb[&wide=1][&now=1][&stop=1][&events=id,id] — that
 // board's last pass (or the one running), and what else is running.
 // stop=1 ends the pass that is running, whichever board it is on; with now=1
 // this board's pass then starts in its place.
@@ -2564,16 +2586,19 @@ app.get('/api/nba/novig-scan', (req, res) => {
     return setTimeout(() => res.status(403).json({ error: 'wrong passcode' }), 800);  // slows guessing
   }
   const wide = req.query.wide === '1';
-  const league = ['nfl', 'nhl', 'nhllines', 'soccer', 'cfb', 'ladder', 'nflladder'].includes(req.query.league) ? req.query.league : 'nba';
+  const league = ['nfl', 'nhl', 'nhllines', 'soccer', 'cfb', 'cbb', 'ladder', 'nflladder'].includes(req.query.league) ? req.query.league : 'nba';
   const key = `${league}:${wide ? 1 : 0}`, B = nvBoard(key), now = Date.now();
   // One pass at a time (Novig's limit is per IP), and only when asked.
   if (req.query.stop === '1' && NV_RUN) NV_RUN.stop();
-  if (req.query.now === '1' && !NV_RUN && (B.stopped || now - Math.max(B.finished, B.started) > NV_SCAN_NOW_MS)) startNovigScan(league, wide);
+  // events=id,id: only those games (the page's game picker).
+  const events = String(req.query.events || '').split(',').filter(x => /^[0-9a-f-]{16,40}$/i.test(x)).slice(0, 40);
+  const other = events.join() !== (B.events || []).join();   // other games than the last pass: no minute's wait
+  if (req.query.now === '1' && !NV_RUN && (B.stopped || other || now - Math.max(B.finished, B.started) > NV_SCAN_NOW_MS)) startNovigScan(league, wide, events);
   const mine = !!NV_RUN && NV_RUN.key === key;
   res.json({
     now, league, wide, scanning: mine, busy: NV_RUN && !mine ? NV_RUN.key.split(':')[0] : null,
     started: B.started, finished: B.finished, stopped: B.stopped || 0, total: B.total, done: B.done, players: B.players, data: B.data,
-    seconds: B.seconds, error: B.error, books: B.books || null, rows: [...B.rows.values()],
+    seconds: B.seconds, error: B.error, books: B.books || null, events: B.events || [], rows: [...B.rows.values()],
   });
 });
 
@@ -2616,7 +2641,7 @@ app.post('/api/nba/novig-requote', (req, res) => {
   if (!row) return res.status(404).json({ error: 'that slip is no longer on the board' });
   if (NV_REQUOTE) return res.status(429).json({ error: 'another slip is being refreshed' });
   NV_REQUOTE = true;
-  const lg = { ladder: 'nba', nflladder: 'nfl', nhllines: 'nhl' }[league] || league;
+  const lg = NV_PY_LEAGUE(league);
   const args = [NV_SCAN_PY, '--requote', '--league', lg].concat(wide ? ['--max-spread', '0.08'] : []);
   let out = '', err = '', done = false;
   const finish = (code, body) => { if (done) return; done = true; NV_REQUOTE = false; clearTimeout(timer); res.status(code).json(body); };

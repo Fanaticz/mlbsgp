@@ -2,6 +2,23 @@
 
 ## 2026-11-13 session
 
+### Novig Scan: pick the game or slate to fetch
+A full NFL pass is about 1,480 slips and Novig allows one quote a second per IP, so it takes about 27 minutes however the quotes are sent. A picker beside Fetch (every board) now limits a pass to one game or one slate.
+
+- **The picker**: All games (as before), then by day: all of that day's games, each kickoff window with two or more games ("6:00 PM slate · 7 games"), and each game. Games in the next eight days, from Novig's catalog (`/api/nba/novig-games`, kept two minutes).
+- **Size**: one NFL game is 70 to 160 slips on today's board, 1.3 to 2.9 minutes; Sunday's seven-game early window about 16 minutes.
+- **The board keeps the other games**: a picked pass replaces and drops rows of its own games only; the rest stay at their earlier prices, and the status line says the last pass was partial. Fetching a different game right after one finishes needs no minute's wait.
+- **How** (`scan.py --games`, `--events ID ...`; `&events=` on `/api/nba/novig-scan`): every slip is tagged with its game (Novig's event id, looked up from its first leg in one catalog pull), whatever built it, so this works on every board. For NFL the stack, game-line and three-leg builders skip the other games before doing any work.
+- **Checked** in a browser on live passes capped at four slips a kind: JAX @ TEN alone (13 rows, both teams only), then HOU @ CLE at once (25 rows, the first game's kept); phone width has no overflow.
+
+### Novig Scan: CBB tab
+A new board on the Novig Scan page (`scan.py --league cbb`), on the CFB board's code (`LINE_BOARDS` in `scan.py`).
+
+- **What Novig lists** (league `NCAAB`): game lines only, like football. Spreads and totals have alt ladders (median book 5c, 44% inside 4c). Team totals and first-half lines are too wide to take a fair value from: none of 314 team totals and 1 of 86 first-half spreads inside 4c (medians 19c and 10.5c).
+- **What it asks**, two a game: the favourite's spread + Over and the underdog's spread + Under, at the lines nearest even money. No underdog-moneyline slips: the margin is close to unrelated to the total in basketball (modelled r 0.01 in a close game, 0.10 at a 30-point spread), so there is nothing for the moneyline to add. A game with no two-sided moneyline (30-point favourites) takes its favourite from the spread.
+- **Checked on 89 quotes over four games** (Pitt at Butler, Georgia at UNC, Georgetown at Clemson, Northern Arizona at Kentucky): none above fair, median -10.4%, best -3.2%. Novig charges a positive correlation on both pairings of a spread with a total (r about +0.1 on favourite + Under as well as favourite + Over), and +0.4 to +0.7 on two short-priced alt lines, so the wider shapes are worse than the two asked here.
+- Same per-game model as CFB (the margin's and total's sd fitted to the alt ladders: about 12 and 16.5; the two scores come out 0.2 to 0.4 correlated), same `CFB_KAPPA` assumption.
+
 ### Novig Scan: refresh one slip
 Every row has a small ↻ button beside its age (every board). It prices that one slip again without running a pass: one catalog pull and one quote.
 
