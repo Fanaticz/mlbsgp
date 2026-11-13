@@ -2,6 +2,14 @@
 
 ## 2026-11-13 session
 
+### Novig Scan: Auto-scan and an All tab
+Max, 11-13: have it scan by itself, cycling NBA, NFL, CBB and CFB, with one tab for every board's good slips.
+
+- **Auto-scan** (button on the scanner page; `nvCycleTick` in `server.js`): while on, the server runs whole-board passes of NBA, NBA Team (the board added today, under three minutes a pass), NFL, CBB and CFB in turn, with the page open or closed. Still one pass at a time; a pass started with Fetch runs first and the cycle carries on after it. A minute between passes, no board more often than every ten minutes, and it switches itself off after 12 hours (`NV_CYCLE_*`). It uses the Wide books setting it was switched on with. Switching it off stops the pass it started. A redeploy switches it off (the state is in memory).
+- **All tab** (`?league=all&min=`): every board's rows at Min EV or better for games that haven't started, best first, each tagged with its board (the two Ladder boards and soccer included, from their last Fetch). The status line shows how old each board's last pass is; rows over an hour old are dimmed. The refresh button and "I bet this" work from the row. No Fetch, game picker or pair filter there.
+- **Changed**: this is the first thing that quotes Novig without Fetch being pressed. It is off until switched on, and asks to confirm.
+- **Checked** with a stand-in for `scan.py` (three rows a board): the cycle went NBA then NFL a minute later, the All tab listed both boards' rows above Min EV, off stopped it. Not run against Novig from here.
+
 ### Novig Scan: NBA Team tab (a prop with the spread, and a game's own lines)
 Max, 11-13: the Points + Threes edge looks gone; expand NBA to team props. A new board, **NBA Team**, on the scanner page (`scan.py --league nba --kind team`; `nbateam` in `server.js`).
 

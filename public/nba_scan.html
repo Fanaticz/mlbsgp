@@ -92,6 +92,12 @@
   #hidebets { background:none; border:1px solid var(--line); color:var(--muted); border-radius:8px; padding:7px 11px; font-size:13px; cursor:pointer; }
   body.nobets .mybets, body.nobets .bet, body.nobets .betform { display:none; }
   body.nobets #hidebets { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  .tag { flex:none; margin-right:7px; border:1px solid var(--line); border-radius:5px; padding:0 5px; font-size:10.5px;
+    font-weight:600; color:var(--accent); white-space:nowrap; letter-spacing:.02em; }
+  #auto { background:none; border:1px solid var(--line); color:var(--muted); border-radius:8px; padding:7px 11px; font-size:13px; cursor:pointer; white-space:nowrap; }
+  #auto.on { border-color:var(--pos); color:var(--pos); font-weight:600; }
+  /* The All tab gathers every board: no pass of its own, no pair or game filter. */
+  body.all #mode, body.all #game, body.all #now, body.all #pair { display:none !important; }
   .empty { padding:28px 14px; color:var(--muted); text-align:center; line-height:1.7; }
   .foot { padding:4px 22px 60px; color:var(--muted); font-size:12px; line-height:1.7; max-width:900px; }
 
@@ -101,6 +107,7 @@
     .toggle { flex:1 1 40%; }
     .toggle button { flex:1; padding:9px 8px; }
     #league { flex:1 1 100%; }
+    #league button { padding:9px 3px; font-size:12px; }
     input[type=search] { flex:1 1 40%; width:auto; min-width:0; }
     input[type=search], input[type=number] { font-size:16px; }
     .board { padding:0 6px 24px; }
@@ -131,6 +138,7 @@
 </header>
 <div class="controls">
   <div class="toggle" id="league">
+    <button data-league="all" title="Every board's plays in one list, best first">All</button>
     <button data-league="nba" class="on">NBA</button>
     <button data-league="ladder" title="NBA shooters' higher lines, one-way lines included">NBA Ladder</button>
     <button data-league="nbateam" title="NBA: a player's prop with his game's spread, total or a team total, and slips across a game's own lines">NBA Team</button>
@@ -157,6 +165,7 @@
     <option value="">All games</option>
   </select>
   <button type="button" id="now" title="Run one pass. Nothing is asked of Novig until you press this: each pass sends every combo to its pricers as a live auction. While a pass runs, this button stops it." style="background:var(--accent);border:0;color:#1a1a1a;font-weight:600;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;white-space:nowrap">Fetch</button>
+  <button type="button" id="auto" title="Auto-scan: the server prices NBA, NBA Team, NFL, CBB and CFB one after another, over and over, with this page open or closed. It switches itself off after 12 hours. Each pass sends every combo to Novig's pricers.">Auto-scan</button>
   <button type="button" id="hidebets" title="Hide or show your own bets on this page, for a screenshot.">Hide my bets</button>
   <a class="back" id="corr" href="nba.html">Correlations →</a>
 </div>
@@ -187,6 +196,7 @@ let STOP = false;          // Stop was pressed: end the running pass on the next
 let GOT = 0;               // when it arrived (ms, this clock)
 let MODE = "plays", WIDE = false, MINEV = 0, LEAGUE = "nba";
 const PAIR_OPTS = {
+  all: [],   // every board's plays together
   nba: [],   // one slip a player now: main-line Points + Threes
   ladder: [],   // NBA shooters' higher lines
   nflladder: [["yds,td", "REC YDS + TD"], ["yds,rec", "REC YDS + REC"], ["ryds,td", "RUSH YDS + TD"], ["pyds,ptd", "PASS YDS + PASS TD"]],
@@ -221,7 +231,7 @@ function pairOpts() {
 async function loadGames() {
   const el = document.getElementById("game"), league = LEAGUE;
   el.innerHTML = `<option value="">All games</option>`;
-  if (!KEY) return;
+  if (!KEY || ALL()) return;
   let games = [];
   try {
     const r = await fetch(`/api/nba/novig-games?league=${league}`, { cache: "no-store", headers: { "X-Scan-Key": KEY } });
@@ -250,16 +260,17 @@ const BUSY = new Set();    // rows being priced again (their refresh button)
 // One slip again: the server re-reads its legs' books and asks Novig for a
 // new quote on it alone. The row is replaced in place.
 async function requote(key) {
-  if (BUSY.size || !S) return;
+  const c = S && S.rows.find(r => rk(r) === key);
+  if (BUSY.size || !c) return;
   BUSY.add(key); render();
-  const league = LEAGUE, wide = WIDE;
+  const tab = LEAGUE, wide = WIDE;
   try {
     const r = await fetch("/api/nba/novig-requote", { method: "POST", headers: { "X-Scan-Key": KEY, "Content-Type": "application/json" },
-                                                      body: JSON.stringify({ league, wide, key }) });
+                                                      body: JSON.stringify({ league: c.board || tab, wide, key: c.key }) });
     const j = await r.json().catch(() => ({}));
-    if (r.ok && j.row && S && league === LEAGUE) {
-      const i = S.rows.findIndex(c => c.key === key);
-      if (i >= 0) S.rows[i] = j.row;
+    if (r.ok && j.row && S && tab === LEAGUE) {
+      const i = S.rows.findIndex(r => rk(r) === key);
+      if (i >= 0) S.rows[i] = c.board ? Object.assign(j.row, { board: c.board }) : j.row;
       S.now = j.now; GOT = Date.now();
     } else if (!r.ok) {
       NOTE = `Could not refresh that slip: ${j.error || r.status}.`;
@@ -301,7 +312,10 @@ const LABEL = { pts:"PTS", reb:"REB", ast:"AST", tpm:"3PM", rec:"REC", yds:"YDS"
                 att:"PASS ATT", cmp:"CMP", pyds:"PASS YDS", ptd:"PASS TD",
                 car:"CAR", ryds:"RUSH YDS", rry:"RUSH+REC YDS", g:"G", sog:"SOG", blk:"BLK", pra:"PTS+REB+AST" };
 const SOC = () => LEAGUE === "soccer";
-const BOARD = { nba:"NBA", ladder:"NBA Ladder", nbateam:"NBA Team", nfl:"NFL", nflladder:"NFL Ladder", nhl:"NHL", nhllines:"NHL Lines", soccer:"soccer", cfb:"CFB", cbb:"CBB" };
+const ALL = () => LEAGUE === "all";
+// A row's key on this page: on the All tab two boards can hold the same key.
+const rk = c => c.board ? c.board + "|" + c.key : c.key;
+const BOARD = { all:"All", nba:"NBA", ladder:"NBA Ladder", nbateam:"NBA Team", nfl:"NFL", nflladder:"NFL Ladder", nhl:"NHL", nhllines:"NHL Lines", soccer:"soccer", cfb:"CFB", cbb:"CBB" };
 
 // My bets: what I have down, kept on the server (same list on every device).
 let BETS = [], BETS_AT = 0;
@@ -368,7 +382,20 @@ function age(row) {
   return s < 90 ? `${Math.round(s)}s` : s < 5400 ? `${Math.round(s / 60)}m` : s < 172800 ? `${Math.round(s / 3600)}h` : `${Math.round(s / 86400)}d`;
 }
 // While a pass runs, rows it hasn't re-priced yet are from the pass before: dimmed.
-const isOld = row => S.scanning && row.at * 1000 < S.started;
+// On the All tab: the same for the row's own board, and any row over an hour old.
+const isOld = row => {
+  if (!ALL()) return S.scanning && row.at * 1000 < S.started;
+  const b = (S.boards || []).find(b => b.league === row.board);
+  return b && b.scanning ? row.at * 1000 < b.started : (S.now + (Date.now() - GOT)) / 1000 - row.at > 3600;
+};
+// What auto-scan is doing, for the status line.
+function autoLine() {
+  const c = S.cycle;
+  if (!c || !c.on) return "";
+  const run = S.scanning ? LEAGUE : S.busy;
+  return `Auto-scan is on (${c.boards.map(b => BOARD[b]).join(" → ")}) until ${clock(Date.now() + c.until - (S.now + (Date.now() - GOT)))}` +
+    (run ? "" : ` · next: ${BOARD[c.next]}`) + (c.wide !== WIDE ? ` · on ${c.wide ? "wide" : "tight"} books: ${c.wide ? "tick" : "untick"} Wide books to see its rows` : "");
+}
 const ago = ms => { const m = Math.round(ms / 60000); return m < 1 ? "just now" : m < 90 ? `${m} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`; };
 
 function tip(ms) {
@@ -398,7 +425,7 @@ function detail(c) {
     mine.map(b => `<span class="mine">${usd(b.stake)}${b.x ? ` at ${b.x.toFixed(2)}x` : ""}<button type="button" class="x" data-del="${b.id}" title="Remove this bet">×</button></span>`).join("") +
     `<span>${mine.length ? "Add" : "I bet this"}: $</span><input type="number" class="stake" min="0" step="1" placeholder="stake" />` +
     `<span>at</span><input type="number" class="px" min="1" step="0.01" value="${c.slip_x.toFixed(2)}" /><span>x</span>` +
-    `<button type="button" data-add="${c.key}">Save</button></div>`;
+    `<button type="button" data-add="${esc(rk(c))}">Save</button></div>`;
   return `<div class="det"><div class="lgs">${legs}</div><div class="tech">${tech}</div>${form}</div>`;
 }
 
@@ -426,11 +453,11 @@ function render() {
   // chip. A player with no such row, or any view filtered to one kind of
   // combo, is headed by his best row. Plays keeps a card when any of his rows
   // clears Min EV, and folds only the rows that do.
-  const pass = c => MODE !== "plays" || c.ev * 100 >= MINEV;
+  const pass = c => (MODE !== "plays" && !ALL()) || c.ev * 100 >= MINEV;
   const byId = new Map();
   // NFL shows every row on its own (a player's props, stacks and game-line
   // slips are different bets, not versions of one).
-  const cardOf = c => LEAGUE === "nfl" || LEAGUE === "nbateam" || LEAGUE.startsWith("nhl") ? c.key : c.id;
+  const cardOf = c => ALL() ? rk(c) : LEAGUE === "nfl" || LEAGUE === "nbateam" || LEAGUE.startsWith("nhl") ? c.key : c.id;
   for (const c of rows) (byId.get(cardOf(c)) || byId.set(cardOf(c), []).get(cardOf(c))).push(c);
   const mainOf = g => g.find(c => c.main) ||
     g.filter(c => c.tier === 1).sort((a, b) => Math.abs(a.legs[1].p - 0.5) - Math.abs(b.legs[1].p - 0.5))[0];
@@ -445,8 +472,15 @@ function render() {
 
   // Status line.
   st.classList.toggle("err", !!S.error && !S.scanning);
-  const n = `<b>${plays.length}</b> at ${MINEV > 0 ? "+" : ""}${MINEV}% or better of ${all.length} priced`;
-  if (S.scanning) {
+  const n = `<b>${plays.length}</b> at ${MINEV > 0 ? "+" : ""}${MINEV}% or better of ${ALL() ? S.boards.reduce((t, b) => t + b.priced, 0) : all.length} priced`;
+  if (ALL()) {
+    // Where each board's last pass stands, in the order they'd be worth a look.
+    const at = b => b.scanning ? (b.total ? `scanning ${b.done} / ${b.total}` : "reading lines") :
+      b.error ? `<span style="color:var(--neg)" title="${esc(b.error)}">failed</span>` :
+      Math.max(b.finished, b.stopped) ? ago(nowMs - Math.max(b.finished, b.stopped)) : "";
+    st.classList.remove("err");
+    st.innerHTML = `${n} on all boards<div>` + S.boards.filter(b => at(b)).map(b => `${BOARD[b.league]} <b>${at(b)}</b>`).join(" · ") + `</div>`;
+  } else if (S.scanning) {
     st.innerHTML = S.total ? `Scanning ${S.done} / ${S.total} combos on ${S.players} players · ${n}` : "Reading Novig’s lines…";
   } else if (S.error) {
     st.textContent = `Scan failed: ${S.error}`;
@@ -463,6 +497,7 @@ function render() {
   }
   if (S.events && S.events.length && (S.scanning || S.finished || S.stopped)) st.appendChild(Object.assign(document.createElement("div"),
     { textContent: `Last pass: ${S.events.length === 1 ? "one game" : S.events.length + " games"} only. Other games’ rows are from earlier passes (see Age).` }));
+  if (autoLine()) st.appendChild(Object.assign(document.createElement("div"), { textContent: autoLine(), style: "color:var(--pos)" }));
   if (NOTE) st.appendChild(Object.assign(document.createElement("div"), { textContent: NOTE, style: "color:var(--accent)" }));
   // Ladder boards lean on FanDuel's prices (NFL: DK's too): say so when one didn't load.
   if (LEAGUE.endsWith("ladder") && S.books && (S.finished || S.scanning) && !S.error) {
@@ -470,7 +505,11 @@ function render() {
     if (miss.length) st.innerHTML += ` · <span style="color:var(--neg)">${miss.map(b => b === "dk" ? "DraftKings" : "FanDuel").join(" and ")} prices did not load` +
       `${S.books.errors && S.books.errors[miss[0]] ? ` (${esc(S.books.errors[miss[0]])})` : ""}: fair values are not capped by ${miss.length === 2 ? "either book" : "that book"}</span>`;
   }
-  document.getElementById("bar").style.width = S.scanning && S.total ? `${Math.round(100 * S.done / S.total)}%` : "0";
+  const run = ALL() ? S.boards.find(b => b.scanning) : S.scanning && S;
+  document.getElementById("bar").style.width = run && run.total ? `${Math.round(100 * run.done / run.total)}%` : "0";
+  const auto = document.getElementById("auto"), on = !!(S.cycle && S.cycle.on);
+  auto.classList.toggle("on", on);
+  auto.textContent = on ? "Auto-scan on · stop" : "Auto-scan";
 
   if (typing) {
     /* rows stay as they are */
@@ -478,6 +517,7 @@ function render() {
     const best = all[0];
     rowsEl.innerHTML = `<div class="empty">${
       q ? "No combo for that name." :
+      ALL() ? `No play at ${MINEV > 0 ? "+" : ""}${MINEV}% or better on any board right now.${S.cycle && S.cycle.on ? "" : " Fetch a board, or switch <b>Auto-scan</b> on to keep NBA, NBA Team, NFL, CBB and CFB priced."}` :
       !all.length ? (S.scanning ? "Pricing the slate. Rows appear as Novig answers (about one a second)." :
         !S.finished ? "Nothing fetched yet. Press <b>Fetch</b> to price the slate." :
         started ? "Every game on this board has started. Press <b>Fetch</b> to price the next slate." :
@@ -490,8 +530,8 @@ function render() {
     }</div>`;
   } else {
     const one = (c, sub, others) =>
-      `<div class="row${sub ? " sub" : ""}${isOld(c) ? " old" : ""}" data-k="${c.key}">` +
-      `<div class="who">${sub ? "" : `<b>${esc(c.player)}</b><small>${esc(c.team)}${c.starts ? " · " + tip(c.starts) : ""}</small>` +
+      `<div class="row${sub ? " sub" : ""}${isOld(c) ? " old" : ""}" data-k="${esc(rk(c))}">` +
+      `<div class="who">${sub ? "" : `${c.board ? `<span class="tag">${BOARD[c.board]}</span>` : ""}<b>${esc(c.player)}</b><small>${esc(c.team)}${c.starts ? " · " + tip(c.starts) : ""}</small>` +
         (betsOn(c.player).length ? `<span class="bet" title="What you have on ${esc(c.player)}">${usd(total(betsOn(c.player)))}</span>` : "") +
         (others && others.length ? `<button type="button" class="more" data-g="${esc(c.id)}">${GOPEN.has(c.id) ? "hide" :
           `+${others.length} more${others[0].ev > c.ev ? `, to ${pct(others[0].ev)}` : ""}`}</button>` : "")}</div>` +
@@ -501,8 +541,8 @@ function render() {
       `<div class="num ev ${c.ev >= 0 ? "pos" : "neg"}">${pct(c.ev)}</div>` +
       `<div class="num qk"><span class="lab">QK</span>${c.qk > 0 ? c.qk.toFixed(2) + "u" : "—"}</div>` +
       `<div class="num rr">${c.r === null ? "" : (c.r >= 0 ? "+" : "−") + Math.abs(c.r).toFixed(2)}</div>` +
-      `<div class="num"><span class="lab">Age</span>${age(c)}<button type="button" class="re${BUSY.has(c.key) ? " spin" : ""}" data-re="${c.key}" title="Price this slip again: today’s leg prices and a new Novig quote"${BUSY.has(c.key) ? " disabled" : ""}>↻</button></div>` +
-      (OPEN.has(c.key) ? detail(c) : "") + `</div>`;
+      `<div class="num"><span class="lab">Age</span>${age(c)}<button type="button" class="re${BUSY.has(c.key) ? " spin" : ""}" data-re="${esc(rk(c))}" title="Price this slip again: today’s leg prices and a new Novig quote"${BUSY.has(c.key) ? " disabled" : ""}>↻</button></div>` +
+      (OPEN.has(rk(c)) ? detail(c) : "") + `</div>`;
     rowsEl.innerHTML = cards.map(({ head, others }) =>
       one(head, false, others) + (GOPEN.has(head.id) ? others.map(c => one(c, true)).join("") : "")).join("");
     rowsEl.querySelectorAll(".more").forEach(b => b.onclick = e => {
@@ -513,12 +553,12 @@ function render() {
     });
     rowsEl.querySelectorAll("[data-re]").forEach(b => b.onclick = e => { e.stopPropagation(); requote(b.dataset.re); });
     rowsEl.querySelectorAll("[data-add]").forEach(b => b.onclick = () => {
-      const c = S.rows.find(r => r.key === b.dataset.add), f = b.closest(".betform");
+      const c = S.rows.find(r => rk(r) === b.dataset.add), f = b.closest(".betform");
       const stake = parseFloat(f.querySelector(".stake").value), x = parseFloat(f.querySelector(".px").value);
       if (!c || !(stake > 0)) return f.querySelector(".stake").focus();
       b.disabled = true;
       document.activeElement.blur();
-      bets({ add: { key: c.key, board: LEAGUE, player: c.player, team: c.team, label: c.label, stake, x, fair: c.fair, starts: c.starts } });
+      bets({ add: { key: c.key, board: c.board || LEAGUE, player: c.player, team: c.team, label: c.label, stake, x, fair: c.fair, starts: c.starts } });
     });
     rowsEl.querySelectorAll("[data-del]").forEach(b => b.onclick = () => bets({ del: b.dataset.del }));
     rowsEl.querySelectorAll(".betform input").forEach(i => { i.onkeydown = e => { if (e.key === "Enter") i.closest(".betform").querySelector("[data-add]").click(); }; i.onblur = () => setTimeout(render, 150); });
@@ -529,7 +569,10 @@ function render() {
       render();
     });
   }
-  document.getElementById("foot").innerHTML =
+  document.getElementById("foot").innerHTML = ALL() ?
+    `All: every board’s slips at Min EV or better, best first, for games that haven’t started. Each row carries its board; open that board’s tab for how its fair value is made and for the rest of its slips. Rows over an hour old are dimmed: press ↻ on a row to price it again. ` +
+    `<b>Auto-scan</b> has the server price NBA, NBA Team, NFL, CBB and CFB in turn, with this page open or closed: a minute between passes, no board more often than every ten minutes, and it switches itself off after 12 hours. NBA Ladder, NFL Ladder and soccer are only priced when you Fetch them on their own tabs. ` +
+    `Quotes move by a few percent between asks and last about 30 seconds, so a row is a lead to re-check on the slip, and against sharp odds, before betting.` :
     (SOC() ? `Soccer: favourite to win + favourite’s corners Under + underdog’s corners Over, with and without a goals Over. Fair value is the legs’ unrelated price adjusted for how much more often the whole slip hits (×1.25 to ×1.61, from 17,934 top-five-league matches). Each leg’s fair value is Pinnacle’s no-vig price on that line (open a row to see it beside Novig’s book); where Pinnacle has no such line it is the middle of Novig’s own book, and the row is marked ~ if that book is wide. The lift is a league average, so treat rows as leads. ` : "") +
     (LEAGUE === "cfb" ? `CFB: Novig lists no college player props, so these are slips across one game’s own lines: the underdog’s moneyline with the game Under (at the main line and at the Under nearest +230), those two with the underdog’s team total Over, the favourite’s spread with the Over, and the underdog’s spread with the Under; then, where Novig’s team-total and first-half books are tight, the underdog’s spread with his team total Under, the favourite’s team total Under with the game Under, both team totals Under, the favourite’s first-half spread with his spread, and the first-half Under with the game Under. Up to ten a game; underdogs longer than about +900 get no moneyline slips. Each leg’s fair value is Novig’s own book at that line. The correlation is modelled, not measured: the two teams’ scores are fitted to that game’s alt spreads and alt totals, and a favourite covering is tied to the Over by half of spread ÷ total (an assumption). Novig prices these lines close to that model, so most rows sit under fair after its 10% parlay fee; treat anything above fair as a lead to check. ` : "") +
     (LEAGUE === "cbb" ? `CBB: Novig lists no college player props, so these are slips across one game’s own lines, up to six a game: the favourite’s spread with the Over; the underdog’s spread with the Under; the underdog’s spread with the underdog’s team total Under; the favourite’s team total Under with the game Under; both team totals Under; and the favourite’s first-half spread with his full-game spread. Novig’s own books on team totals and the first half are too wide to price from, so those legs take Pinnacle’s no-vig price on the same line (open a row to see it); the game’s spread and total are Novig’s own book. A game Pinnacle doesn’t list gets the first two slips only. The correlation for each kind of slip is measured on 17,319 games of the last three seasons against closing spreads and totals, by size of spread: an underdog covering with its own total Under is −0.61 (both hit in 14.4% of games), a team total Under with the game Under +0.83, both team totals Under +0.37, a first-half spread with the game’s spread +0.63, a spread with the total about zero. Team-total and first-half lines in that history are derived from the closing spread and total, not posted ones, so the Pinnacle leg is the softest input: check it before sizing a play. ` : "") +
@@ -543,7 +586,7 @@ function render() {
     (SOC() || LEAGUE === "cfb" || LEAGUE === "cbb" || LEAGUE === "nbateam" ? `` : `Fair value: each leg is Novig’s own exchange book at that line, devigged worst case, joined with the player’s shrunk correlation${LEAGUE === "nfl" ? " (for a slip across two players or with a game line: the league-wide correlation for his role, position and targets or carries a game, from ten seasons of nflverse games against closing lines)" : ""}` +
     `${S.data ? ` (data ${S.data})` : ""}. `) + `Novig: the multiplier on its slip, its public quote after the 10% parlay fee. ` +
     `Quotes move by a few percent between asks and last about 30 seconds, so a row is a lead to re-check on the slip, and against sharp odds, before betting. ` +
-    `Nothing is asked of Novig until you press Fetch; the last pass for each league stays here until then.`;
+    `Nothing is asked of Novig until you press Fetch or switch Auto-scan on; the last pass for each league stays here until the next one.`;
 }
 
 async function poll() {
@@ -554,7 +597,8 @@ async function poll() {
   }
   try {
     const stop = STOP; STOP = false;
-    const r = await fetch(`/api/nba/novig-scan?league=${LEAGUE}${WIDE ? "&wide=1" : ""}${stop ? "&stop=1" : ""}${NOW ? "&now=1" + (document.getElementById("game").value ? "&events=" + document.getElementById("game").value : "") : ""}`, { cache: "no-store", headers: { "X-Scan-Key": KEY } });
+    const tab = LEAGUE;
+    const r = await fetch(ALL() ? `/api/nba/novig-scan?league=all&min=${MINEV}${WIDE ? "&wide=1" : ""}` : `/api/nba/novig-scan?league=${LEAGUE}${WIDE ? "&wide=1" : ""}${stop ? "&stop=1" : ""}${NOW ? "&now=1" + (document.getElementById("game").value ? "&events=" + document.getElementById("game").value : "") : ""}`, { cache: "no-store", headers: { "X-Scan-Key": KEY } });
     if (r.status === 403) {
       KEY = "";
       try { localStorage.removeItem(KEYLS); } catch (_) {}
@@ -565,7 +609,9 @@ async function poll() {
     document.getElementById("lock").style.display = "none";
     document.querySelector(".board").style.display = "";
     document.querySelector(".controls").style.display = "";
-    S = await r.json();
+    const j = await r.json();
+    if (tab !== LEAGUE) return;   // the tab changed while this was on its way
+    S = j;
     GOT = Date.now();
     if (Date.now() - BETS_AT > 30000) { BETS_AT = Date.now(); bets(); }
     if (S.scanning) NOW = false;
@@ -589,6 +635,15 @@ document.querySelectorAll("#mode button").forEach(b => {
   };
 });
 document.getElementById("search").oninput = render;
+document.getElementById("auto").onclick = async () => {
+  if (!S || !S.cycle) return;
+  const on = !S.cycle.on;
+  if (on && !confirm(`Auto-scan: price ${S.cycle.boards.map(b => BOARD[b]).join(", ")} in turn${WIDE ? ", wide books included," : ""} for up to 12 hours, with this page open or closed?`)) return;
+  try {
+    await fetch("/api/nba/novig-cycle", { method: "POST", headers: { "X-Scan-Key": KEY, "Content-Type": "application/json" }, body: JSON.stringify({ on, wide: WIDE }) });
+  } catch (_) { /* the next poll shows where it stands */ }
+  poll();
+};
 document.getElementById("now").onclick = () => {
   if (S && S.scanning) STOP = true;
   else if (S && S.busy) STOP = NOW = true;
@@ -597,10 +652,12 @@ document.getElementById("now").onclick = () => {
 };
 pairOpts();
 loadGames();
+document.body.classList.toggle("all", LEAGUE === "all");
 document.querySelectorAll("#league button").forEach(b => {
   b.classList.toggle("on", b.dataset.league === LEAGUE);
   b.onclick = () => {
     LEAGUE = b.dataset.league; save(); OPEN.clear(); pairOpts(); loadGames();
+    document.body.classList.toggle("all", ALL()); S = null;
     document.querySelectorAll("#league button").forEach(o => o.classList.toggle("on", o === b));
     document.getElementById("rows").innerHTML = "";
     poll();
@@ -623,7 +680,7 @@ document.getElementById("lock").onsubmit = e => {
 };
 const minev = document.getElementById("minev");
 minev.value = MINEV;
-minev.oninput = () => { const v = parseFloat(minev.value); MINEV = Number.isFinite(v) ? v : 0; save(); render(); };
+minev.oninput = () => { const v = parseFloat(minev.value); MINEV = Number.isFinite(v) ? v : 0; save(); render(); if (ALL()) poll(); };
 const wide = document.getElementById("wide");
 wide.checked = WIDE;
 wide.onchange = () => { WIDE = wide.checked; save(); OPEN.clear(); poll(); };

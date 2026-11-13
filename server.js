@@ -2447,12 +2447,13 @@ app.get('/api/nba/scoreboard', async (req, res) => {
 // .claude/skills/nba-sgp-fv/scan.py quotes every same-player combo worth
 // asking Novig about and streams one JSON event per line. Novig's quote limit
 // is per IP (one a second), so one pass runs at a time, here on the server.
-// It never runs by itself: the page polls this route for the board, and a
-// pass starts only when the Fetch button is pressed.
+// The page polls this route for the board. A pass starts when the Fetch
+// button is pressed, or from the auto-scan cycle below while it is switched on.
 const NV_SCAN_PY = path.join(__dirname, '.claude', 'skills', 'nba-sgp-fv', 'scan.py');
 // Every quote is a live auction sent to all of Novig's parlay pricers, so
-// nothing here scans on its own: a pass runs only when the page's Fetch
-// button asks for one (?now=1), at most once a minute for the same board.
+// nothing here scans on its own unless auto-scan is on: a pass runs when the
+// page's Fetch button asks for one (?now=1), at most once a minute for the
+// same board.
 const NV_SCAN_NOW_MS = 60 * 1000;
 const NV_SCAN_MAX_MS = 45 * 60 * 1000;   // a pass stuck this long is killed (the NFL tab on a full board runs 20 to 25 minutes)
 // One board per league and book width ("nba:0", "nfl:1", ...). The last pass
@@ -2460,7 +2461,8 @@ const NV_SCAN_MAX_MS = 45 * 60 * 1000;   // a pass stuck this long is killed (th
 // leaving the page, switching league or a redeploy doesn't lose it (the disk
 // copy survives a redeploy only where NBA_DATA_DIR / /data is a volume).
 const NV_BOARDS = new Map();
-let NV_RUN = null;   // { proc, key, stop } while a pass is running
+let NV_RUN = null;   // { proc, key, stop, auto } while a pass is running
+let NV_LAST_END = 0; // when the last pass ended, however it ended
 const NV_SCAN_FILE = (() => {
   const fsx = require('fs'), os = require('os');
   for (const dir of [process.env.NBA_DATA_DIR, '/data/nba', os.tmpdir()]) {
@@ -2511,7 +2513,7 @@ app.get('/api/nba/novig-games', (req, res) => {
 });
 
 // events: Novig event ids picked on the page (the game picker); empty = the whole board.
-function startNovigScan(league, wide, events) {
+function startNovigScan(league, wide, events, auto) {
   if (NV_RUN) return;
   events = events || [];
   const key = `${league}:${wide ? 1 : 0}`, B = nvBoard(key);
@@ -2555,6 +2557,7 @@ function startNovigScan(league, wide, events) {
     live = false;
     clearTimeout(timer);
     NV_RUN = null;
+    NV_LAST_END = Date.now();
     if (stopped && !ok) {
       // Stopped from the page: rows it priced are kept, and rows it didn't
       // reach stay at their earlier prices (each row carries its own age).
@@ -2572,8 +2575,36 @@ function startNovigScan(league, wide, events) {
   proc.on('error', e => end('scan could not start: ' + e.message));
   proc.on('close', () => end(''));
   // Frees the scanner at once, so another pass can start in the same request.
-  NV_RUN = { proc, key, stop: () => { end('', true); proc.kill(); } };
+  NV_RUN = { proc, key, auto: !!auto, stop: () => { end('', true); proc.kill(); } };
 }
+
+// Auto-scan: while switched on (the page's Auto-scan button), the server runs
+// whole-board passes of NBA, NBA Team, NFL, CBB and CFB one after another, with or
+// without the page open. Still one pass at a time: a pass asked for with
+// Fetch runs first and the cycle carries on after it.
+const NV_CYCLE_BOARDS = ['nba', 'nbateam', 'nfl', 'cbb', 'cfb'];
+const NV_CYCLE_GAP_MS = 60 * 1000;             // pause between two passes
+const NV_CYCLE_REST_MS = 10 * 60 * 1000;       // a board is not asked again sooner than this after its last pass began or ended
+const NV_CYCLE_MAX_MS = 12 * 60 * 60 * 1000;   // switches itself off, so a forgotten cycle doesn't quote Novig for days
+let NV_CYCLE = null;   // { since, wide, i } while on; i = the next board in NV_CYCLE_BOARDS
+function nvCycleTick(first) {
+  if (!NV_CYCLE) return;
+  const now = Date.now();
+  if (now - NV_CYCLE.since > NV_CYCLE_MAX_MS) { NV_CYCLE = null; return; }
+  if (NV_RUN || (!first && now - NV_LAST_END < NV_CYCLE_GAP_MS)) return;
+  for (let n = 0; n < NV_CYCLE_BOARDS.length; n++) {
+    const at = (NV_CYCLE.i + n) % NV_CYCLE_BOARDS.length, league = NV_CYCLE_BOARDS[at];
+    const B = nvBoard(`${league}:${NV_CYCLE.wide ? 1 : 0}`);
+    if (now - Math.max(B.started, B.finished, B.stopped || 0) < NV_CYCLE_REST_MS) continue;
+    NV_CYCLE.i = (at + 1) % NV_CYCLE_BOARDS.length;
+    startNovigScan(league, NV_CYCLE.wide, [], true);
+    return;
+  }
+}
+setInterval(nvCycleTick, 15000).unref();
+const nvCycleState = () => NV_CYCLE
+  ? { on: true, wide: NV_CYCLE.wide, boards: NV_CYCLE_BOARDS, next: NV_CYCLE_BOARDS[NV_CYCLE.i], until: NV_CYCLE.since + NV_CYCLE_MAX_MS }
+  : { on: false, boards: NV_CYCLE_BOARDS };
 
 // GET /api/nba/novig-scan?league=nba|ladder|nbateam|nfl|nflladder|nhl|nhllines|soccer|cfb|cbb[&wide=1][&now=1][&stop=1][&events=id,id] — that
 // board's last pass (or the one running), and what else is running.
@@ -2591,11 +2622,32 @@ app.get('/api/nba/novig-scan', (req, res) => {
   }
   const wide = req.query.wide === '1';
   const league = NV_LEAGUES.includes(req.query.league) ? req.query.league : 'nba';
-  const key = `${league}:${wide ? 1 : 0}`, B = nvBoard(key), now = Date.now();
+  const now = Date.now();
   // One pass at a time (Novig's limit is per IP), and only when asked.
   if (req.query.stop === '1' && NV_RUN) NV_RUN.stop();
+  // league=all[&min=EV%]: the page's All tab. Every board's rows at that EV
+  // or better whose game hasn't started, each tagged with its board, and
+  // where each board's last pass stands. Never starts a pass.
+  if (req.query.league === 'all') {
+    const floor = Number.isFinite(parseFloat(req.query.min)) ? parseFloat(req.query.min) / 100 : 0;
+    const boards = [], rows = [];
+    for (const league of NV_ALL_BOARDS) {
+      const k = `${league}:${wide ? 1 : 0}`, B = NV_BOARDS.get(k) || {};
+      let priced = 0;
+      for (const r of (B.rows ? B.rows.values() : [])) {
+        if (r.starts && r.starts <= now) continue;
+        priced++;
+        if (r.ev >= floor) rows.push(Object.assign({}, r, { board: league }));
+      }
+      boards.push({ league, scanning: !!NV_RUN && NV_RUN.key === k, started: B.started || 0, finished: B.finished || 0,
+                    stopped: B.stopped || 0, total: B.total || 0, done: B.done || 0, error: B.error || null, priced });
+    }
+    return res.json({ now, league: 'all', wide, scanning: false, busy: NV_RUN ? NV_RUN.key.split(':')[0] : null,
+                      boards, rows, cycle: nvCycleState() });
+  }
   // events=id,id: only those games (the page's game picker).
   const events = String(req.query.events || '').split(',').filter(x => /^[0-9a-f-]{16,40}$/i.test(x)).slice(0, 40);
+  const key = `${league}:${wide ? 1 : 0}`, B = nvBoard(key);
   const other = events.join() !== (B.events || []).join();   // other games than the last pass: no minute's wait
   if (req.query.now === '1' && !NV_RUN && (B.stopped || other || now - Math.max(B.finished, B.started) > NV_SCAN_NOW_MS)) startNovigScan(league, wide, events);
   const mine = !!NV_RUN && NV_RUN.key === key;
@@ -2603,7 +2655,26 @@ app.get('/api/nba/novig-scan', (req, res) => {
     now, league, wide, scanning: mine, busy: NV_RUN && !mine ? NV_RUN.key.split(':')[0] : null,
     started: B.started, finished: B.finished, stopped: B.stopped || 0, total: B.total, done: B.done, players: B.players, data: B.data,
     seconds: B.seconds, error: B.error, books: B.books || null, events: B.events || [], rows: [...B.rows.values()],
+    cycle: nvCycleState(),
   });
+});
+// The boards the All tab gathers (the hidden NHL boards are left out).
+const NV_ALL_BOARDS = ['nba', 'ladder', 'nbateam', 'nfl', 'nflladder', 'soccer', 'cfb', 'cbb'];
+
+// POST /api/nba/novig-cycle { on, wide } — switch auto-scan on or off. On: the
+// first board starts at once (if nothing is running). Off: a pass the cycle
+// started is stopped too; one started with Fetch runs on.
+app.post('/api/nba/novig-cycle', (req, res) => {
+  if (!nvBetsAuth(req, res)) return;
+  const { on, wide } = req.body || {};
+  if (on) {
+    if (!NV_CYCLE || NV_CYCLE.wide !== !!wide) NV_CYCLE = { since: Date.now(), wide: !!wide, i: 0 };
+    nvCycleTick(true);
+  } else {
+    NV_CYCLE = null;
+    if (NV_RUN && NV_RUN.auto) NV_RUN.stop();
+  }
+  res.json({ cycle: nvCycleState() });
 });
 
 // My bets on the scanner page: what Max has down, kept on the server so the
