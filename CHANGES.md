@@ -2,6 +2,14 @@
 
 ## 2026-11-13 session
 
+### Novig Scan: CBB tab
+A new board on the Novig Scan page (`scan.py --league cbb`), on the CFB board's code (`LINE_BOARDS` in `scan.py`).
+
+- **What Novig lists** (league `NCAAB`): game lines only, like football. Spreads and totals have alt ladders (median book 5c, 44% inside 4c). Team totals and first-half lines are too wide to take a fair value from: none of 314 team totals and 1 of 86 first-half spreads inside 4c (medians 19c and 10.5c).
+- **What it asks**, two a game: the favourite's spread + Over and the underdog's spread + Under, at the lines nearest even money. No underdog-moneyline slips: the margin is close to unrelated to the total in basketball (modelled r 0.01 in a close game, 0.10 at a 30-point spread), so there is nothing for the moneyline to add. A game with no two-sided moneyline (30-point favourites) takes its favourite from the spread.
+- **Checked on 89 quotes over four games** (Pitt at Butler, Georgia at UNC, Georgetown at Clemson, Northern Arizona at Kentucky): none above fair, median -10.4%, best -3.2%. Novig charges a positive correlation on both pairings of a spread with a total (r about +0.1 on favourite + Under as well as favourite + Over), and +0.4 to +0.7 on two short-priced alt lines, so the wider shapes are worse than the two asked here.
+- Same per-game model as CFB (the margin's and total's sd fitted to the alt ladders: about 12 and 16.5; the two scores come out 0.2 to 0.4 correlated), same `CFB_KAPPA` assumption.
+
 ### Novig Scan: refresh one slip
 Every row has a small ↻ button beside its age (every board). It prices that one slip again without running a pass: one catalog pull and one quote.
 

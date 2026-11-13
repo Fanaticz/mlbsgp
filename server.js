@@ -2549,7 +2549,7 @@ function startNovigScan(league, wide) {
   NV_RUN = { proc, key, stop: () => { end('', true); proc.kill(); } };
 }
 
-// GET /api/nba/novig-scan?league=nba|ladder|nfl|nflladder|nhl|nhllines|soccer|cfb[&wide=1][&now=1][&stop=1] — that
+// GET /api/nba/novig-scan?league=nba|ladder|nfl|nflladder|nhl|nhllines|soccer|cfb|cbb[&wide=1][&now=1][&stop=1] — that
 // board's last pass (or the one running), and what else is running.
 // stop=1 ends the pass that is running, whichever board it is on; with now=1
 // this board's pass then starts in its place.
@@ -2564,7 +2564,7 @@ app.get('/api/nba/novig-scan', (req, res) => {
     return setTimeout(() => res.status(403).json({ error: 'wrong passcode' }), 800);  // slows guessing
   }
   const wide = req.query.wide === '1';
-  const league = ['nfl', 'nhl', 'nhllines', 'soccer', 'cfb', 'ladder', 'nflladder'].includes(req.query.league) ? req.query.league : 'nba';
+  const league = ['nfl', 'nhl', 'nhllines', 'soccer', 'cfb', 'cbb', 'ladder', 'nflladder'].includes(req.query.league) ? req.query.league : 'nba';
   const key = `${league}:${wide ? 1 : 0}`, B = nvBoard(key), now = Date.now();
   // One pass at a time (Novig's limit is per IP), and only when asked.
   if (req.query.stop === '1' && NV_RUN) NV_RUN.stop();

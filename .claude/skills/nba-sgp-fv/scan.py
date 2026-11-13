@@ -14,6 +14,7 @@ player, ranked by EV at what Novig's slip pays.
   python3 scan.py --league nfl --kind tri      # NFL three-leg slips alone
   python3 scan.py --league nhl    # NHL: a skater's goals, assists, points and shots on goal, every pair
   python3 scan.py --league cfb    # college football: slips across a game's own lines
+  python3 scan.py --league cbb    # college basketball: spread + total
   python3 scan.py --json          # one JSON object per line as quotes land
                                   # (server.js reads this for the Scanner page)
 
@@ -152,6 +153,14 @@ total by CFB_KAPPA x spread / total (an assumption, not measured on college
 results; Novig's own quotes imply about the same). On 182 quotes over four
 games (11-13) Novig priced these within a point or two of that model, so
 after the fee nearly every row is under fair: rows are leads.
+
+College basketball (--league cbb): the same model on NCAAB, two asks a game:
+the favourite's spread + Over and the underdog's spread + Under. Novig's
+team-total and first-half books there run 6c to 28c wide (none of 314 team
+totals inside 4c on 11-13), so those legs can't be priced, and the margin is
+close to unrelated to the total (r 0.01 in a close game, 0.10 at a 30-point
+spread), so there is no underdog-moneyline slip. 89 quotes over four games
+(11-13): none above fair, median -10%.
 
 EV and the stake use the fair value as shown (American odds), like price.py:
 quarter Kelly, 1u = 1% of bankroll = --unit dollars.
@@ -1068,28 +1077,33 @@ def soccer_candidates(a):
 
 
 CFB_KAPPA = 0.5            # corr(favourite's margin, total) = CFB_KAPPA x spread / total
-CFB_SD = (14.6, 15.0)      # margin and total sd where a game's ladder is too short to fit
+# Per board: Novig's league, the margin and total sd where a game's ladder is
+# too short to fit, and whether the underdog-moneyline slips are asked.
+LINE_BOARDS = {"cfb": {"league": "NCAAF", "sd": (14.6, 15.0), "dogml": True},
+               "cbb": {"league": "NCAAB", "sd": (12.0, 16.5), "dogml": False}}
 CFB_MIN_DOG = 0.10         # no underdog-moneyline slips on a longer shot than this
 
 
 def cfb_fit(points, default_sd):
     """(line, P(X > line)) pairs -> (mean, sd) of a normal by least squares on
-    z. Under four points, or a fitted sd outside 10 to 22, the sd is the
+    z. Under four points, or a fitted sd outside 8 to 22, the sd is the
     default and the mean comes from the line nearest even money."""
     pts = [(x, sgp.nppf(p)) for x, p in points if 0.08 < p < 0.92]
     if len(pts) >= 4:
         n, sx, sz = len(pts), sum(x for x, _ in pts), sum(z for _, z in pts)
         sxx, sxz = sum(x * x for x, _ in pts), sum(x * z for x, z in pts)
         b = (n * sxz - sx * sz) / ((n * sxx - sx * sx) or 1e-9)   # z = a + b x = (mu - x) / sd
-        if b < 0 and 10 <= -1 / b <= 22:
+        if b < 0 and 8 <= -1 / b <= 22:
             return -(sz - b * sx) / n / b, -1 / b
     x, p = min(points, key=lambda q: abs(q[1] - 0.5))
     return x + default_sd * sgp.nppf(p), default_sd
 
 
 def cfb_candidates(a):
-    """College football slips across one game's lines (see the module docstring)."""
-    items = novig.catalog({"league": "NCAAF", "eventStatus": "OPEN_PREGAME", "marketType": "MONEY,SPREAD,TOTAL,TEAM_TOTAL"})
+    """College football or basketball slips across one game's lines (see the module docstring)."""
+    board = LINE_BOARDS[a.league]
+    items = novig.catalog({"league": board["league"], "eventStatus": "OPEN_PREGAME",
+                           "marketType": "MONEY,SPREAD,TOTAL,TEAM_TOTAL" if board["dogml"] else "MONEY,SPREAD,TOTAL"})
     games = {}
     for m in items:
         games.setdefault(m["eventId"], []).append(m)
@@ -1098,11 +1112,21 @@ def cfb_candidates(a):
         money = next((m for m in ms if m["marketType"] == "MONEY"), None)
         name = next((m["description"].rsplit(" t", 1)[0] for m in ms if m["marketType"] == "TOTAL" and " @ " in m["description"]), None)
         tw = money and two_way(money)
-        if not tw or not name:
+        if not name:
             continue
-        f = 0 if tw["p"][0] >= 0.5 else 1
-        fav, dog = tw["names"][f], tw["names"][1 - f]
-        sub = {o.get("subjectId"): o["name"] for o in money["outcomes"]}
+        if tw:
+            f = 0 if tw["p"][0] >= 0.5 else 1
+            fav, dog = tw["names"][f], tw["names"][1 - f]
+        else:
+            # No two-sided moneyline (a 30-point favourite): the favourite is
+            # the side giving points on the spread nearest even money.
+            sps = [t for t in (two_way(m) for m in ms if m["marketType"] == "SPREAD") if t]
+            if not sps:
+                continue
+            t = min(sps, key=lambda t: abs(t["p"][0] - 0.5) + t["spread"])
+            f = 0 if t["names"][0].rpartition(" ")[2].startswith("-") else 1
+            fav, dog = (t["names"][i].rpartition(" ")[0] for i in (f, 1 - f))
+        sub = {o.get("subjectId"): o["name"] for o in money["outcomes"]} if money else {}
         legs = []   # every side of every two-sided line
         for m in ms:
             t = two_way(m)
@@ -1130,7 +1154,7 @@ def cfb_candidates(a):
         to = [(L["line"], L["p"]) for L in fit if L["stat"] == "tot" and L["side"] == "over"]
         if not sp or not to:
             continue
-        (mu_m, sd_m), (mu_t, sd_t) = cfb_fit(sp, CFB_SD[0]), cfb_fit(to, CFB_SD[1])
+        (mu_m, sd_m), (mu_t, sd_t) = cfb_fit(sp, board["sd"][0]), cfb_fit(to, board["sd"][1])
         if mu_t <= 0:
             continue
         # The two scores: variances and covariance from the margin's and the
@@ -1186,7 +1210,7 @@ def cfb_candidates(a):
             v = [L for L in legs if L["stat"] == stat and L["team"] == team and L["side"] == side
                  and L["width"] <= a.max_spread + 1e-9 and abs(L["p"] - target) <= within]
             return min(v, key=lambda L: abs(L["p"] - target) + L["width"]) if v else None
-        dog_ml = pick("ml", dog, target=tw["p"][1 - f], within=0.01)
+        dog_ml = pick("ml", dog, within=0.5) if board["dogml"] else None
         if dog_ml and dog_ml["p"] < CFB_MIN_DOG:
             dog_ml = None
         under, under_alt = pick("tot", side="under"), pick("tot", side="under", target=0.30, within=0.08)
@@ -1198,8 +1222,8 @@ def cfb_candidates(a):
                 continue
             R = [[1.0 if i == j else corr(x, y) for j, y in enumerate(ls)] for i, x in enumerate(ls)]
             j = sgp.joint(R[0][1], ls[0]["p"], ls[1]["p"]) if len(ls) == 2 else both_scores(ls)
-            out.append({"key": ",".join(L["id"] for L in ls), "tier": 9, "player": name, "id": eid, "team": "NCAAF",
-                        "starts": money["startsTs"], "legs": [dict(L) for L in ls], "kind": kind,
+            out.append({"key": ",".join(L["id"] for L in ls), "tier": 9, "player": name, "id": eid, "team": board["league"],
+                        "starts": ms[0]["startsTs"], "legs": [dict(L) for L in ls], "kind": kind,
                         "label": " · ".join(L["text"] for L in ls), "forced": False,
                         "r": min(R[i][k] for i in range(len(ls)) for k in range(i)), "j": j,
                         "devig_r": sgp.devig_r(j, ls[0]["p"], ls[1]["p"]) if len(ls) == 2 else None,
@@ -1480,7 +1504,7 @@ def scan(a, emit):
         d = {"generated_at": time.strftime("%Y-%m-%d")}
         cands, ctx = soccer_candidates(a)
         stats, rfun, a.tri = (), None, 0
-    elif a.league == "cfb":
+    elif a.league in LINE_BOARDS:
         d = {"generated_at": time.strftime("%Y-%m-%d")}
         cands, ctx = cfb_candidates(a)
         stats, rfun, a.tri = (), None, 0
@@ -1582,7 +1606,7 @@ def scan(a, emit):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--league", default="nba", choices=("nba", "nfl", "nhl", "soccer", "cfb"))
+    ap.add_argument("--league", default="nba", choices=("nba", "nfl", "nhl", "soccer", "cfb", "cbb"))
     ap.add_argument("--kind", default="all", choices=("all", "props", "stacks", "lines", "tri", "mates"),
                     help="NFL: one kind of slip only (default: a player's own props, stacks, game lines, "
                          "then tri, the three-leg slips). "
@@ -1669,7 +1693,7 @@ def main():
     if a.kind == "tri" and (a.league != "nfl" or a.scope == "ladder"):
         raise SystemExit("--kind tri is NFL only (and not with --scope ladder)")
     if a.scope == "ladder":
-        if a.league in ("soccer", "cfb"):
+        if a.league in ("soccer", "cfb", "cbb"):
             raise SystemExit("--scope ladder is NBA and NFL only")
         if a.league == "nhl":
             raise SystemExit("--scope ladder is NBA and NFL only")
