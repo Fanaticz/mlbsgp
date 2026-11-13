@@ -2,6 +2,9 @@
 
 ## 2026-11-13 session
 
+### Novig Scan: CBB underdog slip is two legs
+The three-leg slip (underdog's spread + Under + underdog's team total Under) had a leg that adds nothing: Tennessee State +27.5 with its team total Under 63.5 caps the game at 154, under the 157.5 total. DraftKings refuses the third leg for that reason, and Novig quoted it at its two-leg price. The board now asks the two legs alone. Its fair value leans on how tied the two teams' scores are (0.22 to 0.35 from the alt ladders): that slip showed +546 fair where DraftKings paid +600 and Novig's raw quote was +609, which both fit a tie nearer 0.1 to 0.2. Treat a green row on this shape as unconfirmed.
+
 ### Novig Scan: CBB team totals and first half, priced off Pinnacle
 - **Why**: the CBB board could not ask a team-total or first-half slip, because Novig's own books on those are 6c to 28c wide. Pinnacle posts both for college basketball (three team-total lines a team, a first-half spread and total ladder, first-half team totals and moneyline).
 - **`pinnacle.lines(league)`** (new; `NCAAB` 493, `NCAAF` 880): every pregame game's two-way lines for the game and the first half, alt lines included, devigged worst case. Two calls a pass. `college_match` pairs a game with Novig's by tip time (10 min) and both names (Novig's short code or the full name from its team-total market): 50 of 55 games matched tonight.

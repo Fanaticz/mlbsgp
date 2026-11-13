@@ -160,7 +160,7 @@ College basketball (--league cbb): the same model on NCAAB, six asks a game.
 The favourite's spread + Over and the underdog's spread + Under; then, with
 team-total and first-half legs priced off Pinnacle (pinnacle.lines: Novig's
 own books on those run 6c to 28c wide, none of 314 team totals inside 4c on
-11-13): the underdog's spread + Under + the underdog's team total Under, the
+11-13): the underdog's spread + the underdog's team total Under, the
 favourite's team total Under + Under, both team totals Under, and the
 favourite's first-half spread + his spread. A leg takes Pinnacle's price
 only on the same line; a game Pinnacle doesn't list gets the first two
@@ -1268,7 +1268,9 @@ def cfb_candidates(a):
                   ("cover", [pick("cover", fav), pick("tot")]), ("cover", [pick("cover", dog), under])]
         if board["pin"]:
             fav_ttu, dog_ttu = pick("tt", fav, "under"), pick("tt", dog, "under")
-            shapes += [("tt", [pick("cover", dog), under, dog_ttu]), ("tt", [fav_ttu, under]), ("tt", [fav_ttu, dog_ttu]),
+            # The underdog covering with his own total Under: no game Under leg,
+            # since those two all but force it (63.5 + 63.5 + 27.5 is under a 157.5 total).
+            shapes += [("tt", [pick("cover", dog), dog_ttu]), ("tt", [fav_ttu, under]), ("tt", [fav_ttu, dog_ttu]),
                        ("half", [pick("cover", fav, half=True), pick("cover", fav)])]
         for kind, ls in shapes:
             if any(L is None for L in ls) or len({L["id"] for L in ls}) < len(ls):
