@@ -165,7 +165,7 @@
     <option value="">All games</option>
   </select>
   <button type="button" id="now" title="Run one pass. Nothing is asked of Novig until you press this: each pass sends every combo to its pricers as a live auction. While a pass runs, this button stops it." style="background:var(--accent);border:0;color:#1a1a1a;font-weight:600;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;white-space:nowrap">Fetch</button>
-  <button type="button" id="auto" title="Auto-scan: the server prices NBA, NBA Team, NFL, CBB and CFB one after another, over and over, with this page open or closed. It switches itself off after 12 hours. Each pass sends every combo to Novig's pricers.">Auto-scan</button>
+  <button type="button" id="auto" title="Auto-scan: the server prices every board but the two Ladders (NBA, NBA Team, NFL, CBB, CFB, soccer) one after another, over and over, with this page open or closed. It switches itself off after 12 hours. Each pass sends every combo to Novig's pricers.">Auto-scan</button>
   <button type="button" id="hidebets" title="Hide or show your own bets on this page, for a screenshot.">Hide my bets</button>
   <a class="back" id="corr" href="nba.html">Correlations →</a>
 </div>
@@ -517,7 +517,7 @@ function render() {
     const best = all[0];
     rowsEl.innerHTML = `<div class="empty">${
       q ? "No combo for that name." :
-      ALL() ? `No play at ${MINEV > 0 ? "+" : ""}${MINEV}% or better on any board right now.${S.cycle && S.cycle.on ? "" : " Fetch a board, or switch <b>Auto-scan</b> on to keep NBA, NBA Team, NFL, CBB and CFB priced."}` :
+      ALL() ? `No play at ${MINEV > 0 ? "+" : ""}${MINEV}% or better on any board right now.${S.cycle && S.cycle.on ? "" : " Fetch a board, or switch <b>Auto-scan</b> on to keep every board but the Ladders priced."}` :
       !all.length ? (S.scanning ? "Pricing the slate. Rows appear as Novig answers (about one a second)." :
         !S.finished ? "Nothing fetched yet. Press <b>Fetch</b> to price the slate." :
         started ? "Every game on this board has started. Press <b>Fetch</b> to price the next slate." :
@@ -571,7 +571,7 @@ function render() {
   }
   document.getElementById("foot").innerHTML = ALL() ?
     `All: every board’s slips at Min EV or better, best first, for games that haven’t started. Each row carries its board; open that board’s tab for how its fair value is made and for the rest of its slips. Rows over an hour old are dimmed: press ↻ on a row to price it again. ` +
-    `<b>Auto-scan</b> has the server price NBA, NBA Team, NFL, CBB and CFB in turn, with this page open or closed: a minute between passes, no board more often than every ten minutes, and it switches itself off after 12 hours. NBA Ladder, NFL Ladder and soccer are only priced when you Fetch them on their own tabs. ` +
+    `<b>Auto-scan</b> has the server price NBA, NBA Team, NFL, CBB, CFB and soccer in turn, with this page open or closed: a minute between passes, no board more often than every ten minutes, and it switches itself off after 12 hours. NBA Ladder and NFL Ladder are left out: they are only priced when you Fetch them on their own tabs. ` +
     `Quotes move by a few percent between asks and last about 30 seconds, so a row is a lead to re-check on the slip, and against sharp odds, before betting.` :
     (SOC() ? `Soccer: favourite to win + favourite’s corners Under + underdog’s corners Over, with and without a goals Over. Fair value is the legs’ unrelated price adjusted for how much more often the whole slip hits (×1.25 to ×1.61, from 17,934 top-five-league matches). Each leg’s fair value is Pinnacle’s no-vig price on that line (open a row to see it beside Novig’s book); where Pinnacle has no such line it is the middle of Novig’s own book, and the row is marked ~ if that book is wide. The lift is a league average, so treat rows as leads. ` : "") +
     (LEAGUE === "cfb" ? `CFB: Novig lists no college player props, so these are slips across one game’s own lines: the underdog’s moneyline with the game Under (at the main line and at the Under nearest +230), those two with the underdog’s team total Over, the favourite’s spread with the Over, and the underdog’s spread with the Under; then, where Novig’s team-total and first-half books are tight, the underdog’s spread with his team total Under, the favourite’s team total Under with the game Under, both team totals Under, the favourite’s first-half spread with his spread, and the first-half Under with the game Under. Up to ten a game; underdogs longer than about +900 get no moneyline slips. Each leg’s fair value is Novig’s own book at that line. The correlation is modelled, not measured: the two teams’ scores are fitted to that game’s alt spreads and alt totals, and a favourite covering is tied to the Over by half of spread ÷ total (an assumption). Novig prices these lines close to that model, so most rows sit under fair after its 10% parlay fee; treat anything above fair as a lead to check. ` : "") +

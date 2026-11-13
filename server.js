@@ -2579,10 +2579,10 @@ function startNovigScan(league, wide, events, auto) {
 }
 
 // Auto-scan: while switched on (the page's Auto-scan button), the server runs
-// whole-board passes of NBA, NBA Team, NFL, CBB and CFB one after another, with or
+// whole-board passes of NBA, NBA Team, NFL, CBB, CFB and soccer one after another, with or
 // without the page open. Still one pass at a time: a pass asked for with
 // Fetch runs first and the cycle carries on after it.
-const NV_CYCLE_BOARDS = ['nba', 'nbateam', 'nfl', 'cbb', 'cfb'];
+const NV_CYCLE_BOARDS = ['nba', 'nbateam', 'nfl', 'cbb', 'cfb', 'soccer'];   // every board on the page but the two Ladders
 const NV_CYCLE_GAP_MS = 60 * 1000;             // pause between two passes
 const NV_CYCLE_REST_MS = 10 * 60 * 1000;       // a board is not asked again sooner than this after its last pass began or ended
 const NV_CYCLE_MAX_MS = 12 * 60 * 60 * 1000;   // switches itself off, so a forgotten cycle doesn't quote Novig for days
