@@ -2,6 +2,16 @@
 
 ## 2026-11-13 session
 
+### Novig Scan: CFB tab
+A new board on the Novig Scan page (`scan.py --league cfb`).
+
+- **No player props**: Novig's `NCAAF` league lists game lines only (`MONEY`, `SPREAD`, `TOTAL`, `TEAM_TOTAL`, and one or two first-half lines a game), so the slips are across one game's own lines.
+- **What it asks**, up to five a game: the underdog's moneyline + the game Under (main line, and the Under nearest +230), those two with the underdog's team total Over, the favourite's spread + Over, the underdog's spread + Under. Underdogs under a 10% chance get no moneyline slips. 275 slips on a 59-game Saturday board, about five minutes.
+- **Fair value**: each leg is Novig's own book. The correlation is from a two-score model fitted per game (`cfb_candidates`): the margin's and the total's sd from that game's alt spreads and alt totals (about 14.5 and 15), the two scores tied by what those imply, and the margin tied to the total by `CFB_KAPPA` (0.5) x spread / total. That last number is an assumption, not measured on college results. Three-leg slips are integrated over the two scores directly (their correlation matrix is singular, so `price.tri_joint` can't take it).
+- **Why these shapes**: 182 quotes over four games (FSU at Pitt, Illinois at UCLA, Houston at Colorado, MTSU at Liberty) across spread, moneyline, total, team totals and first-half lines, two and three legs. Novig's quotes implied the same correlations as the model to within a few hundredths (first half with full game 0.71 to 0.78, team total with game total 0.68 to 0.82, spread with total 0.04 to 0.20 by size of spread), so nearly everything came back 4% to 12% under fair after the fee. The underdog's moneyline with the Under was the one shape priced as nearly unrelated (r 0.02 to 0.03 against the model's 0.10): -0.5% to -1%. With the underdog's team total Over added it showed +6%, +6% and -13% on three games, so that row leans on the model: a lead, not a bet.
+- **Refused by Novig** ("Invalid parlay combination"): two lines of the same market in one slip (Pitt -1.5 with FSU +7.5, Over 45.5 with Under 57.5), and a moneyline with the other team's spread.
+- **Page**: CFB button after Soccer, one card a game, filters for "Underdog ML + Under" and "Spread + total".
+
 ### Novig Scan: NFL 3-Leg board, moneyline and first-half lines
 - **NFL tab, game lines**: a prop was asked with the game total, the spread and the team total only. It is now also asked with his team's **moneyline** and the **first half's total, spread and moneyline** (Novig's `MONEY`, `TOTAL_1H`, `SPREAD_1H`, `MONEY_1H`), on the side that goes with the prop. Each player gets his best prop with each kind of line (r 0.25 or better), plus what he was asked before. The pair filter has the four new kinds.
 - **NFL 3-Leg** (a new board; `scan.py --league nfl --kind tri`): three legs at main lines, all pulling the same way. Four shapes: three of a player's own props (receptions + yards + TD); two of his props + a game line; his QB's passing Over + his Over + a game line; three props across him and his QB. The line is any of the seven above. Each player leads up to three slips, the ones with most lift over unrelated legs, at most two of a shape and one per kind of line. The filter picks a shape or a kind of line; an open row shows the three pair r's.

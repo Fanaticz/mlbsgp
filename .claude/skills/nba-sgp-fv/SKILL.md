@@ -283,6 +283,9 @@ moneyline), from the role r's in `public/data/nfl_stack_correlations.json`.
 `--league nfl --kind tri` (the page's **NFL 3-Leg** tab) asks three-leg
 slips: three of a player's props, two with a game line, QB + receiver + a
 game line, or three props across the two.
+`--league cfb` asks college football slips across one game's lines (Novig
+lists no college player props): underdog moneyline + Under, spread + total.
+Fair values are modelled per game; see scan.py's docstring.
 `--league soccer` prices Max's corners shape (favourite 3-way win +
 favourite corners Under + underdog corners Over, with and without goals Over
 1.5 / 2.5) on every open match with team-corners books. Each leg's fair
