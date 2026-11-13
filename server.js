@@ -2585,13 +2585,23 @@ function startNovigScan(league, wide, events, auto) {
 const NV_CYCLE_BOARDS = ['nba', 'nbateam', 'nfl', 'cbb', 'cfb', 'soccer'];   // every board on the page but the two Ladders
 const NV_CYCLE_GAP_MS = 60 * 1000;             // pause between two passes
 const NV_CYCLE_REST_MS = 10 * 60 * 1000;       // a board is not asked again sooner than this after its last pass began or ended
-const NV_CYCLE_MAX_MS = 12 * 60 * 60 * 1000;   // switches itself off, so a forgotten cycle doesn't quote Novig for days
-let NV_CYCLE = null;   // { since, wide, i } while on; i = the next board in NV_CYCLE_BOARDS
+const NV_CYCLE_MAX_MS = 7 * 24 * 60 * 60 * 1000;   // switches itself off, so a forgotten cycle doesn't quote Novig for weeks
+// Nights off: no pass starts from 10 PM to 8 AM, by the clock of the browser
+// that switched auto-scan on (its time zone comes with the request). A pass
+// already running at 10 finishes.
+const NV_CYCLE_QUIET = [22, 8];
+function nvCycleQuiet() {
+  let h;
+  try { h = +new Intl.DateTimeFormat('en-US', { hour: 'numeric', hourCycle: 'h23', timeZone: NV_CYCLE.tz }).format(new Date()); }
+  catch (_) { h = +new Intl.DateTimeFormat('en-US', { hour: 'numeric', hourCycle: 'h23', timeZone: 'America/New_York' }).format(new Date()); }
+  return h >= NV_CYCLE_QUIET[0] || h < NV_CYCLE_QUIET[1];
+}
+let NV_CYCLE = null;   // { since, wide, i, tz } while on; i = the next board in NV_CYCLE_BOARDS
 function nvCycleTick(first) {
   if (!NV_CYCLE) return;
   const now = Date.now();
   if (now - NV_CYCLE.since > NV_CYCLE_MAX_MS) { NV_CYCLE = null; return; }
-  if (NV_RUN || (!first && now - NV_LAST_END < NV_CYCLE_GAP_MS)) return;
+  if (NV_RUN || nvCycleQuiet() || (!first && now - NV_LAST_END < NV_CYCLE_GAP_MS)) return;
   for (let n = 0; n < NV_CYCLE_BOARDS.length; n++) {
     const at = (NV_CYCLE.i + n) % NV_CYCLE_BOARDS.length, league = NV_CYCLE_BOARDS[at];
     const B = nvBoard(`${league}:${NV_CYCLE.wide ? 1 : 0}`);
@@ -2603,7 +2613,8 @@ function nvCycleTick(first) {
 }
 setInterval(nvCycleTick, 15000).unref();
 const nvCycleState = () => NV_CYCLE
-  ? { on: true, wide: NV_CYCLE.wide, boards: NV_CYCLE_BOARDS, next: NV_CYCLE_BOARDS[NV_CYCLE.i], until: NV_CYCLE.since + NV_CYCLE_MAX_MS }
+  ? { on: true, wide: NV_CYCLE.wide, boards: NV_CYCLE_BOARDS, next: NV_CYCLE_BOARDS[NV_CYCLE.i], until: NV_CYCLE.since + NV_CYCLE_MAX_MS,
+      quiet: nvCycleQuiet(), hours: NV_CYCLE_QUIET }
   : { on: false, boards: NV_CYCLE_BOARDS };
 
 // GET /api/nba/novig-scan?league=nba|ladder|nbateam|nfl|nflladder|nhl|nhllines|soccer|cfb|cbb[&wide=1][&now=1][&stop=1][&events=id,id] — that
@@ -2666,9 +2677,9 @@ const NV_ALL_BOARDS = ['nba', 'ladder', 'nbateam', 'nfl', 'nflladder', 'soccer',
 // started is stopped too; one started with Fetch runs on.
 app.post('/api/nba/novig-cycle', (req, res) => {
   if (!nvBetsAuth(req, res)) return;
-  const { on, wide } = req.body || {};
+  const { on, wide, tz } = req.body || {};
   if (on) {
-    if (!NV_CYCLE || NV_CYCLE.wide !== !!wide) NV_CYCLE = { since: Date.now(), wide: !!wide, i: 0 };
+    if (!NV_CYCLE || NV_CYCLE.wide !== !!wide) NV_CYCLE = { since: Date.now(), wide: !!wide, i: 0, tz: String(tz || '').slice(0, 64) };
     nvCycleTick(true);
   } else {
     NV_CYCLE = null;
