@@ -2460,7 +2460,7 @@ const NV_SCAN_MAX_MS = 20 * 60 * 1000;   // a pass stuck this long is killed
 // leaving the page, switching league or a redeploy doesn't lose it (the disk
 // copy survives a redeploy only where NBA_DATA_DIR / /data is a volume).
 const NV_BOARDS = new Map();
-let NV_RUN = null;   // { proc, key } while a pass is running
+let NV_RUN = null;   // { proc, key, stop } while a pass is running
 const NV_SCAN_FILE = (() => {
   const fsx = require('fs'), os = require('os');
   for (const dir of [process.env.NBA_DATA_DIR, '/data/nba', os.tmpdir()]) {
@@ -2506,11 +2506,12 @@ function startNovigScan(league, wide) {
     B.error = 'scan could not start: ' + e.message;
     return;
   }
-  NV_RUN = { proc, key };
-  Object.assign(B, { started: Date.now(), total: 0, done: 0, error: null, seen: new Set() });
+  let live = true;   // false once the pass has ended or been stopped
+  Object.assign(B, { started: Date.now(), total: 0, done: 0, error: null, stopped: 0, seen: new Set() });
   const timer = setTimeout(() => { if (NV_RUN && NV_RUN.proc === proc) proc.kill(); }, NV_SCAN_MAX_MS);
   let buf = '', err = '', ok = false;
   const onEvent = e => {
+    if (!live) return;
     if (e.type === 'start') { B.total = e.total; B.players = e.players; B.data = e.data; B.books = e.books || null; }
     else if (e.type === 'more') { B.total += e.add; if (e.players) B.players = e.players; }
     else if (e.type === 'row') { B.done++; B.seen.add(e.key); B.rows.set(e.key, e); }
@@ -2524,11 +2525,16 @@ function startNovigScan(league, wide) {
     }
   });
   proc.stderr.on('data', c => { err = (err + c).slice(-4000); });
-  const end = why => {
-    if (!NV_RUN || NV_RUN.proc !== proc) return;
+  const end = (why, stopped) => {
+    if (!live) return;
+    live = false;
     clearTimeout(timer);
     NV_RUN = null;
-    if (ok) {
+    if (stopped && !ok) {
+      // Stopped from the page: rows it priced are kept, and rows it didn't
+      // reach stay at their earlier prices (each row carries its own age).
+      B.stopped = Date.now();
+    } else if (ok) {
       B.finished = Date.now();
       // A combo this pass didn't price is gone: its line moved or closed.
       for (const k of [...B.rows.keys()]) if (!B.seen.has(k)) B.rows.delete(k);
@@ -2539,10 +2545,14 @@ function startNovigScan(league, wide) {
   };
   proc.on('error', e => end('scan could not start: ' + e.message));
   proc.on('close', () => end(''));
+  // Frees the scanner at once, so another pass can start in the same request.
+  NV_RUN = { proc, key, stop: () => { end('', true); proc.kill(); } };
 }
 
-// GET /api/nba/novig-scan?league=nba|ladder|nfl|nflladder|nhl|nhllines|soccer[&wide=1][&now=1] — that
+// GET /api/nba/novig-scan?league=nba|ladder|nfl|nflladder|nhl|nhllines|soccer[&wide=1][&now=1][&stop=1] — that
 // board's last pass (or the one running), and what else is running.
+// stop=1 ends the pass that is running, whichever board it is on; with now=1
+// this board's pass then starts in its place.
 // Private: the scanner answers only to the passcode in NOVIG_SCAN_KEY (sent
 // as X-Scan-Key; the page asks for it once and keeps it on that device).
 // With no NOVIG_SCAN_KEY set, the scanner is off for everyone.
@@ -2557,11 +2567,12 @@ app.get('/api/nba/novig-scan', (req, res) => {
   const league = ['nfl', 'nhl', 'nhllines', 'soccer', 'ladder', 'nflladder'].includes(req.query.league) ? req.query.league : 'nba';
   const key = `${league}:${wide ? 1 : 0}`, B = nvBoard(key), now = Date.now();
   // One pass at a time (Novig's limit is per IP), and only when asked.
-  if (req.query.now === '1' && !NV_RUN && now - Math.max(B.finished, B.started) > NV_SCAN_NOW_MS) startNovigScan(league, wide);
+  if (req.query.stop === '1' && NV_RUN) NV_RUN.stop();
+  if (req.query.now === '1' && !NV_RUN && (B.stopped || now - Math.max(B.finished, B.started) > NV_SCAN_NOW_MS)) startNovigScan(league, wide);
   const mine = !!NV_RUN && NV_RUN.key === key;
   res.json({
     now, league, wide, scanning: mine, busy: NV_RUN && !mine ? NV_RUN.key.split(':')[0] : null,
-    started: B.started, finished: B.finished, total: B.total, done: B.done, players: B.players, data: B.data,
+    started: B.started, finished: B.finished, stopped: B.stopped || 0, total: B.total, done: B.done, players: B.players, data: B.data,
     seconds: B.seconds, error: B.error, books: B.books || null, rows: [...B.rows.values()],
   });
 });

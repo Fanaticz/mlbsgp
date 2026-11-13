@@ -1,5 +1,15 @@
 # Changes
 
+## 2026-11-13 session
+
+### Novig Scan: stop a pass
+A pass could not be interrupted: with one running (up to 20 minutes), Fetch was greyed out on every board until it finished.
+
+- **The button**: while this board's pass runs, Fetch reads **Stop**. On another board it reads **Stop NHL Lines and fetch** (whichever board is running): one press ends that pass and starts this board's.
+- **A stopped board** keeps the rows the pass priced; rows it didn't reach stay at their earlier prices (the Age column says which). The status line reads "Stopped at 40 / 120 combos". Nothing is dropped as moved or closed, since the pass never got to ask.
+- **Server** (`/api/nba/novig-scan?stop=1`, with `now=1` to start this board's pass in the same request): kills the scan process. A stopped board can be fetched again at once, without the one-minute wait.
+- Checked against a stand-in scanner (server and the page in a browser); no real pass was run or stopped.
+
 ## 2026-11-12 session
 
 ### Novig Scan: soccer legs priced off Pinnacle
