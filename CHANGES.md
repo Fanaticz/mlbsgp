@@ -2,6 +2,15 @@
 
 ## 2026-11-13 session
 
+### Novig Scan: refresh one slip
+Every row has a small ↻ button beside its age (every board). It prices that one slip again without running a pass: one catalog pull and one quote.
+
+- **What is new on the row**: Novig's quote, and on the NBA, NFL and NHL boards each leg's fair value re-read from Novig's book, with the fair value rebuilt on the same correlation. EV, stake and age follow.
+- **What is kept**: a leg modelled from another line (the ladders), a leg whose book has gone wider than it was, and soccer and CFB fair values (Pinnacle, the fitted lift): for those only the quote is new.
+- A leg that is no longer open (the game started, the line closed) says so under the status line and the row is left as it was. One refresh at a time; it can run while a pass is running.
+- `scan.py --requote --league nfl` (a board row as JSON on stdin); `POST /api/nba/novig-requote { league, wide, key }`.
+- Checked on a live 12-slip NFL pass in a browser, desktop and phone width: a two-leg row and a three-leg row re-priced in place, an unknown slip answers 404.
+
 ### NFL: spread and moneyline correlations by underdog / favourite
 - **What was wrong**: Cam Ward 21+ CMP · 34+ PASS ATT · JAX -10.5 showed fair +306 and +22.5% at Novig's 4.97x, while Fanatics paid +335 and DK +320 on the same slip. The board used one r for a QB's attempts against his team covering (-0.39, all games). For underdogs it is far weaker: an underdog is already expected to trail, and its attempts line says so.
 - **Measured** (ten seasons, each fitted within 3-point bands of the closing spread): QB attempts · his team covering -0.44 as a favourite of 3.5+, -0.39 within a field goal, -0.15 as an underdog of 3.5+; completions -0.29 / -0.19 / -0.02. A lead back's carries · covering go the other way: +0.22 as a favourite, +0.54 / +0.53 otherwise. Touchdown props and everything with a total show no split.

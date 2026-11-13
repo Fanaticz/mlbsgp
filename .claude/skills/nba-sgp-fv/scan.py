@@ -1431,6 +1431,48 @@ def finish(c, quote, unit, kelly):
     return c
 
 
+def requote(c, league, max_spread, unit, kelly):
+    """One slip again (the page's refresh button; --requote): (the row with
+    today's leg prices, a new Novig quote and EV, None), or (None, why).
+    NBA, NFL and NHL legs read off a book are re-read from Novig's catalog
+    (one pull) and the fair value rebuilt with the same correlation: for two
+    legs the r that gave the row's joint, for three legs with pair r's the
+    same three-way joint, otherwise the joint scaled by the legs' move. A
+    leg modelled from another line, or whose book has gone wider than it
+    was (and than --max-spread), keeps its fair value. Soccer and college
+    rows keep theirs too: only the quote is new."""
+    if league in ("nba", "nfl", "nhl"):
+        where = {o["outcomeId"]: (m, i) for m in novig.catalog({"league": league.upper(), "eventStatus": "OPEN_PREGAME"})
+                 for i, o in enumerate(m["outcomes"])}
+        if any(L["id"] not in where for L in c["legs"]):
+            return None, "a leg is no longer open (the game has started or the line closed)"
+        old = [L["p"] for L in c["legs"]]
+        for L in c["legs"]:
+            m, i = where[L["id"]]
+            t = two_way(m) if L.get("from") is None and not L.get("src") else None
+            if t and t["spread"] <= max(max_spread, L["width"]) + 1e-9:
+                L.update(p=t["p"][i], fair=sgp.american(t["p"][i]), width=t["spread"])
+        new = [L["p"] for L in c["legs"]]
+        if new != old and not c.get("forced"):
+            if len(new) == 2:
+                lo, hi = -0.99, 0.99   # the r that gave this row's joint
+                for _ in range(30):
+                    mid = (lo + hi) / 2
+                    lo, hi = (mid, hi) if sgp.joint(mid, *old) < c["j"] else (lo, mid)
+                c["j"] = sgp.joint((lo + hi) / 2, *new)
+                if c.get("devig_r") is not None:
+                    c["devig_r"] = sgp.devig_r(c["j"], *new)
+            elif len(new) == 3 and c.get("rs"):
+                c["j"] = tri_safe(new, c["rs"])
+            else:
+                c["j"] = min(c["j"] * math.prod(new) / math.prod(old), min(new))
+            c["rough"] = max(L["width"] for L in c["legs"]) > novig.MAX_SPREAD + 1e-9
+    quote, why = novig.parlay([L["id"] for L in c["legs"]])
+    if not quote:
+        return None, why
+    return finish(c, quote, unit, kelly), None
+
+
 def scan(a, emit):
     """Quote every candidate; emit(event dict) as things happen. Returns the priced rows."""
     t0 = time.time()
@@ -1593,7 +1635,15 @@ def main():
     ap.add_argument("--min-ev", type=float, default=None, help="print only rows at this EV%% or better")
     ap.add_argument("--top", type=int, default=25, help="rows to print (default 25; 0 = all)")
     ap.add_argument("--json", action="store_true", help="stream events as JSON lines instead of a table")
+    ap.add_argument("--requote", action="store_true",
+                    help="price one slip again: a board row (JSON) on stdin, the row with today's leg prices and "
+                         "a new quote on stdout, or {\"error\": why}")
     a = ap.parse_args()
+    if a.requote:
+        row, why = requote(json.load(sys.stdin), a.league, a.max_spread,
+                           a.unit or (500.0 if a.league == "nhl" else 250.0), a.kelly)
+        print(json.dumps(row if row else {"error": why}))
+        return
     BOOKS["on"] = not a.no_books
     if a.per is None:
         a.per = 4 if a.league == "nhl" and a.kind == "lines" else 3
