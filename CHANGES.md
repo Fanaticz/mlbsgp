@@ -2,6 +2,9 @@
 
 ## 2026-11-13 session
 
+### Novig Scan: a typed stake saves when the keyboard is closed
+Max, 11-13 (iPhone): typed a stake under "I bet this", pressed the keyboard's check mark, nothing saved. The check mark only closes the keyboard; it sends no Enter, and the row was then redrawn without the stake. Leaving the bet form with a stake above zero now saves it (moving between the stake and price boxes does not; Save and Enter save once, as before). Checked in a phone-sized browser: closing the keyboard saved one bet, Save saved one, Enter saved one, an empty stake saved nothing.
+
 ### Novig Scan: Auto-scan and an All tab
 Max, 11-13: have it scan by itself, cycling NBA, NFL, CBB and CFB, with one tab for every board's good slips.
 

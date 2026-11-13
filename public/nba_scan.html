@@ -557,11 +557,21 @@ function render() {
       const stake = parseFloat(f.querySelector(".stake").value), x = parseFloat(f.querySelector(".px").value);
       if (!c || !(stake > 0)) return f.querySelector(".stake").focus();
       b.disabled = true;
+      f.dataset.saved = "1";
       document.activeElement.blur();
       bets({ add: { key: c.key, board: c.board || LEAGUE, player: c.player, team: c.team, label: c.label, stake, x, fair: c.fair, starts: c.starts } });
     });
     rowsEl.querySelectorAll("[data-del]").forEach(b => b.onclick = () => bets({ del: b.dataset.del }));
-    rowsEl.querySelectorAll(".betform input").forEach(i => { i.onkeydown = e => { if (e.key === "Enter") i.closest(".betform").querySelector("[data-add]").click(); }; i.onblur = () => setTimeout(render, 150); });
+    rowsEl.querySelectorAll(".betform input").forEach(i => { i.onkeydown = e => { if (e.key === "Enter") i.closest(".betform").querySelector("[data-add]").click(); }; 
+      // Leaving the form with a stake typed saves it: the iPhone keyboard's
+      // check mark only closes the keyboard, it sends no Enter. (Moving
+      // between the form's own boxes, or pressing Save, is not leaving.)
+      i.onblur = () => setTimeout(() => {
+        const f = i.closest(".betform");
+        if (f.contains(document.activeElement)) return;
+        if (parseFloat(f.querySelector(".stake").value) > 0 && !f.dataset.saved) f.querySelector("[data-add]").click();
+        else render();
+      }, 150); });
     rowsEl.querySelectorAll(".row").forEach(el => el.onclick = e => {
       if (e.target.closest(".det")) return;   // let text in the details be selected
       const k = el.dataset.k;
