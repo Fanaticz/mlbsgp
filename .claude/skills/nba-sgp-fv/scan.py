@@ -154,13 +154,20 @@ results; Novig's own quotes imply about the same). On 182 quotes over four
 games (11-13) Novig priced these within a point or two of that model, so
 after the fee nearly every row is under fair: rows are leads.
 
-College basketball (--league cbb): the same model on NCAAB, two asks a game:
-the favourite's spread + Over and the underdog's spread + Under. Novig's
-team-total and first-half books there run 6c to 28c wide (none of 314 team
-totals inside 4c on 11-13), so those legs can't be priced, and the margin is
-close to unrelated to the total (r 0.01 in a close game, 0.10 at a 30-point
-spread), so there is no underdog-moneyline slip. 89 quotes over four games
-(11-13): none above fair, median -10%.
+College basketball (--league cbb): the same model on NCAAB, six asks a game.
+The favourite's spread + Over and the underdog's spread + Under; then, with
+team-total and first-half legs priced off Pinnacle (pinnacle.lines: Novig's
+own books on those run 6c to 28c wide, none of 314 team totals inside 4c on
+11-13): the underdog's spread + Under + the underdog's team total Under, the
+favourite's team total Under + Under, both team totals Under, and the
+favourite's first-half spread + his spread. A leg takes Pinnacle's price
+only on the same line; a game Pinnacle doesn't list gets the first two
+slips only. The margin is close to unrelated to the total (r 0.01 in a close
+game, 0.10 at a 30-point spread), so there is no underdog-moneyline slip.
+Tested 11-13: 89 quotes on Novig's own books, none above fair, median -10%;
+106 quotes with Pinnacle's team totals and first halves, 5 above fair,
+median -9.5%. The four Pinnacle shapes asked here were the best of 27 by
+median (-2% to -8%).
 
 EV and the stake use the fair value as shown (American odds), like price.py:
 quarter Kelly, 1u = 1% of bankroll = --unit dollars.
@@ -1079,8 +1086,10 @@ def soccer_candidates(a):
 CFB_KAPPA = 0.5            # corr(favourite's margin, total) = CFB_KAPPA x spread / total
 # Per board: Novig's league, the margin and total sd where a game's ladder is
 # too short to fit, and whether the underdog-moneyline slips are asked.
-LINE_BOARDS = {"cfb": {"league": "NCAAF", "sd": (14.6, 15.0), "dogml": True},
-               "cbb": {"league": "NCAAB", "sd": (12.0, 16.5), "dogml": False}}
+# pin: team-total and first-half legs take Pinnacle's no-vig price (Novig's
+# books on those are too wide in college basketball), and the slips with them are asked.
+LINE_BOARDS = {"cfb": {"league": "NCAAF", "sd": (14.6, 15.0), "dogml": True, "pin": False},
+               "cbb": {"league": "NCAAB", "sd": (12.0, 16.5), "dogml": False, "pin": True}}
 CFB_MIN_DOG = 0.10         # no underdog-moneyline slips on a longer shot than this
 
 
@@ -1103,7 +1112,15 @@ def cfb_candidates(a):
     """College football or basketball slips across one game's lines (see the module docstring)."""
     board = LINE_BOARDS[a.league]
     items = novig.catalog({"league": board["league"], "eventStatus": "OPEN_PREGAME",
-                           "marketType": "MONEY,SPREAD,TOTAL,TEAM_TOTAL" if board["dogml"] else "MONEY,SPREAD,TOTAL"})
+                           "marketType": "MONEY,SPREAD,TOTAL" + (",TEAM_TOTAL" if board["dogml"] or board["pin"] else "")
+                                         + (",SPREAD_1H" if board["pin"] else "")})
+    pin = []
+    if board["pin"]:
+        try:
+            import pinnacle
+            pin = pinnacle.lines(board["league"])
+        except Exception as e:
+            print(f"Pinnacle didn't answer ({type(e).__name__}): no team-total or first-half slips", file=sys.stderr)
     games = {}
     for m in items:
         games.setdefault(m["eventId"], []).append(m)
@@ -1126,30 +1143,54 @@ def cfb_candidates(a):
             t = min(sps, key=lambda t: abs(t["p"][0] - 0.5) + t["spread"])
             f = 0 if t["names"][0].rpartition(" ")[2].startswith("-") else 1
             fav, dog = (t["names"][i].rpartition(" ")[0] for i in (f, 1 - f))
-        sub = {o.get("subjectId"): o["name"] for o in money["outcomes"]} if money else {}
-        legs = []   # every side of every two-sided line
+        sub = {}   # Novig's subject id -> the team's short name, as the spread and moneyline spell it
         for m in ms:
-            t = two_way(m)
-            if not t:
-                continue
+            if m["marketType"] in ("MONEY", "SPREAD"):
+                for o in m["outcomes"]:
+                    sub[o.get("subjectId")] = o["name"] if m["marketType"] == "MONEY" else o["name"].rpartition(" ")[0]
+        away, _, home = name.partition(" @ ")
+        pg = None
+        if pin:
+            full = {m["outcomes"][0].get("subjectId"): m["description"].rsplit(" ", 2)[0] for m in ms if m["marketType"] == "TEAM_TOTAL"}
+            ids = {v: k for k, v in sub.items()}
+            both_names = lambda t: [t] + ([full[ids[t]]] if ids.get(t) in full else [])   # noqa: E731
+            pg = pinnacle.college_match(pin, both_names(away), both_names(home), ms[0]["startsTs"] / 1000)
+        legs = []   # every side of every line with a fair value: Novig's two-sided book, or Pinnacle's price
+        for m in ms:
+            t, typ = two_way(m), m["marketType"]
+            half = typ.endswith("_1H")
             for i, o in enumerate(m["outcomes"]):
-                L = {"p": t["p"][i], "fair": sgp.american(t["p"][i]), "width": t["spread"], "id": o["outcomeId"],
-                     "line": t["strike"], "side": "over"}
-                if m["marketType"] == "MONEY":
+                L = {"id": o["outcomeId"], "line": float(m["strike"]), "side": "over", "half": half}
+                if typ == "MONEY":
                     L.update(stat="ml", team=o["name"], text=f"{o['name']} ML")
-                elif m["marketType"] == "SPREAD":
+                    key, des = (0, "moneyline", None, 0.0), "home" if o["name"] == home else "away"
+                elif typ in ("SPREAD", "SPREAD_1H"):
                     tm, _, ln = o["name"].rpartition(" ")
-                    L.update(stat="cover", team=tm, line=float(ln), text=o["name"])
-                elif m["marketType"] == "TOTAL":
-                    L.update(stat="tot", team=None, side="over" if i == 0 else "under", text=f"{'Over' if i == 0 else 'Under'} {t['strike']:g}")
-                elif m["marketType"] == "TEAM_TOTAL" and o.get("subjectId") in sub:
+                    L.update(stat="cover", team=tm, line=float(ln), text=("1H " if half else "") + o["name"])
+                    des = "home" if tm == home else "away"
+                    key = (1 if half else 0, "spread", None, float(ln) if des == "home" else -float(ln))
+                elif typ == "TOTAL":
+                    L.update(stat="tot", team=None, side="over" if i == 0 else "under", text=f"{'Over' if i == 0 else 'Under'} {L['line']:g}")
+                    key, des = (0, "total", None, L["line"]), L["side"]
+                elif typ == "TEAM_TOTAL" and o.get("subjectId") in sub:
                     tm = sub[o["subjectId"]]
                     L.update(stat="tt", team=tm, side="over" if i == 0 else "under",
-                             text=f"{tm} team total {'Over' if i == 0 else 'Under'} {t['strike']:g}")
+                             text=f"{tm} team total {'Over' if i == 0 else 'Under'} {L['line']:g}")
+                    key, des = (0, "team_total", "home" if tm == home else "away", L["line"]), L["side"]
+                else:
+                    continue
+                # Pinnacle prices the team totals and the first half; the game's
+                # own spread, total and moneyline stay on Novig's (tight) book.
+                sharp = ((pg["mk"].get(key) or {}).get(des) if pg and (half or L["stat"] == "tt") else None)
+                if sharp:
+                    L.update(p=sharp[0], fair=sgp.american(sharp[0]), sharp=True, width=t["spread"] if t else 1.0,
+                             books=f"Pinnacle {sharp[1]:+d}" + (f", Novig's book says {sgp.american(t['p'][i]):+d}" if t else ""))
+                elif t and not (board["pin"] and (half or L["stat"] == "tt")):
+                    L.update(p=t["p"][i], fair=sgp.american(t["p"][i]), width=t["spread"])
                 else:
                     continue
                 legs.append(L)
-        fit = [L for L in legs if L["width"] <= 0.05 + 1e-9]   # the ladders the model is fitted to
+        fit = [L for L in legs if L["width"] <= 0.05 + 1e-9 and not L["half"] and not L.get("sharp")]   # the ladders the model is fitted to
         sp = [(-L["line"], L["p"]) for L in fit if L["stat"] == "cover" and L["team"] == fav]
         to = [(L["line"], L["p"]) for L in fit if L["stat"] == "tot" and L["side"] == "over"]
         if not sp or not to:
@@ -1174,7 +1215,11 @@ def cfb_candidates(a):
         def corr(x, y):
             (a1, b1), (a2, b2) = vec(x), vec(y)
             cov = lambda p, q, r, t: p * r * vf + q * t * vd + (p * t + q * r) * cfd   # noqa: E731
-            return cov(a1, b1, a2, b2) / math.sqrt(cov(a1, b1, a1, b1) * cov(a2, b2, a2, b2))
+            # A first-half leg sees half the game: half the variance (the two
+            # halves taken as unrelated), and only that half in common with a
+            # full-game leg. A first-half spread with the game's spread is 0.71.
+            hx, hy = (0.5 if L["half"] else 1.0 for L in (x, y))
+            return cov(a1, b1, a2, b2) * min(hx, hy) / math.sqrt(cov(a1, b1, a1, b1) * hx * cov(a2, b2, a2, b2) * hy)
 
         def both_scores(ls):
             """P(every leg hits) for three or more legs. They are all cuts of
@@ -1206,10 +1251,10 @@ def cfb_candidates(a):
                     tot += w * math.exp(-x1 * x1 / 2) * (sgp.ncdf(hi) - sgp.ncdf(lo))
             return tot * (16 / n) / 3 / math.sqrt(2 * math.pi)
 
-        def pick(stat, team=None, side="over", target=0.5, within=0.12):
-            v = [L for L in legs if L["stat"] == stat and L["team"] == team and L["side"] == side
-                 and L["width"] <= a.max_spread + 1e-9 and abs(L["p"] - target) <= within]
-            return min(v, key=lambda L: abs(L["p"] - target) + L["width"]) if v else None
+        def pick(stat, team=None, side="over", target=0.5, within=0.12, half=False):
+            v = [L for L in legs if L["stat"] == stat and L["team"] == team and L["side"] == side and L["half"] == half
+                 and (L.get("sharp") or L["width"] <= a.max_spread + 1e-9) and abs(L["p"] - target) <= within]
+            return min(v, key=lambda L: abs(L["p"] - target) + (0 if L.get("sharp") else L["width"])) if v else None
         dog_ml = pick("ml", dog, within=0.5) if board["dogml"] else None
         if dog_ml and dog_ml["p"] < CFB_MIN_DOG:
             dog_ml = None
@@ -1217,6 +1262,10 @@ def cfb_candidates(a):
         dog_tt = pick("tt", dog)
         shapes = [("dogml", [dog_ml, under]), ("dogml", [dog_ml, under_alt]), ("dogml", [dog_ml, under, dog_tt]),
                   ("cover", [pick("cover", fav), pick("tot")]), ("cover", [pick("cover", dog), under])]
+        if board["pin"]:
+            fav_ttu, dog_ttu = pick("tt", fav, "under"), pick("tt", dog, "under")
+            shapes += [("tt", [pick("cover", dog), under, dog_ttu]), ("tt", [fav_ttu, under]), ("tt", [fav_ttu, dog_ttu]),
+                       ("half", [pick("cover", fav, half=True), pick("cover", fav)])]
         for kind, ls in shapes:
             if any(L is None for L in ls) or len({L["id"] for L in ls}) < len(ls):
                 continue
@@ -1227,7 +1276,8 @@ def cfb_candidates(a):
                         "label": " · ".join(L["text"] for L in ls), "forced": False,
                         "r": min(R[i][k] for i in range(len(ls)) for k in range(i)), "j": j,
                         "devig_r": sgp.devig_r(j, ls[0]["p"], ls[1]["p"]) if len(ls) == 2 else None,
-                        "rough": max(L["width"] for L in ls) > novig.MAX_SPREAD + 1e-9})
+                        "sharp": sum(1 for L in ls if L.get("sharp")),
+                        "rough": any(L["width"] > novig.MAX_SPREAD + 1e-9 for L in ls if not L.get("sharp"))})
     out.sort(key=lambda c: c["starts"])
     return (out[:a.max] if a.max else out), {}
 
