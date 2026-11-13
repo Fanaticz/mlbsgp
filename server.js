@@ -2454,7 +2454,7 @@ const NV_SCAN_PY = path.join(__dirname, '.claude', 'skills', 'nba-sgp-fv', 'scan
 // nothing here scans on its own: a pass runs only when the page's Fetch
 // button asks for one (?now=1), at most once a minute for the same board.
 const NV_SCAN_NOW_MS = 60 * 1000;
-const NV_SCAN_MAX_MS = 30 * 60 * 1000;   // a pass stuck this long is killed (a full NFL Sunday runs about 15 minutes)
+const NV_SCAN_MAX_MS = 45 * 60 * 1000;   // a pass stuck this long is killed (the NFL tab on a full board runs 20 to 25 minutes)
 // One board per league and book width ("nba:0", "nfl:1", ...). The last pass
 // of each is kept, in memory and on disk, until the next Fetch replaces it:
 // leaving the page, switching league or a redeploy doesn't lose it (the disk
@@ -2498,7 +2498,6 @@ function startNovigScan(league, wide) {
   // included), fair values shifted from the main line (scan.py --scope ladder).
   const args = [NV_SCAN_PY, '--json'].concat(league === 'ladder' ? ['--league', 'nba', '--scope', 'ladder'] :
     league === 'nflladder' ? ['--league', 'nfl', '--scope', 'ladder'] :
-    league === 'nfl3' ? ['--league', 'nfl', '--kind', 'tri'] :
     league === 'nhllines' ? ['--league', 'nhl', '--kind', 'lines'] : ['--league', league]).concat(wide ? ['--max-spread', '0.08', '--alt-spread', '0.10'] : []);
   let proc;
   try {
@@ -2550,7 +2549,7 @@ function startNovigScan(league, wide) {
   NV_RUN = { proc, key, stop: () => { end('', true); proc.kill(); } };
 }
 
-// GET /api/nba/novig-scan?league=nba|ladder|nfl|nfl3|nflladder|nhl|nhllines|soccer|cfb[&wide=1][&now=1][&stop=1] — that
+// GET /api/nba/novig-scan?league=nba|ladder|nfl|nflladder|nhl|nhllines|soccer|cfb[&wide=1][&now=1][&stop=1] — that
 // board's last pass (or the one running), and what else is running.
 // stop=1 ends the pass that is running, whichever board it is on; with now=1
 // this board's pass then starts in its place.
@@ -2565,7 +2564,7 @@ app.get('/api/nba/novig-scan', (req, res) => {
     return setTimeout(() => res.status(403).json({ error: 'wrong passcode' }), 800);  // slows guessing
   }
   const wide = req.query.wide === '1';
-  const league = ['nfl', 'nfl3', 'nhl', 'nhllines', 'soccer', 'cfb', 'ladder', 'nflladder'].includes(req.query.league) ? req.query.league : 'nba';
+  const league = ['nfl', 'nhl', 'nhllines', 'soccer', 'cfb', 'ladder', 'nflladder'].includes(req.query.league) ? req.query.league : 'nba';
   const key = `${league}:${wide ? 1 : 0}`, B = nvBoard(key), now = Date.now();
   // One pass at a time (Novig's limit is per IP), and only when asked.
   if (req.query.stop === '1' && NV_RUN) NV_RUN.stop();

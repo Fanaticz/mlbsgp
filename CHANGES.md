@@ -2,6 +2,11 @@
 
 ## 2026-11-13 session
 
+### Novig Scan: three-leg NFL slips folded into the NFL tab
+The NFL 3-Leg tab is gone (Max, 11-13): the NFL tab's one Fetch now also asks the three-leg slips, on the same board. The pair filter has "Three legs: all", the four shapes and the seven kinds of line, each marked "3:". `scan.py --league nfl --kind tri` still asks them alone.
+
+- **Size**: on Friday's board with tight books the pass is 1,462 slips (397 own props, 226 stacks, 450 with a game line, 389 three-leg), about 27 minutes. Games are asked in order of start time and Stop keeps what has been priced. A pass is now killed at 45 minutes.
+- Checked in a browser on a pass capped at 24 quotes; no full pass has been run.
 ### Novig Scan: CFB tab
 A new board on the Novig Scan page (`scan.py --league cfb`).
 
@@ -14,7 +19,7 @@ A new board on the Novig Scan page (`scan.py --league cfb`).
 
 ### Novig Scan: NFL 3-Leg board, moneyline and first-half lines
 - **NFL tab, game lines**: a prop was asked with the game total, the spread and the team total only. It is now also asked with his team's **moneyline** and the **first half's total, spread and moneyline** (Novig's `MONEY`, `TOTAL_1H`, `SPREAD_1H`, `MONEY_1H`), on the side that goes with the prop. Each player gets his best prop with each kind of line (r 0.25 or better), plus what he was asked before. The pair filter has the four new kinds.
-- **NFL 3-Leg** (a new board; `scan.py --league nfl --kind tri`): three legs at main lines, all pulling the same way. Four shapes: three of a player's own props (receptions + yards + TD); two of his props + a game line; his QB's passing Over + his Over + a game line; three props across him and his QB. The line is any of the seven above. Each player leads up to three slips, the ones with most lift over unrelated legs, at most two of a shape and one per kind of line. The filter picks a shape or a kind of line; an open row shows the three pair r's.
+- **NFL 3-Leg** (first shipped as its own board, folded into the NFL tab the same day, above; `scan.py --league nfl --kind tri`): three legs at main lines, all pulling the same way. Four shapes: three of a player's own props (receptions + yards + TD); two of his props + a game line; his QB's passing Over + his Over + a game line; three props across him and his QB. The line is any of the seven above. Each player leads up to three slips, the ones with most lift over unrelated legs, at most two of a shape and one per kind of line. The filter picks a shape or a kind of line; an open row shows the three pair r's.
 - **The numbers** (`scripts/nfl_stack_correlations.py`, same file, 90 → 210 prop + line rows): a prop moves with the moneyline as it does with the spread. Cut at a player's season win rate, a lead back's carries with a win reads 0.59, but that counts the spread itself (favourites run more); within games of the same closing spread it is 0.50, against 0.47 with covering. So the moneyline leg is priced off its own fair value with that r. First half: a lead back's carries 0.43 with the 1H spread (0.47 full game), rushing yards 0.39 (0.38); QB passing TDs 0.45 with the 1H total (0.62 full), passing yards 0.26 (0.41).
 - **First-half data**: halftime scores for all 2,520 games from ESPN's scoreboard (finals match nflverse in every game). nflverse has no closing first-half lines, so the 1H total is cut at a straight-line fit on the closing total (0.28 + 0.50 x) and the 1H spread at 0.57 x the closing spread. The script leaves the file alone if ESPN gives no halftime scores.
 - **Three-leg fair value**: the three-way Gaussian copula on the three pair r's: the player's own for two of his props, role r's across players and with lines. Role r's carry about ±0.05 each, so these fair values are rougher than two-leg ones, roughly ±5%.
