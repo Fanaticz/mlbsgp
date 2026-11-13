@@ -1121,6 +1121,11 @@ def scan(a, emit):
           "league": a.league, "data": d["generated_at"][:10], "at": t0, "books": BOOKS["seen"]})
     pace, rows, lock = Pace(), [], threading.Lock()
 
+    def soonest(cs):
+        """Earliest game first, so a slate's early games are priced before
+        they start; within a game the order the candidates came in."""
+        return sorted(cs, key=lambda c: c.get("starts") or float("inf"))
+
     def one(c):
         pace.wait()
         quote, why = novig.parlay([L["id"] for L in c["legs"]])
@@ -1132,7 +1137,7 @@ def scan(a, emit):
                 emit({"type": "miss", "key": c["key"], "player": c["player"], "label": c["label"], "why": why})
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=a.workers) as pool:
-        first = [c for c in cands if c["tier"] == 1]
+        first = soonest(c for c in cands if c["tier"] == 1)
         list(pool.map(one, first))
         best, asked = {}, {c["id"] for c in first}
         for c in list(rows):
@@ -1148,7 +1153,7 @@ def scan(a, emit):
             up, kept = ladder, rest
             if up:
                 emit({"type": "more", "add": len(up), "players": len({c["id"] for c in up + kept})})
-        list(pool.map(one, up + kept))
+        list(pool.map(one, soonest(up + kept)))
         cands = first + up + kept
         if a.league == "nba" and a.scope != "ladder" and a.stars:
             asked_keys = {c["key"] for c in cands}
@@ -1156,12 +1161,12 @@ def scan(a, emit):
             if more:
                 emit({"type": "more", "add": len(more)})
                 cands = cands + more
-                list(pool.map(one, more))
+                list(pool.map(one, soonest(more)))
         if a.tri and a.tier in (0, 4):
             more = triples([c for c in rows if go(c)], ctx, stats, rfun, a)
             emit({"type": "more", "add": len(more)})
             cands = cands + more
-            list(pool.map(one, more))
+            list(pool.map(one, soonest(more)))
     emit({"type": "done", "quoted": len(cands), "priced": len(rows), "seconds": time.time() - t0, "at": time.time()})
     return rows
 
