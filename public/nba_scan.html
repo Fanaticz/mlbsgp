@@ -152,6 +152,9 @@
     <input type="number" id="minev" value="0" step="1" /></label>
   <label class="muted" title="Also price legs on Novig books up to 8¢ wide (10¢ for the second threes milestone). Their fair values are rough: marked ~.">
     <input type="checkbox" id="wide" /> Wide books</label>
+  <select id="game" title="Fetch one game or one slate instead of the whole board" style="background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:7px 10px;font-size:13px;max-width:230px">
+    <option value="">All games</option>
+  </select>
   <button type="button" id="now" title="Run one pass. Nothing is asked of Novig until you press this: each pass sends every combo to its pricers as a live auction. While a pass runs, this button stops it." style="background:var(--accent);border:0;color:#1a1a1a;font-weight:600;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;white-space:nowrap">Fetch</button>
   <button type="button" id="hidebets" title="Hide or show your own bets on this page, for a screenshot.">Hide my bets</button>
   <a class="back" id="corr" href="nba.html">Correlations →</a>
@@ -208,6 +211,36 @@ function pairOpts() {
   document.getElementById("pair").innerHTML = `<option value="">All pairs</option>` +
     PAIR_OPTS[LEAGUE].map(([v, t]) => `<option value="${v}">${t}</option>`).join("");
   document.getElementById("corr").href = CORR[LEAGUE] || "nba.html";
+}
+// The game picker: Fetch prices only the game or slate chosen (Novig event
+// ids), so one game takes a couple of minutes instead of the whole board's
+// half hour. Rows of the other games stay as they were.
+async function loadGames() {
+  const el = document.getElementById("game"), league = LEAGUE;
+  el.innerHTML = `<option value="">All games</option>`;
+  if (!KEY) return;
+  let games = [];
+  try {
+    const r = await fetch(`/api/nba/novig-games?league=${league}`, { cache: "no-store", headers: { "X-Scan-Key": KEY } });
+    if (r.ok) games = (await r.json()).games || [];
+  } catch (_) { /* the picker stays at All games */ }
+  if (league !== LEAGUE) return;
+  const day = ms => new Date(ms).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+  const soon = games.filter(g => g.starts > Date.now() && g.starts < Date.now() + 8 * 86400000);
+  const days = new Map();
+  for (const g of soon) (days.get(day(g.starts)) || days.set(day(g.starts), []).get(day(g.starts))).push(g);
+  const opt = (gs, text) => `<option value="${gs.slice(0, 40).map(g => g.id).join(",")}">${esc(text)}</option>`;
+  let html = `<option value="">All games</option>`;
+  for (const [d, gs] of days) {
+    html += `<optgroup label="${esc(d)}">`;
+    if (gs.length > 1) html += opt(gs, `All ${gs.length} games ${d}`);
+    const times = new Map();
+    for (const g of gs) (times.get(g.starts) || times.set(g.starts, []).get(g.starts)).push(g);
+    for (const [t, ts] of times) if (ts.length > 1 && ts.length < gs.length) html += opt(ts, `${clock(t)} slate · ${ts.length} games`);
+    for (const g of gs) html += opt([g], `${g.name} · ${clock(g.starts)}`);
+    html += `</optgroup>`;
+  }
+  el.innerHTML = html;
 }
 const OPEN = new Set();    // expanded rows, by key
 const BUSY = new Set();    // rows being priced again (their refresh button)
@@ -423,6 +456,8 @@ function render() {
   } else {
     st.textContent = S.busy ? `A ${BOARD[S.busy] || S.busy} pass is running. Wait for it, or stop it and fetch this board.` : "Press Fetch to scan.";
   }
+  if (S.events && S.events.length && (S.scanning || S.finished || S.stopped)) st.appendChild(Object.assign(document.createElement("div"),
+    { textContent: `Last pass: ${S.events.length === 1 ? "one game" : S.events.length + " games"} only. Other games’ rows are from earlier passes (see Age).` }));
   if (NOTE) st.appendChild(Object.assign(document.createElement("div"), { textContent: NOTE, style: "color:var(--accent)" }));
   // Ladder boards lean on DK's and FanDuel's prices: say so when one didn't load.
   if (LEAGUE.endsWith("ladder") && S.books && (S.finished || S.scanning) && !S.error) {
@@ -512,7 +547,7 @@ async function poll() {
   }
   try {
     const stop = STOP; STOP = false;
-    const r = await fetch(`/api/nba/novig-scan?league=${LEAGUE}${WIDE ? "&wide=1" : ""}${stop ? "&stop=1" : ""}${NOW ? "&now=1" : ""}`, { cache: "no-store", headers: { "X-Scan-Key": KEY } });
+    const r = await fetch(`/api/nba/novig-scan?league=${LEAGUE}${WIDE ? "&wide=1" : ""}${stop ? "&stop=1" : ""}${NOW ? "&now=1" + (document.getElementById("game").value ? "&events=" + document.getElementById("game").value : "") : ""}`, { cache: "no-store", headers: { "X-Scan-Key": KEY } });
     if (r.status === 403) {
       KEY = "";
       try { localStorage.removeItem(KEYLS); } catch (_) {}
@@ -554,10 +589,11 @@ document.getElementById("now").onclick = () => {
   poll();
 };
 pairOpts();
+loadGames();
 document.querySelectorAll("#league button").forEach(b => {
   b.classList.toggle("on", b.dataset.league === LEAGUE);
   b.onclick = () => {
-    LEAGUE = b.dataset.league; save(); OPEN.clear(); pairOpts();
+    LEAGUE = b.dataset.league; save(); OPEN.clear(); pairOpts(); loadGames();
     document.querySelectorAll("#league button").forEach(o => o.classList.toggle("on", o === b));
     document.getElementById("rows").innerHTML = "";
     poll();
@@ -574,6 +610,7 @@ document.getElementById("lock").onsubmit = e => {
   KEY = document.getElementById("pass").value.trim();
   document.getElementById("pass").value = "";
   try { localStorage.setItem(KEYLS, KEY); } catch (_) {}
+  loadGames();
   document.getElementById("lockmsg").textContent = "Checking…";
   poll();
 };

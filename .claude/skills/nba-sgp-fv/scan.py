@@ -15,6 +15,8 @@ player, ranked by EV at what Novig's slip pays.
   python3 scan.py --league nhl    # NHL: a skater's goals, assists, points and shots on goal, every pair
   python3 scan.py --league cfb    # college football: slips across a game's own lines
   python3 scan.py --league cbb    # college basketball: spread + total
+  python3 scan.py --league nfl --games         # the open games and their ids
+  python3 scan.py --league nfl --events ID ID  # only those games (the page's game picker)
   python3 scan.py --json          # one JSON object per line as quotes land
                                   # (server.js reads this for the Scanner page)
 
@@ -729,6 +731,8 @@ def nfl_slate(a, game):
         if not main or not teams or p.get("team_abbr") not in teams:
             continue   # no tight book, or he has changed teams since the data was built
         starts = min(r["starts"] for v in rows.values() for r in v)
+        if getattr(a, "events", None) and eid not in a.events:
+            continue   # --events: not one of the games asked for
         people.setdefault(eid, {}).setdefault(p["team_abbr"], []).append((p, main, starts))
     return S, events, people, vol
 
@@ -1455,6 +1459,33 @@ def finish(c, quote, unit, kelly):
     return c
 
 
+def catalog_leagues(league):
+    """Novig's league names behind a board."""
+    return {"nba": ("NBA",), "nfl": ("NFL",), "nhl": ("NHL",), "soccer": SOCCER_LEAGUES}.get(league) \
+        or (LINE_BOARDS[league]["league"],)
+
+
+def games(league):
+    """Open pregame games for the page's game picker (--games): [{id, name,
+    starts}], soonest first. The id is Novig's event id, which --events takes."""
+    out = {}
+    for lg in catalog_leagues(league):
+        for m in novig.catalog({"league": lg, "eventStatus": "OPEN_PREGAME", "marketType": "TOTAL,MONEY"}):
+            g = out.setdefault(m["eventId"], {"id": m["eventId"], "name": None, "starts": m["startsTs"]})
+            if m["marketType"] == "TOTAL" and " @ " in m["description"]:
+                g["name"] = m["description"].rsplit(" t", 1)[0]
+            elif not g["name"] and len(m["outcomes"]) == 2:
+                g["name"] = " v ".join(o["name"] for o in m["outcomes"])
+    return sorted((g for g in out.values() if g["name"]), key=lambda g: (g["starts"], g["name"]))
+
+
+def outcome_events(league):
+    """{outcome id: event id} for every open pregame market on the board's
+    league(s): which game a slip belongs to, whatever built it."""
+    return {o["outcomeId"]: m["eventId"] for lg in catalog_leagues(league)
+            for m in novig.catalog({"league": lg, "eventStatus": "OPEN_PREGAME"}) for o in m["outcomes"]}
+
+
 def requote(c, league, max_spread, unit, kelly):
     """One slip again (the page's refresh button; --requote): (the row with
     today's leg prices, a new Novig quote and EV, None), or (None, why).
@@ -1545,6 +1576,20 @@ def scan(a, emit):
     # was already good, and each quote is an auction sent to every pricer.
     # A player with no Points + Threes price at all (a big with no threes
     # line) has no signal either way, so his few combos are still asked.
+    # Each slip is tagged with its game (Novig's event id), and --events
+    # keeps only the games picked on the page.
+    try:
+        where = outcome_events(a.league) if a.events or a.league != "soccer" else {}
+    except OSError:
+        if a.events:
+            raise
+        where = {}
+
+    def mine(cs):
+        for c in cs:
+            c["event"] = where.get(c["legs"][0]["id"])
+        return [c for c in cs if not a.events or c["event"] in a.events]
+    cands = mine(cands)
     ladder = [c for c in cands if c["tier"] == 6]
     cands = [c for c in cands if c["tier"] != 6]
     if BOOKS["ladders"] is not None:   # the NBA ladder's lazy pull
@@ -1590,13 +1635,13 @@ def scan(a, emit):
         cands = first + up + kept
         if a.league == "nba" and a.scope != "ladder" and a.stars:
             asked_keys = {c["key"] for c in cands}
-            more = [c for c in star_triples(ctx, rfun, a) if c["key"] not in asked_keys]
+            more = mine([c for c in star_triples(ctx, rfun, a) if c["key"] not in asked_keys])
             if more:
                 emit({"type": "more", "add": len(more)})
                 cands = cands + more
                 list(pool.map(one, soonest(more)))
         if a.tri and a.tier in (0, 4):
-            more = triples([c for c in rows if go(c)], ctx, stats, rfun, a)
+            more = mine(triples([c for c in rows if go(c)], ctx, stats, rfun, a))
             emit({"type": "more", "add": len(more)})
             cands = cands + more
             list(pool.map(one, soonest(more)))
@@ -1662,7 +1707,14 @@ def main():
     ap.add_argument("--requote", action="store_true",
                     help="price one slip again: a board row (JSON) on stdin, the row with today's leg prices and "
                          "a new quote on stdout, or {\"error\": why}")
+    ap.add_argument("--events", nargs="+", default=None, metavar="ID",
+                    help="only these games (Novig event ids, from --games): the page's game picker")
+    ap.add_argument("--games", action="store_true", help="list the league's open pregame games as JSON and stop")
     a = ap.parse_args()
+    a.events = set(a.events) if a.events else None
+    if a.games:
+        print(json.dumps(games(a.league)))
+        return
     if a.requote:
         row, why = requote(json.load(sys.stdin), a.league, a.max_spread,
                            a.unit or (500.0 if a.league == "nhl" else 250.0), a.kelly)
