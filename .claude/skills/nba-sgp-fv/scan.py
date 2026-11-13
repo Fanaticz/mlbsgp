@@ -77,8 +77,13 @@ half's total, spread and moneyline. Both use league-wide r's by role
 public/data/nfl_stack_correlations.json, ten seasons of nflverse. A stack
 gets his --per highest-r combos; lines get his best prop with each kind of
 line, and his --per highest over the total, spread and team total.
+With the spread and the moneyline (and their first-half versions) the r
+used is the one for his team's side of today's spread: underdog of 3.5+,
+favourite of 3.5+, or between. A QB's attempts go against his team covering
+at -0.44 as a favourite and -0.15 as an underdog; a lead back's carries go
+with it at +0.22 as a favourite and +0.54 otherwise.
 The moneyline's r is measured within games of the same closing spread and
-comes out as the spread's (winning and covering are one margin); first-half
+comes out near the spread's (winning and covering are one margin); first-half
 r's run about three quarters of the full game's for scoring props and about
 the same for a back's carries and yards.
 
@@ -725,11 +730,40 @@ def prop_leg(p, s, main, who=""):
     return L
 
 
-def line_r(S, vol, p, s, line):
+SIDED = ("cover", "win", "h1cover", "h1win")   # lines whose r depends on who is favoured
+
+
+def side_of(ev, team):
+    """'dog', 'even' or 'fav': his team against today's spread (3.5 points
+    either way), from Novig's main spread, else its moneyline (63.5% is
+    about 3.5 points). None when neither has a tight book."""
+    ms = ev["lines"].get("SPREAD", [])
+    if ms:
+        m = min(ms, key=lambda m: (abs(m["p"][0] - 0.5) + m["spread"], -m["volume"]))
+        for n in m["names"]:
+            who, _, pts = n.partition(" ")
+            try:
+                if who == team:   # "TEN +10.5": he gets points, so favoured by -10.5
+                    return "dog" if float(pts) >= 3.5 else "fav" if float(pts) <= -3.5 else "even"
+            except ValueError:
+                pass
+    for m in ev["lines"].get("MONEY", []):
+        for n, q in zip(m["names"], m["p"]):
+            if n.split()[0] == team:
+                return "fav" if q >= 0.635 else "dog" if q <= 0.365 else "even"
+    return None
+
+
+def line_r(S, vol, p, s, line, side=None):
     """The role's r between his stat and a game line. A back's rushing and
-    his TD go by his carries, everything else by targets; a QB has one role."""
+    his TD go by his carries, everything else by targets; a QB has one role.
+    With the spread, the moneyline and their first-half versions the r is the
+    one for his team's side of the spread (a QB's attempts go against his
+    team covering at -0.44 as a favourite and -0.15 as an underdog)."""
     by_ = None if p["group"] == "QB" else "car" if p["group"] == "RB" and s in ("ryds", "car", "rry", "td") else "tgt"
-    return role_r(S["game"], by_ and vol(p, by_ + "_mean"), line=line, stat=s, pos=p["group"], by=by_)
+    v = by_ and vol(p, by_ + "_mean")
+    r = role_r(S["game"], v, line=line, stat=s, pos=p["group"], by=by_, side=side) if side and line in SIDED else None
+    return r if r is not None else role_r(S["game"], v, line=line, stat=s, pos=p["group"], by=by_, side=None)
 
 
 def line_leg(ev, p, team, line, side):
@@ -799,11 +833,12 @@ def nflx_candidates(a, game):
                             mine.append(row(p, starts, prop_leg(qb, qs, qmain, who), prop_leg(p, ts, main), r, "stack", 7))
                     out += sorted(mine, key=lambda c: -c["r"])[:a.per]
                 continue
+            side = side_of(ev, team)
             for p, main, starts in ps:
                 mine = []
                 for s in main:
                     for line in LINE_TYPES:
-                        r = line_r(S, vol, p, s, line)
+                        r = line_r(S, vol, p, s, line, side)
                         if r is None or abs(r) < a.line_r:
                             continue
                         lb = line_leg(ev, p, team, line, r)   # his team's side when r > 0, the other when r < 0
@@ -861,8 +896,9 @@ def nfl_tri_candidates(a):
     def with_line(ev, team, pa, la, pb, lb, rab):
         """(legs, pair r's, kind of line) for the two prop legs with each
         game line that goes the same way as both."""
+        fav = side_of(ev, team)
         for line in LINE_TYPES:
-            ra, rb = line_r(S, vol, pa, la["stat"], line), line_r(S, vol, pb, lb["stat"], line)
+            ra, rb = line_r(S, vol, pa, la["stat"], line, fav), line_r(S, vol, pb, lb["stat"], line, fav)
             if ra is None or rb is None:
                 continue
             side = 1 if ra + rb > 0 else -1
