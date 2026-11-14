@@ -494,7 +494,7 @@ function render() {
       b.error ? `<span style="color:var(--neg)" title="${esc(b.error)}">failed</span>` :
       Math.max(b.finished, b.stopped) ? ago(nowMs - Math.max(b.finished, b.stopped)) : "";
     st.classList.remove("err");
-    st.innerHTML = `${n} on all boards<div>` + S.boards.filter(b => at(b)).map(b => `${BOARD[b.league]} <b>${at(b)}</b>`).join(" · ") + `</div>`;
+    st.innerHTML = `${n} on all boards${S.out ? ` · ${S.out} hidden, player out` : ""}<div>` + S.boards.filter(b => at(b)).map(b => `${BOARD[b.league]} <b>${at(b)}</b>`).join(" · ") + `</div>`;
   } else if (S.scanning) {
     st.innerHTML = S.total ? `Scanning ${S.done} / ${S.total} combos on ${S.players} players · ${n}` : "Reading Novig’s lines…";
   } else if (S.error) {
@@ -505,7 +505,7 @@ function render() {
   } else if (S.finished) {
     const since = S.now + (Date.now() - GOT) - S.finished;
     st.innerHTML = `Saved from ${clock(Date.now() - since)} (${ago(since)}) · ${S.total} combos · ${n}` +
-      (started ? ` · ${started} hidden, game started` : "") +
+      (started ? ` · ${started} hidden, game started` : "") + (S.out ? ` · ${S.out} hidden, player out` : "") +
       (S.busy ? ` · a ${BOARD[S.busy] || S.busy} pass is running` : since > 20 * 60000 ? " · prices are old: Fetch before betting" : "");
   } else {
     st.textContent = S.busy ? `A ${BOARD[S.busy] || S.busy} pass is running. Wait for it, or stop it and fetch this board.` : "Press Fetch to scan.";
@@ -611,6 +611,7 @@ function render() {
     (SOC() || LEAGUE === "cfb" || LEAGUE === "cbb" || LEAGUE === "nbateam" ? `` : `Fair value: each leg is Novig’s own exchange book at that line, devigged worst case, joined with the player’s shrunk correlation${LEAGUE === "nfl" ? " (for a slip across two players or with a game line: the league-wide correlation for his role, position and targets or carries a game, from ten seasons of nflverse games against closing lines)" : ""}` +
     `${S.data ? ` (data ${S.data})` : ""}. `) + `Novig: the multiplier on its slip, its public quote after the 10% parlay fee. ` +
     `Quotes move by a few percent between asks and last about 30 seconds, so a row is a lead to re-check on the slip, and against sharp odds, before betting. ` +
+    `NFL and NBA players ESPN lists as out, on injured reserve, suspended or doubtful are left off (the count is in the line at the top): Novig can keep their props open for hours. ` +
     `Nothing is asked of Novig until you press Fetch or switch Auto-scan on; the last pass for each league stays here until the next one.`;
 }
 

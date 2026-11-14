@@ -2578,6 +2578,54 @@ function startNovigScan(league, wide, events, auto) {
   NV_RUN = { proc, key, auto: !!auto, stop: () => { end('', true); proc.kill(); } };
 }
 
+// Players who are out: ESPN's injury report for the NFL and the NBA, read
+// again every ten minutes while the boards are being looked at or auto-scan
+// is on. Novig keeps a ruled-out player's props open for hours (11-14: T.J.
+// Hockenson, out since Friday afternoon, still headed the board that night),
+// so his rows are left off the page and out of the top-plays re-pricing. They
+// stay in the saved board and come back if the report changes.
+// Out = ESPN's Out, Injured Reserve, Suspension or Doubtful.
+const NV_OUT = { nfl: { at: 0, names: new Map(), last: new Map() }, nba: { at: 0, names: new Map(), last: new Map() } };
+const NV_OUT_EVERY_MS = 10 * 60 * 1000;
+const nvName = n => String(n || '').toLowerCase().normalize('NFD').replace(/[^a-z ]/g, '').replace(/ (jr|sr|ii|iii|iv|v)$/, '').replace(/\s+/g, ' ').trim();
+let NV_OUT_BUSY = false;
+async function nvOutRefresh() {
+  if (NV_OUT_BUSY) return;
+  NV_OUT_BUSY = true;
+  for (const [lg, sport] of [['nfl', 'football/nfl'], ['nba', 'basketball/nba']]) {
+    if (Date.now() - NV_OUT[lg].at < NV_OUT_EVERY_MS) continue;
+    NV_OUT[lg].at = Date.now();   // a failed read waits its ten minutes too; the last good list stays
+    try {
+      const r = await fetch(`https://site.api.espn.com/apis/site/v2/sports/${sport}/injuries`, { signal: AbortSignal.timeout(30000) });
+      if (!r.ok) throw new Error('ESPN answered ' + r.status);
+      const names = new Map(), last = new Map();
+      for (const t of (await r.json()).injuries || []) {
+        for (const i of t.injuries || []) {
+          if (!/^(out|injured reserve|suspension|doubtful)$/i.test(i.status || '')) continue;
+          const a = i.athlete || {}, team = String((a.team || {}).abbreviation || '').toUpperCase();
+          names.set(nvName(a.displayName), i.status);
+          const l = nvName(a.lastName);   // "Stroud 21+ CMP": a leg on another player names him by last name
+          if (l) last.set(l, (last.get(l) || []).concat(team));
+        }
+      }
+      NV_OUT[lg].names = names; NV_OUT[lg].last = last;
+    } catch (e) { console.warn(`Novig scan: could not read ESPN's ${lg.toUpperCase()} injury report: ${e.message}`); }
+  }
+  NV_OUT_BUSY = false;
+}
+// Is this row's player (either one of a two-player slip, or a quarterback a
+// leg names) out?
+function nvOut(league, row) {
+  const O = NV_OUT[NV_PY_LEAGUE(league)];
+  if (!O || !O.names.size) return false;
+  if (String(row.player || '').split(' + ').some(n => O.names.has(nvName(n)))) return true;
+  const team = String(row.team || '').toUpperCase();
+  return (row.legs || []).some(L => {
+    const teams = L.text && O.last.get(nvName(String(L.text).split(' ')[0]));
+    return !!teams && teams.includes(team) && /^[A-Z][a-z'.-]+ \d/.test(L.text);
+  });
+}
+
 // Auto-scan: while switched on (the page's Auto-scan button), the server runs
 // whole-board passes of NBA, NBA Team, NFL, CBB, CFB and soccer one after another, with or
 // without the page open. Still one pass at a time: a pass asked for with
@@ -2651,17 +2699,20 @@ app.get('/api/nba/novig-scan', (req, res) => {
   const now = Date.now();
   // One pass at a time (Novig's limit is per IP), and only when asked.
   if (req.query.stop === '1' && NV_RUN) NV_RUN.stop();
+  nvOutRefresh();
   // league=all[&min=EV%]: the page's All tab. Every board's rows at that EV
   // or better whose game hasn't started, each tagged with its board, and
   // where each board's last pass stands. Never starts a pass.
   if (req.query.league === 'all') {
     const floor = Number.isFinite(parseFloat(req.query.min)) ? parseFloat(req.query.min) / 100 : 0;
     const boards = [], rows = [];
+    let out = 0;
     for (const league of NV_ALL_BOARDS) {
       const k = `${league}:${wide ? 1 : 0}`, B = NV_BOARDS.get(k) || {};
       let priced = 0;
       for (const r of (B.rows ? B.rows.values() : [])) {
         if (r.starts && r.starts <= now) continue;
+        if (nvOut(league, r)) { out++; continue; }
         priced++;
         if (r.ev >= floor) rows.push(Object.assign({}, r, { board: league }));
       }
@@ -2669,7 +2720,7 @@ app.get('/api/nba/novig-scan', (req, res) => {
                     stopped: B.stopped || 0, total: B.total || 0, done: B.done || 0, error: B.error || null, priced });
     }
     return res.json({ now, league: 'all', wide, scanning: false, busy: NV_RUN ? NV_RUN.key.split(':')[0] : null,
-                      boards, rows, cycle: nvCycleState() });
+                      boards, rows, out, cycle: nvCycleState() });
   }
   // events=id,id: only those games (the page's game picker).
   const events = String(req.query.events || '').split(',').filter(x => /^[0-9a-f-]{16,40}$/i.test(x)).slice(0, 40);
@@ -2677,11 +2728,12 @@ app.get('/api/nba/novig-scan', (req, res) => {
   const other = events.join() !== (B.events || []).join();   // other games than the last pass: no minute's wait
   if (req.query.now === '1' && !NV_RUN && (B.stopped || other || now - Math.max(B.finished, B.started) > NV_SCAN_NOW_MS)) startNovigScan(league, wide, events);
   const mine = !!NV_RUN && NV_RUN.key === key;
+  const shown = [...B.rows.values()].filter(r => !nvOut(league, r));
   res.json({
     now, league, wide, scanning: mine, busy: NV_RUN && !mine ? NV_RUN.key.split(':')[0] : null,
     started: B.started, finished: B.finished, stopped: B.stopped || 0, total: B.total, done: B.done, players: B.players, data: B.data,
-    seconds: B.seconds, error: B.error, books: B.books || null, events: B.events || [], rows: [...B.rows.values()],
-    cycle: nvCycleState(),
+    seconds: B.seconds, error: B.error, books: B.books || null, events: B.events || [], rows: shown,
+    out: B.rows.size - shown.length, cycle: nvCycleState(),
   });
 });
 // The boards the All tab gathers (the hidden NHL boards are left out).
@@ -2786,12 +2838,14 @@ app.post('/api/nba/novig-requote', (req, res) => {
 const NV_TOP_N = 8, NV_TOP_EVERY_MS = 5 * 60 * 1000;
 const NV_TOP = { busy: false, at: 0, n: 0 };   // at: when the last round ended; n: slips it re-priced
 function nvTopTick() {
+  if (NV_CYCLE) nvOutRefresh();
+  if (NV_OUT_BUSY) return;   // the injury report is being read: wait for it (next tick)
   if (!NV_CYCLE || NV_TOP.busy || nvCycleQuiet() || Date.now() - NV_TOP.at < NV_TOP_EVERY_MS) return;
   const wide = NV_CYCLE.wide, now = Date.now(), best = new Map();   // by slip: the same legs can sit on two boards
   for (const league of NV_ALL_BOARDS) {
     const B = NV_BOARDS.get(`${league}:${wide ? 1 : 0}`);
     for (const r of (B ? B.rows.values() : [])) {
-      if (r.ev > 0 && (!r.starts || r.starts > now) && !best.has(r.key)) best.set(r.key, { league, key: r.key, ev: r.ev });
+      if (r.ev > 0 && (!r.starts || r.starts > now) && !best.has(r.key) && !nvOut(league, r)) best.set(r.key, { league, key: r.key, ev: r.ev });
     }
   }
   const todo = [...best.values()].sort((a, b) => b.ev - a.ev).slice(0, NV_TOP_N);

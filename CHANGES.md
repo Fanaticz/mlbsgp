@@ -2,6 +2,14 @@
 
 ## 2026-11-14 session
 
+### Novig Scan: players who are out are left off
+Max, 11-14: T.J. Hockenson headed the All tab at +15.9% five hours after he was ruled out; Novig still had his props open.
+
+- The server reads ESPN's NFL and NBA injury reports (`site.api.espn.com/.../injuries`, every ten minutes while the page is open or Auto-scan is on; `nvOutRefresh`, `nvOut` in `server.js`). A row is left off every tab, and out of the five-minute top-plays re-pricing, when its player is listed Out, Injured Reserve, Suspension or Doubtful: the row's player, either player of a two-player slip, or a quarterback one of its legs names (matched on last name and team).
+- Matching is by name. A row stays in the saved board and returns if the report changes. The status line counts them ("3 hidden, player out"). A full pass still asks Novig about them: this hides rows, it does not yet skip them in `scan.py`.
+- Not covered: Questionable and game-time decisions (they stay), and college or soccer players (those boards have no player props).
+- Checked against ESPN's live report with a stand-in board: Hockenson's row and a slip with an out quarterback's leg were hidden, a healthy player's row and a game-line row were not.
+
 ### Novig Scan: Auto-scan stays on through a redeploy
 Every push to `main` redeploys the server, which switched Auto-scan off each time (its state was in memory). It is now written to `novig_cycle.json` beside the saved boards and read back at start, so it carries on after a restart, on the same Wide books setting and time zone, and still ends a week after it was switched on. This holds where that directory is a volume (`NBA_DATA_DIR` or `/data/nba`), the same condition as for the saved boards and bets. Checked: switched on, server killed and started again, it was still on and started a pass; switched off, restarted, it stayed off.
 
