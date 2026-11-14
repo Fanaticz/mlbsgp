@@ -2,6 +2,9 @@
 
 ## 2026-11-14 session
 
+### Novig Scan: the five-minute re-pricing of the top eight is removed
+Max, 11-14: with slips above fair now asked again until they settle, the separate re-pricing of the eight best plays every five minutes is not needed. `nvTopTick` and its status text are gone (about 100 fewer quotes an hour); the row refresh button is unchanged. The injury report is now refreshed from the auto-scan tick. A row's price is as old as its board's last pass (its Age), so press the row's refresh before betting an old one.
+
 ### Novig Scan: a slip above fair is asked again until its price settles
 Max, 11-14: the top plays are "fake"; on the slip the odds are lower before he has put money in.
 

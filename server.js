@@ -2582,7 +2582,7 @@ function startNovigScan(league, wide, events, auto) {
 // again every ten minutes while the boards are being looked at or auto-scan
 // is on. Novig keeps a ruled-out player's props open for hours (11-14: T.J.
 // Hockenson, out since Friday afternoon, still headed the board that night),
-// so his rows are left off the page and out of the top-plays re-pricing. They
+// so his rows are left off the page. They
 // stay in the saved board and come back if the report changes.
 // Out = ESPN's Out, Injured Reserve, Suspension or Doubtful.
 const NV_OUT = { nfl: { at: 0, names: new Map(), last: new Map() }, nba: { at: 0, names: new Map(), last: new Map() } };
@@ -2661,6 +2661,7 @@ function nvCycleQuiet() {
 }
 function nvCycleTick(first) {
   if (!NV_CYCLE) return;
+  nvOutRefresh();   // the injury report, kept current while auto-scan runs
   const now = Date.now();
   if (now - NV_CYCLE.since > NV_CYCLE_MAX_MS) { NV_CYCLE = null; nvSaveCycle(); return; }
   if (NV_RUN || nvCycleQuiet() || (!first && now - NV_LAST_END < NV_CYCLE_GAP_MS)) return;
@@ -2676,8 +2677,7 @@ function nvCycleTick(first) {
 setInterval(nvCycleTick, 15000).unref();
 const nvCycleState = () => NV_CYCLE
   ? { on: true, wide: NV_CYCLE.wide, boards: NV_CYCLE_BOARDS, next: NV_CYCLE_BOARDS[NV_CYCLE.i], until: NV_CYCLE.since + NV_CYCLE_MAX_MS,
-      quiet: nvCycleQuiet(), hours: NV_CYCLE_QUIET,
-      top: { n: NV_TOP_N, at: NV_TOP.at, done: NV_TOP.n, busy: NV_TOP.busy } }
+      quiet: nvCycleQuiet(), hours: NV_CYCLE_QUIET }
   : { on: false, boards: NV_CYCLE_BOARDS };
 
 // GET /api/nba/novig-scan?league=nba|ladder|nbateam|nfl|nflladder|nhl|nhllines|soccer|cfb|cbb[&wide=1][&now=1][&stop=1][&events=id,id] — that
@@ -2820,46 +2820,8 @@ function nvRequote(league, wide, key, cb) {
 app.post('/api/nba/novig-requote', (req, res) => {
   if (!nvBetsAuth(req, res)) return;
   const { league, wide, key } = req.body || {};
-  // While the top plays are being re-priced (below) a press of the button
-  // waits for the gap between two of them instead of being turned away.
-  const go = tries => {
-    if (NV_REQUOTE && NV_TOP.busy && tries < 60) return setTimeout(() => go(tries + 1), 500);
-    nvRequote(league, wide, key, (why, row, code) => why ? res.status(code).json({ error: why }) : res.json({ row, now: Date.now() }));
-  };
-  go(0);
+  nvRequote(league, wide, key, (why, row, code) => why ? res.status(code).json({ error: why }) : res.json({ row, now: Date.now() }));
 });
-
-// Top plays kept fresh: while auto-scan is on (and not paused for the night),
-// every five minutes the eight best slips across all boards are priced again,
-// one after another, with the same single-slip re-quote as a row's refresh
-// button. A full pass comes round to a board only every half hour or more,
-// and the best prices are the ones that move. A slip whose price has dropped
-// falls down the list, so the next round takes whatever is then on top.
-const NV_TOP_N = 8, NV_TOP_EVERY_MS = 5 * 60 * 1000;
-const NV_TOP = { busy: false, at: 0, n: 0 };   // at: when the last round ended; n: slips it re-priced
-function nvTopTick() {
-  if (NV_CYCLE) nvOutRefresh();
-  if (NV_OUT_BUSY) return;   // the injury report is being read: wait for it (next tick)
-  if (!NV_CYCLE || NV_TOP.busy || nvCycleQuiet() || Date.now() - NV_TOP.at < NV_TOP_EVERY_MS) return;
-  const wide = NV_CYCLE.wide, now = Date.now(), best = new Map();   // by slip: the same legs can sit on two boards
-  for (const league of NV_ALL_BOARDS) {
-    const B = NV_BOARDS.get(`${league}:${wide ? 1 : 0}`);
-    for (const r of (B ? B.rows.values() : [])) {
-      if (r.ev > 0 && (!r.starts || r.starts > now) && !best.has(r.key) && !nvOut(league, r)) best.set(r.key, { league, key: r.key, ev: r.ev });
-    }
-  }
-  const todo = [...best.values()].sort((a, b) => b.ev - a.ev).slice(0, NV_TOP_N);
-  if (!todo.length) { NV_TOP.at = now; NV_TOP.n = 0; return; }
-  NV_TOP.busy = true;
-  let n = 0;
-  const next = () => {
-    const t = todo.shift();
-    if (!t || !NV_CYCLE) { NV_TOP.busy = false; NV_TOP.at = Date.now(); NV_TOP.n = n; return; }
-    nvRequote(t.league, wide, t.key, why => { if (!why) n++; setTimeout(next, 1500); });
-  };
-  next();
-}
-setInterval(nvTopTick, 15000).unref();
 
 app.get('/api/nba/novig-bets', (req, res) => { if (nvBetsAuth(req, res)) res.json({ bets: nvBets(), epoch: NV_BETS_EPOCH }); });
 app.post('/api/nba/novig-bets', (req, res) => {
