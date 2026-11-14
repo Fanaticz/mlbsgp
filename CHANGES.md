@@ -1,5 +1,15 @@
 # Changes
 
+## 2026-11-14 session
+
+### Novig Scan: the top plays are re-priced every five minutes
+Max, 11-14: by the time he looks at a top play its price is often well down. A full pass returns to a board only every half hour or more, so the best rows were the stalest where it matters most.
+
+- While Auto-scan is on (and not paused for the night), every five minutes the eight best slips across all boards (EV above zero, game not started) are priced again, one after another, with the single-slip re-quote behind a row's refresh button (`nvTopTick`, `NV_TOP_N`, `NV_TOP_EVERY_MS` in `server.js`; the route's body is now `nvRequote`). It runs beside a full pass. A slip whose price dropped falls down the list and the next round takes the new top eight. A slip Novig no longer prices keeps its old row and Age.
+- The status line says when the top eight were last re-priced. A press of a row's refresh button during a round waits for the gap between two slips instead of failing.
+- Cost: about 100 more quotes an hour.
+- Checked with a stand-in for `scan.py`: a round re-priced the eight best rows across two boards and left the rest; off stopped it. Not run against Novig from here.
+
 ## 2026-11-13 session
 
 ### Novig Scan: QK in dollars
