@@ -432,6 +432,7 @@ function detail(c) {
       c.games ? `${c.games} games${c.kind === "mate" ? " together" : ""}` : c.role ? "league-wide r for his position and ice time" : "position average r") : null,
     `books ${c.legs.map(L => (100 * L.width).toFixed(1)).join(" / ")}¢`,
     `quote ${c.raw_x.toFixed(2)}x before fee`,
+    c.first_x && c.asks > 1 ? (Math.abs(c.first_x - c.slip_x) > 0.005 ? `first quote ${c.first_x.toFixed(2)}x, settled over ${c.asks} asks` : `same price on ${c.asks} asks`) : null,
     c.qk > 0 ? `${c.qk.toFixed(2)}u` : null,
     c.forced ? "threes alone clear the points line" : null,
   ].filter(Boolean).join(" · ");
@@ -610,7 +611,8 @@ function render() {
     (LEAGUE === "nba" ? `NBA: one slip a player, his main-line Points + Threes, to keep the number of requests Novig’s pricers see down. The big-stat players (Doncic, Curry, Wembanyama, Gilgeous-Alexander, Jerome, Tatum, Jokic, and anyone whose points line is 26.5 or higher) also get their three-leg slips asked at main lines: every three of points, rebounds, assists and threes, folded under the player’s “more” chip. ` : "") +
     (SOC() || LEAGUE === "cfb" || LEAGUE === "cbb" || LEAGUE === "nbateam" ? `` : `Fair value: each leg is Novig’s own exchange book at that line, devigged worst case, joined with the player’s shrunk correlation${LEAGUE === "nfl" ? " (for a slip across two players or with a game line: the league-wide correlation for his role, position and targets or carries a game, from ten seasons of nflverse games against closing lines)" : ""}` +
     `${S.data ? ` (data ${S.data})` : ""}. `) + `Novig: the multiplier on its slip, its public quote after the 10% parlay fee. ` +
-    `Quotes move by a few percent between asks and last about 30 seconds, so a row is a lead to re-check on the slip, and against sharp odds, before betting. ` +
+    `Novig’s first quote on a slip is often not its price (it can be far higher, and is gone half a minute later), so a slip that comes back above fair is asked again until two quotes in a row agree, and the row shows that settled price. ` +
+    `Quotes still move by a few percent between asks and last about 30 seconds, so a row is a lead to re-check on the slip, and against sharp odds, before betting. ` +
     `NFL and NBA players ESPN lists as out, on injured reserve, suspended or doubtful are left off (the count is in the line at the top): Novig can keep their props open for hours. ` +
     `Nothing is asked of Novig until you press Fetch or switch Auto-scan on; the last pass for each league stays here until the next one.`;
 }

@@ -2,6 +2,15 @@
 
 ## 2026-11-14 session
 
+### Novig Scan: a slip above fair is asked again until its price settles
+Max, 11-14: the top plays are "fake"; on the slip the odds are lower before he has put money in.
+
+- **What was found** (asked from here, 11-14): Novig's first quote on a slip it hasn't been asked lately is often not its price. Goff 36+ pass attempts + 269+ yards quoted 4.14x, then 2.32x on every ask after; Herbert's 1.73x, 2.83x, then 2.33x; three other quarterbacks' slips gave the same price five times running. Mahomes 33+ attempts + 241+ yards, +25% on the board at 3.34x, quoted 2.65x (fair, +167) six times a few minutes later. The board showed each slip's first quote, and sorting 1,500 of them by EV put the wrong ones on top.
+- **Fix** (`settle` in `scan.py`'s `scan()`; `SETTLE_S`, `SETTLE_TOL`, `SETTLE_MAX`): a slip whose quote comes back above fair is held back and asked again 40 seconds later, until two quotes in a row agree within 2% (three more asks at most, then the worse of the last two). Its row is sent only then, at the settled price. Slips at or under fair are sent on the first quote as before. An opened row shows "first quote 4.14x, settled over 2 asks".
+- **Live check** (SEA @ LV, 116 slips, all priced, 190 seconds): 15 came back above fair on the first quote. Asked again, 10 fell under fair (14.75x to 8.91x, 18.26x to 13.07x, 4.05x to 2.58x, 9.36x to 6.82x, ...) and 5 gave the same price, at +0.5% to +3.3%. So expect far fewer plays and far smaller EVs than before: the big numbers were first quotes.
+- **Cost**: one or two more quotes for each slip above fair; a pass's plays appear 40 seconds or more after they are first priced.
+- **Not known**: whether the first quote can be bet by someone who asks first on the slip (asking may be what moves it), and whether a slip quoted low at first would settle above fair (those are not asked again).
+
 ### Novig Scan: players who are out are left off
 Max, 11-14: T.J. Hockenson headed the All tab at +15.9% five hours after he was ruled out; Novig still had his props open.
 

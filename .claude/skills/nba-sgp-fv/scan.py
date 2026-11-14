@@ -1895,6 +1895,9 @@ def requote(c, league, max_spread, unit, kelly):
     return finish(c, quote, unit, kelly), None
 
 
+SETTLE_S, SETTLE_TOL, SETTLE_MAX = 40, 0.02, 3   # see `pending` in scan()
+
+
 def scan(a, emit):
     """Quote every candidate; emit(event dict) as things happen. Returns the priced rows."""
     t0 = time.time()
@@ -1975,19 +1978,67 @@ def scan(a, emit):
         they start; within a game the order the candidates came in."""
         return sorted(cs, key=lambda c: c.get("starts") or float("inf"))
 
+    # Novig's first quote on a slip it hasn't been asked lately is not its
+    # price: asked again half a minute later it has moved, often a long way
+    # (11-14, Goff 36+ pass attempts + 269+ yards: 4.14x, then 2.32x on every
+    # ask after; Herbert's 1.73x, 2.83x, then 2.33x). The page showed those
+    # first quotes as the best plays and the price was gone on the slip. So a
+    # slip that comes back above fair is held back and asked again SETTLE_S
+    # later, until two quotes in a row agree within SETTLE_TOL (SETTLE_MAX
+    # more asks at most, then the worse of the last two). Only then is its
+    # row sent, at the settled price; first_x keeps the first quote.
+    pending = []   # [when to ask again, combo, the last quote, asks so far]
+
+    def settle(wait=False):
+        """Ask again the held slips that are due (wait: every held slip,
+        sleeping until each is due)."""
+        while True:
+            with lock:
+                due = [x for x in pending if wait or x[0] <= time.time()]
+                if not due:
+                    return
+                x = min(due, key=lambda x: x[0])
+                pending.remove(x)
+            when, c, last, asks = x
+            if when > time.time():
+                time.sleep(when - time.time())
+            pace.wait()
+            quote, why = novig.parlay([L["id"] for L in c["legs"]])
+            with lock:
+                if not quote:
+                    emit({"type": "miss", "key": c["key"], "player": c["player"], "label": c["label"], "why": why})
+                    continue
+                agree = abs(quote - last) <= SETTLE_TOL * last
+                finish(c, quote, a.unit, a.kelly)
+                c["asks"] = asks + 1
+                if c["ev"] > 0 and not agree:
+                    if asks < SETTLE_MAX:
+                        pending.append([time.time() + SETTLE_S, c, quote, asks + 1])
+                        continue
+                    finish(c, max(quote, last), a.unit, a.kelly)   # never settled: the worse price
+                rows.append(c)
+                emit(dict(c, type="row"))
+
     def one(c):
         pace.wait()
         quote, why = novig.parlay([L["id"] for L in c["legs"]])
         with lock:
             if quote:
-                rows.append(finish(c, quote, a.unit, a.kelly))
-                emit(dict(c, type="row"))
+                finish(c, quote, a.unit, a.kelly)
+                if c["ev"] > 0:
+                    c["first_x"] = c["slip_x"]
+                    pending.append([time.time() + SETTLE_S, c, quote, 1])
+                else:
+                    rows.append(c)
+                    emit(dict(c, type="row"))
             else:
                 emit({"type": "miss", "key": c["key"], "player": c["player"], "label": c["label"], "why": why})
+        settle()
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=a.workers) as pool:
         first = soonest(c for c in cands if c["tier"] == 1)
         list(pool.map(one, first))
+        settle(wait=True)   # the gate below reads the settled prices
         best, asked = {}, {c["id"] for c in first}
         for c in list(rows):
             best[c["id"]] = max(best.get(c["id"], -9.0), c["ev"])
@@ -2003,6 +2054,7 @@ def scan(a, emit):
             if up:
                 emit({"type": "more", "add": len(up), "players": len({c["id"] for c in up + kept})})
         list(pool.map(one, soonest(up + kept)))
+        settle(wait=True)
         cands = first + up + kept
         if a.league == "nba" and a.scope != "ladder" and a.stars:
             asked_keys = {c["key"] for c in cands}
@@ -2011,11 +2063,13 @@ def scan(a, emit):
                 emit({"type": "more", "add": len(more)})
                 cands = cands + more
                 list(pool.map(one, soonest(more)))
+                settle(wait=True)
         if a.tri and a.tier in (0, 4):
             more = mine(triples([c for c in rows if go(c)], ctx, stats, rfun, a))
             emit({"type": "more", "add": len(more)})
             cands = cands + more
             list(pool.map(one, soonest(more)))
+            settle(wait=True)
     emit({"type": "done", "quoted": len(cands), "priced": len(rows), "seconds": time.time() - t0, "at": time.time()})
     return rows
 
