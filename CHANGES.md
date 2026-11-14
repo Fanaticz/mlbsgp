@@ -2,6 +2,9 @@
 
 ## 2026-11-14 session
 
+### Novig Scan: Auto-scan stays on through a redeploy
+Every push to `main` redeploys the server, which switched Auto-scan off each time (its state was in memory). It is now written to `novig_cycle.json` beside the saved boards and read back at start, so it carries on after a restart, on the same Wide books setting and time zone, and still ends a week after it was switched on. This holds where that directory is a volume (`NBA_DATA_DIR` or `/data/nba`), the same condition as for the saved boards and bets. Checked: switched on, server killed and started again, it was still on and started a pass; switched off, restarted, it stayed off.
+
 ### Novig Scan: the top plays are re-priced every five minutes
 Max, 11-14: by the time he looks at a top play its price is often well down. A full pass returns to a board only every half hour or more, so the best rows were the stalest where it matters most.
 

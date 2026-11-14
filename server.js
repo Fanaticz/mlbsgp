@@ -2590,17 +2590,31 @@ const NV_CYCLE_MAX_MS = 7 * 24 * 60 * 60 * 1000;   // switches itself off, so a 
 // that switched auto-scan on (its time zone comes with the request). A pass
 // already running at 10 finishes.
 const NV_CYCLE_QUIET = [22, 8];
+let NV_CYCLE = null;   // { since, wide, i, tz } while on; i = the next board in NV_CYCLE_BOARDS
+// Kept on disk beside the boards, so a redeploy or restart doesn't switch
+// auto-scan off (where that directory is a volume; elsewhere it is lost with
+// the disk, as the boards are). It still ends a week after it was switched on.
+const NV_CYCLE_FILE = NV_SCAN_FILE ? path.join(path.dirname(NV_SCAN_FILE), 'novig_cycle.json') : null;
+function nvSaveCycle() {
+  if (NV_CYCLE_FILE) require('fs').writeFile(NV_CYCLE_FILE, JSON.stringify(NV_CYCLE), () => {});
+}
+try {
+  const c = JSON.parse(require('fs').readFileSync(NV_CYCLE_FILE, 'utf8'));
+  if (c && Number(c.since) > 0 && Date.now() - c.since < NV_CYCLE_MAX_MS) {
+    NV_CYCLE = { since: Number(c.since), wide: !!c.wide, i: 0, tz: String(c.tz || '').slice(0, 64) };
+    console.log('Novig auto-scan: still on from before the restart');
+  }
+} catch (_) { /* it was off */ }
 function nvCycleQuiet() {
   let h;
   try { h = +new Intl.DateTimeFormat('en-US', { hour: 'numeric', hourCycle: 'h23', timeZone: NV_CYCLE.tz }).format(new Date()); }
   catch (_) { h = +new Intl.DateTimeFormat('en-US', { hour: 'numeric', hourCycle: 'h23', timeZone: 'America/New_York' }).format(new Date()); }
   return h >= NV_CYCLE_QUIET[0] || h < NV_CYCLE_QUIET[1];
 }
-let NV_CYCLE = null;   // { since, wide, i, tz } while on; i = the next board in NV_CYCLE_BOARDS
 function nvCycleTick(first) {
   if (!NV_CYCLE) return;
   const now = Date.now();
-  if (now - NV_CYCLE.since > NV_CYCLE_MAX_MS) { NV_CYCLE = null; return; }
+  if (now - NV_CYCLE.since > NV_CYCLE_MAX_MS) { NV_CYCLE = null; nvSaveCycle(); return; }
   if (NV_RUN || nvCycleQuiet() || (!first && now - NV_LAST_END < NV_CYCLE_GAP_MS)) return;
   for (let n = 0; n < NV_CYCLE_BOARDS.length; n++) {
     const at = (NV_CYCLE.i + n) % NV_CYCLE_BOARDS.length, league = NV_CYCLE_BOARDS[at];
@@ -2681,9 +2695,11 @@ app.post('/api/nba/novig-cycle', (req, res) => {
   const { on, wide, tz } = req.body || {};
   if (on) {
     if (!NV_CYCLE || NV_CYCLE.wide !== !!wide) NV_CYCLE = { since: Date.now(), wide: !!wide, i: 0, tz: String(tz || '').slice(0, 64) };
+    nvSaveCycle();
     nvCycleTick(true);
   } else {
     NV_CYCLE = null;
+    nvSaveCycle();
     if (NV_RUN && NV_RUN.auto) NV_RUN.stop();
   }
   res.json({ cycle: nvCycleState() });
