@@ -2,6 +2,9 @@
 
 ## 2026-11-14 session
 
+### Novig Scan: Auto-scan is a plain on/off switch
+Max, 11-14: turn it on and off at any time; no time rules. Gone: the 10 PM to 8 AM pause, the one-week limit and the "are you sure" prompt. The button switches it on at once, at any hour, and it runs until the button is pressed again (it still comes back on after a redeploy if it was on). A minute between passes and ten minutes before the same board is asked again are unchanged. Checked with a stand-in scanner: on started a pass at once, off stopped it, on again after a restart.
+
 ### Novig Scan: the five-minute re-pricing of the top eight is removed
 Max, 11-14: with slips above fair now asked again until they settle, the separate re-pricing of the eight best plays every five minutes is not needed. `nvTopTick` and its status text are gone (about 100 fewer quotes an hour); the row refresh button is unchanged. The injury report is now refreshed from the auto-scan tick. A row's price is as old as its board's last pass (its Age), so press the row's refresh before betting an old one.
 
