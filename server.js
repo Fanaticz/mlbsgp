@@ -2455,7 +2455,7 @@ const NV_SCAN_PY = path.join(__dirname, '.claude', 'skills', 'nba-sgp-fv', 'scan
 // page's Fetch button asks for one (?now=1), at most once a minute for the
 // same board.
 const NV_SCAN_NOW_MS = 60 * 1000;
-const NV_SCAN_MAX_MS = 45 * 60 * 1000;   // a pass stuck this long is killed (the NFL tab on a full board runs 20 to 25 minutes)
+const NV_SCAN_MAX_MS = 90 * 60 * 1000;   // a pass stuck this long is killed (the NFL tab on a full board, Unders included, runs about 50 minutes)
 // One board per league and book width ("nba:0", "nfl:1", ...). The last pass
 // of each is kept, in memory and on disk, until the next Fetch replaces it:
 // leaving the page, switching league or a redeploy doesn't lose it (the disk

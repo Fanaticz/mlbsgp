@@ -293,7 +293,8 @@ docstring for what was tested.
 Receptions·TD and Yards·TD (TD = Novig's TOUCHDOWNS 0.5, any touchdown) for
 the WRs, TEs and RBs in `public/data/nfl_correlations.json`, then the three
 together. No rushing props (no r for them). NFL books are thin until late in
-the week.
+the week. Unders are asked too (Under + Under on the same pairs, stacks and
+game lines; `--no-unders` leaves them out): see scan.py's docstring.
 The same pass asks QB + receiver stacks and a prop with a game line (the
 total, spread, moneyline, team total, and the first half's total, spread and
 moneyline), from the role r's in `public/data/nfl_stack_correlations.json`.

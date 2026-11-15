@@ -2,6 +2,22 @@
 
 ## 2026-11-15 session
 
+### Novig Scan: NFL Unders
+Max, 11-15: "I don't ever see NFL unders" (the NFL board built every player prop as an Over); Unders are fair play.
+
+- **Asked now** (`scan.py --league nfl`; `--no-unders` leaves them out):
+  - a player's **Under + Under** on each of his own pairs (`nfl_candidates`), at the same r as the Over + Over;
+  - a stack's **Under + Under** (QB passing Under + his receiver's Under);
+  - **Over + Under across a QB and his back**, both ways (`STACK_AGAINST`): pass attempts against carries (-0.29 for a lead back, -0.20 at 8 to 13 carries) and passing yards against rushing yards (-0.15, lead backs only). These were in `nfl_stack_correlations.json` and not asked;
+  - a prop's **Under + the game line's other side** (a back's rushing yards Under + the other team covering).
+  Stacks and lines get each player's allowance (`--per`) again for the Unders, so they don't push his Overs out. Three-leg slips are still all Overs.
+- **The r** is the Overs': a copula r fitted to how often both Overs hit gives how often both Unders hit as well, and its negative gives one Over with the other Under.
+- **Novig prices them.** One NFL player's Under + Under is quoted (St. Brown U7.5 REC + U81.5 YDS; Addison the same), unlike the NBA's, which it refuses. Sixteen probe slips of the eight shapes on DET and MIN all came back with a price.
+- **Not asked**: an Under + Under where a leg is U0.5 of anything but a touchdown (U0.5 receptions is U any yards: one leg, not two).
+- **Page**: the NFL filter has "Unders: any slip with a prop Under"; the note under the board says what is asked.
+- **A pass is twice as long**: 1,488 slips to 2,996 on the 11-15 slate (counted without asking for quotes), about 50 minutes at a quote a second, so the server's limit on one pass goes from 45 to 90 minutes (`NV_SCAN_MAX_MS`).
+- **Checked**: `--kind stacks` on NE @ DET end to end against Novig, 60-odd rows, Unders and Over + Under among them, none above fair (best -2.1%). The props and lines Unders were counted and spot-read, not quoted in bulk; the page was not opened in a browser and a full pass was not timed.
+
 ### Novig Scan: NFL slips with a fair value longer than +600 are not asked
 Max, 11-15: keep the FVs we scan under +600 (the NFL board was headed by 70x slips at +2209 and +2311); NFL only.
 

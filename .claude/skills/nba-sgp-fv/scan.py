@@ -106,8 +106,10 @@ against 26.6%), which a straight line misses. Threes were in the wrong
 role for 26 of 83 players when the role was read off the line alone.
 
 NFL (--league nfl): WRs, TEs and RBs in public/data/nfl_correlations.json,
-whose shrunk r's are already copula correlations. Over + Over at main lines
-on Receptions·Yards, Receptions·TD and Yards·TD (TD = Novig's TOUCHDOWNS 0.5,
+whose shrunk r's are already copula correlations. Over + Over at main lines,
+and Under + Under on the same pairs at the same r (Max, 11-15: Unders are
+fair play; Novig prices one NFL player's Under + Under, unlike the NBA's;
+--no-unders leaves every Under out), on Receptions·Yards, Receptions·TD and Yards·TD (TD = Novig's TOUCHDOWNS 0.5,
 any touchdown, as the data counts receiving + rushing), then the three
 together (--scope all). Quarterbacks: Over + Over at main lines on pass
 attempts, completions, passing yards and passing TDs, every pair with r at
@@ -127,6 +129,11 @@ half's total, spread and moneyline. Both use league-wide r's by role
 public/data/nfl_stack_correlations.json, ten seasons of nflverse. A stack
 gets his --per highest-r combos; lines get his best prop with each kind of
 line, and his --per highest over the total, spread and team total.
+Unders get that allowance again: a stack's Under + Under; a QB's pass
+attempts against his back's carries (-0.29 for a lead back) and his passing
+yards against the back's rushing yards (-0.15), Over + Under both ways; and
+a prop's Under with the line's other side (a back's rushing yards Under +
+the other team covering). Three-leg slips are still all Overs.
 With the spread and the moneyline (and their first-half versions) the r
 used is the one for his team's side of today's spread: underdog of 3.5+,
 favourite of 3.5+, or between. A QB's attempts go against his team covering
@@ -603,8 +610,9 @@ def leg_text(L):
 
 
 def nfl_candidates(markets, by, a):
-    """NFL: Over + Over at main lines on each pair with r at least --min-r,
-    most lift over independent legs first. Same shapes as candidates()."""
+    """NFL: Over + Over, and Under + Under, at main lines on each pair with r
+    at least --min-r, most lift over independent legs first. Same shapes as
+    candidates()."""
     key = {novig.norm(n): n for n in by}
     out, ctx = [], {}
     for nm in sorted({novig.player_name(m) for m in markets}):
@@ -621,13 +629,16 @@ def nfl_candidates(markets, by, a):
             r = nfl_r(p, x, y)
             if x not in main or y not in main or r is None or r < a.min_r:
                 continue
-            la, lb = leg(x, main[x], 1), leg(y, main[y], 1)
-            j = sgp.joint(r, la["p"], lb["p"])
-            out.append({"key": f"{la['id']},{lb['id']}", "tier": 2, "player": p["name"], "id": p["athlete_id"],
-                        "team": p.get("team_abbr") or "", "starts": starts, "legs": [la, lb],
-                        "label": f"{leg_text(la)} · {leg_text(lb)}", "r": r, "j": j, "forced": False,
-                        "devig_r": sgp.devig_r(j, la["p"], lb["p"]),
-                        "rough": max(la["width"], lb["width"]) > novig.MAX_SPREAD + 1e-9})
+            for side in (1, -1) if a.unders else (1,):   # Under + Under at the same r
+                if side < 0 and any(main[s]["line"] < 1 for s in (x, y) if s not in ("td", "ptd")):
+                    continue   # U0.5 receptions is U any yards: one leg, not two
+                la, lb = leg(x, main[x], side), leg(y, main[y], side)
+                j = sgp.joint(r, la["p"], lb["p"])
+                out.append({"key": f"{la['id']},{lb['id']}", "tier": 2, "player": p["name"], "id": p["athlete_id"],
+                            "team": p.get("team_abbr") or "", "starts": starts, "legs": [la, lb],
+                            "label": f"{leg_text(la)} · {leg_text(lb)}", "r": r, "j": j, "forced": False,
+                            "devig_r": sgp.devig_r(j, la["p"], lb["p"]),
+                            "rough": max(la["width"], lb["width"]) > novig.MAX_SPREAD + 1e-9})
     out.sort(key=lambda c: -c["j"] / (c["legs"][0]["p"] * c["legs"][1]["p"]))
     return (out[:a.max] if a.max else out), ctx
 
@@ -724,6 +735,9 @@ STACK_PROPS = ("pyds", "ptd", "cmp", "att", "yds", "rec", "td", "ryds", "car", "
 # QB stat + teammate's stat asked by default; --scope all adds the weaker two.
 STACK_PAIRS = (("pyds", "yds"), ("ptd", "td"), ("cmp", "rec"), ("pyds", "td"))
 STACK_MORE = (("pyds", "rec"), ("ptd", "yds"))
+# QB stat + his back's stat that go against each other (r by the back's
+# carries): asked Over + Under and Under + Over.
+STACK_AGAINST = (("att", "car"), ("pyds", "ryds"))
 # Game lines a prop is asked with, and Novig's market type for each. "win" is
 # the moneyline; the h1 ones are the first half's total, spread and moneyline.
 LINE_TYPES = {"over": "TOTAL", "cover": "SPREAD", "win": "MONEY", "tt": "TEAM_TOTAL",
@@ -800,8 +814,8 @@ def nfl_slate(a, game):
     return S, events, people, vol
 
 
-def prop_leg(p, s, main, who=""):
-    L = leg(s, main[s], 1)
+def prop_leg(p, s, main, who="", side=1):
+    L = leg(s, main[s], side)
     L["text"] = f"{who}{leg_text(L)}"
     return L
 
@@ -878,7 +892,12 @@ def nflx_candidates(a, game):
                            with the OTHER team covering or winning)
     Stacks: his --per highest-r combos. Lines: for each kind of line his
     highest-r prop, and his --per highest over the total, spread and team
-    total whatever the prop."""
+    total whatever the prop.
+    Unders (unless --no-unders), with the same allowance again: each stack
+    Under + Under, a QB's pass attempts or passing yards against his back's
+    carries or rushing yards as Over + Under both ways (STACK_AGAINST), and
+    each prop's Under with the line's other side. The r is the Overs': the
+    copula r that gives how often both Overs hit gives both Unders too."""
     S, events, people, vol = nfl_slate(a, game)
 
     def row(p, starts, la, lb, r, kind, tier):
@@ -902,16 +921,24 @@ def nflx_candidates(a, game):
                 for p, main, starts in ps:
                     if p["group"] == "QB":
                         continue
-                    mine = []
+                    mine, unders = [], []
                     for qs, ts in STACK_PAIRS + (STACK_MORE if a.scope == "all" else ()):
                         r = role_r(S["stack"], vol(p, "tgt_mean"), qb=qs, stat=ts, pos=p["group"], by="tgt")
                         if qs in qmain and ts in main and r is not None and r >= a.min_r:
                             mine.append(row(p, starts, prop_leg(qb, qs, qmain, who), prop_leg(p, ts, main), r, "stack", 7))
+                            unders.append(row(p, starts, prop_leg(qb, qs, qmain, who, -1), prop_leg(p, ts, main, side=-1), r, "stack", 7))
+                    for qs, ts in STACK_AGAINST:   # one Over, the other Under
+                        r = role_r(S["stack"], vol(p, "car_mean"), qb=qs, stat=ts, pos=p["group"], by="car")
+                        if qs in qmain and ts in main and r is not None and -r >= a.min_r:
+                            unders += [row(p, starts, prop_leg(qb, qs, qmain, who, q), prop_leg(p, ts, main, side=-q), -r, "stack", 7)
+                                       for q in (1, -1)]
                     out += sorted(mine, key=lambda c: -c["r"])[:a.per]
+                    if a.unders:   # his --per best with an Under in them, on top of the Overs
+                        out += sorted(unders, key=lambda c: -c["r"])[:a.per]
                 continue
             side = side_of(ev, team)
             for p, main, starts in ps:
-                mine = []
+                overs, unders = [], []
                 for s in main:
                     for line in LINE_TYPES:
                         r = line_r(S, vol, p, s, line, side)
@@ -919,12 +946,16 @@ def nflx_candidates(a, game):
                             continue
                         lb = line_leg(ev, p, team, line, r)   # his team's side when r > 0, the other when r < 0
                         if lb:
-                            mine.append(row(p, starts, prop_leg(p, s, main), lb, abs(r), line, 8))
-                mine.sort(key=lambda c: -c["r"])
-                keep = {c["key"] for c in [c for c in mine if c["kind"] in ("over", "cover", "tt")][:a.per]}
-                for line in LINE_TYPES:   # and his best prop with each kind of line
-                    keep |= {c["key"] for c in [c for c in mine if c["kind"] == line][:1]}
-                out += [c for c in mine if c["key"] in keep]
+                            overs.append(row(p, starts, prop_leg(p, s, main), lb, abs(r), line, 8))
+                        lb = a.unders and line_leg(ev, p, team, line, -r)   # his Under with the line's other side
+                        if lb:
+                            unders.append(row(p, starts, prop_leg(p, s, main, side=-1), lb, abs(r), line, 8))
+                for mine in (overs, unders):   # the same allowance for each
+                    mine.sort(key=lambda c: -c["r"])
+                    keep = {c["key"] for c in [c for c in mine if c["kind"] in ("over", "cover", "tt")][:a.per]}
+                    for line in LINE_TYPES:   # and his best prop with each kind of line
+                        keep |= {c["key"] for c in [c for c in mine if c["kind"] == line][:1]}
+                    out += [c for c in mine if c["key"] in keep]
     out.sort(key=lambda c: -c["j"] / (c["legs"][0]["p"] * c["legs"][1]["p"]))
     return out[:a.max] if a.max else out
 
@@ -2126,6 +2157,8 @@ def main():
     ap.add_argument("--star-pts", type=float, default=26.5,
                     help="NBA: also ask those three-leg slips for anyone whose points main line is this high (0 = the list only)")
     ap.add_argument("--ladder-fix", action="store_true", help="scale higher-line joints by LADDER_FIX (off: plain model)")
+    ap.add_argument("--no-unders", dest="unders", action="store_false",
+                    help="NFL: ask no player-prop Unders (Under + Under, the Over + Under stacks, a prop's Under + a game line)")
     ap.add_argument("--no-dd", dest="dd", action="store_false", help="skip the build-your-own double-doubles")
     ap.add_argument("--no-ladder", dest="ladder", action="store_false", help="skip the higher-line combos")
     ap.add_argument("--min-r", type=float, default=None,
