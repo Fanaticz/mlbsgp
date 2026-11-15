@@ -216,6 +216,14 @@ receiver's TD is lower (WR 7+ targets 0.62 to 0.54) and with the team total
 higher (0.67 to 0.82). The three-leg joint at 3+ matched ten seasons of
 results within 2% with the team total.
 
+**NFL role r's and the three-leg stack fix** (11-15): a receiver's role r
+is read off the line between the middles of the target buckets (3-5, 5-7,
+7+), not the bucket's own (5.25 targets: PTD·TD 0.591, not the 5-7
+bucket's 0.607). A QB prop + his receiver's prop + a game line is then
+scaled x0.95 (`STACKLINE_FIX` in scan.py): over ten seasons those slips hit
+0.93 to 0.98 of what the pair r's model, the pairs themselves 0.97 to 1.00.
+Rodgers 2+ pass TDs + Bernard TD + Over 49.5 went from +559 to +606.
+
 **Fair-value cap, NFL only** (Max, 11-15: keep the NFL FVs we scan under
 +600): on the NFL boards a slip whose fair value is longer than +600 is not
 asked (`--max-fair`, 600 for `--league nfl`, no cap elsewhere; `0` = no

@@ -995,6 +995,16 @@ def tri_safe(ps, rs):
     return min(j, sgp.joint(rab, ps[0], ps[1]), sgp.joint(rac, ps[0], ps[2]), sgp.joint(rbc, ps[1], ps[2]))
 
 
+# A QB prop + his receiver's prop + a game line hits less often than the
+# three pair r's say: the pairs each reproduce their own history, the three
+# together don't quite. Ten seasons, each game priced at the rates of that
+# player-season's other games (11-15): 2+ pass TDs + WR TD + Over 1,699 hits
+# against 1,802 modelled (0.94), with the team total 0.96, pass yards +
+# receiving yards + Over 0.96, 3+ pass TDs 0.93, tight ends 0.96, pass yards
+# + TD + Over 0.98. The slip's joint is scaled by this.
+STACKLINE_FIX = 0.95
+
+
 def nfl_tri_candidates(a):
     """NFL three-leg slips (part of the NFL pass; --kind tri alone), every leg at
     its main line and all three pulling the same way:
@@ -1087,6 +1097,8 @@ def nfl_tri_candidates(a):
                         j = tri_safe([x["p"] for x in legs], rs)
                     except (ValueError, ZeroDivisionError, OverflowError):
                         continue
+                    if shape == "stackline":
+                        j *= STACKLINE_FIX
                     if not 0 < j < 1:
                         continue
                     seen.add(ids)
