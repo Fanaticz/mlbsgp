@@ -751,10 +751,23 @@ def role_r(table, vol, at=None, **match):
     2.5): `at` is the passing-TD leg's own line, and the row fitted nearest
     it is used (2+ when no line is given). At 3+ the r with a receiver's TD
     is lower than at 2+ and the r with the team total higher."""
-    rows = [e for e in table if all(e.get(k) == v for k, v in match.items()) and (
-        e["by"] is None or (vol is not None and e["min"] <= vol and (e["max"] is None or vol < e["max"])))]
+    rows = [e for e in table if all(e.get(k) == v for k, v in match.items())]
+    if not rows:
+        return None
     want = 1.5 if at is None else at
-    return min(rows, key=lambda e: abs(e.get("at", want) - want))["r"] if rows else None
+    near = min(abs(e.get("at", want) - want) for e in rows)
+    rows = sorted((e for e in rows if abs(e.get("at", want) - want) == near), key=lambda e: e["min"])
+    if rows[0]["by"] is None:
+        return rows[0]["r"]
+    if vol is None or vol < rows[0]["min"]:
+        return None
+    # Between the middles of two volume buckets the r is read off the straight
+    # line through them, not the bucket's own: a receiver at 5.25 targets is
+    # nearer the 3-5 bucket (PTD·TD 0.565) than the 5-7 one's middle (0.607).
+    # The open top bucket's middle is taken half the bucket below's width up.
+    mids = [(e["min"] + e["max"]) / 2 if e["max"] is not None else
+            e["min"] + ((e["min"] - rows[i - 1]["min"]) / 2 if i else 0.0) for i, e in enumerate(rows)]
+    return price.interp(list(zip(mids, (e["r"] for e in rows))), vol)
 
 
 def ptd_at(stat, line):
