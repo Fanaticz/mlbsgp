@@ -1,5 +1,15 @@
 # Changes
 
+## 2026-11-15 session
+
+### Novig Scan: slips with a fair value longer than +600 are not asked
+Max, 11-15: keep the FVs we scan under +600 (the NFL board was headed by 70x slips at +2209 and +2311).
+
+- **Change** (`--max-fair`, default 600, in `scan.py`; applied in `scan()`'s `mine`): on every board a slip whose fair value is longer than +600 is dropped before it is sent to Novig, so it costs no quote. Three-leg slips built later in a pass go through the same check. `--max-fair 0` removes the cap.
+- **Ladder boards**: their band was +500 to +800 (`--ladder-fair`), so they now hold +500 to +600 only.
+- **Rows already on a board** above +600 go when that board's next full pass finishes (a pass removes rows it did not price).
+- **Checked** without asking Novig for a quote (candidates counted at the start of a pass, 11-15 slate): NFL 1,827 slips to 1,438; NFL Ladder 420 to 173. No NBA games were open to count. Not run end to end against Novig, and the page was not opened.
+
 ## 2026-11-14 session
 
 ### Novig Scan: Auto-scan is a plain on/off switch

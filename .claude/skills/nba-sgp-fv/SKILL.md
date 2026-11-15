@@ -209,6 +209,12 @@ slip). In that band the 11-11 pass had 61 slips, 8 above fair and 3 at +10%
 or better (Pritchard 25+ / 3+ at 11.31x against +640, Curry 27+ / 7+ and
 26+ / 7+); most of the +10% slips were at +1200 and longer.
 
+**Fair-value cap** (Max, 11-15: keep the FVs we scan under +600): on every
+board a slip whose fair value is longer than +600 is not asked
+(`--max-fair 600`; `0` = no cap). The ladder boards' +500 to +800 band is
+therefore +500 to +600. On the 11-15 NFL slate the cap took the main board
+from 1,827 slips to 1,438 and the NFL ladder from 420 to 173.
+
 **Star three-leg slips** (Max, 11-12) ride on every NBA pass except the
 ladder: for `STARS` in scan.py (Doncic, Curry, Wembanyama, Gilgeous-Alexander,
 Jerome, Tatum, Jokic) and anyone whose points main line is `--star-pts`
