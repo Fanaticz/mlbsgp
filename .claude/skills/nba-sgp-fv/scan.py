@@ -2007,10 +2007,22 @@ def scan(a, emit):
           "league": a.league, "data": d["generated_at"][:10], "at": t0, "books": BOOKS["seen"]})
     pace, rows, lock = Pace(), [], threading.Lock()
 
+    # --first: the slips the last pass left at the top of the board, best
+    # first. They are asked before the rest of their stage, so the rows being
+    # looked at are minutes old early in a pass, not whenever a 50-minute NFL
+    # pass reaches them (Max, 11-15: half the All tab was dimmed).
+    lead = {}
+    if a.first:
+        try:
+            lead = {k: i for i, k in enumerate(json.load(open(a.first)))}
+        except (OSError, ValueError):
+            lead = {}
+
     def soonest(cs):
-        """Earliest game first, so a slate's early games are priced before
-        they start; within a game the order the candidates came in."""
-        return sorted(cs, key=lambda c: c.get("starts") or float("inf"))
+        """The last pass's best rows first (--first), in that order; then the
+        earliest game first, so a slate's early games are priced before they
+        start; within a game the order the candidates came in."""
+        return sorted(cs, key=lambda c: (lead.get(c["key"], len(lead)), c.get("starts") or float("inf")))
 
     # Novig's first quote on a slip it hasn't been asked lately is not its
     # price: asked again half a minute later it has moved, often a long way
@@ -2181,6 +2193,8 @@ def main():
                          "a new quote on stdout, or {\"error\": why}")
     ap.add_argument("--events", nargs="+", default=None, metavar="ID",
                     help="only these games (Novig event ids, from --games): the page's game picker")
+    ap.add_argument("--first", default=None, metavar="FILE",
+                    help="a JSON list of slip keys to ask before the rest, in that order (server.js: the last pass's best rows)")
     ap.add_argument("--games", action="store_true", help="list the league's open pregame games as JSON and stop")
     a = ap.parse_args()
     a.events = set(a.events) if a.events else None

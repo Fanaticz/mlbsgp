@@ -2,6 +2,14 @@
 
 ## 2026-11-15 session
 
+### Novig Scan: a pass prices its board's best rows first
+Max, 11-15: half the All tab was dimmed. Those were NFL rows the running pass hadn't reached (about 2,750 slips, 50 minutes at a quote a second, asked in game order) and rows over an hour old.
+
+- **Change**: when a pass starts, the server lists that board's rows at -2% EV or better from last time, best first, 400 at most (`NV_LEAD_EV`, `NV_LEAD_MAX`; written to `novig_first_<board>.json` beside the saved boards) and `scan.py --first FILE` asks those before the rest of their stage. The rest follows in game order as before. No more quotes than before.
+- **What to expect**: the top of a board is re-priced in the first minutes of its pass, not up to 50 minutes in. A board is still priced once per Auto-scan round, so an NFL row can still pass an hour (and dim) while the other five boards take their turn.
+- **NBA**: the main-line Points + Threes slips still go first (they decide which players get more asked); the listed rows lead each stage after that.
+- **Checked** live on CAR @ NO stacks (8 slips, twice): the three slips listed were asked first, in order; one came back above fair and was held 40 seconds to settle, so its row landed last. The server was started on a saved board and passed the scanner the right five keys, best EV first. A full pass was not timed and the page was not opened.
+
 ### Novig Scan: NFL Unders
 Max, 11-15: "I don't ever see NFL unders" (the NFL board built every player prop as an Over); Unders are fair play.
 

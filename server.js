@@ -2461,6 +2461,9 @@ const NV_SCAN_MAX_MS = 90 * 60 * 1000;   // a pass stuck this long is killed (th
 // leaving the page, switching league or a redeploy doesn't lose it (the disk
 // copy survives a redeploy only where NBA_DATA_DIR / /data is a volume).
 const NV_BOARDS = new Map();
+// A pass asks first the rows its board's last pass left at this EV or better
+// (a little under fair: those are the ones that cross it), best first.
+const NV_LEAD_EV = -0.02, NV_LEAD_MAX = 400;
 let NV_RUN = null;   // { proc, key, stop, auto } while a pass is running
 let NV_LAST_END = 0; // when the last pass ended, however it ended
 const NV_SCAN_FILE = (() => {
@@ -2526,6 +2529,14 @@ function startNovigScan(league, wide, events, auto) {
     league === 'nhllines' ? ['--league', 'nhl', '--kind', 'lines'] :
     league === 'nbateam' ? ['--league', 'nba', '--kind', 'team'] : ['--league', league]).concat(wide ? ['--max-spread', '0.08', '--alt-spread', '0.10'] : [])
     .concat(events.length ? ['--events', ...events] : []);
+  // The last pass's best rows are asked first (scan.py --first), so the top
+  // of the board is fresh minutes into a pass instead of whenever the pass
+  // reaches each row (an NFL pass is about 50 minutes).
+  const lead = [...B.rows.values()].filter(r => r.ev >= NV_LEAD_EV).sort((x, y) => y.ev - x.ev).slice(0, NV_LEAD_MAX).map(r => r.key);
+  if (lead.length && NV_SCAN_FILE) {
+    const f = path.join(path.dirname(NV_SCAN_FILE), `novig_first_${league}_${wide ? 1 : 0}.json`);
+    try { require('fs').writeFileSync(f, JSON.stringify(lead)); args.push('--first', f); } catch (_) { /* the pass runs in its usual order */ }
+  }
   let proc;
   try {
     proc = require('child_process').spawn(PYTHON, args, { stdio: ['ignore', 'pipe', 'pipe'] });
