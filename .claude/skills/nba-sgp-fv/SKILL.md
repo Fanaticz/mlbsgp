@@ -209,6 +209,13 @@ slip). In that band the 11-11 pass had 61 slips, 8 above fair and 3 at +10%
 or better (Pritchard 25+ / 3+ at 11.31x against +640, Curry 27+ / 7+ and
 26+ / 7+); most of the +10% slips were at +1200 and longer.
 
+**Passing TDs at 3+** (11-15): the role r's with passing TDs are fitted at
+2+ and again at 3+ (`at` 1.5 / 2.5 in `nfl_stack_correlations.json`), and
+the scanner takes the row nearest the leg's line. At 3+ the r with a
+receiver's TD is lower (WR 7+ targets 0.62 to 0.54) and with the team total
+higher (0.67 to 0.82). The three-leg joint at 3+ matched ten seasons of
+results within 2% with the team total.
+
 **Fair-value cap, NFL only** (Max, 11-15: keep the NFL FVs we scan under
 +600): on the NFL boards a slip whose fair value is longer than +600 is not
 asked (`--max-fair`, 600 for `--league nfl`, no cap elsewhere; `0` = no

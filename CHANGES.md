@@ -2,6 +2,15 @@
 
 ## 2026-11-15 session
 
+### Novig Scan: passing-TD correlations fitted at 3+ as well as 2+
+Max, 11-15: fix the 3 TD correlation (Purdy 3+ PASS TD · Samuel 1+ TD · SF team total Over 30.5, fair +497, with three books paying +486 to +575).
+
+- **What was wrong**: a good offence's main passing-TD line is 2.5, not 1.5 (Purdy: 3+ at 35%, 2+ at 65%), and every role r with passing TDs was fitted at 2+ only.
+- **Fix** (`PTD_AT`, `ptd_lines` in `scripts/nfl_stack_correlations.py`; `role_r(..., at)`, `ptd_at` in `scan.py`): each pairing with passing TDs is fitted twice, at 2+ and at 3+ (rows with `at` 1.5 and 2.5 in `nfl_stack_correlations.json`, rebuilt today), and the scanner uses the row nearest the passing-TD leg's own line. The 2+ rows are the same numbers as before.
+- **What 3+ changes**: with a receiver's anytime TD the r is lower (WR 3 to 5 targets 0.57 to 0.45, 5 to 7 0.61 to 0.54, 7+ 0.62 to 0.54; TE 5+ 0.58 to 0.47); with the scoring lines it is higher (team total 0.67 to 0.82, game total 0.62 to 0.68, covering 0.31 to 0.41).
+- **On Max's slip the two cancel**: fair +497 at the 2+ rows, +501 at the 3+ rows. So the 3+ fit was not why the books paid more than fair.
+- **The three-leg joint checked against ten seasons** (QB passing TDs + his WR's TD + team total, each QB-receiver season at its own hit rates): at 3+ all three hit in 9.1% of 2,476 games for 3-to-5-target receivers against the model's 9.2%, 12.2% against 12.0% at 5 to 7, 15.6% against 15.9% at 7+. With the game total in place of the team total the 3-to-5 bucket runs 9% high (7.7% against 8.4%); the others are within 2%. This is the same data the r's were fitted on, pair by pair; the three-way count was not fitted.
+- Not run end to end against Novig; candidates were built on today's board without error (552 slips, 97 three-leg).
 ### Novig Scan: a pass prices its board's best rows first
 Max, 11-15: half the All tab was dimmed. Those were NFL rows the running pass hadn't reached (about 2,750 slips, 50 minutes at a quote a second, asked in game order) and rows over an hour old.
 

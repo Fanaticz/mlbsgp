@@ -744,14 +744,22 @@ LINE_TYPES = {"over": "TOTAL", "cover": "SPREAD", "win": "MONEY", "tt": "TEAM_TO
               "h1over": "TOTAL_1H", "h1cover": "SPREAD_1H", "h1win": "MONEY_1H"}
 
 
-def role_r(table, vol, **match):
+def role_r(table, vol, at=None, **match):
     """The role's r from nfl_stack_correlations.json: the row matching
-    `match` whose volume bucket holds `vol` (targets or carries a game)."""
-    for e in table:
-        if all(e.get(k) == v for k, v in match.items()) and (
-                e["by"] is None or (vol is not None and e["min"] <= vol and (e["max"] is None or vol < e["max"]))):
-            return e["r"]
-    return None
+    `match` whose volume bucket holds `vol` (targets or carries a game).
+    Passing TDs are fitted at 2+ and again at 3+ (rows with `at` 1.5 and
+    2.5): `at` is the passing-TD leg's own line, and the row fitted nearest
+    it is used (2+ when no line is given). At 3+ the r with a receiver's TD
+    is lower than at 2+ and the r with the team total higher."""
+    rows = [e for e in table if all(e.get(k) == v for k, v in match.items()) and (
+        e["by"] is None or (vol is not None and e["min"] <= vol and (e["max"] is None or vol < e["max"])))]
+    want = 1.5 if at is None else at
+    return min(rows, key=lambda e: abs(e.get("at", want) - want))["r"] if rows else None
+
+
+def ptd_at(stat, line):
+    """`at` for role_r: the leg's line when it is passing TDs, else None."""
+    return line if stat == "ptd" else None
 
 
 def two_way(m):
@@ -844,16 +852,17 @@ def side_of(ev, team):
     return None
 
 
-def line_r(S, vol, p, s, line, side=None):
-    """The role's r between his stat and a game line. A back's rushing and
+def line_r(S, vol, p, s, line, side=None, at=None):
+    """The role's r between his stat and a game line (`at`: a passing-TD
+    leg's own line, see role_r). A back's rushing and
     his TD go by his carries, everything else by targets; a QB has one role.
     With the spread, the moneyline and their first-half versions the r is the
     one for his team's side of the spread (a QB's attempts go against his
     team covering at -0.44 as a favourite and -0.15 as an underdog)."""
     by_ = None if p["group"] == "QB" else "car" if p["group"] == "RB" and s in ("ryds", "car", "rry", "td") else "tgt"
     v = by_ and vol(p, by_ + "_mean")
-    r = role_r(S["game"], v, line=line, stat=s, pos=p["group"], by=by_, side=side) if side and line in SIDED else None
-    return r if r is not None else role_r(S["game"], v, line=line, stat=s, pos=p["group"], by=by_, side=None)
+    r = role_r(S["game"], v, at, line=line, stat=s, pos=p["group"], by=by_, side=side) if side and line in SIDED else None
+    return r if r is not None else role_r(S["game"], v, at, line=line, stat=s, pos=p["group"], by=by_, side=None)
 
 
 def line_leg(ev, p, team, line, side):
@@ -923,7 +932,8 @@ def nflx_candidates(a, game):
                         continue
                     mine, unders = [], []
                     for qs, ts in STACK_PAIRS + (STACK_MORE if a.scope == "all" else ()):
-                        r = role_r(S["stack"], vol(p, "tgt_mean"), qb=qs, stat=ts, pos=p["group"], by="tgt")
+                        r = role_r(S["stack"], vol(p, "tgt_mean"), ptd_at(qs, qmain[qs]["line"]) if qs in qmain else None,
+                                   qb=qs, stat=ts, pos=p["group"], by="tgt")
                         if qs in qmain and ts in main and r is not None and r >= a.min_r:
                             mine.append(row(p, starts, prop_leg(qb, qs, qmain, who), prop_leg(p, ts, main), r, "stack", 7))
                             unders.append(row(p, starts, prop_leg(qb, qs, qmain, who, -1), prop_leg(p, ts, main, side=-1), r, "stack", 7))
@@ -941,7 +951,7 @@ def nflx_candidates(a, game):
                 overs, unders = [], []
                 for s in main:
                     for line in LINE_TYPES:
-                        r = line_r(S, vol, p, s, line, side)
+                        r = line_r(S, vol, p, s, line, side, ptd_at(s, main[s]["line"]))
                         if r is None or abs(r) < a.line_r:
                             continue
                         lb = line_leg(ev, p, team, line, r)   # his team's side when r > 0, the other when r < 0
@@ -1005,7 +1015,8 @@ def nfl_tri_candidates(a):
         game line that goes the same way as both."""
         fav = side_of(ev, team)
         for line in LINE_TYPES:
-            ra, rb = line_r(S, vol, pa, la["stat"], line, fav), line_r(S, vol, pb, lb["stat"], line, fav)
+            ra = line_r(S, vol, pa, la["stat"], line, fav, ptd_at(la["stat"], la["line"]))
+            rb = line_r(S, vol, pb, lb["stat"], line, fav, ptd_at(lb["stat"], lb["line"]))
             if ra is None or rb is None:
                 continue
             side = 1 if ra + rb > 0 else -1
@@ -1037,7 +1048,8 @@ def nfl_tri_candidates(a):
                 if qb and p is not qb:
                     Q = {s: prop_leg(qb, s, qmain, who) for s in qmain}
                     st = {(qs, ts): r for qs, ts in STACK_PAIRS + STACK_MORE if qs in Q and ts in L
-                          for r in [role_r(S["stack"], vol(p, "tgt_mean"), qb=qs, stat=ts, pos=p["group"], by="tgt")]
+                          for r in [role_r(S["stack"], vol(p, "tgt_mean"), ptd_at(qs, Q[qs]["line"]),
+                                           qb=qs, stat=ts, pos=p["group"], by="tgt")]
                           if r is not None and r >= a.min_r}
                     for (qs, ts), r in st.items():
                         mine += [("stackline", line, legs, rs) for legs, rs, line in with_line(ev, team, qb, Q[qs], p, L[ts], r)]

@@ -20,8 +20,8 @@ What r is
 The Gaussian-copula correlation that reproduces how often both legs hit.
 Within each group of games (one QB + one receiver in one season, or one
 player's season against the lines), each stat is cut at that group's median
-(anytime TD at 1+, passing TDs at 2+, the game lines at the closing number:
-Over, cover, team total Over). r solves
+(anytime TD at 1+, passing TDs at 2+ and, in a row of their own, at 3+; the
+game lines at the closing number: Over, cover, team total Over). r solves
 
     sum over groups [ n a b + (n - 1) (J(r; a, b) - a b) ] = games both hit
 
@@ -103,6 +103,11 @@ COLS = {"att": ("attempts",), "cmp": ("completions",), "pyds": ("passing_yards",
 # A leg's line inside a group: a fixed count, or the group's median.
 FIXED = {"td": 0.5, "ptd": 1.5, "over": 0.0, "cover": 0.0, "tt": 0.0,
          "win": 0.0, "h1over": 0.0, "h1cover": 0.0, "h1win": 0.0}
+# Passing TDs are also fitted at 3+. A good offence's main line is 2.5 (Purdy
+# 3+ at 35% against 2+ at 65%, 11-15), and the r fitted at 2+ said such a slip
+# hit more often than it did: every pairing with passing TDs gets one more
+# row, `at` 2.5, beside the 2+ row (`at` 1.5).
+PTD_AT = (1.5, 2.5)
 
 # (QB stat, teammate's stat, teammate positions, role volume)
 STACKS = (("pyds", "yds", ("WR", "TE", "RB"), "tgt"), ("pyds", "rec", ("WR", "TE", "RB"), "tgt"),
@@ -271,17 +276,20 @@ def joint(r: float, x: float, y: float, ab: float) -> float:
     return ab + tot * h / 3
 
 
-def line_of(vals: list[float], stat: str, q: float = 0.5) -> float:
+def line_of(vals: list[float], stat: str, q: float = 0.5, at: dict | None = None) -> float:
+    if at and stat in at:
+        return at[stat]
     if stat in FIXED:
         return FIXED[stat]
     s = sorted(vals)
     return statistics.median(s) if q == 0.5 else s[min(len(s) - 1, int(q * len(s)))]
 
 
-def cut(pairs: list[tuple[float, float]], sx: str, sy: str, q: float = 0.5):
-    """(n, a, b, both) for one group at its lines, or None if a leg never / always hits."""
+def cut(pairs: list[tuple[float, float]], sx: str, sy: str, q: float = 0.5, at: dict | None = None):
+    """(n, a, b, both) for one group at its lines, or None if a leg never / always hits.
+    `at` fixes a stat's line ({"ptd": 2.5}) in place of FIXED's."""
     n = len(pairs)
-    lx, ly = line_of([x for x, _ in pairs], sx, q), line_of([y for _, y in pairs], sy, q)
+    lx, ly = line_of([x for x, _ in pairs], sx, q, at), line_of([y for _, y in pairs], sy, q, at)
     a = sum(x > lx for x, _ in pairs) / n
     b = sum(y > ly for _, y in pairs) / n
     if not (0.08 <= a <= 0.92 and 0.08 <= b <= 0.92):
@@ -289,13 +297,13 @@ def cut(pairs: list[tuple[float, float]], sx: str, sy: str, q: float = 0.5):
     return n, a, b, sum(x > lx and y > ly for x, y in pairs)
 
 
-def banded(groups: list[list[tuple]], sy: str) -> list[tuple]:
+def banded(groups: list[list[tuple]], sy: str, at: dict | None = None) -> list[tuple]:
     """Cuts for a line with no closing number (won, led at the half): one per
     3-point band of the closing spread, across every group. The stat is cut
     at each group's own median; ties on the line are left out."""
     cells = collections.defaultdict(lambda: [0, 0, 0, 0])
     for g in groups:
-        ly = line_of([y for _, y, _ in g], sy)
+        ly = line_of([y for _, y, _ in g], sy, at=at)
         for x, y, sp in g:
             if x == 0:
                 continue
@@ -335,10 +343,10 @@ def fit(cuts: list[tuple]) -> dict | None:
             "unrelated": round(sum(n * a * b for n, a, b, _ in cuts) / games, 4)}
 
 
-def check(groups: list[list[tuple[float, float]]], sx: str, sy: str, r: float) -> dict | None:
+def check(groups: list[list[tuple[float, float]]], sx: str, sy: str, r: float, at: dict | None = None) -> dict | None:
     """Out of the fit's sight: both legs at each group's upper-third lines
     (counts with a fixed line keep it), actual vs what r says."""
-    cuts = [c for g in groups for c in [cut(g, sx, sy, 2 / 3)] if c]
+    cuts = [c for g in groups for c in [cut(g, sx, sy, 2 / 3, at)] if c]
     if not cuts or (sx in FIXED and sy in FIXED):   # both lines fixed: nothing the fit didn't see
         return None
     games = sum(c[0] for c in cuts)
@@ -346,9 +354,11 @@ def check(groups: list[list[tuple[float, float]]], sx: str, sy: str, r: float) -
     return {"actual": round(sum(c[3] for c in cuts) / games, 4), "model": round(model / games, 4)}
 
 
-def buckets(rows: list[tuple[float, list]], edges: tuple, sx: str, sy: str, bands: bool = False) -> list[dict]:
+def buckets(rows: list[tuple[float, list]], edges: tuple, sx: str, sy: str, bands: bool = False,
+            at: dict | None = None) -> list[dict]:
     """rows = (volume, group's pairs). One fit per volume bucket, thin buckets
-    merged downward (the top bucket into the one below it)."""
+    merged downward (the top bucket into the one below it). `at` fixes a
+    stat's line in place of FIXED's."""
     bins = [[lo, None, []] for lo in edges]
     for vol, pairs in rows:
         i = max((i for i, lo in enumerate(edges) if vol >= lo), default=None)
@@ -366,14 +376,20 @@ def buckets(rows: list[tuple[float, list]], edges: tuple, sx: str, sy: str, band
     out = []
     for lo, hi, groups in bins:
         if bands or sx in BANDED:
-            f = fit(banded(groups, sy))
+            f = fit(banded(groups, sy, at))
             if f:
                 out.append({"min": lo, "max": hi, **f, "groups": len(groups), "check": None})
             continue
-        f = fit([c for g in groups for c in [cut(g, sx, sy)] if c])
+        f = fit([c for g in groups for c in [cut(g, sx, sy, at=at)] if c])
         if f:
-            out.append({"min": lo, "max": hi, **f, "check": check(groups, sx, sy, f["r"])})
+            out.append({"min": lo, "max": hi, **f, "check": check(groups, sx, sy, f["r"], at)})
     return out
+
+
+def ptd_lines(*stats):
+    """The passing-TD lines a pairing is fitted at: [(extra row keys, `at`)].
+    One plain fit for a pairing with no passing TDs."""
+    return [({"at": L}, {"ptd": L}) for L in PTD_AT] if "ptd" in stats else [({}, None)]
 
 
 def main() -> None:
@@ -406,8 +422,9 @@ def main() -> None:
                     if g["qb"]:
                         duo[g["qb"]["id"]].append((g["qb"][sx], g["p"][sy]))
                 rows += [(vol[key][by], d) for d in duo.values() if len(d) >= MIN_GROUP]
-            for b in buckets(rows, EDGES[by], sx, sy):
-                stack.append({"qb": sx, "stat": sy, "pos": pos, "by": by, **b})
+            for extra, at in ptd_lines(sx, sy):
+                for b in buckets(rows, EDGES[by], sx, sy, at=at):
+                    stack.append({"qb": sx, "stat": sy, "pos": pos, "by": by, **extra, **b})
 
     game = []
     for sy, positions, by in GAME:
@@ -421,8 +438,9 @@ def main() -> None:
                          for g in games if g["ln"] and line in g["ln"]]
                     if len(d) >= MIN_GROUP:
                         rows.append((vol[key][by] if by else 1.0, d))
-                for b in buckets(rows, EDGES[by] if by else (0.0,), line, sy):
-                    game.append({"line": line, "stat": sy, "pos": pos, "by": by, "side": None, **b})
+                for extra, at in ptd_lines(sy):
+                    for b in buckets(rows, EDGES[by] if by else (0.0,), line, sy, at=at):
+                        game.append({"line": line, "stat": sy, "pos": pos, "by": by, "side": None, **extra, **b})
                 if line not in SIDED:
                     continue
                 for side, on in SIDES.items():
@@ -436,8 +454,9 @@ def main() -> None:
                              for g in games if g["ln"] and line in g["ln"]]
                         if len(d) >= MIN_GROUP:
                             rows.append((vol[key][by] if by else 1.0, d))
-                    for b in buckets(rows, EDGES[by] if by else (0.0,), line, sy, bands=True):
-                        game.append({"line": line, "stat": sy, "pos": pos, "by": by, "side": side, **b})
+                    for extra, at in ptd_lines(sy):
+                        for b in buckets(rows, EDGES[by] if by else (0.0,), line, sy, bands=True, at=at):
+                            game.append({"line": line, "stat": sy, "pos": pos, "by": by, "side": side, **extra, **b})
 
     payload = {
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -446,7 +465,8 @@ def main() -> None:
         "seasons": seasons,
         "team_games": len(teams),
         "method": "Gaussian-copula r that reproduces how often both legs hit at each group's median lines "
-                  "(anytime TD 1+, passing TDs 2+, game lines at the closing number); role = position and "
+                  "(anytime TD 1+, game lines at the closing number; passing TDs at 2+ and again at 3+, "
+                  "one row each, `at` 1.5 and 2.5); role = position and "
                   "that season's targets or carries a game; check = the same at upper-third lines. "
                   "win and h1win are fitted within 3-point bands of the closing spread; rows with a side "
                   "(dog: underdog of 3.5+, fav: favourite of 3.5+, even: between) are the spread and "
@@ -476,10 +496,10 @@ def main() -> None:
     print(f"NFL stack + game-line correlations, {seasons[0]}-{seasons[-1]}, {len(teams)} team-games")
     print("QB with a teammate (r, games, how often both hit; check: actual / model)")
     for b in stack:
-        show(b, f"{b['qb']}·{b['stat']} {b['pos']} {rng(b)} {b['by']}/g")
+        show(b, f"{b['qb']}{'@%g' % b['at'] if 'at' in b else ''}·{b['stat']} {b['pos']} {rng(b)} {b['by']}/g")
     print("Prop with a game line")
     for b in game:
-        show(b, f"{b['stat']}·{b['line']} {b['pos']}" + (f" {rng(b)} {b['by']}/g" if b["by"] else "") + (f" {b['side']}" if b["side"] else ""))
+        show(b, f"{b['stat']}{'@%g' % b['at'] if 'at' in b else ''}·{b['line']} {b['pos']}" + (f" {rng(b)} {b['by']}/g" if b["by"] else "") + (f" {b['side']}" if b["side"] else ""))
     print(f"Wrote {args.out}")
 
 
