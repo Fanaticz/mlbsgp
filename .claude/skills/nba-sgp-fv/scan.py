@@ -1960,8 +1960,8 @@ def scan(a, emit):
         where = {}
 
     def mine(cs):
-        # --max-fair: a slip whose fair value is longer than +600 is not asked
-        # at all (Max, 11-15: keep the FVs we scan under +600).
+        # --max-fair: an NFL slip whose fair value is longer than +600 is not
+        # asked at all (Max, 11-15: keep the NFL FVs we scan under +600).
         for c in cs:
             c["event"] = where.get(c["legs"][0]["id"])
         return [c for c in cs if (not a.events or c["event"] in a.events)
@@ -2114,9 +2114,9 @@ def main():
     ap.add_argument("--ladder-fair", type=float, nargs=2, default=None, metavar=("LOW", "HIGH"),
                     help="ask only ladder slips whose fair value is in this American-odds band "
                          "(ladder scope: 500 800; '0 0' = every slip)")
-    ap.add_argument("--max-fair", type=float, default=600.0,
-                    help="ask only slips whose fair value is at most this in American odds, on every board "
-                         "(600; 0 = no cap). The ladder band is cut to it: 500 to 600")
+    ap.add_argument("--max-fair", type=float, default=None,
+                    help="ask only slips whose fair value is at most this in American odds "
+                         "(NFL: 600, so its ladder band is 500 to 600; other leagues: no cap; 0 = no cap)")
     ap.add_argument("--gate", type=float, default=None,
                     help="ask a player's other combos only if his best main-line PTS+3PM EV%% is above this (-100 = everyone)")
     ap.add_argument("--no-books", action="store_true",
@@ -2176,6 +2176,8 @@ def main():
         # pass of 11-11, players at -10% to 0% held 46 of the 81 ladder slips
         # at +10% or better; those under -10% held 4 (of 74 asked).
         a.gate = -10.0 if a.scope == "ladder" else 0.0
+    if a.max_fair is None:   # Max, 11-15: NFL only
+        a.max_fair = 600.0 if a.league == "nfl" else 0.0
     if a.ladder_fair is None and a.scope == "ladder":
         # Max, 11-11: the +2000 fairs are modelled too far from the main line
         # to trust. Keep the ladder to slips around +500 to +800.
