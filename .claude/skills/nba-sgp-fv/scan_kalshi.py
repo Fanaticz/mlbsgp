@@ -496,10 +496,11 @@ def finish(c, yes, unit, kelly):
 
 def requote(c, a):
     """One slip again (the page's refresh button; --requote): (the row with a
-    new Kalshi answer and EV, None), or (None, why). An NBA or NFL leg is
-    re-read off Kalshi's own book where that book is inside --kalshi-spread
-    and no wider than the book the leg was priced from; the fair value is
-    rebuilt with the r that gave the row's joint. College legs keep theirs."""
+    new Kalshi answer and EV, None), or (None, why). Every NBA or NFL leg is
+    re-read off Kalshi's own book (inside --kalshi-spread) and the fair value
+    rebuilt with the r that gave the row's joint; a leg with no such book
+    fails the refresh instead of keeping an old fair value. College legs keep
+    theirs (priced off Novig; Kalshi's college books are too wide)."""
     if a.league != "cbb":
         _, d = call("GET", "/markets", query={"tickers": ",".join(L["id"] for L in c["legs"]), "limit": 10}, signed=False)
         book = {m["ticker"]: m for m in d.get("markets") or []}
@@ -510,10 +511,12 @@ def requote(c, a):
             try:
                 bid, offer = float(book[L["id"]]["yes_bid_dollars"]), float(book[L["id"]]["yes_ask_dollars"])
             except (KeyError, TypeError, ValueError):
-                continue
-            if 0 < bid < offer < 1 and offer - bid <= min(a.kalshi_spread, max(L["width"], 0.01)) + 1e-9:
-                p = sgp.devig_worst(offer, 1 - bid)[0]
-                L.update(p=p, fair=sgp.american(p), width=offer - bid, src="kalshi")
+                return None, "Kalshi's book on a leg could not be read"
+            if not (0 < bid < offer < 1 and offer - bid <= a.kalshi_spread + 1e-9):
+                # No book to price the leg from now: an old fair value under a new price is worse than no row.
+                return None, f"{L.get('text') or 'a leg'} has no tight book on Kalshi right now: press Fetch"
+            p = sgp.devig_worst(offer, 1 - bid)[0]
+            L.update(p=p, fair=sgp.american(p), width=offer - bid, src="kalshi")
         new = [L["p"] for L in c["legs"]]
         if new != old:
             lo, hi = -0.99, 0.99   # the r that gave this row's joint

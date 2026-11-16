@@ -2,6 +2,14 @@
 
 ## 2026-11-16 session
 
+### Kalshi Scan: a refresh no longer keeps an old fair value
+Max, 11-16: Tristan da Silva 15+ points · 3+ threes at +12.5% (fair +225, Kalshi 3.66x) looks weird; every book has his 15+ points alone at +228 to +270.
+
+- **What was wrong**: fair +225 is 31%, more than his 15+ points leg alone (about 27%: Kalshi 26 / 29, Novig 25 / 29), which can't be. The row's points leg was still carrying about 36%, from before his line fell (Novig's 12.5, once his main line, is now 40%). The refresh added an hour earlier re-read a leg only where Kalshi's book was no wider than the book it was first priced from; Kalshi's 15+ book was wider, so the old fair value stayed under a new price.
+- **Fix** (`requote` in `scan_kalshi.py`): a refresh re-reads every NBA and NFL leg off Kalshi's book (5c wide at most). A leg with no such book fails the refresh with a message; nothing keeps an old fair value.
+- **The slip now**: legs 27% and 47.5% at r 0.82 give fair about +300 (4.0x); at Kalshi's 3.66x that is about -8%.
+- **Not checked**: that the stale leg came from an earlier pass is worked out from the numbers (which leg price gives +225), not seen in the server's saved rows. The fix was not run against a real Kalshi quote.
+
 ### Kalshi Scan: a row's refresh button works; requests are sized at $100
 Max, 11-16: the refresh button doesn't work (and the Kalshi app showed Henry 80+ rushing yards + touchdown at 2.58x for $150 when the board said 2.77x, three minutes old).
 
