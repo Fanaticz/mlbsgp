@@ -15,7 +15,8 @@ Max, 11-16: can the Novig logic be done on Kalshi or another exchange?
   - Shapes with no r of ours applied: moneyline + total and spread + total priced as unrelated (implied r about 0), opposing players' touchdowns +0.01, teammates' touchdowns -0.12.
 - **What that says**: on these few trades Kalshi's makers price the correlation close to this repo's numbers, so the price lands near fair less the fee. Nothing like Novig's NBA teammates discount showed up, but three trades can't rule it out. The sample is small and it is what other people chose to buy, not the scanner's slips; the NBA games were three hours off.
 - **To build the board**: a Kalshi API key (key id + private key) set on the server. Then the scanner's own slips can be asked directly. Two costs to know first: Kalshi raises the price of asking for accounts that ask often and rarely accept, and an account may create 5,000 new combos a week.
-- **Not looked at**: ProphetX (it has parlays with live quotes; no public price call was found) and Sporttrade.
+- **ProphetX, looked at the same day** (Max: check ProphetX too). It is the closest to Novig: one call takes a slip's legs and answers with a parlay price in about two seconds (`POST cash.api.prophetx.co/parlay/api/v1/affiliate/quotes`, 2 to 12 legs, American odds back, or nothing when no maker answers). But the call needs a token ProphetX issues on request (hello@prophetexchange.com, "Affiliate Parlay Quotes"), and reading its lines needs a second one (Market Data API, also on request). Without a token the quote call answers 401 from here. The price it returns has no fee in it, and ProphetX's docs give no fee rate (it is set per account), so what the slip pays would have to be checked against the app. Nothing was priced.
+- **Not looked at**: Sporttrade.
 
 ### NHL looked at again (still nothing above fair; the boards stay hidden)
 Max, 11-16: EV plays in every league but the NHL.
