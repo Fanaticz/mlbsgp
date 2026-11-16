@@ -285,7 +285,7 @@ def ask(c, a):
     try:
         for _ in range(a.polls):
             time.sleep(a.wait / a.polls)
-            st, d = call("GET", "/communications/quotes", query={"rfq_id": rfq, "limit": 100})
+            st, d = call("GET", "/communications/quotes", query={"rfq_id": rfq, "rfq_user_filter": "self", "limit": 100})
             for q in d.get("quotes") or []:
                 try:
                     nb = float(q.get("no_bid_dollars") or 0)
@@ -366,8 +366,7 @@ def main():
             refused, why_refused, yes, why = refused + 1, str(e), None, "Kalshi refused the key"
             if not rows and refused >= REFUSED_AFTER:
                 # Its own line on stderr: server.js shows the last one as the board's error.
-                raise SystemExit(f"Kalshi is refusing this key's requests ({why_refused}). If the key has only the Trade "
-                                 "permission, make a new one with Full access and put it in Railway.")
+                raise SystemExit(f"Kalshi is refusing this key's requests: {why_refused}")
         if yes:
             finish(c, yes, a.unit, a.kelly)
             rows.append(c)
