@@ -2600,7 +2600,7 @@ function startNovigScan(league, wide, events, auto, before) {
 // so his rows are left off the page. They
 // stay in the saved board and come back if the report changes.
 // Out = ESPN's Out, Injured Reserve, Suspension or Doubtful.
-const NV_OUT = { nfl: { at: 0, names: new Map(), last: new Map() }, nba: { at: 0, names: new Map(), last: new Map() } };
+const NV_OUT = { nfl: { at: 0, names: new Map(), last: new Map(), maybe: new Map() }, nba: { at: 0, names: new Map(), last: new Map(), maybe: new Map() } };
 const NV_OUT_EVERY_MS = 10 * 60 * 1000;
 const nvName = n => String(n || '').toLowerCase().normalize('NFD').replace(/[^a-z ]/g, '').replace(/ (jr|sr|ii|iii|iv|v)$/, '').replace(/\s+/g, ' ').trim();
 let NV_OUT_BUSY = false;
@@ -2613,17 +2613,33 @@ async function nvOutRefresh() {
     try {
       const r = await fetch(`https://site.api.espn.com/apis/site/v2/sports/${sport}/injuries`, { signal: AbortSignal.timeout(30000) });
       if (!r.ok) throw new Error('ESPN answered ' + r.status);
-      const names = new Map(), last = new Map();
+      const names = new Map(), last = new Map(), maybe = new Map();
+      // ESPN's NBA report has no Doubtful or Questionable status: both are
+      // "Day-To-Day", and the word is in the note ("Tyson (ankle) has been
+      // downgraded to doubtful for Monday's game", 11-16: he headed the board
+      // at +22% an hour after that). So a Day-To-Day note about today's game
+      // is read: doubtful or out hides the player, questionable flags him.
+      // A note about another day's game says nothing about tonight.
+      const today = new Intl.DateTimeFormat('en-US', { timeZone: NV_TZ, weekday: 'long' }).format(Date.now());
       for (const t of (await r.json()).injuries || []) {
         for (const i of t.injuries || []) {
-          if (!/^(out|injured reserve|suspension|doubtful)$/i.test(i.status || '')) continue;
+          let status = i.status || '';
+          const note = String(i.shortComment || '');
+          if (/^day-to-day$/i.test(status)) {
+            const day = (note.match(/\b(Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday)'s\b/) || [])[1];
+            if (day !== today) continue;
+            if (/\b(doubtful|ruled out|is out|out for|won't play|will not play|will miss|will sit)\b/i.test(note) && !/\bupgraded\b/i.test(note)) status = 'Doubtful';
+            else if (/\bquestionable\b/i.test(note)) status = 'Questionable';
+          }
+          if (/^questionable$/i.test(status)) { maybe.set(nvName((i.athlete || {}).displayName), note || 'Questionable'); continue; }
+          if (!/^(out|injured reserve|suspension|doubtful)$/i.test(status)) continue;
           const a = i.athlete || {}, team = String((a.team || {}).abbreviation || '').toUpperCase();
-          names.set(nvName(a.displayName), i.status);
+          names.set(nvName(a.displayName), status);
           const l = nvName(a.lastName);   // "Stroud 21+ CMP": a leg on another player names him by last name
           if (l) last.set(l, (last.get(l) || []).concat(team));
         }
       }
-      NV_OUT[lg].names = names; NV_OUT[lg].last = last;
+      NV_OUT[lg].names = names; NV_OUT[lg].last = last; NV_OUT[lg].maybe = maybe;
     } catch (e) { console.warn(`Novig scan: could not read ESPN's ${lg.toUpperCase()} injury report: ${e.message}`); }
   }
   NV_OUT_BUSY = false;
@@ -2639,6 +2655,15 @@ function nvOut(league, row) {
     const teams = L.text && O.last.get(nvName(String(L.text).split(' ')[0]));
     return !!teams && teams.includes(team) && /^[A-Z][a-z'.-]+ \d/.test(L.text);
   });
+}
+
+// A row whose player is questionable goes out with the report's note on it
+// (gtd), for the page to flag: he may sit, and the price may know it.
+function nvFlag(league, row) {
+  const O = NV_OUT[NV_PY_LEAGUE(league)];
+  if (!O || !O.maybe.size) return row;
+  const note = String(row.player || '').split(' + ').map(n => O.maybe.get(nvName(n))).find(Boolean);
+  return note ? Object.assign({}, row, { gtd: note }) : row;
 }
 
 // Auto-scan: while switched on (the page's Auto-scan button), the server runs
@@ -2728,7 +2753,7 @@ app.get('/api/nba/novig-scan', (req, res) => {
         if (r.starts && r.starts <= now) continue;
         if (nvOut(league, r)) { out++; continue; }
         priced++;
-        if (r.ev >= floor) rows.push(Object.assign({}, r, { board: league }));
+        if (r.ev >= floor) rows.push(Object.assign({}, nvFlag(league, r), { board: league }));
       }
       boards.push({ league, scanning: !!NV_RUN && NV_RUN.key === k, started: B.started || 0, finished: B.finished || 0,
                     stopped: B.stopped || 0, total: B.total || 0, done: B.done || 0, error: B.error || null, priced });
@@ -2742,7 +2767,7 @@ app.get('/api/nba/novig-scan', (req, res) => {
   const other = events.join() !== (B.events || []).join();   // other games than the last pass: no minute's wait
   if (req.query.now === '1' && !NV_RUN && (B.stopped || other || now - Math.max(B.finished, B.started) > NV_SCAN_NOW_MS)) startNovigScan(league, wide, events);
   const mine = !!NV_RUN && NV_RUN.key === key;
-  const shown = [...B.rows.values()].filter(r => !nvOut(league, r));
+  const shown = [...B.rows.values()].filter(r => !nvOut(league, r)).map(r => nvFlag(league, r));
   res.json({
     now, league, wide, scanning: mine, busy: NV_RUN && !mine ? NV_RUN.key.split(':')[0] : null,
     started: B.started, finished: B.finished, stopped: B.stopped || 0, total: B.total, done: B.done, players: B.players, data: B.data,

@@ -2,6 +2,14 @@
 
 ## 2026-11-16 session
 
+### Novig Scan: doubtful NBA players are hidden, questionable ones carry a Q
+Max, 11-16: Jaylon Tyson headed the All tab at +22% an hour after he was downgraded to doubtful.
+
+- **What was wrong**: the board hides players ESPN lists as Out, Injured Reserve, Suspension or Doubtful, but ESPN's NBA report has no Doubtful (or Questionable) status. Both are "Day-To-Day", with the word in the note ("Tyson (ankle) has been downgraded to doubtful for Monday's game against the Bulls"). So no doubtful NBA player was ever hidden. The NFL report does use Doubtful and Questionable.
+- **Fix** (`nvOutRefresh`, `nvFlag` in `server.js`): a Day-To-Day note about today's game (the weekday it names, Eastern) is read. Doubtful, ruled out, out, won't play: the player is hidden like any other out. Questionable: his rows stay and carry a **Q** beside his name (hover or hold for the note), on his board and on All. A note about another day's game is ignored: it says nothing about tonight. NFL Questionable players get the Q too.
+- **Still true**: the report is read every ten minutes and ESPN's note can trail the news (Tyson's was posted about an hour before the screenshot). A big number on a role player is worth a look at the news before betting.
+- **Checked** against ESPN's live report with a stand-in board: Tyson and Larsson (doubtful) hidden, Watson and Embiid (questionable, Embiid on a two-player slip) flagged, Mitchell untouched, VanVleet ("ruled out for Sunday's game", yesterday) untouched. The page was not opened to look at the Q.
+
 ### Novig Scan: NBA teammates' points, Over + Over
 Max, 11-16: Points + Threes are dead; what else for the NBA? (Then: yes, build it.)
 
