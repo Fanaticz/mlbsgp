@@ -2,6 +2,21 @@
 
 ## 2026-11-16 session
 
+### Kalshi and Polymarket looked at for the same scan (nothing built yet: a live price needs an account key)
+Max, 11-16: can the Novig logic be done on Kalshi or another exchange?
+
+- **Kalshi has the slips**: its combos take two or more legs from one game: player points, rebounds, assists, threes, NFL yards, receptions and touchdowns, spreads, totals, moneylines. Its public API reads from here with no key: every leg's book, every combo market and every trade.
+- **What it lacks is Novig's keyless quote.** A combo price on Kalshi is an auction (create the combo, send a request for quote, read the makers' answers), and each of those calls must be signed with an account's API key. Polymarket's combos work the same way and need its account credentials. So a live board is possible, but only with a key on the server.
+- **Fee**: Kalshi charges the taker 7% x price x (1 - price) a contract (its fee schedule; the combo series is on the standard rate). Novig's parlay fee is the same shape at 10%.
+- **A first read without a key, from the public trade tape** (two pulls about 30 minutes apart, 2 and 14 minutes of trades; about 3,000 combo trades a minute, most of them 3+ legs or across games). 170 two-leg same-game combos a taker bought had both legs on books 4c wide or less; 121 of those had both legs between 15% and 85%, where a whole-cent book is a usable fair value. Legs were priced off Kalshi's own books, worst-case devig, and joined at this repo's r.
+  - NFL, one player's rushing yards + touchdown (7): Kalshi's implied r +0.42 against our +0.49; after the fee, median -1.9%, range -7% to +6%, 3 of 7 above fair.
+  - NBA teammates' points, both Yes (3): implied r -0.01 against our 0.00; median -4.2%, one at +8.5% (Davis 20+ with Young 25+, implied r -0.20, a $1 trade).
+  - NBA, one player's pairs (4): implied r +0.49 against our +0.42; median -3.6%.
+  - Shapes with no r of ours applied: moneyline + total and spread + total priced as unrelated (implied r about 0), opposing players' touchdowns +0.01, teammates' touchdowns -0.12.
+- **What that says**: on these few trades Kalshi's makers price the correlation close to this repo's numbers, so the price lands near fair less the fee. Nothing like Novig's NBA teammates discount showed up, but three trades can't rule it out. The sample is small and it is what other people chose to buy, not the scanner's slips; the NBA games were three hours off.
+- **To build the board**: a Kalshi API key (key id + private key) set on the server. Then the scanner's own slips can be asked directly. Two costs to know first: Kalshi raises the price of asking for accounts that ask often and rarely accept, and an account may create 5,000 new combos a week.
+- **Not looked at**: ProphetX (it has parlays with live quotes; no public price call was found) and Sporttrade.
+
 ### NHL looked at again (still nothing above fair; the boards stay hidden)
 Max, 11-16: EV plays in every league but the NHL.
 
