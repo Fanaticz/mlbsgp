@@ -2,6 +2,14 @@
 
 ## 2026-11-16 session
 
+### Novig Scan: swipe a row right to hide it; Unhide brings them back
+Max, 11-16.
+
+- **Swipe** a row to the right (finger, or a mouse drag) past about a third of its width and it leaves the board; a shorter drag, or one to the left, puts it back. Up and down still scrolls. The drag starts on the row itself, not on its buttons, the Novig link, the bet form or the opened details.
+- **Unhide N** appears beside Hide my bets while any open row is hidden, and brings them all back.
+- **What is hidden**: that one slip, on its own board and on All, on this device only (`nbaScanHidden` in the browser), until its game starts (then it is forgotten) or Unhide. A new pass does not bring it back. The player's other slips stay.
+- **Checked** in a phone-sized browser with touch drags on a stand-in board: a long right swipe hid the row and showed "Unhide 1", a short swipe and a left swipe did nothing, the row stayed hidden after a reload, Unhide brought it back. Not tried on a real phone.
+
 ### Novig Scan: a row's Novig price is a link that opens the slip in Novig
 Max, 11-16: make the plays links (and, next, Discord alerts that carry them).
 

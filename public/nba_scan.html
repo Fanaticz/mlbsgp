@@ -60,6 +60,9 @@
   .more { flex:none; margin-left:8px; background:none; border:1px solid var(--line); color:var(--muted); border-radius:999px;
     padding:1px 9px; font-size:11.5px; cursor:pointer; white-space:nowrap; }
   .row.sub { background:#12181f; }
+  .row { touch-action:pan-y; }   /* a sideways drag is ours (swipe right to hide); up and down still scrolls */
+  .row.drag { transition:none; user-select:none; -webkit-user-select:none; }
+  #unhide { background:none; border:1px solid var(--line); color:var(--muted); border-radius:8px; padding:7px 11px; font-size:13px; cursor:pointer; }
   .row.sub .legs { padding-left:14px; }
   .who small, .legs small { color:var(--muted); font-size:11.5px; margin-left:6px; white-space:nowrap; }
   .legs { overflow:hidden; text-overflow:ellipsis; }
@@ -173,6 +176,7 @@
   </select>
   <button type="button" id="now" title="Run one pass. Nothing is asked of Novig until you press this: each pass sends every combo to its pricers as a live auction. While a pass runs, this button stops it." style="background:var(--accent);border:0;color:#1a1a1a;font-weight:600;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;white-space:nowrap">Fetch</button>
   <button type="button" id="auto" title="Auto-scan: the server prices every board but the two Ladders (NBA, NBA Team, NFL, CBB, CFB, soccer) one after another, over and over, with this page open or closed. Today's games only. It runs until you press this again. Each pass sends every combo to Novig's pricers.">Auto-scan</button>
+  <button type="button" id="unhide" style="display:none" title="Bring back the rows you swiped away."></button>
   <button type="button" id="hidebets" title="Hide or show your own bets on this page, for a screenshot.">Hide my bets</button>
   <a class="back" id="corr" href="nba.html">Correlations →</a>
 </div>
@@ -322,6 +326,13 @@ const SOC = () => LEAGUE === "soccer";
 const ALL = () => LEAGUE === "all";
 // A row's key on this page: on the All tab two boards can hold the same key.
 const rk = c => c.board ? c.board + "|" + c.key : c.key;
+// Rows swiped away (swipe a row right): slip key -> when to forget it (its
+// game's start, or a day on). Kept on this device; a hidden slip is hidden on
+// its own board and on All, until Unhide.
+let HIDDEN = new Map();
+try { HIDDEN = new Map(Object.entries(JSON.parse(localStorage.getItem("nbaScanHidden") || "{}")).filter(([, t]) => t > Date.now())); } catch (_) {}
+const saveHidden = () => { try { localStorage.setItem("nbaScanHidden", JSON.stringify(Object.fromEntries(HIDDEN))); } catch (_) {} };
+let SWIPE = null, SWIPED = 0;   // the drag under way; when the last one ended (its click is not a row press)
 const BOARD = { all:"All", nba:"NBA", ladder:"NBA Ladder", nbateam:"NBA Team", nfl:"NFL", nflladder:"NFL Ladder", nhl:"NHL", nhllines:"NHL Lines", soccer:"soccer", cfb:"CFB", cbb:"CBB" };
 
 // My bets: what I have down, kept on the server (same list on every device).
@@ -460,6 +471,7 @@ function detail(c) {
 }
 
 function render() {
+  if (SWIPE && SWIPE.on) return;   // a row is being dragged: it is drawn again when the drag ends
   if (!S) return;
   betStrip();
   // Typing a stake: leave the rows alone until it is saved or left.
@@ -470,7 +482,11 @@ function render() {
   // slate once tonight's last game is under way).
   const nowMs = S.now + (Date.now() - GOT);
   const started = S.rows.filter(c => c.starts && c.starts <= nowMs).length;
-  const all = S.rows.filter(c => !c.starts || c.starts > nowMs).sort((a, b) => b.ev - a.ev);
+  const open = S.rows.filter(c => !c.starts || c.starts > nowMs);
+  const all = open.filter(c => !HIDDEN.has(c.key)).sort((a, b) => b.ev - a.ev);
+  const gone = open.length - all.length, un = document.getElementById("unhide");
+  un.style.display = gone ? "" : "none";
+  un.textContent = `Unhide ${gone}`;
   const plays = all.filter(c => c.ev * 100 >= MINEV);
   const q = document.getElementById("search").value.trim().toLowerCase();
   let rows = all;
@@ -610,7 +626,7 @@ function render() {
         else render();
       }, 150); });
     rowsEl.querySelectorAll(".row").forEach(el => el.onclick = e => {
-      if (e.target.closest(".det") || e.target.closest("a.nv")) return;   // let text in the details be selected; a link is not a row press
+      if (e.target.closest(".det") || e.target.closest("a.nv") || Date.now() - SWIPED < 400) return;   // let text in the details be selected; a link is not a row press
       const k = el.dataset.k;
       OPEN.has(k) ? OPEN.delete(k) : OPEN.add(k);
       render();
@@ -712,6 +728,44 @@ document.querySelectorAll("#league button").forEach(b => {
   };
 });
 document.getElementById("pair").onchange = render;
+// Swipe a row right to hide it. The drag starts on the row itself, not on
+// its buttons, links, bet form or opened details.
+{
+  const rowsEl = document.getElementById("rows");
+  rowsEl.addEventListener("pointerdown", e => {
+    const el = e.target.closest(".row");
+    if (!el || e.target.closest("button, a, input, .det, .betform") || (e.pointerType === "mouse" && e.button !== 0)) return;
+    SWIPE = { el, x: e.clientX, y: e.clientY, dx: 0, on: false, id: e.pointerId };
+  });
+  rowsEl.addEventListener("pointermove", e => {
+    if (!SWIPE || e.pointerId !== SWIPE.id) return;
+    const dx = e.clientX - SWIPE.x, dy = e.clientY - SWIPE.y;
+    if (!SWIPE.on) {
+      if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { SWIPE = null; return; }   // a scroll
+      if (dx < 14 || Math.abs(dy) > dx) return;
+      SWIPE.on = true;
+      SWIPE.el.classList.add("drag");
+      try { SWIPE.el.setPointerCapture(e.pointerId); } catch (_) {}
+    }
+    SWIPE.dx = Math.max(0, dx);
+    SWIPE.el.style.transform = `translateX(${SWIPE.dx}px)`;
+    SWIPE.el.style.opacity = String(Math.max(0.25, 1 - SWIPE.dx / 260));
+  });
+  const end = e => {
+    if (!SWIPE || e.pointerId !== SWIPE.id) return;
+    const w = SWIPE;
+    SWIPE = null;
+    if (!w.on) return;
+    SWIPED = Date.now();
+    w.el.classList.remove("drag"); w.el.style.transform = ""; w.el.style.opacity = "";
+    const c = e.type === "pointerup" && w.dx > Math.min(110, w.el.offsetWidth * 0.3) && S.rows.find(r => rk(r) === w.el.dataset.k);
+    if (c) { HIDDEN.set(c.key, c.starts || Date.now() + 86400000); saveHidden(); }
+    render();
+  };
+  rowsEl.addEventListener("pointerup", end);
+  rowsEl.addEventListener("pointercancel", end);
+}
+document.getElementById("unhide").onclick = () => { HIDDEN.clear(); saveHidden(); render(); };
 document.getElementById("hidebets").onclick = () => {
   HIDEBETS = !HIDEBETS;
   try { localStorage.setItem("nbaScanHideBets", HIDEBETS ? "1" : "0"); } catch (_) {}
