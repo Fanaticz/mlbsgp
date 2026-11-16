@@ -230,6 +230,12 @@ copula r on 17,319 games of 2023-24 to 2025-26 against closing lines, by
 size of spread (scripts/cbb_line_correlations.py): underdog covers + his
 team total Under -0.61, a team total Under + game Under +0.83, both team
 totals Under +0.37, first-half spread + spread +0.63, spread + total -0.04.
+Each two-leg slip is asked again with each leg moved one line either way,
+where that line has a fair value (Pinnacle's on team totals and the first
+half, Novig's own tight book on the game's spread and total): Novig's price
+does not follow the line the way the fair value does, so the line beside
+can be the better play. Team-total and first-half slips always; a spread +
+total slip only when it priced at --alt-gate (-8%) or better.
 Tested 11-13: 89 quotes on Novig's own books, none above fair, median -10%;
 106 quotes with Pinnacle's team totals and first halves, 5 above fair,
 median -9.5%. The four Pinnacle shapes asked here were the best of 27 by
@@ -1121,8 +1127,10 @@ def nfl_tri_candidates(a):
 SOCCER_LIFT = {None: [(0.50, 1.33), (0.60, 1.29), (0.70, 1.26), (1.0, 1.25)],
                "1.5": [(0.50, 1.38), (0.60, 1.32), (0.70, 1.31), (1.0, 1.31)],
                "2.5": [(0.50, 1.61), (0.60, 1.51), (0.70, 1.40), (1.0, 1.42)]}
-SOCCER_LEAGUES = ("EPL", "Serie A", "La Liga", "Bundesliga", "Ligue 1", "Champions League", "Europa League",
-                  "MLS", "Liga MX", "UEFA Nations League", "FIFA World Cup", "FIFA Club World Cup")
+# The major leagues only (Max, 11-16): the top five, which SOCCER_LIFT was
+# measured on, and the Champions League. Left out since: Europa League, MLS,
+# Liga MX, UEFA Nations League, FIFA World Cup, FIFA Club World Cup.
+SOCCER_LEAGUES = ("EPL", "Serie A", "La Liga", "Bundesliga", "Ligue 1", "Champions League")
 
 
 def soccer_candidates(a):
@@ -1212,6 +1220,7 @@ def soccer_candidates(a):
     return (out[:a.max] if a.max else out), {}
 
 
+ALT_P = (0.25, 0.75)       # a leg moved a line keeps a fair chance inside this
 CFB_KAPPA = 0.5            # corr(favourite's margin, total) = CFB_KAPPA x spread / total
 # Per board: Novig's league, the margin and total sd where a game's ladder is
 # too short to fit, and whether the underdog-moneyline slips are asked.
@@ -1277,7 +1286,7 @@ def cfb_candidates(a):
     games = {}
     for m in items:
         games.setdefault(m["eventId"], []).append(m)
-    out = []
+    out, alts, seen_alt = [], [], set()
     for eid, ms in games.items():
         money = next((m for m in ms if m["marketType"] == "MONEY"), None)
         name = next((m["description"].rsplit(" t", 1)[0] for m in ms if m["marketType"] == "TOTAL" and " @ " in m["description"]), None)
@@ -1425,23 +1434,47 @@ def cfb_candidates(a):
                        ("half", "fav_1h_cover+fav_cover", [pick("cover", fav, half=True), pick("cover", fav)])]
         if board["own"]:
             shapes += [("half", "1h_under+under", [pick("tot", side="under", half=True), under])]
-        for kind, shape, ls in shapes:
-            if any(L is None for L in ls) or len({L["id"] for L in ls}) < len(ls):
-                continue
+        def row(kind, shape, ls):
             R = [[1.0 if i == j else corr(x, y) for j, y in enumerate(ls)] for i, x in enumerate(ls)]
             seen = measured_r(shape, abs(mu_m)) if shape and len(ls) == 2 else None
             if seen:
                 R[0][1] = R[1][0] = seen["r"]
             j = sgp.joint(R[0][1], ls[0]["p"], ls[1]["p"]) if len(ls) == 2 else both_scores(ls)
-            out.append({"key": ",".join(L["id"] for L in ls), "tier": 9, "player": name, "id": eid, "team": board["league"],
-                        "starts": ms[0]["startsTs"], "legs": [dict(L) for L in ls], "kind": kind,
-                        "label": " · ".join(L["text"] for L in ls), "forced": False,
-                        "r": min(R[i][k] for i in range(len(ls)) for k in range(i)), "j": j,
-                        "devig_r": sgp.devig_r(j, ls[0]["p"], ls[1]["p"]) if len(ls) == 2 else None,
-                        "sharp": sum(1 for L in ls if L.get("sharp")), **({"games": seen["n"]} if seen else {}),
-                        "rough": any(L["width"] > novig.MAX_SPREAD + 1e-9 for L in ls if not L.get("sharp"))})
+            return {"key": ",".join(L["id"] for L in ls), "tier": 9, "player": name, "id": eid, "team": board["league"],
+                    "starts": ms[0]["startsTs"], "legs": [dict(L) for L in ls], "kind": kind,
+                    "label": " · ".join(L["text"] for L in ls), "forced": False,
+                    "r": min(R[i][k] for i in range(len(ls)) for k in range(i)), "j": j,
+                    "devig_r": sgp.devig_r(j, ls[0]["p"], ls[1]["p"]) if len(ls) == 2 else None,
+                    "sharp": sum(1 for L in ls if L.get("sharp")), **({"games": seen["n"]} if seen else {}),
+                    "rough": any(L["width"] > novig.MAX_SPREAD + 1e-9 for L in ls if not L.get("sharp"))}
+
+        def beside(L):
+            """The same leg on the next line each way (one easier, one
+            harder), where that line has a fair value too."""
+            v = [x for x in legs if x["id"] != L["id"] and all(x[k] == L[k] for k in ("stat", "team", "side", "half"))
+                 and (x.get("sharp") or x["width"] <= a.max_spread + 1e-9) and ALT_P[0] <= x["p"] <= ALT_P[1]]
+            near = lambda xs: [min(xs, key=lambda x: abs(x["line"] - L["line"]))] if xs else []   # noqa: E731
+            return near([x for x in v if x["p"] > L["p"]]) + near([x for x in v if x["p"] < L["p"]])
+        for kind, shape, ls in shapes:
+            if any(L is None for L in ls) or len({L["id"] for L in ls}) < len(ls):
+                continue
+            c = row(kind, shape, ls)
+            out.append(c)
+            # The same slip with one leg moved a line (Max, 11-16: U88 + U74
+            # paid +230 where U88 + U76 paid +225; Novig's price doesn't move
+            # with the line the way the fair value does). Asked only when the
+            # slip itself comes back near fair (--alt-gate), see scan().
+            if board["pin"] and a.alts and len(ls) == 2:
+                for i, L in enumerate(ls):
+                    for x in beside(L):
+                        v = row(kind, shape, [x if k == i else y for k, y in enumerate(ls)])
+                        if v["key"] not in seen_alt:
+                            seen_alt.add(v["key"])
+                            alts.append(dict(v, alt=c["key"], alt_of=c["label"]))
     out.sort(key=lambda c: c["starts"])
-    return (out[:a.max] if a.max else out), {}
+    out = out[:a.max] if a.max else out
+    keys = {c["key"] for c in out}
+    return out + [v for v in alts if v["alt"] in keys and v["key"] not in keys], {}
 
 
 NBA_LINES = os.path.join(HERE, "..", "..", "..", "public", "data", "nba_line_correlations.json")
@@ -2039,6 +2072,8 @@ def scan(a, emit):
                 and (not a.before or not c.get("starts") or c["starts"] < a.before)
                 and (not a.max_fair or sgp.american(c["j"]) <= a.max_fair)]
     cands = mine(cands)
+    moved = [c for c in cands if c.get("alt")]   # CBB: a slip with one leg moved a line, asked after its own slip
+    cands = [c for c in cands if not c.get("alt")]
     ladder = [c for c in cands if c["tier"] == 6]
     cands = [c for c in cands if c["tier"] != 6]
     if BOOKS["ladders"] is not None:   # the NBA ladder's lazy pull
@@ -2151,6 +2186,21 @@ def scan(a, emit):
                 cands = cands + more
                 list(pool.map(one, soonest(more)))
                 settle(wait=True)
+        if moved:
+            # Team-total and first-half slips: always asked. Novig's price on
+            # those does not follow the line (11-16, ACU @ MOST: ACU +5.5 +
+            # ACU Under 67.5 paid 4.04x, -39%, and ACU +6.5 + Under 67.5,
+            # the easier slip, 5.95x, +10%), so the slip's own EV says nothing
+            # about the line beside it. Spread + total slips track the model
+            # (every one of 8 within 3% of its slip), so theirs are asked only
+            # when the slip itself priced at --alt-gate or better.
+            ev = {c["key"]: c["ev"] for c in rows}
+            more = [c for c in moved if c["kind"] != "cover" or ev.get(c["alt"], -9.0) * 100 >= a.alt_gate]
+            if more:
+                emit({"type": "more", "add": len(more)})
+                cands = cands + more
+                list(pool.map(one, soonest(more)))
+                settle(wait=True)
         if a.tri and a.tier in (0, 4):
             more = mine(triples([c for c in rows if go(c)], ctx, stats, rfun, a))
             emit({"type": "more", "add": len(more)})
@@ -2210,6 +2260,10 @@ def main():
     ap.add_argument("--star-pts", type=float, default=26.5,
                     help="NBA: also ask those three-leg slips for anyone whose points main line is this high (0 = the list only)")
     ap.add_argument("--ladder-fix", action="store_true", help="scale higher-line joints by LADDER_FIX (off: plain model)")
+    ap.add_argument("--alt-gate", type=float, default=-8.0,
+                    help="CBB: a spread + total slip at this EV%% or better is asked again with each leg moved one line "
+                         "either way (default -8); team-total and first-half slips always are")
+    ap.add_argument("--no-alts", dest="alts", action="store_false", help="CBB: skip the moved-line versions")
     ap.add_argument("--no-unders", dest="unders", action="store_false",
                     help="NFL: ask no player-prop Unders (Under + Under, the Over + Under stacks, a prop's Under + a game line)")
     ap.add_argument("--no-dd", dest="dd", action="store_false", help="skip the build-your-own double-doubles")

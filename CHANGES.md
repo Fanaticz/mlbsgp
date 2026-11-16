@@ -2,6 +2,27 @@
 
 ## 2026-11-16 session
 
+### Novig Scan: CBB slips are asked again with a leg moved one line
+Max, 11-16: after the Pinnacle lines are found, check the line beside too (U88 + U74 paid +230 where U88 + U76 paid +225).
+
+- **Change** (`beside`, `row` in `cfb_candidates`; the `moved` stage in `scan()`; `--alt-gate`, `--no-alts`): each two-leg CBB slip also gets versions with one leg moved to the next line, one easier and one harder, where that line has a fair value (Pinnacle's on team totals and the first half, Novig's own tight book on the game's spread and total) and its chance stays between 25% and 75%. They are asked after the slips themselves and show as ordinary rows under the game.
+- **When they are asked**: always for slips with a team-total or first-half leg; for spread + total slips only when the slip itself priced within 8% of fair.
+- **Why not gate them all**: live on ACU @ MOST (21 slips, all priced), ACU +5.5 + ACU Under 67.5 paid 4.04x (-39%) and ACU +6.5 + Under 67.5, the easier slip, paid 5.95x (+10%). Both team totals Under: -26% at 72.5 / 67.5, +7% at 72.5 / 66.5, +3% at 73.5 / 67.5. Novig's price on these does not follow the line, so a slip's own EV says nothing about the line beside it. The eight spread + total versions all came back within 3% of their slip (-7% to -13%).
+- **Cost**: about three times the asks on team-total games. Today's slate: 104 slips and 353 moved-line versions over 22 games (180 always asked, 173 gated), counted without quoting.
+- **Checked**: that one game end to end against Novig, slips above fair settled over two asks as usual. A whole pass was not timed and the page was not opened.
+
+### Novig Scan: soccer is the major leagues only
+Max, 11-16. `SOCCER_LEAGUES` is the top five (EPL, Serie A, La Liga, Bundesliga, Ligue 1), which the lifts were measured on, and the Champions League. Dropped: Europa League, MLS, Liga MX, UEFA Nations League, FIFA World Cup, FIFA Club World Cup.
+
+### Soccer explored (nothing changed on the board)
+Max, 11-16: explore other soccer; check BTTS and Novig's SGPs against Pinnacle, prebuilt combos included.
+
+- **Leagues**: Novig lists soccer in eight leagues (66 matches), all of them already asked.
+- **BTTS against Pinnacle**: on 43 matches with both, Novig's Yes and No offers sit either side of Pinnacle's no-vig price; taking the better offer is -4% to +1%.
+- **Novig's parlays against Pinnacle's prebuilt combos** (result & total goals, BTTS & result, BTTS & total goals; fair = Pinnacle's combo market with its 6% to 8% margin taken out in proportion; eight Nations League matches, 128 quotes): median -8% to -9% for each kind. 17 quotes above fair, nearly all long shots with the draw or the underdog (Draw & Over, No & Draw, underdog & either total), and Novig paid more than Pinnacle's own price, margin included, on many of them (Germany v Netherlands No & Draw 27.6x against Pinnacle's +2053, the same when asked again). Taking the margin out in proportion flatters long shots, so those EVs are high; paying more than Pinnacle's price is not affected by that. Not checked on a major-league match, and Pinnacle's limit on these is $150.
+- **Goalscorer + his team to win**: priced above the goalscorer's own chance. Nothing there.
+- **Other corner shapes**, measured on 19,761 top-five-league matches (football-data.co.uk, 2015-16 on; the same method gives the board's existing lifts): underdog wins + favourite's corners Over + underdog's corners Under hits x1.37 to x1.62 as often as unrelated legs would; underdog wins + favourite's corners Over x1.16 to x1.37; favourite -1.5 + his corners Under + underdog's Over x1.25 to x1.47. Total corners with total goals, and BTTS with corners: unrelated (x0.95 to x1.06). On two even Nations League matches Novig priced the first shape at about 14x where x1.22 was needed, twice running; on lopsided matches it was far under fair. Corner legs there were Novig's own 5c to 8c books, not Pinnacle's. Novig refuses "favourite doesn't win" in a parlay.
+
 ### Novig Scan: swipe a row right to hide it; Unhide brings them back
 Max, 11-16.
 
