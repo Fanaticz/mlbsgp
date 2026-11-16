@@ -1,5 +1,16 @@
 # Changes
 
+## 2026-11-16 session
+
+### Novig Scan: Auto-scan prices today's games only
+Max, 11-16: have the auto scanner focus on the games of that day.
+
+- **Change**: an Auto-scan pass leaves out every game starting after the next midnight (`nvDayEnd` in `server.js`; `scan.py --before MS`, applied in `scan()`'s `mine`). Midnight is in the time zone of the page that switched Auto-scan on (the page sends it; Eastern if none, and for a cycle already on from before this change until it is switched off and on again).
+- **Later days' games** are priced with Fetch only (the whole board, or the game picker). Their rows stay on the board at their earlier prices: an Auto-scan pass removes only today's rows it did not price.
+- **A board with no game today** gets a pass that reads the board and asks nothing, then the cycle moves on.
+- **Page**: the status line says "today's games only", and a board whose last pass was Auto-scan's says so.
+- **Checked** on the live boards without asking for a quote (candidates counted at the start of a pass): NFL 247 slips to 225 (LAC @ BAL tonight; the rest are Thursday's and Sunday's), NBA 65 to 65 (all tonight), CFB 0. Not run end to end through the server, and the page was not opened.
+
 ## 2026-11-15 session
 
 ### Novig Scan: passing-TD correlations fitted at 3+ as well as 2+

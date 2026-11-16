@@ -18,6 +18,7 @@ player, ranked by EV at what Novig's slip pays.
   python3 scan.py --league cbb    # college basketball: spread + total
   python3 scan.py --league nfl --games         # the open games and their ids
   python3 scan.py --league nfl --events ID ID  # only those games (the page's game picker)
+  python3 scan.py --league nfl --before MS     # only games starting before that time (Auto-scan: today's games)
   python3 scan.py --json          # one JSON object per line as quotes land
                                   # (server.js reads this for the Scanner page)
 
@@ -2032,7 +2033,10 @@ def scan(a, emit):
         # asked at all (Max, 11-15: keep the NFL FVs we scan under +600).
         for c in cs:
             c["event"] = where.get(c["legs"][0]["id"])
+        # --before: games starting later than that are left out (Auto-scan
+        # prices today's games only).
         return [c for c in cs if (not a.events or c["event"] in a.events)
+                and (not a.before or not c.get("starts") or c["starts"] < a.before)
                 and (not a.max_fair or sgp.american(c["j"]) <= a.max_fair)]
     cands = mine(cands)
     ladder = [c for c in cands if c["tier"] == 6]
@@ -2230,6 +2234,8 @@ def main():
                          "a new quote on stdout, or {\"error\": why}")
     ap.add_argument("--events", nargs="+", default=None, metavar="ID",
                     help="only these games (Novig event ids, from --games): the page's game picker")
+    ap.add_argument("--before", type=float, default=None, metavar="MS",
+                    help="only games starting before this time (epoch ms): Auto-scan's end of today")
     ap.add_argument("--first", default=None, metavar="FILE",
                     help="a JSON list of slip keys to ask before the rest, in that order (server.js: the last pass's best rows)")
     ap.add_argument("--games", action="store_true", help="list the league's open pregame games as JSON and stop")
