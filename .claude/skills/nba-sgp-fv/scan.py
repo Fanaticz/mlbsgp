@@ -57,6 +57,10 @@ allows one a second, so the order is the scan's budget):
   4  Three legs: the best --tri two-leg Over + Over rows (at --tri-min-ev or
      better) each get every other stat's main-line Over added, wherever no
      pair in the three has a negative r.
+  T  Teammates: each team's two highest points lines, Over + Over, priced
+     as unrelated legs (nba_mate_candidates: that is what four seasons of
+     box scores say, and Novig often prices them as if they pulled against
+     each other). Not gated: one slip a team.
 Under + Under is never asked: Novig rejects it for one player. Legs on books
 wider than --max-spread are skipped, not guessed.
 
@@ -1914,6 +1918,50 @@ def candidates(markets, d, by, a):
     return (out[:a.max] if a.max else out), ctx
 
 
+NBA_MATE_R = 0.0       # two teammates' points Overs: unrelated (see nba_mate_candidates)
+NBA_MATE_MIN = 14.5    # the second scorer's points line is at least this
+
+
+def nba_mate_candidates(markets, ctx):
+    """NBA teammates: each team's two highest points lines, Over + Over.
+    Measured on four seasons of box scores (each player's line his median
+    over his previous 15 games, 20+ minutes): a team's top two scorers both
+    go Over as often as unrelated legs would, r +0.02 on 6,578 team-games
+    (two-sigma range -0.03 to +0.06), the same at 20+ and 24+ points a game.
+    Pairs don't differ from one another by more than chance (204 pairs with
+    40+ games together: their r's spread 0.17, what 78 games each gives by
+    itself), so every pair is priced at NBA_MATE_R, the measured r less one
+    standard error. Novig prices many of them as if one scorer's night cost
+    the other's: 11-16, 16 teams, its quotes implied r -0.05 at the median
+    and -0.12 to -0.15 on Jokic + Murray, Davis + Young and Maxey + Brown,
+    +6% to +10% against unrelated legs and the same on a second ask.
+    Opposing stars it prices about right (8 slips, median -2.7%), and one
+    player's Over + Under came back -6% to -30% (6 slips): neither is asked."""
+    event = {}
+    for m in markets:
+        event.setdefault(novig.norm(novig.player_name(m)), m["eventId"])
+    teams = {}   # (game, team): the data's team can be out of date, so two teammates must also be in the same game
+    for p, main, starts in ctx.values():
+        ev = event.get(novig.norm(p["name"]))
+        if "pts" in main and p.get("team_abbr") and ev:
+            teams.setdefault((ev, p["team_abbr"]), []).append((p, main["pts"], starts))
+    out = []
+    for (_, team), ps in teams.items():
+        ps.sort(key=lambda x: -x[1]["line"])
+        if len(ps) < 2 or ps[1][1]["line"] < NBA_MATE_MIN:
+            continue
+        (pa, ra, starts), (pb, rb, _) = ps[0], ps[1]
+        la, lb = leg("pts", ra, 1), leg("pts", rb, 1)
+        last = lambda p: p["name"].split(" ", 1)[-1]   # noqa: E731
+        j = sgp.joint(NBA_MATE_R, la["p"], lb["p"])
+        out.append({"key": f"{la['id']},{lb['id']}", "tier": 2, "player": f"{pa['name']} + {pb['name']}",
+                    "id": f"{pa['athlete_id']}+{pb['athlete_id']}", "team": team, "starts": starts, "legs": [la, lb], "kind": "mates",
+                    "label": f"{last(pa)} {leg_text(la)} · {last(pb)} {leg_text(lb)}", "r": NBA_MATE_R, "j": j, "forced": False,
+                    "devig_r": sgp.devig_r(j, la["p"], lb["p"]),
+                    "rough": max(la["width"], lb["width"]) > novig.MAX_SPREAD + 1e-9})
+    return out
+
+
 def triples(rows, ctx, stats, rfun, a):
     """Three-leg combos: the best two-leg Over + Over rows, each with one more
     stat's main-line Over. rfun(player, stat, stat) is the pair's r (or None)."""
@@ -2129,7 +2177,10 @@ def scan(a, emit):
         stats, rfun, a.tri, a.stars = (), None, 0, False
     else:
         d, by = sgp.load()
-        cands, ctx = candidates(novig.fetch(), d, by, a)
+        markets = novig.fetch()
+        cands, ctx = candidates(markets, d, by, a)
+        if a.scope != "ladder" and a.mates:   # not under --tier: the NBA board runs at --tier 1
+            cands = cands + nba_mate_candidates(markets, ctx)
         stats, rfun = STATS, lambda p, x, y: price.shrunk_r(d, by, p, x, y)[0]
     # Everything else waits for the main-line Points + Threes quotes: a player
     # whose best one isn't above --gate (0%: above fair) gets nothing more
@@ -2349,6 +2400,7 @@ def main():
     ap.add_argument("--alt-gate", type=float, default=-8.0,
                     help="CBB: a spread + total slip at this EV%% or better is asked again with each leg moved one line "
                          "either way (default -8); team-total and first-half slips always are")
+    ap.add_argument("--no-mates", dest="mates", action="store_false", help="NBA: skip the teammates' points slips")
     ap.add_argument("--no-alts", dest="alts", action="store_false", help="CBB: skip the moved-line versions")
     ap.add_argument("--no-unders", dest="unders", action="store_false",
                     help="NFL: ask no player-prop Unders (Under + Under, the Over + Under stacks, a prop's Under + a game line)")

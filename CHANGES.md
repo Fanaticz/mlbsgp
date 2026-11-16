@@ -2,6 +2,15 @@
 
 ## 2026-11-16 session
 
+### Novig Scan: NBA teammates' points, Over + Over
+Max, 11-16: Points + Threes are dead; what else for the NBA? (Then: yes, build it.)
+
+- **Added** (`nba_mate_candidates` in `scan.py`; `--no-mates`): on the NBA board, each team's two highest points lines, Over + Over, as one slip under both names. One ask a team, not gated by the Points + Threes quote. Priced as unrelated legs (`NBA_MATE_R` 0.0).
+- **Why unrelated**: on four seasons of box scores (each player's line his median over his previous 15 games, 20+ minutes) a team's top two scorers both go Over at r +0.02 on 6,578 team-games (two-sigma range -0.03 to +0.06), the same at 20+ and 24+ points a game; 0.0 is that less one standard error. Pairs don't differ from one another by more than chance (204 pairs with 40+ games together), so no pair has its own number.
+- **Why it can pay**: Novig often prices the two as if one's night cost the other's. 11-16, 16 teams: its quotes implied r -0.05 at the median, and -0.12 to -0.15 on Jokic + Murray, Davis + Young and Maxey + Brown (+6% to +10% against r +0.02; 8 of 16 above fair, median +0.4%).
+- **Probed the same day and not added**: one player's Over + Under (Novig quotes it; points Over + assists Under on six stars -6% to -30%); opposing stars' points Over + Over (measured r +0.06, Novig about the same: 8 slips, median -2.7%); teammates' rebounds, opposing rebounders and opposing passers (unrelated in the data, -0.03 to +0.03). Rebounds Over + game Under is 0.06 to 0.12 and + the opponent's team total Under 0.09 to 0.16 in `nba_line_correlations.json`: under the 10% fee.
+- **Checked** end to end on PHX @ DEN: Jokic 26+ + Murray 25+ fair +322, Novig 4.56x, +8.1%, the same on a second ask; Booker + Brooks -10.6%. The row was opened on the page in a browser. One slate only.
+
 ### Novig Scan: my bets are kept on each device only
 Max, 11-16: other people look at the scanner too; hide the bets and keep them local.
 
