@@ -340,27 +340,30 @@ let BETS = [], BETS_AT = 0;
 let HIDEBETS = false;
 try { HIDEBETS = localStorage.getItem("nbaScanHideBets") === "1"; } catch (_) {}
 const usd = v => "$" + (Math.round(v * 100) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 });
-async function bets(body) {
-  try {
-    const r = await fetch("/api/nba/novig-bets", body
-      ? { method: "POST", headers: { "X-Scan-Key": KEY, "Content-Type": "application/json" }, body: JSON.stringify(body) }
-      : { cache: "no-store", headers: { "X-Scan-Key": KEY } });
-    if (!r.ok) return;
-    const j = await r.json();
-    BETS = j.bets || [];
-    BETS_AT = Date.now();
-    // This browser keeps its own copy. If the server's list was wiped (its
-    // epoch changed: a redeploy that lost the file), send back what is missing.
-    let mine = {};
-    try { mine = JSON.parse(localStorage.getItem("nbaScanBets") || "{}"); } catch (_) {}
-    if (!body || !body.restore) {
-      const have = new Set(BETS.map(b => b.id));
-      const lost = mine.epoch && j.epoch && mine.epoch !== j.epoch ? (mine.bets || []).filter(b => !have.has(b.id)) : [];
-      if (lost.length) return bets({ restore: lost });
-    }
-    try { localStorage.setItem("nbaScanBets", JSON.stringify({ epoch: j.epoch, bets: BETS })); } catch (_) {}
-    render();
-  } catch (_) { /* keep the list we have */ }
+// My bets are kept on this device only (Max, 11-16: other people look at the
+// scanner too). Nothing about them is sent to the server, so each device has
+// its own list. The first time, the list starts from the copy this browser
+// kept of the old server-side list.
+const BETSLS = "nbaScanMyBets";
+function bets(body) {
+  let list = null;
+  try { list = JSON.parse(localStorage.getItem(BETSLS) || "null"); } catch (_) {}
+  if (!Array.isArray(list)) {
+    try { list = (JSON.parse(localStorage.getItem("nbaScanBets") || "{}").bets) || []; } catch (_) { list = []; }
+  }
+  if (body && body.del) list = list.filter(b => b.id !== String(body.del));
+  if (body && body.add) {
+    const a = body.add, stake = Math.round(Number(a.stake) * 100) / 100, x = Number(a.x);
+    if (stake > 0 && a.player) list.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7), at: Date.now(),
+      key: String(a.key || ""), board: String(a.board || ""), player: String(a.player), team: String(a.team || ""), label: String(a.label || ""),
+      stake, x: x > 1 ? x : null, fair: Number.isFinite(Number(a.fair)) ? Number(a.fair) : null, starts: Number(a.starts) > 0 ? Number(a.starts) : null });
+  }
+  // A bet leaves the list three days after its game (or after it was added).
+  list = list.filter(b => (b.starts || b.at) > Date.now() - 3 * 86400000);
+  try { localStorage.setItem(BETSLS, JSON.stringify(list)); localStorage.removeItem("nbaScanBets"); } catch (_) {}
+  BETS = list;
+  BETS_AT = Date.now();
+  render();
 }
 // A bet shows until about five hours after tip (a day after it was added when
 // the row had no start time).
@@ -636,7 +639,7 @@ function render() {
     `All: every board’s slips at Min EV or better, best first, for games that haven’t started. Each row carries its board; open that board’s tab for how its fair value is made and for the rest of its slips. A dimmed row is over an hour old, or its board is being priced and hasn’t reached it yet; a pass prices its board’s best rows from last time first, so those clear within minutes. Press ↻ on a row to price it again now. ` +
     `<b>Auto-scan</b> has the server price today’s games on NBA, NBA Team, NFL, CBB, CFB and soccer in turn (games starting before midnight your time; Fetch a board for later days), with this page open or closed: a minute between passes, no board more often than every ten minutes, and it runs, day and night, until you switch it off. NBA Ladder and NFL Ladder are left out: they are only priced when you Fetch them on their own tabs. ` +
     `Quotes move by a few percent between asks and last about 30 seconds, so a row is a lead to re-check on the slip, and against sharp odds, before betting.` :
-    (SOC() ? `Soccer: favourite to win + favourite’s corners Under + underdog’s corners Over, with and without a goals Over. Fair value is the legs’ unrelated price adjusted for how much more often the whole slip hits (×1.25 to ×1.61, from 17,934 top-five-league matches). Each leg’s fair value is Pinnacle’s no-vig price on that line (open a row to see it beside Novig’s book); where Pinnacle has no such line it is the middle of Novig’s own book, and the row is marked ~ if that book is wide. The lift is a league average, so treat rows as leads. ` : "") +
+    (SOC() ? `Soccer (the top five leagues and the Champions League): favourite to win + favourite’s corners Under + underdog’s corners Over, with and without a goals Over; and, where the favourite is under 70% to win, the mirror: underdog to win + favourite’s corners Over + underdog’s corners Under (a favourite who is behind piles up corners). Each three-leg slip is also asked with a corner leg moved one line, where that line has a price. Fair value comes from how each pair of legs moves together, measured on 19,761 top-five-league matches by strength of favourite and applied to each leg’s own price, so it holds on any corner line (within 5% of the counted hit rate at every line tested). Each leg’s fair value is Pinnacle’s no-vig price on that line (open a row to see it beside Novig’s book); where Pinnacle has no such line it is the middle of Novig’s own book, and the row is marked ~ if that book is wide. League averages, not this match’s teams: treat rows as leads. ` : "") +
     (LEAGUE === "cfb" ? `CFB: Novig lists no college player props, so these are slips across one game’s own lines: the underdog’s moneyline with the game Under (at the main line and at the Under nearest +230), those two with the underdog’s team total Over, the favourite’s spread with the Over, and the underdog’s spread with the Under; then, where Novig’s team-total and first-half books are tight, the underdog’s spread with his team total Under, the favourite’s team total Under with the game Under, both team totals Under, the favourite’s first-half spread with his spread, and the first-half Under with the game Under. Up to ten a game; underdogs longer than about +900 get no moneyline slips. Each leg’s fair value is Novig’s own book at that line. The correlation is modelled, not measured: the two teams’ scores are fitted to that game’s alt spreads and alt totals, and a favourite covering is tied to the Over by half of spread ÷ total (an assumption). Novig prices these lines close to that model, so most rows sit under fair after its 10% parlay fee; treat anything above fair as a lead to check. ` : "") +
     (LEAGUE === "cbb" ? `CBB: Novig lists no college player props, so these are slips across one game’s own lines, up to six a game: the favourite’s spread with the Over; the underdog’s spread with the Under; the underdog’s spread with the underdog’s team total Under; the favourite’s team total Under with the game Under; both team totals Under; and the favourite’s first-half spread with his full-game spread. Each slip with a team total or first-half leg is asked again with one leg moved a line either way (Under 76 for Under 74), and a spread + total slip is when it prices within 8% of fair: Novig’s price does not follow the line the way the fair value does, so the line beside can be the better play. Novig’s own books on team totals and the first half are too wide to price from, so those legs take Pinnacle’s no-vig price on the same line (open a row to see it); the game’s spread and total are Novig’s own book. A game Pinnacle doesn’t list gets the first two slips only. The correlation for each kind of slip is measured on 17,319 games of the last three seasons against closing spreads and totals, by size of spread: an underdog covering with its own total Under is −0.61 (both hit in 14.4% of games), a team total Under with the game Under +0.83, both team totals Under +0.37, a first-half spread with the game’s spread +0.63, a spread with the total about zero. Team-total and first-half lines in that history are derived from the closing spread and total, not posted ones, so the Pinnacle leg is the softest input: check it before sizing a play. ` : "") +
     (LEAGUE === "nfl" ? `NFL: receptions, receiving yards and anytime touchdown for WRs, TEs and RBs; rushing yards, rushing + receiving yards and carries with anytime touchdown for RBs; pass attempts, completions, passing yards and passing touchdowns for QBs. Then a quarterback’s passing Over with one of his own receivers’ Over, and a player’s prop Over with a game line on the side that goes with it (a back’s carries with his team covering or winning; a quarterback’s pass attempts with the other team): the game total, his team’s spread, moneyline and team total, and the first half’s total, spread and moneyline. Each player gets his best prop with each kind of line, where the correlation is 0.25 or better. With the spread and the moneyline the correlation used is the one for his team’s side of today’s spread (underdog of 3.5 or more, favourite of 3.5 or more, or between): a quarterback’s attempts go against his team covering at −0.44 as a favourite and only −0.15 as an underdog, and a lead back’s carries go with it at +0.22 as a favourite and +0.54 otherwise. A prop moves with the moneyline much as it does with the spread; with first-half lines a back’s carries and yards hold up (0.43) and scoring props run about three quarters of the full game’s. First-half scores are ESPN’s, cut at stand-ins for the closing first-half lines (about half the total, 0.57 of the spread). Unders are asked too, at the same correlations: a player’s Under + Under on each of those pairs, a quarterback’s Under with his receiver’s Under, a quarterback’s pass attempts against his back’s carries and his passing yards against the back’s rushing yards (one Over, one Under, both ways; −0.29 and −0.15 for a lead back), and a prop’s Under with the line’s other side. Pick “Unders” in the filter to see them alone. Then three legs at main lines, all Overs, all pulling the same way. Three of a player’s own props (receptions, yards and a touchdown); two of his props with a game line; his quarterback’s passing Over, his own Over and a game line; or three props across him and his quarterback. The game line is the total, spread, moneyline or team total, or the first half’s total, spread or moneyline, on the side that goes with both props. Each player leads up to three three-leg slips: the ones that hit most often compared with unrelated legs, at most two of one shape and one of each kind of line. Fair value is a three-way joint from the three pair correlations (open a row to see them); the ones across two players or with a game line are league-wide for the role and each carries about ±0.05, so a three-leg fair value is rougher than a two-leg one, by roughly ±5%. ` : "") +

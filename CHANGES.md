@@ -2,6 +2,24 @@
 
 ## 2026-11-16 session
 
+### Novig Scan: my bets are kept on each device only
+Max, 11-16: other people look at the scanner too; hide the bets and keep them local.
+
+- **Change**: the bets list lives in the browser (`nbaScanMyBets`) and nothing about a bet is sent to the server. The `/api/nba/novig-bets` routes are gone, and the server's saved list is set aside at start (`novig_bets.old.json`, not deleted). Another person with the passcode sees the boards and none of your bets.
+- **What you lose**: the phone and the computer no longer share one list. A bet shows on the device it was entered on.
+- **Bets already entered**: each device starts from the copy it had kept of the old shared list, so a device that had the page open before still shows them (anyone else's that did, too, until those games are three days old).
+- **Checked** in a browser on a stand-in board: the old copy came over, a new bet was added and was still there after a reload, no request about bets went to the server, a second browser with the same passcode showed no bets, and the old route answers 404.
+
+### Novig Scan: soccer priced by measured correlations, with the line beside and the mirror slip
+Max, 11-16: build it (after the research below).
+
+- **Fair value** (`slip` in `soccer_candidates`; `price.quad_joint`; `public/data/soccer_corner_correlations.json`): a Gaussian copula's joint at the legs' own prices, with each pair of legs' r measured on 19,761 top-five-league matches by strength of favourite, times a scale per shape so it matches the counted hit rate on average. It replaces one fixed lift per favourite strength, which was right only at the 50/50 corner lines. At those lines the two agree (Slovenia: x1.24 against x1.26; with Over 2.5 x1.45 against x1.40).
+- **How good**: at the main corner lines and one corner either side (nine combinations per favourite strength), the scaled joint is within 5% of the counted hit rate for every shape the board asks.
+- **The mirror**: underdog to win + favourite's corners Over + underdog's corners Under, where the favourite is under 70% to win (`SOCCER_DOG_MAX`; above that the fit is up to 11% out on few matches).
+- **The line beside**: each three-leg slip is asked again with a corner leg moved one line, where that line has Pinnacle's price or a Novig book inside 10c. On today's Nations League board that was 4 extra slips over 13 matches: few corner lines have a usable second price.
+- **Data** (`scripts/soccer_corner_correlations.py --fetch 2016 2026`): downloads the seasons from football-data.co.uk into `public/data/soccer_matches.json` and rebuilds the correlations with their checks.
+- **Checked live** on Slovenia v North Macedonia with the league list pointed at the Nations League for the test (6 slips, all priced): the three favourite slips -9% to -11%, the mirror 26.8x against a fair +2161 (+19%, the same on a second ask), its moved-line version +11%. **Not checked on a major-league match**: Novig has no corner books on one today. The page was not opened on the soccer tab.
+
 ### Soccer SGPs researched further (nothing changed on the board)
 Max, 11-16: research more on soccer SGPs.
 

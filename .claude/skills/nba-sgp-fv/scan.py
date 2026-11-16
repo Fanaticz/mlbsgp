@@ -191,12 +191,19 @@ leading favourite sits back and the underdog chases, so the legs hit
 together more often than unrelated legs would. Each leg's fair value is
 Pinnacle's no-vig price on that line (pinnacle.py), or the middle of
 Novig's own book where Pinnacle has no such line (marked ~ when that book
-is wide: corner books often are). Fair value = the legs'
-product times SOCCER_LIFT, measured on 17,934 top-five-league matches
-(2015-16 on, football-data.co.uk: results, corners, closing odds) with
-corner lines nearest 50/50: x1.25 to x1.33 with no goals leg, x1.31 to
-x1.38 with Over 1.5, x1.40 to x1.61 with Over 2.5, larger for weaker
-favourites. League averages, not match-specific: rows are leads.
+is wide: corner books often are). Where the favourite is under 70% to win
+it also asks the mirror: underdog to win + favourite's corners Over +
+underdog's corners Under (a favourite who is behind piles up corners). Each
+three-leg slip is asked again with a corner leg moved one line either way,
+where that line has Pinnacle's price or a Novig book inside 10c. Fair value
+is a Gaussian copula's joint at the legs' own prices, with each pair of
+legs' r measured on 19,761 top-five-league matches (2015-16 on,
+football-data.co.uk: results, corners, closing odds) by strength of
+favourite, times the shape's scale so it matches the counted hit rate on
+average (scripts/soccer_corner_correlations.py; within 5% at every corner
+line tested). The fixed lifts it replaced (SOCCER_LIFT, x1.25 to x1.61,
+right only at the 50/50 corner lines) are kept for when that file is
+missing. League averages, not match-specific: rows are leads.
 
 College football (--league cfb): Novig lists no player props for NCAAF, only
 game lines, so the slips are across a game's own lines: the underdog's
@@ -1133,12 +1140,20 @@ SOCCER_LIFT = {None: [(0.50, 1.33), (0.60, 1.29), (0.70, 1.26), (1.0, 1.25)],
 SOCCER_LEAGUES = ("EPL", "Serie A", "La Liga", "Bundesliga", "Ligue 1", "Champions League")
 
 
+SOCCER_CORNERS = os.path.join(HERE, "..", "..", "..", "public", "data", "soccer_corner_correlations.json")
+try:
+    SOCCER_R = json.load(open(SOCCER_CORNERS))
+except (OSError, ValueError):
+    SOCCER_R = {}
+SOCCER_DOG_MAX = 0.70      # the mirror slip is asked where the favourite is under this to win
+
+
 def soccer_candidates(a):
     """Favourite ML + goals Over + favourite corners Under + underdog corners
     Over, per match, against the unrelated-legs price. Each leg's fair value
     is Pinnacle's no-vig price on that line where it has one (pinnacle.py),
     else the middle of Novig's own book."""
-    out, failed = [], []
+    out, failed, alts, seen_alt = [], [], [], set()
     try:
         import pinnacle
         pin = pinnacle.board()
@@ -1201,23 +1216,94 @@ def soccer_candidates(a):
             base = [L(wins[0], 0, "ml", f"{fav} win", game and game["ml"][fside]),
                     L(fc, 1, "crn", f"{fav} U{fc['strike']} corners", crn(fc, fside, "under")),
                     L(dc, 0, "crn", f"{dog} O{dc['strike']} corners", crn(dc, dside, "over"))]
-            shapes = [(None, base)]
+            band = next((b for b in SOCCER_R.get("by_fav", []) if b["fav"][0] <= base[0]["p"] < b["fav"][1] + 1e-9), None)
+
+            def slip(shape, legs, goals=None, alt=None):
+                """shape 'fav': favourite wins (+ goals Over) + his corners
+                Under + the underdog's Over; 'dog': underdog wins + the
+                favourite's corners Over + the underdog's Under. The joint
+                is the Gaussian copula's at the measured pair r's for this
+                strength of favourite, times the shape's scale (see
+                scripts/soccer_corner_correlations.py); with no correlations
+                file, the old lift at the main lines."""
+                ps, unrelated = [x["p"] for x in legs], math.prod(x["p"] for x in legs)
+                if band:
+                    r, g = band["r"], f"o{goals.replace('.', '')}" if goals else None
+                    if shape == "dog":
+                        prs, name = {(0, 1): r["dw_fo"], (0, 2): r["dw_du"], (1, 2): r["fu_do"]}, "dog"
+                    elif g:
+                        prs, name = {(0, 1): r[f"fw_{g}"], (0, 2): r["fw_fu"], (0, 3): r["fw_do"], (1, 2): r[f"fu_{g}"],
+                                     (1, 3): r[f"do_{g}"], (2, 3): r["fu_do"]}, f"fav_{g}"
+                    else:
+                        prs, name = {(0, 1): r["fw_fu"], (0, 2): r["fw_do"], (1, 2): r["fu_do"]}, "fav"
+                    R = [[1.0 if i == k else prs[(min(i, k), max(i, k))] for k in range(len(ps))] for i in range(len(ps))]
+                    j = (price.tri_joint(ps, R) if len(ps) == 3 else price.quad_joint(ps, R)) * band["check"][name]["scale"]
+                    rs = [round(v, 2) for v in prs.values()]
+                else:
+                    if shape == "dog" or alt:
+                        return None
+                    j, rs = unrelated * next(v for top, v in SOCCER_LIFT[goals] if base[0]["p"] <= top), None
+                j = min(j, 0.99, min(ps))
+                c = {"key": ",".join(x["id"] for x in legs), "tier": 5, "player": f"{fav} v {dog}", "id": eid,
+                     "team": lg, "starts": wins[0]["starts"], "legs": [dict(x) for x in legs], "label": " · ".join(x["text"] for x in legs),
+                     "r": None, "j": j, "forced": False, "devig_r": None, "pair_rs": rs,
+                     "lift": j / unrelated, "unrelated_x": 1 / unrelated, "sharp": sum(1 for x in legs if x.get("sharp")),
+                     "rough": any(x["width"] > novig.MAX_SPREAD + 1e-9 for x in legs if not x.get("sharp"))}
+                if alt:
+                    c.update(alt=alt["key"], alt_of=alt["label"])
+                return c
+
+            def beside(team, side, m0, i, way):
+                """The team's corner legs on the next line each way from m0
+                (one easier, one harder), where that line has a price worth
+                using: Pinnacle's, or a Novig book no wider than 10c."""
+                v = []
+                for m in ms:
+                    if m["type"] != "TEAM_TOTAL_CORNERS" or not m["desc"].startswith(team + " ") or m["strike"] == m0["strike"]:
+                        continue
+                    sharp = crn(m, side, way)
+                    if not sharp and m["width"] > 0.10 + 1e-9:
+                        continue
+                    leg = L(m, i, "crn", f"{team} {'O' if i == 0 else 'U'}{m['strike']} corners", sharp)
+                    if ALT_P[0] <= leg["p"] <= ALT_P[1]:
+                        v.append(leg)
+                near = lambda xs: [min(xs, key=lambda x: abs(x["line"] - float(m0["strike"])))] if xs else []   # noqa: E731
+                p0 = L(m0, i, "crn", "", crn(m0, side, way))["p"]
+                return near([x for x in v if x["p"] > p0]) + near([x for x in v if x["p"] < p0])
+
+            def moved(shape, legs, c, spots):
+                """c with one corner leg moved a line: [(index in legs, team, Pinnacle side, market, outcome, way)]."""
+                for k, team, side, m0, i, way in spots:
+                    for x in beside(team, side, m0, i, way):
+                        v = slip(shape, [x if n == k else y for n, y in enumerate(legs)], alt=c)
+                        if v and v["key"] not in seen_alt:
+                            seen_alt.add(v["key"])
+                            alts.append(v)
+            c = slip("fav", base)
+            out.append(c)
+            if a.alts and band:
+                moved("fav", base, c, [(1, fav, fside, fc, 1, "under"), (2, dog, dside, dc, 0, "over")])
             for line in ("1.5", "2.5"):
                 t = next((m for m in ms if m["type"] == "TOTAL" and m["strike"] == line and m["width"] <= 0.30), None)
                 if t:
-                    shapes.append((line, [base[0], L(t, 0, "tot", f"Over {line}",
-                                                     game and game["goals"].get(float(line), {}).get("over"))] + base[1:]))
-            for goals, legs in shapes:
-                unrelated = math.prod(x["p"] for x in legs)
-                lift = next(v for top, v in SOCCER_LIFT[goals] if base[0]["p"] <= top)
-                out.append({"key": ",".join(x["id"] for x in legs), "tier": 5, "player": f"{fav} v {dog}", "id": eid,
-                            "team": lg, "starts": wins[0]["starts"], "legs": legs, "label": " · ".join(x["text"] for x in legs),
-                            "r": None, "j": min(unrelated * lift, 0.99), "forced": False, "devig_r": None,
-                            "lift": lift, "unrelated_x": 1 / unrelated, "sharp": sum(1 for x in legs if x.get("sharp")),
-                            "rough": any(x["width"] > novig.MAX_SPREAD + 1e-9 for x in legs if not x.get("sharp"))})
+                    out.append(slip("fav", [base[0], L(t, 0, "tot", f"Over {line}",
+                                                       game and game["goals"].get(float(line), {}).get("over"))] + base[1:], goals=line))
+            # The mirror (Max, 11-16): a favourite who is behind piles up
+            # corners. Only where he is under SOCCER_DOG_MAX to win: above
+            # that the joint is off by more than 5% on too few matches.
+            if band and base[0]["p"] < SOCCER_DOG_MAX and wins[1]["width"] <= 0.08:
+                mirror = [L(wins[1], 0, "ml", f"{dog} win", game and game["ml"][dside]),
+                          L(fc, 0, "crn", f"{fav} O{fc['strike']} corners", crn(fc, fside, "over")),
+                          L(dc, 1, "crn", f"{dog} U{dc['strike']} corners", crn(dc, dside, "under"))]
+                c = slip("dog", mirror)
+                out.append(c)
+                if a.alts:
+                    moved("dog", mirror, c, [(1, fav, fside, fc, 0, "over"), (2, dog, dside, dc, 1, "under")])
     if failed and not out:
         raise SystemExit("Novig's catalog didn't answer for " + ", ".join(failed))
-    return (out[:a.max] if a.max else out), {}
+    out = out[:a.max] if a.max else out
+    keys = {c["key"] for c in out}
+    return out + [v for v in alts if v["alt"] in keys and v["key"] not in keys], {}
 
 
 ALT_P = (0.25, 0.75)       # a leg moved a line keeps a fair chance inside this
@@ -2195,7 +2281,7 @@ def scan(a, emit):
             # (every one of 8 within 3% of its slip), so theirs are asked only
             # when the slip itself priced at --alt-gate or better.
             ev = {c["key"]: c["ev"] for c in rows}
-            more = [c for c in moved if c["kind"] != "cover" or ev.get(c["alt"], -9.0) * 100 >= a.alt_gate]
+            more = [c for c in moved if c.get("kind") != "cover" or ev.get(c["alt"], -9.0) * 100 >= a.alt_gate]
             if more:
                 emit({"type": "more", "add": len(more)})
                 cands = cands + more

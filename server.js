@@ -2794,27 +2794,11 @@ app.post('/api/nba/novig-cycle', (req, res) => {
   res.json({ cycle: nvCycleState() });
 });
 
-// My bets on the scanner page: what Max has down, kept on the server so the
-// phone and the desktop show the same list. Same passcode as the scanner.
-//   GET  /api/nba/novig-bets                      -> { bets }
-//   POST /api/nba/novig-bets { add: {...} } | { del: id }
-const NV_BETS_FILE = NV_SCAN_FILE ? path.join(path.dirname(NV_SCAN_FILE), 'novig_bets.json') : null;
-// The file also carries an epoch: a random id made when the file is first
-// written. If the server's disk is wiped (a redeploy with no volume mounted)
-// the epoch changes, and a browser that still holds the bets sends them back.
-let NV_BETS = [], NV_BETS_EPOCH = '';
-try {
-  const saved = JSON.parse(require('fs').readFileSync(NV_BETS_FILE, 'utf8'));
-  NV_BETS = Array.isArray(saved) ? saved : (saved.bets || []);
-  NV_BETS_EPOCH = saved.epoch || '';
-} catch (_) { /* none yet */ }
-if (!NV_BETS_EPOCH) NV_BETS_EPOCH = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-function nvBets() {
-  // A bet leaves the list three days after its game (or after it was added).
-  const cut = Date.now() - 3 * 86400000;
-  NV_BETS = NV_BETS.filter(b => (b.starts || b.at) > cut);
-  return NV_BETS;
-}
+// My bets on the scanner page are kept in each browser only (Max, 11-16:
+// other people look at the scanner too). They used to be saved here and
+// shown to every device with the passcode; that file is set aside at start.
+// (renamed, not deleted, so the old list can be read back by hand if a device lost its copy)
+if (NV_SCAN_FILE) require('fs').rename(path.join(path.dirname(NV_SCAN_FILE), 'novig_bets.json'), path.join(path.dirname(NV_SCAN_FILE), 'novig_bets.old.json'), () => {});
 function nvBetsAuth(req, res) {
   res.set('Cache-Control', 'no-store');
   if (!NV_SCAN_KEY) { res.status(503).json({ error: 'scanner off' }); return false; }
@@ -2860,36 +2844,7 @@ app.post('/api/nba/novig-requote', (req, res) => {
   nvRequote(league, wide, key, (why, row, code) => why ? res.status(code).json({ error: why }) : res.json({ row, now: Date.now() }));
 });
 
-app.get('/api/nba/novig-bets', (req, res) => { if (nvBetsAuth(req, res)) res.json({ bets: nvBets(), epoch: NV_BETS_EPOCH }); });
-app.post('/api/nba/novig-bets', (req, res) => {
-  if (!nvBetsAuth(req, res)) return;
-  const { add, del, restore } = req.body || {};
-  const str = (v, n) => String(v == null ? '' : v).slice(0, n);
-  const clean = (b, id, at) => {
-    const stake = Number(b.stake), x = Number(b.x);
-    if (!(stake > 0) || !b.player) return null;
-    return { id, at, key: str(b.key, 400), board: str(b.board, 12), player: str(b.player, 80), team: str(b.team, 12),
-             label: str(b.label, 160), stake: Math.round(stake * 100) / 100, x: x > 1 ? x : null,
-             fair: Number.isFinite(Number(b.fair)) ? Number(b.fair) : null,
-             starts: Number(b.starts) > 0 ? Number(b.starts) : null };
-  };
-  if (del) NV_BETS = NV_BETS.filter(b => b.id !== String(del));
-  if (add) {
-    const b = clean(add, Date.now().toString(36) + Math.random().toString(36).slice(2, 7), Date.now());
-    if (!b) return res.status(400).json({ error: 'a bet needs a player and a stake' });
-    NV_BETS.push(b);
-  }
-  // Bets a browser still holds after this server lost its file.
-  if (Array.isArray(restore)) {
-    for (const r of restore.slice(0, 200)) {
-      const id = str(r && r.id, 40);
-      const b = id && !NV_BETS.some(x => x.id === id) && clean(r, id, Number(r.at) > 0 ? Number(r.at) : Date.now());
-      if (b) NV_BETS.push(b);
-    }
-  }
-  if (NV_BETS_FILE) require('fs').writeFile(NV_BETS_FILE, JSON.stringify({ epoch: NV_BETS_EPOCH, bets: nvBets() }), () => {});
-  res.json({ bets: nvBets(), epoch: NV_BETS_EPOCH });
-});
+
 
 app.get('/healthz', (_req, res) => res.send('ok'));
 

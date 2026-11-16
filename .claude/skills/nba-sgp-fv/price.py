@@ -278,6 +278,22 @@ def tri_joint(ps, R):
     return tot * step / 3
 
 
+def quad_joint(ps, R):
+    """P(all four legs hit) under a Gaussian copula: the first leg is
+    integrated out and tri_joint takes the other three at each value."""
+    a = sgp.nppf(1 - ps[0])
+    r1 = [R[0][i] for i in (1, 2, 3)]
+    s = [math.sqrt(1 - r * r) for r in r1]
+    Rp = [[1.0 if i == j else (R[i + 1][j + 1] - r1[i] * r1[j]) / (s[i] * s[j]) for j in range(3)] for i in range(3)]
+    n, hi = 60, max(a, 0) + 8
+    step, tot = (hi - a) / n, 0.0
+    for k in range(n + 1):
+        x = a + k * step
+        q = [min(1 - 1e-9, max(1e-9, 1 - sgp.ncdf((sgp.nppf(1 - ps[i + 1]) - r1[i] * x) / s[i]))) for i in range(3)]
+        tot += math.exp(-x * x / 2) / math.sqrt(2 * math.pi) * tri_joint(q, Rp) * (1 if k in (0, n) else 4 if k % 2 else 2)
+    return tot * step / 3
+
+
 def mc_joint(ps, R, draws=4_000_000):
     import numpy as np
     vals, vecs = np.linalg.eigh(np.array(R))
