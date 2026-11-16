@@ -2490,21 +2490,20 @@ function nvSaveBoards() {
 try {
   const saved = JSON.parse(require('fs').readFileSync(NV_SCAN_FILE, 'utf8'));
   for (const [k, b] of Object.entries(saved)) {
+    if (k.startsWith('dknba')) continue;   // the DK NBA board is gone: drop its saved rows
     NV_BOARDS.set(k, Object.assign(b, { rows: new Map((b.rows || []).map(r => [r.key, r])), seen: new Set() }));
   }
 } catch (_) { /* no saved boards yet */ }
 
-const NV_PY_LEAGUE = league => ({ ladder: 'nba', nbateam: 'nba', dknba: 'nba', kalshinba: 'nba', kalshinfl: 'nfl', nflladder: 'nfl', nhllines: 'nhl' }[league] || league);
-// The DK NBA board: the NBA slips priced on DraftKings (scan_dk.py). Its own script; same events.
-const NV_DK_PY = path.join(__dirname, '.claude', 'skills', 'nba-sgp-fv', 'scan_dk.py');
+const NV_PY_LEAGUE = league => ({ ladder: 'nba', nbateam: 'nba', kalshinba: 'nba', kalshinfl: 'nfl', nflladder: 'nfl', nhllines: 'nhl' }[league] || league);
 // Every board but 'nba' (the default). 'nbateam' is the NBA Team board:
 // scan.py --league nba --kind team.
 // The Kalshi NBA board: the NBA slips asked as Kalshi combos (scan_kalshi.py), signed with
-// KALSHI_KEY_ID / KALSHI_PRIVATE_KEY. Fetch only, like the DK board.
+// KALSHI_KEY_ID / KALSHI_PRIVATE_KEY. Fetch only.
 const NV_KALSHI_PY = path.join(__dirname, '.claude', 'skills', 'nba-sgp-fv', 'scan_kalshi.py');
-const NV_OWN_SCRIPT = { dknba: NV_DK_PY, kalshinba: NV_KALSHI_PY, kalshinfl: NV_KALSHI_PY };
+const NV_OWN_SCRIPT = { kalshinba: NV_KALSHI_PY, kalshinfl: NV_KALSHI_PY };
 const nvKalshi = league => String(league).startsWith('kalshi');
-const NV_LEAGUES = ['nfl', 'nhl', 'nhllines', 'soccer', 'cfb', 'cbb', 'ladder', 'nflladder', 'nbateam', 'dknba', 'kalshinba', 'kalshinfl'];
+const NV_LEAGUES = ['nfl', 'nhl', 'nhllines', 'soccer', 'cfb', 'cbb', 'ladder', 'nflladder', 'nbateam', 'kalshinba', 'kalshinfl'];
 // GET /api/nba/novig-games?league= — the league's open pregame games for the
 // page's game picker: [{ id, name, starts }]. One catalog read, kept 2 minutes.
 const NV_GAMES = new Map();   // python league -> { at, games }
@@ -2547,10 +2546,7 @@ function startNovigScan(league, wide, events, auto, before) {
   }
   let proc;
   try {
-    // The DK board prices with the cookie pasted in the main app (Soccer tab,
-    // "DK cookie"), as the app's own DK pricing does.
-    const env = league === 'dknba' && DK_RUNTIME_COOKIES ? Object.assign({}, process.env, { DK_COOKIES: DK_RUNTIME_COOKIES }) : process.env;
-    proc = require('child_process').spawn(PYTHON, args, { stdio: ['ignore', 'pipe', 'pipe'], env });
+    proc = require('child_process').spawn(PYTHON, args, { stdio: ['ignore', 'pipe', 'pipe'] });
   } catch (e) {
     B.error = 'scan could not start: ' + e.message;
     return;
@@ -2808,7 +2804,7 @@ app.get('/api/nba/novig-scan', (req, res) => {
   });
 });
 // The boards the All tab gathers (the hidden NHL boards are left out).
-const NV_ALL_BOARDS = ['nba', 'ladder', 'nbateam', 'nfl', 'nflladder', 'soccer', 'cfb', 'cbb', 'dknba', 'kalshinba', 'kalshinfl'];
+const NV_ALL_BOARDS = ['nba', 'ladder', 'nbateam', 'nfl', 'nflladder', 'soccer', 'cfb', 'cbb', 'kalshinba', 'kalshinfl'];
 
 // GET /n/<outcome id,outcome id,...> — a slip's link into Novig, for the
 // scanner's rows (and for alerts sent off the page). Novig's own app routes

@@ -2,6 +2,10 @@
 
 ## 2026-11-16 session
 
+### Novig Scan: the DK NBA board is removed
+
+- **Removed**: the **DK NBA** tab, the `dknba` board in `server.js` (its rows no longer appear on the All tab, and saved ones are dropped on start) and `.claude/skills/nba-sgp-fv/scan_dk.py`. Not needed any more.
+
 ### Novig Scan: a Kalshi NFL board, and the Kalshi passcode typed into the name filter
 Max, 11-16: price NBA, NFL and CBB on Kalshi tonight; and nothing asks for the passcode when the scanner is opened from the app.
 
