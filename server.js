@@ -2465,6 +2465,7 @@ const NV_BOARDS = new Map();
 // (a little under fair: those are the ones that cross it), best first.
 const NV_LEAD_EV = -0.02, NV_LEAD_MAX = 400;
 let NV_RUN = null;   // { proc, key, stop, auto } while a pass is running
+let NV_KRUN = null;  // the same for a Kalshi board: its own slot, so it runs beside a Novig pass
 let NV_LAST_END = 0; // when the last pass ended, however it ended
 const NV_SCAN_FILE = (() => {
   const fsx = require('fs'), os = require('os');
@@ -2525,7 +2526,8 @@ app.get('/api/nba/novig-games', (req, res) => {
 // events: Novig event ids picked on the page (the game picker); empty = the whole board.
 // before: only games starting before this time (ms); Auto-scan's end of today.
 function startNovigScan(league, wide, events, auto, before) {
-  if (NV_RUN) return;
+  const onKalshi = String(league).startsWith('kalshi');
+  if (onKalshi ? NV_KRUN : NV_RUN) return;
   events = events || [];
   const key = `${league}:${wide ? 1 : 0}`, B = nvBoard(key);
   // wide: also price legs on books up to 8c (10c for the second threes
@@ -2557,7 +2559,7 @@ function startNovigScan(league, wide, events, auto, before) {
   }
   let live = true;   // false once the pass has ended or been stopped
   Object.assign(B, { started: Date.now(), total: 0, done: 0, error: null, stopped: 0, seen: new Set(), events, before: before || 0 });
-  const timer = setTimeout(() => { if (NV_RUN && NV_RUN.proc === proc) proc.kill(); }, NV_SCAN_MAX_MS);
+  const timer = setTimeout(() => { const R = onKalshi ? NV_KRUN : NV_RUN; if (R && R.proc === proc) proc.kill(); }, NV_SCAN_MAX_MS);
   let buf = '', err = '', ok = false;
   const onEvent = e => {
     if (!live) return;
@@ -2578,8 +2580,7 @@ function startNovigScan(league, wide, events, auto, before) {
     if (!live) return;
     live = false;
     clearTimeout(timer);
-    NV_RUN = null;
-    NV_LAST_END = Date.now();
+    if (onKalshi) NV_KRUN = null; else { NV_RUN = null; NV_LAST_END = Date.now(); }
     if (stopped && !ok) {
       // Stopped from the page: rows it priced are kept, and rows it didn't
       // reach stay at their earlier prices (each row carries its own age).
@@ -2600,7 +2601,8 @@ function startNovigScan(league, wide, events, auto, before) {
   proc.on('error', e => end('scan could not start: ' + e.message));
   proc.on('close', () => end(''));
   // Frees the scanner at once, so another pass can start in the same request.
-  NV_RUN = { proc, key, auto: !!auto, stop: () => { end('', true); proc.kill(); } };
+  const run = { proc, key, auto: !!auto, stop: () => { end('', true); proc.kill(); } };
+  if (onKalshi) NV_KRUN = run; else NV_RUN = run;
 }
 
 // Players who are out: ESPN's injury report for the NFL and the NBA, read
@@ -2766,9 +2768,11 @@ app.get('/api/nba/novig-scan', (req, res) => {
   // its rows stay off the All tab, and a pass on it shows as no board's.
   const kalshiOk = (req.get('X-Kalshi-Key') || '') === NV_KALSHI_KEY;
   if (nvKalshi(league) && !kalshiOk) return setTimeout(() => res.status(423).json({ error: 'locked' }), 800);
-  const busyName = () => { const b = NV_RUN ? NV_RUN.key.split(':')[0] : null; return b && nvKalshi(b) && !kalshiOk ? 'another' : b; };
+  // A Kalshi board looks at the Kalshi slot, every other board at Novig's.
+  const RUN = nvKalshi(league) && req.query.league !== 'all' ? NV_KRUN : NV_RUN;
+  const busyName = () => (RUN ? RUN.key.split(':')[0] : null);
   // One pass at a time (Novig's limit is per IP), and only when asked.
-  if (req.query.stop === '1' && NV_RUN) NV_RUN.stop();
+  if (req.query.stop === '1' && RUN) RUN.stop();
   nvOutRefresh();
   // league=all[&min=EV%]: the page's All tab. Every board's rows at that EV
   // or better whose game hasn't started, each tagged with its board, and
@@ -2787,7 +2791,8 @@ app.get('/api/nba/novig-scan', (req, res) => {
         priced++;
         if (r.ev >= floor) rows.push(Object.assign({}, nvFlag(league, r), { board: league }));
       }
-      boards.push({ league, scanning: !!NV_RUN && NV_RUN.key === k, started: B.started || 0, finished: B.finished || 0,
+      const R = nvKalshi(league) ? NV_KRUN : NV_RUN;
+      boards.push({ league, scanning: !!R && R.key === k, started: B.started || 0, finished: B.finished || 0,
                     stopped: B.stopped || 0, total: B.total || 0, done: B.done || 0, error: B.error || null, priced });
     }
     return res.json({ now, league: 'all', wide, scanning: false, busy: busyName(),
@@ -2797,11 +2802,11 @@ app.get('/api/nba/novig-scan', (req, res) => {
   const events = String(req.query.events || '').split(',').filter(x => /^[0-9a-f-]{16,40}$/i.test(x)).slice(0, 40);
   const key = `${league}:${wide ? 1 : 0}`, B = nvBoard(key);
   const other = events.join() !== (B.events || []).join();   // other games than the last pass: no minute's wait
-  if (req.query.now === '1' && !NV_RUN && (B.stopped || other || now - Math.max(B.finished, B.started) > NV_SCAN_NOW_MS)) startNovigScan(league, wide, events);
-  const mine = !!NV_RUN && NV_RUN.key === key;
+  if (req.query.now === '1' && !RUN && (B.stopped || other || now - Math.max(B.finished, B.started) > NV_SCAN_NOW_MS)) startNovigScan(league, wide, events);
+  const mine = !!RUN && RUN.key === key;
   const shown = [...B.rows.values()].filter(r => !nvOut(league, r)).map(r => nvFlag(league, r));
   res.json({
-    now, league, wide, scanning: mine, busy: NV_RUN && !mine ? busyName() : null,
+    now, league, wide, scanning: mine, busy: RUN && !mine ? busyName() : null,
     started: B.started, finished: B.finished, stopped: B.stopped || 0, total: B.total, done: B.done, players: B.players, data: B.data,
     seconds: B.seconds, error: B.error, books: B.books || null, events: B.events || [], before: B.before || 0, rows: shown,
     out: B.rows.size - shown.length, cycle: nvCycleState(),

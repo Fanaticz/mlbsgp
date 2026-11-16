@@ -210,7 +210,7 @@ let S = null;              // last response
 let NOW = false;           // Fetch was pressed: ask for a pass on the next poll
 let STOP = false;          // Stop was pressed: end the running pass on the next poll
 let GOT = 0;               // when it arrived (ms, this clock)
-let MODE = "plays", WIDE = false, MINEV = 0, LEAGUE = "nba";
+let MODE = "plays", WIDE = false, MINEV = 0, LEAGUE = new URLSearchParams(location.search).has("kalshi") ? "kalshinba" : "nba";
 const PAIR_OPTS = {
   all: [],   // every board's plays together
   nba: [],   // one slip a player now: main-line Points + Threes
@@ -304,29 +304,25 @@ const GOPEN = new Set();   // players whose other rows are unfolded
 const KEYLS = "nbaScanKey";
 let KEY = "";
 try { KEY = localStorage.getItem(KEYLS) || ""; } catch (_) {}
-// The Kalshi board has its own passcode, kept on this device. The tab shows
-// only once it is in: open the page with #kalshi on the address to type it.
+// The Kalshi boards live on their own page (this one opened with ?kalshi), so
+// a Kalshi pass and a Novig pass run side by side. That page has a second
+// passcode, kept on this device; the Novig page never shows a Kalshi tab.
+const KPAGE = new URLSearchParams(location.search).has("kalshi");
 const KKEYLS = "nbaScanKalshiKey";
 let KKEY = "";
-try { KKEY = localStorage.getItem(KKEYLS) || ""; } catch (_) {}
+try { KKEY = KPAGE ? localStorage.getItem(KKEYLS) || "" : ""; } catch (_) {}
 const KALSHI = l => String(l).startsWith("kalshi");
-const kalshiTabs = hide => document.querySelectorAll('#league button[data-league^="kalshi"]').forEach(b => { b.hidden = hide; });
-// Asked for with #kalshi on the address, or by typing kalshi in the name filter.
-function kalshiAsk(force) {
-  if (force !== true && location.hash !== "#kalshi") return;
-  const v = (prompt("Kalshi board passcode") || "").trim();
+function kalshiAsk() {
+  const v = (prompt("Kalshi scanner passcode") || "").trim();
   if (v) { KKEY = v; try { localStorage.setItem(KKEYLS, v); } catch (_) {} }
-  history.replaceState(null, "", location.pathname + location.search);
-  kalshiTabs(!KKEY);   // the page was already open
+  kalshiNote();
 }
-kalshiAsk();
-addEventListener("hashchange", kalshiAsk);
-function kalshiLock() {   // a wrong passcode: forget it and put the tab away
+function kalshiLock() {   // the server refused it: forget it and ask once more
   KKEY = "";
   try { localStorage.removeItem(KKEYLS); } catch (_) {}
-  kalshiTabs(true);
-  if (KALSHI(LEAGUE)) document.querySelector('#league button[data-league="nba"]').click();
+  kalshiAsk();
 }
+const kalshiNote = () => { if (KPAGE && !KKEY) document.getElementById("rows").innerHTML = '<div class="empty">Locked. Click the title three times to enter the Kalshi passcode.</div>'; };
 const bookHead = () => { document.getElementById("bookhead").textContent = KALSHI(LEAGUE) ? "Kalshi" : LEAGUE === "dknba" ? "DK" : ALL() ? "Price" : "Novig"; };
 function lock(msg) {
   S = null;
@@ -336,12 +332,12 @@ function lock(msg) {
   document.querySelector(".controls").style.display = "none";
   document.getElementById("status").textContent = "";
 }
-const LS = "nbaNovigScan";
+const LS = KPAGE ? "nbaKalshiScan" : "nbaNovigScan";
 try {
   const v = JSON.parse(localStorage.getItem(LS) || "{}");
   if (v.mode === "all") MODE = "all";
   // NHL and NHL Lines are hidden (11-13): ~800 test slips, none above fair.
-  if (PAIR_OPTS[v.league] && !v.league.startsWith("nhl") && (!KALSHI(v.league) || KKEY)) LEAGUE = v.league;
+  if (PAIR_OPTS[v.league] && !v.league.startsWith("nhl") && KALSHI(v.league) === KPAGE) LEAGUE = v.league;
   WIDE = !!v.wide;
   if (Number.isFinite(v.minev)) MINEV = v.minev;
 } catch (_) {}
@@ -697,6 +693,7 @@ function render() {
 
 async function poll() {
   if (!shown()) return;
+  if (KPAGE && KEY && !KKEY) return kalshiNote();
   if (!KEY) {   // keep a "Wrong passcode" message up until the next try
     if (document.getElementById("lock").style.display === "none") lock("Private. Enter the passcode.");
     return;
@@ -759,19 +756,14 @@ document.getElementById("now").onclick = () => {
 pairOpts();
 loadGames();
 document.body.classList.toggle("all", LEAGUE === "all");
-kalshiTabs(!KKEY);
-// Three quick clicks on the page's title ask for the Kalshi passcode (or forget it, when it is already in).
-document.querySelector("h1").addEventListener("click", e => {
-  if (e.detail !== 3) return;
-  getSelection().removeAllRanges();
-  if (KKEY && confirm("Hide the Kalshi tabs on this device?")) return kalshiLock();
-  if (!KKEY) kalshiAsk(true);
-});
-document.getElementById("search").addEventListener("input", e => {
-  if (e.target.value.trim().toLowerCase() !== "kalshi") return;
-  e.target.value = ""; e.target.dispatchEvent(new Event("input"));
-  kalshiAsk(true);
-});
+document.querySelectorAll("#league button").forEach(b => { if (KALSHI(b.dataset.league) !== KPAGE) b.hidden = true; else if (KPAGE) b.hidden = false; });
+if (KPAGE) {
+  document.title = "Kalshi SGP Scanner";
+  document.querySelector("h1").textContent = "Kalshi SGP scanner";
+  document.getElementById("auto").hidden = true;
+  if (!KKEY) kalshiAsk();
+  document.querySelector("h1").addEventListener("click", e => { if (e.detail === 3 && !KKEY) { getSelection().removeAllRanges(); kalshiAsk(); } });
+}
 bookHead();
 document.querySelectorAll("#league button").forEach(b => {
   b.classList.toggle("on", b.dataset.league === LEAGUE);

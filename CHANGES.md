@@ -2,6 +2,14 @@
 
 ## 2026-11-16 session
 
+### Kalshi Scan: its own page and its own slot on the server
+Max, 11-16: a separate Kalshi tab, so the two scanners can run at the same time.
+
+- **Its own page**: the Kalshi boards moved off the Novig scan page to a page of their own (`nba_scan.html?kalshi=1`: Kalshi NBA, Kalshi NFL, Kalshi CBB, no Auto-scan). In the main app it is a **KALSHI SCAN** tab (`?sport=kalshiscan`). The Novig page no longer shows any Kalshi tab, and Kalshi rows are no longer on its All tab.
+- **Its own slot** (`NV_KRUN` in `server.js`): a Kalshi pass no longer waits for a Novig pass or holds one up. Novig's Auto-scan keeps going while Kalshi is fetched. Still one Kalshi board at a time.
+- **Getting in**: with the Novig scanner open, tap the EVC label five more times; the Kalshi page opens and asks for its passcode once. After that the KALSHI SCAN button stays on that device. The earlier ways in (`#kalshi`, typing kalshi in the filter, three clicks on the Novig title) are gone; three clicks on the Kalshi page's title ask again after a wrong passcode.
+- **Checked** in a browser against the local server with a stand-in for Kalshi: the Novig page's tabs (no Kalshi), the Kalshi page's three tabs after the passcode, a Kalshi CBB pass running while the Novig NBA board showed free, and the app opening the Kalshi page at `?sport=kalshiscan`. The five taps on the label were not clicked through.
+
 ### Novig Scan: a Kalshi NFL board, and the Kalshi passcode typed into the name filter
 Max, 11-16: price NBA, NFL and CBB on Kalshi tonight; and nothing asks for the passcode when the scanner is opened from the app.
 
