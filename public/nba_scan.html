@@ -161,7 +161,7 @@
     <button data-league="cfb" title="College football: slips across one game's lines (moneyline, spread, total, team total)">CFB</button>
     <button data-league="cbb" title="College basketball: a game's spread with its total">CBB</button>
     <button data-league="dknba" title="The NBA slips priced on DraftKings instead of Novig. Fetch only: Auto-scan leaves it out.">DK NBA</button>
-    <button data-league="kalshinba" title="The NBA slips asked as Kalshi combos. Fetch only: Auto-scan leaves it out.">Kalshi NBA</button>
+    <button data-league="kalshinba" hidden title="The NBA slips asked as Kalshi combos. Fetch only: Auto-scan leaves it out.">Kalshi NBA</button>
   </div>
   <div class="toggle" id="mode">
     <button data-mode="plays" class="on">Plays</button>
@@ -192,7 +192,7 @@
 <div class="mybets" id="mybets" style="display:none"></div>
 <div class="board">
   <div class="head">
-    <div>Player</div><div>Legs</div><div class="num">Fair</div><div class="num">Novig</div>
+    <div>Player</div><div>Legs</div><div class="num">Fair</div><div class="num" id="bookhead">Novig</div>
     <div class="num">EV</div><div class="num">QK</div><div class="num" title="Quarter Kelly in dollars, at $500 a unit">QK $</div><div class="num">r</div><div class="num">Age</div>
   </div>
   <div id="rows"></div>
@@ -300,6 +300,28 @@ const GOPEN = new Set();   // players whose other rows are unfolded
 const KEYLS = "nbaScanKey";
 let KEY = "";
 try { KEY = localStorage.getItem(KEYLS) || ""; } catch (_) {}
+// The Kalshi board has its own passcode, kept on this device. The tab shows
+// only once it is in: open the page with #kalshi on the address to type it.
+const KKEYLS = "nbaScanKalshiKey";
+let KKEY = "";
+try { KKEY = localStorage.getItem(KKEYLS) || ""; } catch (_) {}
+function kalshiAsk() {
+  if (location.hash !== "#kalshi") return;
+  const v = (prompt("Kalshi board passcode") || "").trim();
+  if (v) { KKEY = v; try { localStorage.setItem(KKEYLS, v); } catch (_) {} }
+  history.replaceState(null, "", location.pathname + location.search);
+  const b = document.querySelector('#league button[data-league="kalshinba"]');
+  if (b) b.hidden = !KKEY;   // the page was already open
+}
+kalshiAsk();
+addEventListener("hashchange", kalshiAsk);
+function kalshiLock() {   // a wrong passcode: forget it and put the tab away
+  KKEY = "";
+  try { localStorage.removeItem(KKEYLS); } catch (_) {}
+  document.querySelector('#league button[data-league="kalshinba"]').hidden = true;
+  if (LEAGUE === "kalshinba") document.querySelector('#league button[data-league="nba"]').click();
+}
+const bookHead = () => { document.getElementById("bookhead").textContent = LEAGUE === "kalshinba" ? "Kalshi" : LEAGUE === "dknba" ? "DK" : ALL() ? "Price" : "Novig"; };
 function lock(msg) {
   S = null;
   document.getElementById("lock").style.display = "";
@@ -313,7 +335,7 @@ try {
   const v = JSON.parse(localStorage.getItem(LS) || "{}");
   if (v.mode === "all") MODE = "all";
   // NHL and NHL Lines are hidden (11-13): ~800 test slips, none above fair.
-  if (PAIR_OPTS[v.league] && !v.league.startsWith("nhl")) LEAGUE = v.league;
+  if (PAIR_OPTS[v.league] && !v.league.startsWith("nhl") && (v.league !== "kalshinba" || KKEY)) LEAGUE = v.league;
   WIDE = !!v.wide;
   if (Number.isFinite(v.minev)) MINEV = v.minev;
 } catch (_) {}
@@ -674,7 +696,8 @@ async function poll() {
   try {
     const stop = STOP; STOP = false;
     const tab = LEAGUE;
-    const r = await fetch(ALL() ? `/api/nba/novig-scan?league=all&min=${MINEV}${WIDE ? "&wide=1" : ""}` : `/api/nba/novig-scan?league=${LEAGUE}${WIDE ? "&wide=1" : ""}${stop ? "&stop=1" : ""}${NOW ? "&now=1" + (document.getElementById("game").value ? "&events=" + document.getElementById("game").value : "") : ""}`, { cache: "no-store", headers: { "X-Scan-Key": KEY } });
+    const r = await fetch(ALL() ? `/api/nba/novig-scan?league=all&min=${MINEV}${WIDE ? "&wide=1" : ""}` : `/api/nba/novig-scan?league=${LEAGUE}${WIDE ? "&wide=1" : ""}${stop ? "&stop=1" : ""}${NOW ? "&now=1" + (document.getElementById("game").value ? "&events=" + document.getElementById("game").value : "") : ""}`, { cache: "no-store", headers: { "X-Scan-Key": KEY, "X-Kalshi-Key": KKEY } });
+    if (r.status === 423) { kalshiLock(); return; }
     if (r.status === 403) {
       KEY = "";
       try { localStorage.removeItem(KEYLS); } catch (_) {}
@@ -728,10 +751,12 @@ document.getElementById("now").onclick = () => {
 pairOpts();
 loadGames();
 document.body.classList.toggle("all", LEAGUE === "all");
+document.querySelector('#league button[data-league="kalshinba"]').hidden = !KKEY;
+bookHead();
 document.querySelectorAll("#league button").forEach(b => {
   b.classList.toggle("on", b.dataset.league === LEAGUE);
   b.onclick = () => {
-    LEAGUE = b.dataset.league; save(); OPEN.clear(); pairOpts(); loadGames();
+    LEAGUE = b.dataset.league; save(); OPEN.clear(); pairOpts(); loadGames(); bookHead();
     document.body.classList.toggle("all", ALL()); S = null;
     document.querySelectorAll("#league button").forEach(o => o.classList.toggle("on", o === b));
     document.getElementById("rows").innerHTML = "";

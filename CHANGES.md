@@ -2,6 +2,14 @@
 
 ## 2026-11-16 session
 
+### Novig Scan: the Kalshi NBA tab is hidden behind its own passcode
+Max, 11-16: hide the Kalshi tab, password yyy, since it asks with my API key. (The board's first real pass priced: Davis 25+ with Young 20+ at 5.46x, +14.8%.)
+
+- **Server** (`server.js`): the Kalshi board answers only to a second passcode (`X-Kalshi-Key`; `yyy`, or `KALSHI_TAB_KEY` on the server). Without it the board can't be read or started (423), its rows stay off the All tab, and a pass on it shows to others as "another" board.
+- **Page**: the tab is hidden until the passcode is on the device. Open the scanner with `#kalshi` on the end of the address and type it once; it is kept on that device. A wrong one is forgotten at the first refusal and the tab goes away again.
+- **Also**: the price column's heading follows the board (Kalshi, DK, Novig); it said Novig on every tab.
+- **Checked** in a browser against the local server: no tab without the passcode, a wrong passcode refused and dropped with the main passcode kept, the right one showing the tab on that visit and the next. The passcode sits in the repo's code; anyone who can read the repo can read it, so set `KALSHI_TAB_KEY` in Railway if the repo is shared.
+
 ### Novig Scan: a Kalshi NBA board (the NBA slips asked as Kalshi combos)
 Max, 11-16: the Kalshi key is saved in Railway (`KALSHI_KEY_ID`, `KALSHI_PRIVATE_KEY`; made with Read all data + Trade only).
 

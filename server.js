@@ -2749,6 +2749,8 @@ function nvCycleState() {
 // as X-Scan-Key; the page asks for it once and keeps it on that device).
 // With no NOVIG_SCAN_KEY set, the scanner is off for everyone.
 const NV_SCAN_KEY = (process.env.NOVIG_SCAN_KEY || '').trim();
+// The Kalshi board's own passcode (KALSHI_TAB_KEY on the server changes it).
+const NV_KALSHI_KEY = (process.env.KALSHI_TAB_KEY || 'yyy').trim();
 app.get('/api/nba/novig-scan', (req, res) => {
   res.set('Cache-Control', 'no-store');
   if (!NV_SCAN_KEY) return res.status(503).json({ error: 'scanner off' });
@@ -2758,6 +2760,12 @@ app.get('/api/nba/novig-scan', (req, res) => {
   const wide = req.query.wide === '1';
   const league = NV_LEAGUES.includes(req.query.league) ? req.query.league : 'nba';
   const now = Date.now();
+  // The Kalshi board asks with the owner's own Kalshi key, so it has a second
+  // passcode (X-Kalshi-Key). Without it the board can't be read or started,
+  // its rows stay off the All tab, and a pass on it shows as no board's.
+  const kalshiOk = (req.get('X-Kalshi-Key') || '') === NV_KALSHI_KEY;
+  if (league === 'kalshinba' && !kalshiOk) return setTimeout(() => res.status(423).json({ error: 'locked' }), 800);
+  const busyName = () => { const b = NV_RUN ? NV_RUN.key.split(':')[0] : null; return b === 'kalshinba' && !kalshiOk ? 'another' : b; };
   // One pass at a time (Novig's limit is per IP), and only when asked.
   if (req.query.stop === '1' && NV_RUN) NV_RUN.stop();
   nvOutRefresh();
@@ -2769,6 +2777,7 @@ app.get('/api/nba/novig-scan', (req, res) => {
     const boards = [], rows = [];
     let out = 0;
     for (const league of NV_ALL_BOARDS) {
+      if (league === 'kalshinba' && !kalshiOk) continue;
       const k = `${league}:${wide ? 1 : 0}`, B = NV_BOARDS.get(k) || {};
       let priced = 0;
       for (const r of (B.rows ? B.rows.values() : [])) {
@@ -2780,7 +2789,7 @@ app.get('/api/nba/novig-scan', (req, res) => {
       boards.push({ league, scanning: !!NV_RUN && NV_RUN.key === k, started: B.started || 0, finished: B.finished || 0,
                     stopped: B.stopped || 0, total: B.total || 0, done: B.done || 0, error: B.error || null, priced });
     }
-    return res.json({ now, league: 'all', wide, scanning: false, busy: NV_RUN ? NV_RUN.key.split(':')[0] : null,
+    return res.json({ now, league: 'all', wide, scanning: false, busy: busyName(),
                       boards, rows, out, cycle: nvCycleState() });
   }
   // events=id,id: only those games (the page's game picker).
@@ -2791,7 +2800,7 @@ app.get('/api/nba/novig-scan', (req, res) => {
   const mine = !!NV_RUN && NV_RUN.key === key;
   const shown = [...B.rows.values()].filter(r => !nvOut(league, r)).map(r => nvFlag(league, r));
   res.json({
-    now, league, wide, scanning: mine, busy: NV_RUN && !mine ? NV_RUN.key.split(':')[0] : null,
+    now, league, wide, scanning: mine, busy: NV_RUN && !mine ? busyName() : null,
     started: B.started, finished: B.finished, stopped: B.stopped || 0, total: B.total, done: B.done, players: B.players, data: B.data,
     seconds: B.seconds, error: B.error, books: B.books || null, events: B.events || [], before: B.before || 0, rows: shown,
     out: B.rows.size - shown.length, cycle: nvCycleState(),
