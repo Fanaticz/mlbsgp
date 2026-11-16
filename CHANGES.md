@@ -2,6 +2,15 @@
 
 ## 2026-11-16 session
 
+### NHL looked at again (still nothing above fair; the boards stay hidden)
+Max, 11-16: EV plays in every league but the NHL.
+
+- **Two players, both Yes** (28 slips, six games with tight books, two days before the games): Novig prices every pairing as positively related, opponents included. Its implied r: teammates' shots + shots +0.21, teammates' goal + goal +0.18, opposing skaters' shots +0.19, goals +0.19, points +0.16, teammates' points +0.47.
+- **What two seasons of game logs say** (3,177 team-games; each skater's hits centred on his own season rate): a team's top two shooters' shots +0.03, top two scorers' goals +0.01, opposing top shooters' shots -0.01, opposing scorers' goals -0.02, opposing scorers' points 0.00 (all within 0.05 of zero); teammates' top two scorers' points +0.30. So every Yes + Yes slip is far under fair.
+- **The other way round is no better**: one Yes with the other's No (38 slips, a second ask on none because none came back above fair), priced at the measured r: teammates' shots -20% at the median (best -16%), opposing shots -22%, teammates' goals -26%, opposing goals -24%, opposing points -15%. Novig is not wrong about the direction; it takes a far bigger margin on NHL player parlays than on the NBA's. Draisaitl and McDavid's goals: Yes + Yes at 4.33x and Yes + No at 3.05x add up to 56% for an event (Draisaitl scores) its own book has at 42%.
+- **Game lines only** (moneyline, puck line either way, with the total Over and Under; 40 slips on four games): 0 above fair, medians -8% to -11% by shape. Measured r of a result with the total is about zero except win-by-two with Over 5.5 (+0.17), and Novig charges more than that too.
+- **Caveat**: all of it two days before the games, when few books are tight. Worth one more look on a game day before calling the NHL closed.
+
 ### Novig Scan: a DK NBA board (the NBA slips priced on DraftKings)
 Max, 11-16: can a scan like this be done for DraftKings? Try anything to get it to work.
 
