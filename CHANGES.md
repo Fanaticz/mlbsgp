@@ -2,6 +2,16 @@
 
 ## 2026-11-16 session
 
+### Novig Scan: a Kalshi NBA board (the NBA slips asked as Kalshi combos)
+Max, 11-16: the Kalshi key is saved in Railway (`KALSHI_KEY_ID`, `KALSHI_PRIVATE_KEY`; made with Read all data + Trade only).
+
+- **Added** (`.claude/skills/nba-sgp-fv/scan_kalshi.py`; the `kalshinba` board in `server.js`; a **Kalshi NBA** tab on the page; `cryptography` in `requirements.txt` for the signing). Per player with open Kalshi props on a game not yet started: each team's two highest points lines together (r 0.0, asked first), Points + Threes, and his other pairs at r 0.25 or better. Every leg is a Yes on a Kalshi milestone (25+ points is Over 24.5), on the one nearest Novig's main line.
+- **Fair value**: each leg is Novig's book on the same line where it is tight, else Kalshi's own bid and ask, 5c wide at most (marked ~). Legs between 15% and 85% only.
+- **Price**: for each slip the script creates the combo, sends a $25 request for quote, waits 3 seconds, reads the makers' answers and deletes the request. Buying Yes costs 1 less the best No bid; Kalshi's fee (7% x price x (1 - price)) goes on top. The script has no call that accepts a quote or places an order.
+- **Fetch only, 60 slips a pass**: Auto-scan leaves the board out and one row can't be refreshed by itself. Each ask is a real auction on the account; Kalshi makes asking dearer for accounts that ask often and never accept, and allows 5,000 new combos a week.
+- **Checked**: 60 slips built from Kalshi's and Novig's live lines (58 with both legs on Novig's book). The whole pass through the server and the page (phone-sized browser, the tab, an opened row) with Kalshi's signed calls answered by a stand-in that verifies the signature; the key read both pasted on one line and with `\n` breaks.
+- **Not checked: no real Kalshi price has been seen.** The key is on the server only. Three things are assumptions until the first real pass: that a key with Trade (not Full access) may create combos and requests for quote (if not, the board says so and names the fix); that same-game NBA combos are made in `KXMVECROSSCATEGORY-R` (the collection on today's tape; the script tries a second one); and that makers answer a $25 request inside 3 seconds. `python3 scan_kalshi.py --check` on the server tests the key alone and asks nothing.
+
 ### Kalshi and Polymarket looked at for the same scan (nothing built yet: a live price needs an account key)
 Max, 11-16: can the Novig logic be done on Kalshi or another exchange?
 

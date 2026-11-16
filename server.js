@@ -2494,12 +2494,16 @@ try {
   }
 } catch (_) { /* no saved boards yet */ }
 
-const NV_PY_LEAGUE = league => ({ ladder: 'nba', nbateam: 'nba', dknba: 'nba', nflladder: 'nfl', nhllines: 'nhl' }[league] || league);
+const NV_PY_LEAGUE = league => ({ ladder: 'nba', nbateam: 'nba', dknba: 'nba', kalshinba: 'nba', nflladder: 'nfl', nhllines: 'nhl' }[league] || league);
 // The DK NBA board: the NBA slips priced on DraftKings (scan_dk.py). Its own script; same events.
 const NV_DK_PY = path.join(__dirname, '.claude', 'skills', 'nba-sgp-fv', 'scan_dk.py');
 // Every board but 'nba' (the default). 'nbateam' is the NBA Team board:
 // scan.py --league nba --kind team.
-const NV_LEAGUES = ['nfl', 'nhl', 'nhllines', 'soccer', 'cfb', 'cbb', 'ladder', 'nflladder', 'nbateam', 'dknba'];
+// The Kalshi NBA board: the NBA slips asked as Kalshi combos (scan_kalshi.py), signed with
+// KALSHI_KEY_ID / KALSHI_PRIVATE_KEY. Fetch only, like the DK board.
+const NV_KALSHI_PY = path.join(__dirname, '.claude', 'skills', 'nba-sgp-fv', 'scan_kalshi.py');
+const NV_OWN_SCRIPT = { dknba: NV_DK_PY, kalshinba: NV_KALSHI_PY };
+const NV_LEAGUES = ['nfl', 'nhl', 'nhllines', 'soccer', 'cfb', 'cbb', 'ladder', 'nflladder', 'nbateam', 'dknba', 'kalshinba'];
 // GET /api/nba/novig-games?league= — the league's open pregame games for the
 // page's game picker: [{ id, name, starts }]. One catalog read, kept 2 minutes.
 const NV_GAMES = new Map();   // python league -> { at, games }
@@ -2527,7 +2531,7 @@ function startNovigScan(league, wide, events, auto, before) {
   // milestone); the page flags those rows as rough.
   // "ladder" is its own NBA board: the shooters' higher lines (one-way lines
   // included), fair values shifted from the main line (scan.py --scope ladder).
-  const args = league === 'dknba' ? [NV_DK_PY, '--json'].concat(before ? ['--before', String(before)] : []) : [NV_SCAN_PY, '--json'].concat(league === 'ladder' ? ['--league', 'nba', '--scope', 'ladder'] :
+  const args = NV_OWN_SCRIPT[league] ? [NV_OWN_SCRIPT[league], '--json'].concat(before ? ['--before', String(before)] : []) : [NV_SCAN_PY, '--json'].concat(league === 'ladder' ? ['--league', 'nba', '--scope', 'ladder'] :
     league === 'nflladder' ? ['--league', 'nfl', '--scope', 'ladder'] :
     league === 'nhllines' ? ['--league', 'nhl', '--kind', 'lines'] :
     league === 'nbateam' ? ['--league', 'nba', '--kind', 'team'] : ['--league', league]).concat(wide ? ['--max-spread', '0.08', '--alt-spread', '0.10'] : [])
@@ -2536,7 +2540,7 @@ function startNovigScan(league, wide, events, auto, before) {
   // of the board is fresh minutes into a pass instead of whenever the pass
   // reaches each row (an NFL pass is about 50 minutes).
   const lead = [...B.rows.values()].filter(r => r.ev >= NV_LEAD_EV).sort((x, y) => y.ev - x.ev).slice(0, NV_LEAD_MAX).map(r => r.key);
-  if (lead.length && NV_SCAN_FILE && league !== 'dknba') {
+  if (lead.length && NV_SCAN_FILE && !NV_OWN_SCRIPT[league]) {
     const f = path.join(path.dirname(NV_SCAN_FILE), `novig_first_${league}_${wide ? 1 : 0}.json`);
     try { require('fs').writeFileSync(f, JSON.stringify(lead)); args.push('--first', f); } catch (_) { /* the pass runs in its usual order */ }
   }
@@ -2794,7 +2798,7 @@ app.get('/api/nba/novig-scan', (req, res) => {
   });
 });
 // The boards the All tab gathers (the hidden NHL boards are left out).
-const NV_ALL_BOARDS = ['nba', 'ladder', 'nbateam', 'nfl', 'nflladder', 'soccer', 'cfb', 'cbb', 'dknba'];
+const NV_ALL_BOARDS = ['nba', 'ladder', 'nbateam', 'nfl', 'nflladder', 'soccer', 'cfb', 'cbb', 'dknba', 'kalshinba'];
 
 // GET /n/<outcome id,outcome id,...> — a slip's link into Novig, for the
 // scanner's rows (and for alerts sent off the page). Novig's own app routes
@@ -2857,7 +2861,7 @@ let NV_REQUOTE = false;
 function nvRequote(league, wide, key, cb) {
   const B = NV_BOARDS.get(`${league}:${wide ? 1 : 0}`), row = B && B.rows.get(String(key));
   if (!row) return cb('that slip is no longer on the board', null, 404);
-  if (league === 'dknba') return cb('one slip can\'t be re-priced on the DK board: press Fetch', null, 400);
+  if (NV_OWN_SCRIPT[league]) return cb('one slip can\'t be re-priced on this board: press Fetch', null, 400);
   if (NV_REQUOTE) return cb('another slip is being refreshed', null, 429);
   NV_REQUOTE = true;
   const lg = NV_PY_LEAGUE(league);
