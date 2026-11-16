@@ -66,6 +66,7 @@ NFL_SERIES = {"KXNFLREC": "rec", "KXNFLRECYDS": "yds", "KXNFLTD": "td", "KXNFLPA
 PAIRS = (("pts", "reb"), ("pts", "ast"), ("reb", "ast"), ("reb", "tpm"), ("ast", "tpm"))
 # The collections a same-game sports combo can be made in, the one the tape shows first.
 COLLECTIONS = ("KXMVECROSSCATEGORY-R", "KXMVESPORTSMULTIGAMEEXTENDED-R")
+TIP_S = 3 * 3600      # a market's occurrence_datetime is about this long after the game starts
 FEE = 0.07            # taker fee = FEE x price x (1 - price) a contract
 PACE_S = 1.0          # between two slips
 REFUSED_AFTER = 3     # this many 401 / 403 answers with no price at all: stop
@@ -172,7 +173,7 @@ def kalshi_props(before=None, series=SERIES):
                     bid, ask = float(m["yes_bid_dollars"]), float(m["yes_ask_dollars"])
                 except (KeyError, TypeError, ValueError):
                     continue
-                starts *= 1000
+                starts = (starts - TIP_S) * 1000
                 if not name or len(parts) < 4 or starts <= now or (before and starts >= before):
                     continue
                 who = out.setdefault(novig.norm(name), {"name": name, "team": parts[2][:3], "starts": starts,
@@ -224,6 +225,7 @@ def nfl_candidates(a):
         if not p:
             continue
         _, rows = novig.ladder(markets, p["name"])
+        info["starts"] = next((r["starts"] for v in rows.values() for r in v), info["starts"])
         legs = {}
         for stat, kal in info["stats"].items():
             L = pick_leg(stat, kal, rows.get(stat, []), a)
@@ -259,6 +261,7 @@ def candidates(a):
         if not p:
             continue
         _, rows = novig.ladder(markets, p["name"])
+        info["starts"] = next((r["starts"] for v in rows.values() for r in v), info["starts"])
         legs = {}
         for stat, kal in info["stats"].items():
             L = pick_leg(stat, kal, rows.get(stat, []), a)
@@ -300,9 +303,138 @@ def candidates(a):
     return (out[:a.max] if a.max else out), d
 
 
+def _markets(series):
+    """Every open market of a Kalshi series (no key needed)."""
+    out, cursor = [], None
+    for _ in range(20):
+        q = {"series_ticker": series, "status": "open", "limit": 1000}
+        if cursor:
+            q["cursor"] = cursor
+        _, d = call("GET", "/markets", query=q, signed=False)
+        out += d.get("markets") or []
+        cursor = d.get("cursor")
+        if not cursor or not d.get("markets"):
+            break
+    return out
+
+
+def _team(s):
+    """A college's name boiled down for matching: 'Michigan St.' and 'Michigan State' agree."""
+    s = re.sub(r"[^a-z ]", "", s.lower().replace("&", " and ").replace("-", " "))
+    return " ".join({"st": "state", "u": "university"}.get(w, w) for w in s.split())
+
+
+def _same(a, b):
+    import difflib
+    a, b = _team(a), _team(b)
+    return 1.0 if a == b else difflib.SequenceMatcher(None, a, b).ratio()
+
+
+def cbb_candidates(a):
+    """College basketball: a game's spread with its total, the two pairings
+    that go together in the box scores (cbb_line_correlations.json, by size of
+    spread). Kalshi lists "X wins by over 7.5" and "Over 150.5": the favourite
+    covering and the Over are Yes legs, the underdog covering and the Under
+    are No legs on those same markets. Fair values are Novig's books on the
+    same lines; a game Novig doesn't list, or whose teams can't be matched by
+    name, is left out (Kalshi's own college books are 8 to 10 cents wide)."""
+    shapes = json.load(open(scan.CBB_LINES))
+    S, buckets = shapes["shapes"]["fav_cover+over"], shapes["buckets"]
+    now, games = time.time() * 1000, {}
+    for kind, series in (("spread", "KXNCAAMBSPREAD"), ("total", "KXNCAAMBTOTAL")):
+        for m in _markets(series):
+            try:
+                starts = (time.mktime(time.strptime(m["occurrence_datetime"][:19], "%Y-%m-%dT%H:%M:%S")) - time.timezone - TIP_S) * 1000
+                line = float(m["floor_strike"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if starts <= now or (a.before and starts >= a.before):
+                continue
+            g = games.setdefault(m["event_ticker"].split("-", 1)[1], {"starts": starts, "spread": [], "total": []})
+            row = {"line": line, "ticker": m["ticker"], "event": m["event_ticker"]}
+            if kind == "spread":
+                t, ab = re.match(r"(.+) wins by over", m.get("title") or ""), re.match(r"([A-Z]+)\d+$", m["ticker"].rsplit("-", 1)[-1])
+                if not t or not ab:
+                    continue
+                row["team"], row["abbr"] = t.group(1).strip(), ab.group(1)
+            g[kind].append(row)
+    nv = {}
+    for m in novig.catalog({"league": "NCAAB", "marketType": "SPREAD,TOTAL", "eventStatus": "OPEN_PREGAME"}):
+        t = scan.two_way(m)
+        if not t or t["spread"] > a.max_spread + 1e-9:
+            continue
+        e = nv.setdefault(m["eventId"], {"starts": m["startsTs"], "spread": {}, "total": {}, "teams": set(), "desc": ""})
+        if m["marketType"] == "TOTAL":
+            e["total"][t["strike"]] = t
+            e["desc"] = t["desc"].split(" t")[0]
+        else:
+            for i, n in enumerate(t["names"]):
+                x = re.match(r"(.+) ([+-]\d+(?:\.\d+)?)$", n)
+                if x:
+                    e["teams"].add(x.group(1))
+                    e["spread"][(x.group(1), float(x.group(2)))] = (t["p"][i], t["spread"])
+    import difflib
+    like = lambda x, y: difflib.SequenceMatcher(None, x.upper(), y.upper()).ratio()   # noqa: E731
+    out = []
+    for code, g in games.items():
+        if not g["spread"] or not g["total"]:
+            continue
+        # the game on Novig: the same start (within 45 minutes) and the nearest pair of team codes
+        letters, best = re.sub(r"^\d{2}[A-Z]{3}\d{2}", "", code), None
+        for e in nv.values():
+            if len(e["teams"]) != 2 or not e["desc"] or abs(e["starts"] - g["starts"]) > 45 * 60e3:
+                continue
+            score = like(letters, e["desc"].replace(" @ ", ""))
+            if score >= 0.6 and (not best or score > best[0]):
+                best = (score, e)
+        if not best:
+            continue
+        e, name = best[1], {}
+        n = sorted(e["teams"])
+        for row in g["spread"]:   # Kalshi's team -> Novig's, by code or by name, whichever is the closer
+            s0, s1 = (max(like(row["abbr"], x), _same(row["team"], x)) for x in n)
+            if abs(s0 - s1) >= 0.15:
+                name[row["team"]] = n[0] if s0 > s1 else n[1]
+        g["spread"] = [r for r in g["spread"] if r["team"] in name]
+        # the spread leg: "X wins by over L" is Novig's "X -L"; nearest even money on a book both list
+        sp = [(r, e["spread"][(name[r["team"]], -r["line"])]) for r in g["spread"] if (name[r["team"]], -r["line"]) in e["spread"]]
+        to = [(r, e["total"][r["line"]]) for r in g["total"] if r["line"] in e["total"]]
+        if not sp or not to:
+            continue
+        ks, (pf, ws) = min(sp, key=lambda x: abs(x[1][0] - 0.5))
+        kt_, t = min(to, key=lambda x: abs(x[1]["p"][0] - 0.5))
+        po, wt = t["p"][0], t["spread"]
+        if not (a.lo <= pf <= a.hi and a.lo <= po <= a.hi):
+            continue
+        band = next((b for b, (lo, hi) in zip(S["by_spread"], buckets) if lo <= ks["line"] < hi), None)
+        r = S["all"]["r"]
+        if band and band["n"] >= scan.CBB_MIN_GAMES and not band["r_lo"] <= r <= band["r_hi"]:
+            r = band["r"]
+        fav, dog = name[ks["team"]], next(x for x in n if x != name[ks["team"]])
+        legs = {"fav": {"stat": "cover", "side": "over", "yes": True, "p": pf, "text": f"{fav} -{ks['line']:g}"},
+                "dog": {"stat": "cover", "side": "under", "yes": False, "p": 1 - pf, "text": f"{dog} +{ks['line']:g}"},
+                "over": {"stat": "over", "side": "over", "yes": True, "p": po, "text": f"Over {kt_['line']:g}"},
+                "under": {"stat": "over", "side": "under", "yes": False, "p": 1 - po, "text": f"Under {kt_['line']:g}"}}
+        for k, L in legs.items():
+            src = ks if k in ("fav", "dog") else kt_
+            L.update(line=src["line"], fair=sgp.american(L["p"]), width=ws if k in ("fav", "dog") else wt,
+                     id=src["ticker"], event=src["event"], src="novig")
+        # fav + over and dog + under share the measured r; the other two pairings have its opposite
+        pairs = (("fav", "over"), ("dog", "under")) if r >= 0 else (("fav", "under"), ("dog", "over"))
+        for x, y in pairs:
+            la, lb, rr = legs[x], legs[y], abs(r)
+            j = sgp.joint(rr, la["p"], lb["p"])
+            out.append({"key": f"{la['id']}:{x},{lb['id']}:{y}", "tier": 1, "player": e["desc"], "id": code,
+                        "team": "CBB", "starts": e["starts"], "legs": [dict(la), dict(lb)], "label": f"{la['text']} · {lb['text']}",
+                        "r": rr, "j": j, "forced": False, "devig_r": sgp.devig_r(j, la["p"], lb["p"]), "book": "kalshi",
+                        "event": code, "rough": False, "legs_x": 1 / (la["p"] * lb["p"])})
+    out.sort(key=lambda c: (c["starts"], -c["r"]))
+    return (out[:a.max] if a.max else out), {"generated_at": shapes["generated_at"]}
+
+
 def ask(c, a):
     """(Yes price a contract before the fee, None) for the slip, or (None, why)."""
-    body = {"selected_markets": [{"market_ticker": L["id"], "event_ticker": L["event"], "side": "yes"} for L in c["legs"]]}
+    body = {"selected_markets": [{"market_ticker": L["id"], "event_ticker": L["event"], "side": "yes" if L.get("yes", True) else "no"} for L in c["legs"]]}
     ticker = why = None
     for coll in COLLECTIONS:
         st, d = call("POST", f"/multivariate_event_collections/{coll}", body)
@@ -356,7 +488,7 @@ def finish(c, yes, unit, kelly):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--league", default="nba", choices=("nba", "nfl"))
+    ap.add_argument("--league", default="nba", choices=("nba", "nfl", "cbb"))
     ap.add_argument("--json", action="store_true", help="stream events as JSON lines (server.js)")
     ap.add_argument("--dry", action="store_true", help="list the slips, ask Kalshi for no price (no key needed)")
     ap.add_argument("--check", action="store_true", help="make one signed read to see that the key is accepted")
@@ -390,13 +522,13 @@ def main():
         return
     if not a.dry:
         _signer()   # no key, or one that can't be read: say so before anything is fetched
-    cands, d = nfl_candidates(a) if a.league == "nfl" else candidates(a)
+    cands, d = nfl_candidates(a) if a.league == "nfl" else cbb_candidates(a) if a.league == "cbb" else candidates(a)
     emit({"type": "start", "total": len(cands), "players": len({c["id"] for c in cands}), "league": "kalshi" + a.league,
           "data": d["generated_at"][:10], "at": t0})
     if a.dry:
         for c in cands:
             print(f"{c['player'][:30]:30s} {c['label'][:36]:36s} r {c['r']:+.2f} fair {sgp.american(c['j']):+5d}  legs "
-                  + " / ".join(f"{L['p']:.2f} ({L['src']})" for L in c["legs"]))
+                  + " / ".join(f"{L['p']:.2f} ({L['src']})" for L in c["legs"]) + f"  {c['player']}"[:0])
         print(f"{len(cands)} slips, {sum(1 for c in cands if c['rough'])} with a leg priced off Kalshi's own book")
         return
     rows, refused, why_refused = [], 0, ""
