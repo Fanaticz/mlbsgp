@@ -2,6 +2,15 @@
 
 ## 2026-11-16 session
 
+### Novig Scan: a Kalshi NFL board, and the Kalshi passcode typed into the name filter
+Max, 11-16: price NBA, NFL and CBB on Kalshi tonight; and nothing asks for the passcode when the scanner is opened from the app.
+
+- **Kalshi NFL** (`scan_kalshi.py --league nfl`; the `kalshinfl` board; a hidden **Kalshi NFL** tab): one player's own props, both legs Yes, every pair the Novig NFL board prices (receptions, receiving yards and a touchdown; a quarterback's attempts, completions, yards and passing TDs; rushing yards, carries or rush + receiving yards with a touchdown) at r 0.25 or better. Legs, fair value, price, fee and the 60-slip cap as on Kalshi NBA. 54 slips on tonight's game and Thursday's; 46 with both legs on Novig's book (Novig lists the round-number yards lines Kalshi uses).
+- **Not on it yet**: quarterback + receiver stacks, props with game lines, three legs, Unders.
+- **The passcode**: the prompt only came up with `#kalshi` on the address, which a link from the app doesn't carry. Typing `kalshi` in the "Filter by name" box now asks for it too.
+- **CBB is not built yet.** Kalshi's own college spread and total books are 8 to 10 cents wide, too wide to be a fair value, so the legs must be priced off Novig or Pinnacle, and that needs each game matched between the two by team name.
+- **Checked**: the 54 NFL slips built from live lines; the passcode typed into the filter and the NFL tab opened in a browser against the local server. No real Kalshi price has been seen on the NFL board.
+
 ### Novig Scan: the Kalshi NBA tab is hidden behind its own passcode
 Max, 11-16: hide the Kalshi tab, password yyy, since it asks with my API key. (The board's first real pass priced: Davis 25+ with Young 20+ at 5.46x, +14.8%.)
 

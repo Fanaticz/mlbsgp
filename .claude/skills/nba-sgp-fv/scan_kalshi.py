@@ -61,6 +61,8 @@ import sgp  # noqa: E402  joint, american, devig_worst, load
 HOST = os.environ.get("KALSHI_HOST", "https://api.elections.kalshi.com")
 API = "/trade-api/v2"
 SERIES = {"KXNBAPTS": "pts", "KXNBAREB": "reb", "KXNBAAST": "ast", "KXNBA3PT": "tpm"}
+NFL_SERIES = {"KXNFLREC": "rec", "KXNFLRECYDS": "yds", "KXNFLTD": "td", "KXNFLPASSATT": "att", "KXNFLPASSCOMP": "cmp",
+              "KXNFLPASSYDS": "pyds", "KXNFLPASSTDS": "ptd", "KXNFLRSHATT": "car", "KXNFLRSHYDS": "ryds", "KXNFLRRYDS": "rry"}
 PAIRS = (("pts", "reb"), ("pts", "ast"), ("reb", "ast"), ("reb", "tpm"), ("ast", "tpm"))
 # The collections a same-game sports combo can be made in, the one the tape shows first.
 COLLECTIONS = ("KXMVECROSSCATEGORY-R", "KXMVESPORTSMULTIGAMEEXTENDED-R")
@@ -150,12 +152,12 @@ def call(method, path, body=None, query=None, signed=True):
     return 429, {"code": "too_many_requests"}
 
 
-def kalshi_props(before=None):
+def kalshi_props(before=None, series=SERIES):
     """{normalised player name: {"name", "team", "starts" (ms), "game", "stats":
     {stat: [{"line", "ticker", "event", "bid", "ask"}]}}} from Kalshi's open NBA
     player-prop markets on games that have not started. No key needed."""
     out, now = {}, time.time() * 1000
-    for series, stat in SERIES.items():
+    for series, stat in series.items():
         cursor = None
         for _ in range(20):
             q = {"series_ticker": series, "status": "open", "limit": 1000}
@@ -205,7 +207,45 @@ def pick_leg(stat, kal, nv_rows, a):
             "id": k["ticker"], "event": k["event"], "src": src}
 
 
-WORD = {"pts": "points", "reb": "rebounds", "ast": "assists", "tpm": "threes"}
+WORD = {"pts": "points", "reb": "rebounds", "ast": "assists", "tpm": "threes", "rec": "receptions", "yds": "receiving yards",
+        "td": "touchdowns", "att": "pass attempts", "cmp": "completions", "pyds": "passing yards", "ptd": "passing TDs",
+        "car": "carries", "ryds": "rushing yards", "rry": "rush + rec yards"}
+
+
+def nfl_candidates(a):
+    """NFL: one player's own pairs, Yes + Yes, every pair in scan.NFL_PAIRS with r at least --min-r."""
+    d = json.load(open(scan.NFL_DATA))
+    key = {novig.norm(p["name"]): p for p in d["players"]}
+    board = kalshi_props(a.before, NFL_SERIES)
+    markets = novig.fetch("NFL", scan.NFL_STATS)
+    out = []
+    for nm, info in board.items():
+        p = key.get(nm)
+        if not p:
+            continue
+        _, rows = novig.ladder(markets, p["name"])
+        legs = {}
+        for stat, kal in info["stats"].items():
+            L = pick_leg(stat, kal, rows.get(stat, []), a)
+            if L:
+                n = int(L["line"] + 0.5)
+                L["text"] = "anytime touchdown" if stat == "td" and n == 1 else f"{n}+ {WORD[stat]}"
+                legs[stat] = L
+        for x, y in scan.NFL_PAIRS:
+            if x not in legs or y not in legs:
+                continue
+            r = scan.nfl_r(p, x, y)
+            if r is None or r < a.min_r:
+                continue
+            la, lb = legs[x], legs[y]
+            j = sgp.joint(r, la["p"], lb["p"])
+            out.append({"key": f"{la['id']},{lb['id']}", "tier": 1, "player": p["name"], "id": p.get("athlete_id") or p.get("id") or nm,
+                        "team": p.get("team_abbr") or p.get("team") or info["team"], "starts": info["starts"],
+                        "legs": [dict(la), dict(lb)], "label": f"{la['text']} · {lb['text']}", "r": r, "j": j, "forced": False,
+                        "devig_r": sgp.devig_r(j, la["p"], lb["p"]), "book": "kalshi", "event": info["game"],
+                        "rough": any(L["src"] == "kalshi" for L in (la, lb)), "legs_x": 1 / (la["p"] * lb["p"])})
+    out.sort(key=lambda c: (c["starts"], -c["r"]))
+    return (out[:a.max] if a.max else out), d
 
 
 def candidates(a):
@@ -316,6 +356,7 @@ def finish(c, yes, unit, kelly):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--league", default="nba", choices=("nba", "nfl"))
     ap.add_argument("--json", action="store_true", help="stream events as JSON lines (server.js)")
     ap.add_argument("--dry", action="store_true", help="list the slips, ask Kalshi for no price (no key needed)")
     ap.add_argument("--check", action="store_true", help="make one signed read to see that the key is accepted")
@@ -349,8 +390,8 @@ def main():
         return
     if not a.dry:
         _signer()   # no key, or one that can't be read: say so before anything is fetched
-    cands, d = candidates(a)
-    emit({"type": "start", "total": len(cands), "players": len({c["id"] for c in cands}), "league": "kalshinba",
+    cands, d = nfl_candidates(a) if a.league == "nfl" else candidates(a)
+    emit({"type": "start", "total": len(cands), "players": len({c["id"] for c in cands}), "league": "kalshi" + a.league,
           "data": d["generated_at"][:10], "at": t0})
     if a.dry:
         for c in cands:

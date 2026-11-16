@@ -2494,7 +2494,7 @@ try {
   }
 } catch (_) { /* no saved boards yet */ }
 
-const NV_PY_LEAGUE = league => ({ ladder: 'nba', nbateam: 'nba', dknba: 'nba', kalshinba: 'nba', nflladder: 'nfl', nhllines: 'nhl' }[league] || league);
+const NV_PY_LEAGUE = league => ({ ladder: 'nba', nbateam: 'nba', dknba: 'nba', kalshinba: 'nba', kalshinfl: 'nfl', nflladder: 'nfl', nhllines: 'nhl' }[league] || league);
 // The DK NBA board: the NBA slips priced on DraftKings (scan_dk.py). Its own script; same events.
 const NV_DK_PY = path.join(__dirname, '.claude', 'skills', 'nba-sgp-fv', 'scan_dk.py');
 // Every board but 'nba' (the default). 'nbateam' is the NBA Team board:
@@ -2502,8 +2502,9 @@ const NV_DK_PY = path.join(__dirname, '.claude', 'skills', 'nba-sgp-fv', 'scan_d
 // The Kalshi NBA board: the NBA slips asked as Kalshi combos (scan_kalshi.py), signed with
 // KALSHI_KEY_ID / KALSHI_PRIVATE_KEY. Fetch only, like the DK board.
 const NV_KALSHI_PY = path.join(__dirname, '.claude', 'skills', 'nba-sgp-fv', 'scan_kalshi.py');
-const NV_OWN_SCRIPT = { dknba: NV_DK_PY, kalshinba: NV_KALSHI_PY };
-const NV_LEAGUES = ['nfl', 'nhl', 'nhllines', 'soccer', 'cfb', 'cbb', 'ladder', 'nflladder', 'nbateam', 'dknba', 'kalshinba'];
+const NV_OWN_SCRIPT = { dknba: NV_DK_PY, kalshinba: NV_KALSHI_PY, kalshinfl: NV_KALSHI_PY };
+const nvKalshi = league => String(league).startsWith('kalshi');
+const NV_LEAGUES = ['nfl', 'nhl', 'nhllines', 'soccer', 'cfb', 'cbb', 'ladder', 'nflladder', 'nbateam', 'dknba', 'kalshinba', 'kalshinfl'];
 // GET /api/nba/novig-games?league= — the league's open pregame games for the
 // page's game picker: [{ id, name, starts }]. One catalog read, kept 2 minutes.
 const NV_GAMES = new Map();   // python league -> { at, games }
@@ -2531,7 +2532,7 @@ function startNovigScan(league, wide, events, auto, before) {
   // milestone); the page flags those rows as rough.
   // "ladder" is its own NBA board: the shooters' higher lines (one-way lines
   // included), fair values shifted from the main line (scan.py --scope ladder).
-  const args = NV_OWN_SCRIPT[league] ? [NV_OWN_SCRIPT[league], '--json'].concat(before ? ['--before', String(before)] : []) : [NV_SCAN_PY, '--json'].concat(league === 'ladder' ? ['--league', 'nba', '--scope', 'ladder'] :
+  const args = NV_OWN_SCRIPT[league] ? [NV_OWN_SCRIPT[league], '--json'].concat(nvKalshi(league) ? ['--league', league.slice(6)] : []).concat(before ? ['--before', String(before)] : []) : [NV_SCAN_PY, '--json'].concat(league === 'ladder' ? ['--league', 'nba', '--scope', 'ladder'] :
     league === 'nflladder' ? ['--league', 'nfl', '--scope', 'ladder'] :
     league === 'nhllines' ? ['--league', 'nhl', '--kind', 'lines'] :
     league === 'nbateam' ? ['--league', 'nba', '--kind', 'team'] : ['--league', league]).concat(wide ? ['--max-spread', '0.08', '--alt-spread', '0.10'] : [])
@@ -2764,8 +2765,8 @@ app.get('/api/nba/novig-scan', (req, res) => {
   // passcode (X-Kalshi-Key). Without it the board can't be read or started,
   // its rows stay off the All tab, and a pass on it shows as no board's.
   const kalshiOk = (req.get('X-Kalshi-Key') || '') === NV_KALSHI_KEY;
-  if (league === 'kalshinba' && !kalshiOk) return setTimeout(() => res.status(423).json({ error: 'locked' }), 800);
-  const busyName = () => { const b = NV_RUN ? NV_RUN.key.split(':')[0] : null; return b === 'kalshinba' && !kalshiOk ? 'another' : b; };
+  if (nvKalshi(league) && !kalshiOk) return setTimeout(() => res.status(423).json({ error: 'locked' }), 800);
+  const busyName = () => { const b = NV_RUN ? NV_RUN.key.split(':')[0] : null; return b && nvKalshi(b) && !kalshiOk ? 'another' : b; };
   // One pass at a time (Novig's limit is per IP), and only when asked.
   if (req.query.stop === '1' && NV_RUN) NV_RUN.stop();
   nvOutRefresh();
@@ -2777,7 +2778,7 @@ app.get('/api/nba/novig-scan', (req, res) => {
     const boards = [], rows = [];
     let out = 0;
     for (const league of NV_ALL_BOARDS) {
-      if (league === 'kalshinba' && !kalshiOk) continue;
+      if (nvKalshi(league) && !kalshiOk) continue;
       const k = `${league}:${wide ? 1 : 0}`, B = NV_BOARDS.get(k) || {};
       let priced = 0;
       for (const r of (B.rows ? B.rows.values() : [])) {
@@ -2807,7 +2808,7 @@ app.get('/api/nba/novig-scan', (req, res) => {
   });
 });
 // The boards the All tab gathers (the hidden NHL boards are left out).
-const NV_ALL_BOARDS = ['nba', 'ladder', 'nbateam', 'nfl', 'nflladder', 'soccer', 'cfb', 'cbb', 'dknba', 'kalshinba'];
+const NV_ALL_BOARDS = ['nba', 'ladder', 'nbateam', 'nfl', 'nflladder', 'soccer', 'cfb', 'cbb', 'dknba', 'kalshinba', 'kalshinfl'];
 
 // GET /n/<outcome id,outcome id,...> — a slip's link into Novig, for the
 // scanner's rows (and for alerts sent off the page). Novig's own app routes
