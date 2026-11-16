@@ -2542,7 +2542,10 @@ function startNovigScan(league, wide, events, auto, before) {
   }
   let proc;
   try {
-    proc = require('child_process').spawn(PYTHON, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    // The DK board prices with the cookie pasted in the main app (Soccer tab,
+    // "DK cookie"), as the app's own DK pricing does.
+    const env = league === 'dknba' && DK_RUNTIME_COOKIES ? Object.assign({}, process.env, { DK_COOKIES: DK_RUNTIME_COOKIES }) : process.env;
+    proc = require('child_process').spawn(PYTHON, args, { stdio: ['ignore', 'pipe', 'pipe'], env });
   } catch (e) {
     B.error = 'scan could not start: ' + e.message;
     return;
