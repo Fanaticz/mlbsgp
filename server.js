@@ -2771,7 +2771,7 @@ app.get('/n/:ids', (req, res) => {
 <style>body{margin:0;background:#0b0d10;color:#e8eaed;font:16px -apple-system,system-ui,sans-serif;display:flex;flex-direction:column;gap:14px;align-items:center;justify-content:center;height:100vh}
 a{display:block;width:240px;text-align:center;padding:14px 0;border-radius:10px;text-decoration:none;font-weight:600}
 .a{background:#179be7;color:#fff}.w{border:1px solid #3a3f47;color:#e8eaed}</style>
-<a class="a" href="${appUrl}">Open in the Novig app</a><a class="w" href="${web}">Open on novig.com</a>
+<a class="a" href="${appUrl}">Open in the Novig app</a><a class="w" href="${web}">Open on novig.com</a><a class="w" href="/">Back to the scanner</a>
 <script>location.href=${JSON.stringify(appUrl)};</script>`);
 });
 

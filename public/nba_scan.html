@@ -404,13 +404,17 @@ const isOld = row => {
   const b = (S.boards || []).find(b => b.league === row.board);
   return b && b.scanning ? row.at * 1000 < b.started : (S.now + (Date.now() - GOT)) / 1000 - row.at > 3600;
 };
-// A row's Novig price as a link into Novig with its legs on the slip:
-// /n/<outcome ids> on this server, which sends a phone to the app and a
-// computer to novig.com.
+// A row's Novig price as a link into Novig with its legs on the slip. On a
+// phone it opens the Novig app itself (novigapp://events/<outcome ids>), so
+// this page stays where it is to come back to (Max, 11-16: the home-screen
+// app has no back button to leave a page it was sent to). On a computer it
+// is /n/<outcome ids> on this server, which goes to novig.com, in a new tab.
+const PHONE = /iphone|ipad|ipod|android/i.test(navigator.userAgent);
 const nvLink = (c, text) => {
   const ids = (c.legs || []).map(L => L.id);
-  return ids.length && ids.every(i => /^[0-9a-f-]{36}$/i.test(i))
-    ? `<a class="nv" href="/n/${ids.join(",")}" target="_blank" rel="noopener" title="Open Novig with these legs on the slip">${text} ↗</a>` : text;
+  if (!ids.length || !ids.every(i => /^[0-9a-f-]{36}$/i.test(i))) return text;
+  return PHONE ? `<a class="nv" data-app="1" href="novigapp://events/${ids.join(",")}">${text} ↗</a>`
+    : `<a class="nv" href="/n/${ids.join(",")}" target="_blank" rel="noopener" title="Open Novig with these legs on the slip">${text} ↗</a>`;
 };
 
 // What auto-scan is doing, for the status line.
@@ -580,6 +584,11 @@ function render() {
       render();
     });
     rowsEl.querySelectorAll("[data-re]").forEach(b => b.onclick = e => { e.stopPropagation(); requote(b.dataset.re); });
+    // The app link is opened from the top window: this page sits in a frame on the main page.
+    rowsEl.querySelectorAll("a.nv[data-app]").forEach(a => a.onclick = e => {
+      e.preventDefault(); e.stopPropagation();
+      try { window.top.location.href = a.href; } catch (_) { location.href = a.href; }
+    });
     rowsEl.querySelectorAll("[data-add]").forEach(b => b.onclick = () => {
       const c = S.rows.find(r => rk(r) === b.dataset.add), f = b.closest(".betform");
       const stake = parseFloat(f.querySelector(".stake").value), x = parseFloat(f.querySelector(".px").value);

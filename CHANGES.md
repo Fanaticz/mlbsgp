@@ -9,6 +9,8 @@ Max, 11-16: make the plays links (and, next, Discord alerts that carry them).
 - **`GET /n/<outcome ids>`** on this server (`server.js`; no passcode, it only redirects and takes nothing but outcome ids): a computer is sent to `https://novig.com/events/<ids>`; a phone gets a page that opens `novigapp://events/<ids>` at once, with buttons for the app and for novig.com if it doesn't open.
 - **Page**: each row's Novig multiplier is that link (new tab). Pressing it doesn't open the row.
 - **Not confirmed that the slip fills.** Novig's bot check stopped a browser from here at the link, and a signed-out phone browser is sent to sign-up, so the slip was never seen with the legs on it. Tap one on the phone and on the computer (signed in) to see. Checked here: the route's two answers and its 404 for anything but outcome ids, and the link on a stand-in row in a browser.
+- **Works** (Max, 11-16, iPhone): the app opened with both legs on the slip as a 2 Leg Parlay (Cam Spencer 13+ PTS · 3+ 3PM). Not yet tried on a computer.
+- **A phone opens the app straight from the row** (same day): the first version sent the phone to the `/n/` page, and the home-screen app has no back button to leave it. The row's link on a phone is now `novigapp://events/<ids>` itself, opened from the top window, so the scanner stays put. The `/n/` page (still what a computer and any link sent off the page use) has a "Back to the scanner" button.
 - **Amount**: the path's third part is a stake, but it comes after a partner id Novig's affiliates use; not sent.
 
 ### Novig Scan: Auto-scan prices today's games only
