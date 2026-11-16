@@ -2876,17 +2876,18 @@ let NV_REQUOTE = false;
 function nvRequote(league, wide, key, cb) {
   const B = NV_BOARDS.get(`${league}:${wide ? 1 : 0}`), row = B && B.rows.get(String(key));
   if (!row) return cb('that slip is no longer on the board', null, 404);
-  if (NV_OWN_SCRIPT[league]) return cb('one slip can\'t be re-priced on this board: press Fetch', null, 400);
+  const onKalshi = nvKalshi(league);
+  if (NV_OWN_SCRIPT[league] && !onKalshi) return cb('one slip can\'t be re-priced on this board: press Fetch', null, 400);
   if (NV_REQUOTE) return cb('another slip is being refreshed', null, 429);
   NV_REQUOTE = true;
   const lg = NV_PY_LEAGUE(league);
-  const args = [NV_SCAN_PY, '--requote', '--league', lg].concat(wide ? ['--max-spread', '0.08'] : []);
+  const args = [onKalshi ? NV_KALSHI_PY : NV_SCAN_PY, '--requote', '--league', lg].concat(wide ? ['--max-spread', '0.08'] : []);
   let out = '', err = '', done = false, timer = null;
   const finish = (why, r, code) => { if (done) return; done = true; NV_REQUOTE = false; clearTimeout(timer); cb(why, r, code); };
   let proc;
   try { proc = require('child_process').spawn(PYTHON, args, { stdio: ['pipe', 'pipe', 'pipe'] }); }
   catch (e) { return finish('could not start: ' + e.message, null, 502); }
-  timer = setTimeout(() => { proc.kill(); finish('Novig did not answer', null, 504); }, 90 * 1000);
+  timer = setTimeout(() => { proc.kill(); finish((onKalshi ? 'Kalshi' : 'Novig') + ' did not answer', null, 504); }, 90 * 1000);
   proc.stdout.on('data', c => { out += c; });
   proc.stderr.on('data', c => { err = (err + c).slice(-2000); });
   proc.on('error', e => finish('could not start: ' + e.message, null, 502));
@@ -2904,6 +2905,7 @@ function nvRequote(league, wide, key, cb) {
 app.post('/api/nba/novig-requote', (req, res) => {
   if (!nvBetsAuth(req, res)) return;
   const { league, wide, key } = req.body || {};
+  if (nvKalshi(league) && (req.get('X-Kalshi-Key') || '') !== NV_KALSHI_KEY) return res.status(423).json({ error: 'locked' });
   nvRequote(league, wide, key, (why, row, code) => why ? res.status(code).json({ error: why }) : res.json({ row, now: Date.now() }));
 });
 

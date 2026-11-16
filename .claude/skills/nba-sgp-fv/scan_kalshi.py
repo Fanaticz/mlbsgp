@@ -494,11 +494,50 @@ def finish(c, yes, unit, kelly):
     return c
 
 
+def requote(c, a):
+    """One slip again (the page's refresh button; --requote): (the row with a
+    new Kalshi answer and EV, None), or (None, why). An NBA or NFL leg is
+    re-read off Kalshi's own book where that book is inside --kalshi-spread
+    and no wider than the book the leg was priced from; the fair value is
+    rebuilt with the r that gave the row's joint. College legs keep theirs."""
+    if a.league != "cbb":
+        _, d = call("GET", "/markets", query={"tickers": ",".join(L["id"] for L in c["legs"]), "limit": 10}, signed=False)
+        book = {m["ticker"]: m for m in d.get("markets") or []}
+        if any(L["id"] not in book or book[L["id"]].get("status") != "active" for L in c["legs"]):
+            return None, "a leg is no longer open on Kalshi"
+        old = [L["p"] for L in c["legs"]]
+        for L in c["legs"]:
+            try:
+                bid, offer = float(book[L["id"]]["yes_bid_dollars"]), float(book[L["id"]]["yes_ask_dollars"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if 0 < bid < offer < 1 and offer - bid <= min(a.kalshi_spread, max(L["width"], 0.01)) + 1e-9:
+                p = sgp.devig_worst(offer, 1 - bid)[0]
+                L.update(p=p, fair=sgp.american(p), width=offer - bid, src="kalshi")
+        new = [L["p"] for L in c["legs"]]
+        if new != old:
+            lo, hi = -0.99, 0.99   # the r that gave this row's joint
+            for _ in range(30):
+                mid = (lo + hi) / 2
+                lo, hi = (mid, hi) if sgp.joint(mid, *old) < c["j"] else (lo, mid)
+            c["j"] = sgp.joint((lo + hi) / 2, *new)
+            c["devig_r"] = sgp.devig_r(c["j"], *new)
+            c["rough"] = any(L["width"] > a.max_spread + 1e-9 for L in c["legs"])
+    try:
+        yes, why = ask(c, a)
+    except Refused as e:
+        return None, f"Kalshi refused the request: {e}"
+    if not yes:
+        return None, why
+    return finish(c, yes, a.unit, a.kelly), None
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--league", default="nba", choices=("nba", "nfl", "cbb"))
     ap.add_argument("--json", action="store_true", help="stream events as JSON lines (server.js)")
     ap.add_argument("--dry", action="store_true", help="list the slips, ask Kalshi for no price (no key needed)")
+    ap.add_argument("--requote", action="store_true", help="re-ask the one slip given as JSON on stdin; print it as JSON")
     ap.add_argument("--check", action="store_true", help="make one signed read to see that the key is accepted")
     ap.add_argument("--max", type=int, default=60, help="ask at most this many slips a pass (0: all)")
     ap.add_argument("--min-r", type=float, default=0.25, help="smallest r for a pair other than Points + Threes")
@@ -506,7 +545,7 @@ def main():
     ap.add_argument("--kalshi-spread", type=float, default=0.05, help="widest Kalshi book a leg's fair value is read from when Novig has none")
     ap.add_argument("--lo", type=float, default=0.15, help="a leg's fair value is at least this")
     ap.add_argument("--hi", type=float, default=0.85, help="and at most this")
-    ap.add_argument("--stake", type=float, default=25.0, help="dollars each request for quote is sized at")
+    ap.add_argument("--stake", type=float, default=100.0, help="dollars each request for quote is sized at")
     ap.add_argument("--wait", type=float, default=3.0, help="seconds to wait for makers' answers")
     ap.add_argument("--polls", type=int, default=2, help="reads of the answers within --wait")
     ap.add_argument("--before", type=float, default=None, metavar="MS", help="only games starting before this time (epoch ms)")
@@ -527,6 +566,10 @@ def main():
         except Refused as e:
             raise SystemExit(f"Kalshi refused the key: {e}")
         print("key accepted" if st == 200 else f"unexpected answer: {st} {d}")
+        return
+    if a.requote:
+        row, why = requote(json.load(sys.stdin), a)
+        print(json.dumps(row if row else {"error": why}))
         return
     if not a.dry:
         _signer()   # no key, or one that can't be read: say so before anything is fetched

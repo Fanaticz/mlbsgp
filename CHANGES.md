@@ -2,6 +2,13 @@
 
 ## 2026-11-16 session
 
+### Kalshi Scan: a row's refresh button works; requests are sized at $100
+Max, 11-16: the refresh button doesn't work (and the Kalshi app showed Henry 80+ rushing yards + touchdown at 2.58x for $150 when the board said 2.77x, three minutes old).
+
+- **Refresh** (`scan_kalshi.py --requote`; `nvRequote` in `server.js`): the button on a Kalshi row re-asks that one slip. An NBA or NFL leg is re-read off Kalshi's own book where that book is no wider than the one it was priced from, and the fair value rebuilt at the same r; college legs keep their fair value. It was refused outright before.
+- **Request size**: each ask was for $25; it is now $100 (`--stake`), nearer what is bet. A maker can answer a small request better than a large one, which is one possible reason for the 2.77x against the app's 2.58x at $150; the other is three minutes on a moving leg. Which it was is not known: compare a refreshed row with the app at once.
+- **Checked**: the refresh on one live NFL slip with Kalshi's signed calls faked (legs re-read, joint rebuilt, new EV). The button was not pressed in a browser.
+
 ### Kalshi Scan: a leg is priced off the tighter book, Novig's or Kalshi's
 Max, 11-16: where does Davis 25+ points' fair value come from? (Then: yes, use the tighter book.)
 
