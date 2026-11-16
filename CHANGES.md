@@ -2,6 +2,15 @@
 
 ## 2026-11-16 session
 
+### Novig Scan: a DK NBA board (the NBA slips priced on DraftKings)
+Max, 11-16: can a scan like this be done for DraftKings? Try anything to get it to work.
+
+- **What was there already**: `dk_api.py` reads DraftKings' slate and every line, and prices a same-game parlay with DraftKings' own `calculateBets` call (`_price_combo`), the path the main app's DK pricing uses.
+- **Added** (`.claude/skills/nba-sgp-fv/scan_dk.py`; the `dknba` board in `server.js`; a **DK NBA** tab on the page): per player on tonight's DraftKings slate, Points + Threes Over at DraftKings' own O/U lines, his other Over + Over pairs at r 0.25 or better, and each team's two highest points lines together (r 0.0). 172 slips on tonight's slate. Each leg's fair value is Novig's exchange book on the same line where it has a tight one, else DraftKings' own Over / Under with the margin taken out (53 of the 172 have such a leg; marked ~). The row shows DraftKings' parlay price, EV, stake, and what its two legs multiplied would pay.
+- **Fetch only**: Auto-scan leaves the board out (each price is a request DraftKings sees), one row can't be refreshed by itself, and the rows appear on the All tab tagged DK NBA.
+- **The catch**: DraftKings answers the price call only from a connection it trusts. From the machine this was built on it refused (403, its bot protection; the slate and the lines read fine), and nothing was done to get around that. So **no real DraftKings parlay price has been seen by this board**. On the server it will price if the main app's DK pricing is working there (a fresh DK cookie, or `DK_PROXY`); if DraftKings refuses, the pass stops after four refusals and the board says so.
+- **Checked**: the 172 slips built from DraftKings' and Novig's live lines; the whole pass through the server and the page (phone-sized browser, the tab, an opened row, the All tab) with DraftKings' price call replaced by a stand-in; and the real call from here ending with the refusal message on the board.
+
 ### Novig Scan: the status line says when Auto-scan is resting
 Max, 11-16: "doesn't seem to be scanning" (every board priced 3 to 7 minutes ago, "next: NBA", nothing moving).
 
