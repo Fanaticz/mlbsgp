@@ -523,6 +523,10 @@ def main():
     if not a.dry:
         _signer()   # no key, or one that can't be read: say so before anything is fetched
     cands, d = nfl_candidates(a) if a.league == "nfl" else cbb_candidates(a) if a.league == "cbb" else candidates(a)
+    # Each row links to its game's page on Kalshi, where the combo is built (no link fills the slip in).
+    game = {"nba": "kxnbagame", "nfl": "kxnflgame", "cbb": "kxncaambgame"}[a.league]
+    for c in cands:
+        c["url"] = f"https://kalshi.com/markets/{game}/game/{game}-{c['event'].lower()}"
     emit({"type": "start", "total": len(cands), "players": len({c["id"] for c in cands}), "league": "kalshi" + a.league,
           "data": d["generated_at"][:10], "at": t0})
     if a.dry:

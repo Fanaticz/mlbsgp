@@ -454,6 +454,7 @@ const isOld = row => {
 // is /n/<outcome ids> on this server, which goes to novig.com, in a new tab.
 const PHONE = /iphone|ipad|ipod|android/i.test(navigator.userAgent);
 const nvLink = (c, text) => {
+  if (c.book === "kalshi" && /^https:\/\/kalshi\.com\//.test(c.url || "")) return `<a class="nv" href="${esc(c.url)}" target="_blank" rel="noopener" title="Open this game on Kalshi (build the combo there)">${text} ↗</a>`;
   const ids = (c.legs || []).map(L => L.id);
   if (!ids.length || !ids.every(i => /^[0-9a-f-]{36}$/i.test(i))) return text;
   return PHONE ? `<a class="nv" data-app="1" href="novigapp://events/${ids.join(",")}">${text} ↗</a>`
