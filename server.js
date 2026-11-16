@@ -2753,6 +2753,28 @@ app.get('/api/nba/novig-scan', (req, res) => {
 // The boards the All tab gathers (the hidden NHL boards are left out).
 const NV_ALL_BOARDS = ['nba', 'ladder', 'nbateam', 'nfl', 'nflladder', 'soccer', 'cfb', 'cbb'];
 
+// GET /n/<outcome id,outcome id,...> — a slip's link into Novig, for the
+// scanner's rows (and for alerts sent off the page). Novig's own app routes
+// /events/<outcome ids> to the board with those legs on the slip (read from
+// its web bundle 11-16: path 'events/:orderslip_outcomes?/:partner_id?/:amount?',
+// link prefixes novigapp:// and novig.onelink.me/JHQQ). A phone is sent to the
+// app (novigapp://events/...), with a button to novig.com if the app doesn't
+// open; a computer goes straight to novig.com. Nothing here needs the
+// passcode: the page only redirects, and takes nothing but outcome ids.
+app.get('/n/:ids', (req, res) => {
+  const ids = String(req.params.ids).split(',');
+  if (ids.length > 8 || !ids.every(i => /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(i))) return res.status(404).send('not a slip');
+  const tail = 'events/' + ids.join(','), web = 'https://novig.com/' + tail, appUrl = 'novigapp://' + tail;
+  res.set('Cache-Control', 'no-store');
+  if (!/iphone|ipad|ipod|android/i.test(req.get('User-Agent') || '')) return res.redirect(302, web);
+  res.type('html').send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open in Novig</title>
+<style>body{margin:0;background:#0b0d10;color:#e8eaed;font:16px -apple-system,system-ui,sans-serif;display:flex;flex-direction:column;gap:14px;align-items:center;justify-content:center;height:100vh}
+a{display:block;width:240px;text-align:center;padding:14px 0;border-radius:10px;text-decoration:none;font-weight:600}
+.a{background:#179be7;color:#fff}.w{border:1px solid #3a3f47;color:#e8eaed}</style>
+<a class="a" href="${appUrl}">Open in the Novig app</a><a class="w" href="${web}">Open on novig.com</a>
+<script>location.href=${JSON.stringify(appUrl)};</script>`);
+});
+
 // POST /api/nba/novig-cycle { on, wide, tz } — switch auto-scan on or off. On: the
 // first board starts at once (if nothing is running). Off: a pass the cycle
 // started is stopped too; one started with Fetch runs on.

@@ -2,6 +2,15 @@
 
 ## 2026-11-16 session
 
+### Novig Scan: a row's Novig price is a link that opens the slip in Novig
+Max, 11-16: make the plays links (and, next, Discord alerts that carry them).
+
+- **Novig's link format**, read from its own web app's code (novig.com's script bundle, 11-16; not documented anywhere public): `/events/<outcome id>,<outcome id>,...` opens the board with those legs put on the slip. The app's router has it as `events/:orderslip_outcomes?/:partner_id?/:amount?`, its "share parlay" builds the same path, and the phone app answers to `novigapp://` and `https://novig.onelink.me/JHQQ`.
+- **`GET /n/<outcome ids>`** on this server (`server.js`; no passcode, it only redirects and takes nothing but outcome ids): a computer is sent to `https://novig.com/events/<ids>`; a phone gets a page that opens `novigapp://events/<ids>` at once, with buttons for the app and for novig.com if it doesn't open.
+- **Page**: each row's Novig multiplier is that link (new tab). Pressing it doesn't open the row.
+- **Not confirmed that the slip fills.** Novig's bot check stopped a browser from here at the link, and a signed-out phone browser is sent to sign-up, so the slip was never seen with the legs on it. Tap one on the phone and on the computer (signed in) to see. Checked here: the route's two answers and its 404 for anything but outcome ids, and the link on a stand-in row in a browser.
+- **Amount**: the path's third part is a stake, but it comes after a partner id Novig's affiliates use; not sent.
+
 ### Novig Scan: Auto-scan prices today's games only
 Max, 11-16: have the auto scanner focus on the games of that day.
 

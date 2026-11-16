@@ -53,6 +53,8 @@
   .re { margin-left:6px; background:none; border:1px solid var(--line); color:var(--muted); border-radius:999px; width:24px; height:24px;
         padding:0; font-size:13px; line-height:1; cursor:pointer; vertical-align:middle; }
   .re:hover { color:var(--txt); border-color:var(--muted); }
+  a.nv { color:inherit; text-decoration:underline; text-decoration-color:var(--muted); text-underline-offset:3px; white-space:nowrap; }
+  a.nv:hover { text-decoration-color:var(--txt); }
   .re.spin { animation:respin 0.9s linear infinite; opacity:.6; }
   @keyframes respin { to { transform:rotate(360deg); } }
   .more { flex:none; margin-left:8px; background:none; border:1px solid var(--line); color:var(--muted); border-radius:999px;
@@ -402,6 +404,15 @@ const isOld = row => {
   const b = (S.boards || []).find(b => b.league === row.board);
   return b && b.scanning ? row.at * 1000 < b.started : (S.now + (Date.now() - GOT)) / 1000 - row.at > 3600;
 };
+// A row's Novig price as a link into Novig with its legs on the slip:
+// /n/<outcome ids> on this server, which sends a phone to the app and a
+// computer to novig.com.
+const nvLink = (c, text) => {
+  const ids = (c.legs || []).map(L => L.id);
+  return ids.length && ids.every(i => /^[0-9a-f-]{36}$/i.test(i))
+    ? `<a class="nv" href="/n/${ids.join(",")}" target="_blank" rel="noopener" title="Open Novig with these legs on the slip">${text} ↗</a>` : text;
+};
+
 // What auto-scan is doing, for the status line.
 function autoLine() {
   const c = S.cycle;
@@ -553,7 +564,7 @@ function render() {
           `+${others.length} more${others[0].ev > c.ev ? `, to ${pct(others[0].ev)}` : ""}`}</button>` : "")}</div>` +
       `<div class="legs">${esc(c.label)}${c.model ? `<span class="rough" title="A higher line: fair value is modelled from the main line, not read off a book.">*</span>` : ""}${c.rough ? `<span class="rough" title="A leg sits on a Novig book wider than 4¢: rough fair value. Check sharp odds.">~</span>` : ""}</div>` +
       `<div class="num fair"><span class="lab">Fair</span>${am(c.fair)}</div>` +
-      `<div class="num"><span class="lab">Novig</span>${c.slip_x.toFixed(2)}x</div>` +
+      `<div class="num"><span class="lab">Novig</span>${nvLink(c, c.slip_x.toFixed(2) + "x")}</div>` +
       `<div class="num ev ${c.ev >= 0 ? "pos" : "neg"}">${pct(c.ev)}</div>` +
       `<div class="num qk"><span class="lab">QK</span>${c.qk > 0 ? c.qk.toFixed(2) + "u" : "—"}</div>` +
       `<div class="num"><span class="lab">QK $</span>${c.qk > 0 ? "$" + Math.round(c.qk * UNIT).toLocaleString() : "—"}</div>` +
@@ -590,7 +601,7 @@ function render() {
         else render();
       }, 150); });
     rowsEl.querySelectorAll(".row").forEach(el => el.onclick = e => {
-      if (e.target.closest(".det")) return;   // let text in the details be selected
+      if (e.target.closest(".det") || e.target.closest("a.nv")) return;   // let text in the details be selected; a link is not a row press
       const k = el.dataset.k;
       OPEN.has(k) ? OPEN.delete(k) : OPEN.add(k);
       render();
