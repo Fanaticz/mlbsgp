@@ -2,6 +2,13 @@
 
 ## 2026-11-16 session
 
+### Kalshi Scan: a leg is priced off the tighter book, Novig's or Kalshi's
+Max, 11-16: where does Davis 25+ points' fair value come from? (Then: yes, use the tighter book.)
+
+- **What it was**: Novig's book on Over 24.5 whenever it was inside 4c. For Davis that is a thin alt line (41.5 / 45.0, 3.5c wide, 17,000 traded; his main line is 23.5) while Kalshi's own 25+ book was 43 / 44.
+- **Now** (`pick_leg` in `scan_kalshi.py`, NBA and NFL): each leg takes the tighter of the two books on its line; where they are within a cent of each other in width, the average of their two fair values. A row is marked ~ when a leg's book is wider than 4c, whichever book it is. CBB is unchanged (Novig only: Kalshi's college books are 8 to 10 cents wide).
+- **Checked** on tonight's live lines with `--dry`: Davis 25+ at 0.43 off Kalshi's book. Close to tip Kalshi's star props are a cent wide, so most NBA legs now come off Kalshi's own book or the average.
+
 ### Kalshi Scan: its own page and its own slot on the server
 Max, 11-16: a separate Kalshi tab, so the two scanners can run at the same time.
 

@@ -16,11 +16,11 @@ Kalshi's props are milestones ("25+ points" is Over 24.5). Each leg sits on the
 milestone nearest Novig's main line where Novig has a tight book on that same
 line; where it has none, on Kalshi's own milestone nearest even money.
 
-Fair value: each leg is Novig's exchange book on the same line, devigged worst
-case, where Novig has a two-sided book inside --max-spread. Where it has none,
-the leg is Kalshi's own Yes bid / ask (inside --kalshi-spread) with the spread
-taken out, and the row is marked rough (~): Kalshi's prop books are whole
-cents and 3 to 5 cents wide. The legs are joined with the same Gaussian copula
+Fair value: each leg is the tighter of two books on that line, devigged worst
+case: Novig's exchange book (inside --max-spread) or Kalshi's own Yes bid /
+ask (inside --kalshi-spread); the average of the two where they are within a
+cent of each other in width. A row with a leg on a book wider than
+--max-spread is marked rough (~). The legs are joined with the same Gaussian copula
 as the Novig board.
 
 Price: a combo on Kalshi is an auction. For each slip: create the combo market
@@ -187,23 +187,31 @@ def kalshi_props(before=None, series=SERIES):
 
 
 def pick_leg(stat, kal, nv_rows, a):
-    """The leg for this stat: Kalshi's milestone on the Novig line nearest
-    Novig's main line (fair from Novig), else Kalshi's own milestone nearest
-    even money (fair from Kalshi's book, rough). None when neither is priced."""
-    by_line = {k["line"]: k for k in kal}
-    ok = [r for r in nv_rows if r["line"] in by_line and scan.usable(r, a.max_spread)]
-    if ok:
-        main = scan.main_line([r for r in nv_rows if scan.usable(r, a.max_spread)])
-        r = min(ok, key=lambda r: (abs(r["line"] - main["line"]), abs(r["fo"] - 0.5)))
-        k, fo, width, src = by_line[r["line"]], r["fo"], r["spread"], "novig"
-    else:
-        own = [k for k in kal if 0 < k["bid"] < k["ask"] < 1 and k["ask"] - k["bid"] <= a.kalshi_spread + 1e-9]
-        if not own:
-            return None
-        k = min(own, key=lambda k: abs((k["bid"] + k["ask"]) / 2 - 0.5))
-        fo, width, src = sgp.devig_worst(k["ask"], 1 - k["bid"])[0], k["ask"] - k["bid"], "kalshi"
-    if not a.lo <= fo <= a.hi:
+    """The leg for this stat. Each Kalshi milestone is priced off the tighter
+    of two books on that same line: Novig's (inside --max-spread) or Kalshi's
+    own Yes bid / ask (inside --kalshi-spread); where the two are within a
+    cent of each other in width, off the average of their two fair values. The milestone taken is the one
+    nearest Novig's main line, or nearest even money where Novig lists nothing
+    usable. None when no milestone has a book to price it from."""
+    nv = {r["line"]: r for r in nv_rows if scan.usable(r, a.max_spread)}
+    priced = []
+    for k in kal:
+        books = []
+        if k["line"] in nv:
+            books.append((nv[k["line"]]["spread"], nv[k["line"]]["fo"], "novig"))
+        if 0 < k["bid"] < k["ask"] < 1 and k["ask"] - k["bid"] <= a.kalshi_spread + 1e-9:
+            books.append((k["ask"] - k["bid"], sgp.devig_worst(k["ask"], 1 - k["bid"])[0], "kalshi"))
+        if books:
+            width, fo, src = min(books)   # the tighter book
+            if len(books) == 2 and abs(books[0][0] - books[1][0]) <= 0.01 + 1e-9:
+                # about as tight as each other: the two fair values averaged
+                width, fo, src = max(books)[0], (books[0][1] + books[1][1]) / 2, "both"
+            if a.lo <= fo <= a.hi:
+                priced.append((k, fo, width, src))
+    if not priced:
         return None
+    main = scan.main_line(list(nv.values()))["line"] if nv else None
+    k, fo, width, src = min(priced, key=lambda x: (abs(x[0]["line"] - main) if main is not None else 0, abs(x[1] - 0.5)))
     return {"stat": stat, "side": "over", "line": k["line"], "p": fo, "fair": sgp.american(fo), "width": width,
             "id": k["ticker"], "event": k["event"], "src": src}
 
@@ -245,7 +253,7 @@ def nfl_candidates(a):
                         "team": p.get("team_abbr") or p.get("team") or info["team"], "starts": info["starts"],
                         "legs": [dict(la), dict(lb)], "label": f"{la['text']} · {lb['text']}", "r": r, "j": j, "forced": False,
                         "devig_r": sgp.devig_r(j, la["p"], lb["p"]), "book": "kalshi", "event": info["game"],
-                        "rough": any(L["src"] == "kalshi" for L in (la, lb)), "legs_x": 1 / (la["p"] * lb["p"])})
+                        "rough": any(L["width"] > a.max_spread + 1e-9 for L in (la, lb)), "legs_x": 1 / (la["p"] * lb["p"])})
     out.sort(key=lambda c: (c["starts"], -c["r"]))
     return (out[:a.max] if a.max else out), d
 
@@ -275,7 +283,7 @@ def candidates(a):
                  "team": p.get("team_abbr") or info["team"], "starts": info["starts"], "legs": [dict(la), dict(lb)],
                  "label": label or f"{la['text']} · {lb['text']}", "r": r, "j": j, "forced": False,
                  "devig_r": sgp.devig_r(j, la["p"], lb["p"]), "book": "kalshi", "event": info["game"],
-                 "rough": any(L["src"] == "kalshi" for L in (la, lb)), "legs_x": 1 / (la["p"] * lb["p"])}
+                 "rough": any(L["width"] > a.max_spread + 1e-9 for L in (la, lb)), "legs_x": 1 / (la["p"] * lb["p"])}
             if kind:
                 c["kind"] = kind
             return c
@@ -533,7 +541,10 @@ def main():
         for c in cands:
             print(f"{c['player'][:30]:30s} {c['label'][:36]:36s} r {c['r']:+.2f} fair {sgp.american(c['j']):+5d}  legs "
                   + " / ".join(f"{L['p']:.2f} ({L['src']})" for L in c["legs"]) + f"  {c['player']}"[:0])
-        print(f"{len(cands)} slips, {sum(1 for c in cands if c['rough'])} with a leg priced off Kalshi's own book")
+        import collections
+        n = collections.Counter(L["src"] for c in cands for L in c["legs"])
+        print(f"{len(cands)} slips; legs priced off {dict(n)}, "
+              f"{sum(1 for c in cands if c['rough'])} slips with a leg on a book wider than {a.max_spread * 100:g}c")
         return
     rows, refused, why_refused = [], 0, ""
     for c in cands:
