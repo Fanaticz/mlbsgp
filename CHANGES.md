@@ -2,6 +2,16 @@
 
 ## 2026-11-16 session
 
+### Soccer SGPs researched further (nothing changed on the board)
+Max, 11-16: research more on soccer SGPs.
+
+- **Game-line slips in the major leagues: no.** On two EPL matches every way of betting a draw with a total or BTTS (nine slips a match) came back -13% to -60% against Pinnacle's own combo price, its correct scores and a goals model; Man City v Fulham's thirteen win / total / BTTS / spread slips were -8% to -24%. The long shots Novig overpaid on the Nations League matches earlier today are not there on the EPL.
+- **A goals model against history** (two Poisson means and a low-score term fitted to each match's closing home, draw and Over 2.5 prices; 19,763 top-five-league matches): right within 2% on win & total and on BTTS & win. Off on draws: 2-2 or higher happened 15% more often than the model, 0-0 13% less, a win by two or more 7% less. Novig's draw slips are far enough under fair that this doesn't rescue them.
+- **Corners are the one loose spot, and the board's fair value there is coarse.** It uses one lift per favourite strength; measured by line, the favourite win + his corners Under + underdog's corners Over hits x1.15 to x1.61 as often as unrelated legs (higher with a harder corner line, lower with an easier one). So a row on a line a corner off 50/50 can be up to 15% out, either way.
+- **A fix that holds at every line**: one correlation per pair of legs (result with the favourite's corners 0.22, result with the underdog's 0.09, the two corner legs 0.17, by favourite strength) through the three-leg joint the other boards use gives the counted hit rate within 5% on all 36 line combinations. That would also let the board ask the corner line beside, as CBB now does.
+- **The mirror** (underdog wins + favourite's corners Over + underdog's Under): x1.3 to x1.9 by line. The same joint is within 6% of the count where the favourite is under 60%, and 10% to 25% too high above that (few games), so it would be for even matches only.
+- **Not checked live**: Novig has no corner books on a top-five-league match today (they open nearer kick-off).
+
 ### Novig Scan: CBB slips are asked again with a leg moved one line
 Max, 11-16: after the Pinnacle lines are found, check the line beside too (U88 + U74 paid +230 where U88 + U76 paid +225).
 
