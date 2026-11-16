@@ -760,6 +760,13 @@ pairOpts();
 loadGames();
 document.body.classList.toggle("all", LEAGUE === "all");
 kalshiTabs(!KKEY);
+// Three quick clicks on the page's title ask for the Kalshi passcode (or forget it, when it is already in).
+document.querySelector("h1").addEventListener("click", e => {
+  if (e.detail !== 3) return;
+  getSelection().removeAllRanges();
+  if (KKEY && confirm("Hide the Kalshi tabs on this device?")) return kalshiLock();
+  if (!KKEY) kalshiAsk(true);
+});
 document.getElementById("search").addEventListener("input", e => {
   if (e.target.value.trim().toLowerCase() !== "kalshi") return;
   e.target.value = ""; e.target.dispatchEvent(new Event("input"));
