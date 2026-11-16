@@ -2,6 +2,14 @@
 
 ## 2026-11-16 session
 
+### Novig Scan: the status line says when Auto-scan is resting
+Max, 11-16: "doesn't seem to be scanning" (every board priced 3 to 7 minutes ago, "next: NBA", nothing moving).
+
+- **What it was**: nothing wrong. With today's games only, a round of all six boards takes a few minutes, and then every board is inside its ten minutes' rest (no board more often than every ten minutes), so nothing runs until the first one is due.
+- **Change** (`nvCycleState` in `server.js`, `autoLine` on the page): between passes the line reads "resting (no board more often than every ten minutes) · next: NBA in 3 min".
+- The ten minutes is unchanged. Halving it would double the asks Novig's pricers see from this server.
+- **Checked** with a stand-in scanner that ends at once: the board and the time to it came back right between passes. The page was not opened.
+
 ### Novig Scan: doubtful NBA players are hidden, questionable ones carry a Q
 Max, 11-16: Jaylon Tyson headed the All tab at +22% an hour after he was downgraded to doubtful.
 

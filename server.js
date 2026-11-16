@@ -2715,9 +2715,22 @@ function nvCycleTick(first) {
   }
 }
 setInterval(nvCycleTick, 15000).unref();
-const nvCycleState = () => NV_CYCLE
-  ? { on: true, wide: NV_CYCLE.wide, tz: NV_CYCLE.tz, boards: NV_CYCLE_BOARDS, next: NV_CYCLE_BOARDS[NV_CYCLE.i], since: NV_CYCLE.since }
-  : { on: false, boards: NV_CYCLE_BOARDS };
+// next: the board the cycle will price next and how long until then (ms; 0
+// while a pass runs). Between rounds every board can be inside its ten
+// minutes' rest, and the page said "next: NBA" with nothing to show it was waiting.
+function nvCycleState() {
+  if (!NV_CYCLE) return { on: false, boards: NV_CYCLE_BOARDS };
+  const now = Date.now();
+  let next = NV_CYCLE_BOARDS[NV_CYCLE.i], wait = Infinity;
+  for (let n = 0; n < NV_CYCLE_BOARDS.length; n++) {
+    const league = NV_CYCLE_BOARDS[(NV_CYCLE.i + n) % NV_CYCLE_BOARDS.length];
+    const B = NV_BOARDS.get(`${league}:${NV_CYCLE.wide ? 1 : 0}`) || {};
+    const due = Math.max(Math.max(B.started || 0, B.finished || 0, B.stopped || 0) + NV_CYCLE_REST_MS, NV_LAST_END + NV_CYCLE_GAP_MS) - now;
+    if (due < wait - 1000) { wait = due; next = league; }
+    if (due <= 0) break;   // the tick takes the first board that is due, in order
+  }
+  return { on: true, wide: NV_CYCLE.wide, tz: NV_CYCLE.tz, boards: NV_CYCLE_BOARDS, next, wait: NV_RUN ? 0 : Math.max(0, wait), since: NV_CYCLE.since };
+}
 
 // GET /api/nba/novig-scan?league=nba|ladder|nbateam|nfl|nflladder|nhl|nhllines|soccer|cfb|cbb[&wide=1][&now=1][&stop=1][&events=id,id] — that
 // board's last pass (or the one running), and what else is running.

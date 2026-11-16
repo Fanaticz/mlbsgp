@@ -438,7 +438,7 @@ function autoLine() {
   if (!c || !c.on) return "";
   const run = S.scanning ? LEAGUE : S.busy;
   return `Auto-scan is on, today’s games only (${c.boards.map(b => BOARD[b]).join(" → ")})` +
-    (run ? "" : ` · next: ${BOARD[c.next]}`) + (c.wide !== WIDE ? ` · on ${c.wide ? "wide" : "tight"} books: ${c.wide ? "tick" : "untick"} Wide books to see its rows` : "");
+    (run ? "" : ` · resting (no board more often than every ten minutes) · next: ${BOARD[c.next]}${c.wait > 20000 ? ` in ${c.wait < 90000 ? "about a minute" : Math.round(c.wait / 60000) + " min"}` : " now"}`) + (c.wide !== WIDE ? ` · on ${c.wide ? "wide" : "tight"} books: ${c.wide ? "tick" : "untick"} Wide books to see its rows` : "");
 }
 const ago = ms => { const m = Math.round(ms / 60000); return m < 1 ? "just now" : m < 90 ? `${m} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`; };
 
