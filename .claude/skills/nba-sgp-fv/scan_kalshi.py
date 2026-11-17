@@ -212,8 +212,12 @@ def pick_leg(stat, kal, nv_rows, a):
         return None
     main = scan.main_line(list(nv.values()))["line"] if nv else None
     k, fo, width, src = min(priced, key=lambda x: (abs(x[0]["line"] - main) if main is not None else 0, abs(x[1] - 0.5)))
-    return {"stat": stat, "side": "over", "line": k["line"], "p": fo, "fair": sgp.american(fo), "width": width,
-            "id": k["ticker"], "event": k["event"], "src": src}
+    L = {"stat": stat, "side": "over", "line": k["line"], "p": fo, "fair": sgp.american(fo), "width": width,
+         "id": k["ticker"], "event": k["event"], "src": src}
+    same = next((r for r in nv_rows if r["line"] == k["line"] and r["ids"].get("over")), None)
+    if same:   # Novig's Over on this same line, for its price on the same slip (novig_price)
+        L["nv"] = same["ids"]["over"]
+    return L
 
 
 WORD = {"pts": "points", "reb": "rebounds", "ast": "assists", "tpm": "threes", "rec": "receptions", "yds": "receiving yards",
@@ -380,7 +384,7 @@ def cbb_candidates(a):
                 x = re.match(r"(.+) ([+-]\d+(?:\.\d+)?)$", n)
                 if x:
                     e["teams"].add(x.group(1))
-                    e["spread"][(x.group(1), float(x.group(2)))] = (t["p"][i], t["spread"])
+                    e["spread"][(x.group(1), float(x.group(2)))] = (t["p"][i], t["spread"], t["ids"][i])
     import difflib
     like = lambda x, y: difflib.SequenceMatcher(None, x.upper(), y.upper()).ratio()   # noqa: E731
     out = []
@@ -409,7 +413,7 @@ def cbb_candidates(a):
         to = [(r, e["total"][r["line"]]) for r in g["total"] if r["line"] in e["total"]]
         if not sp or not to:
             continue
-        ks, (pf, ws) = min(sp, key=lambda x: abs(x[1][0] - 0.5))
+        ks, (pf, ws, nv_fav) = min(sp, key=lambda x: abs(x[1][0] - 0.5))
         kt_, t = min(to, key=lambda x: abs(x[1]["p"][0] - 0.5))
         po, wt = t["p"][0], t["spread"]
         if not (a.lo <= pf <= a.hi and a.lo <= po <= a.hi):
@@ -423,6 +427,10 @@ def cbb_candidates(a):
                 "dog": {"stat": "cover", "side": "under", "yes": False, "p": 1 - pf, "text": f"{dog} +{ks['line']:g}"},
                 "over": {"stat": "over", "side": "over", "yes": True, "p": po, "text": f"Over {kt_['line']:g}"},
                 "under": {"stat": "over", "side": "under", "yes": False, "p": 1 - po, "text": f"Under {kt_['line']:g}"}}
+        nv_dog = e["spread"].get((next(x for x in n if x != name[ks["team"]]), ks["line"]), (0, 0, None))[2]
+        for k, nid in (("fav", nv_fav), ("dog", nv_dog), ("over", t["ids"][0]), ("under", t["ids"][1])):
+            if nid:
+                legs[k]["nv"] = nid
         for k, L in legs.items():
             src = ks if k in ("fav", "dog") else kt_
             L.update(line=src["line"], fair=sgp.american(L["p"]), width=ws if k in ("fav", "dog") else wt,
@@ -480,6 +488,22 @@ def ask(c, a):
     return 1 - best, None
 
 
+def novig_price(c):
+    """Novig's price for the same slip, as a second opinion beside Kalshi's:
+    c["novig_x"] (what its slip pays after its parlay fee) and c["novig_ev"]
+    at this row's fair value. Asked only where Novig lists every leg on the
+    same line; one keyless Novig quote."""
+    c.pop("novig_x", None)
+    c.pop("novig_ev", None)
+    ids = [L.get("nv") for L in c["legs"]]
+    if not all(ids):
+        return
+    q, _ = novig.parlay(ids)
+    if q:
+        c["novig_x"] = novig.slip_multiplier(q)
+        c["novig_ev"] = c["j"] * c["novig_x"] - 1
+
+
 def slip_x(p):
     """What $1 pays on a Yes bought at p a contract: 1 / (price + fee)."""
     return 1 / (p + FEE * p * (1 - p))
@@ -532,7 +556,9 @@ def requote(c, a):
         return None, f"Kalshi refused the request: {e}"
     if not yes:
         return None, why
-    return finish(c, yes, a.unit, a.kelly), None
+    finish(c, yes, a.unit, a.kelly)
+    novig_price(c)
+    return c, None
 
 
 def main():
@@ -603,6 +629,7 @@ def main():
                 raise SystemExit(f"Kalshi is refusing this key's requests: {why_refused}")
         if yes:
             finish(c, yes, a.unit, a.kelly)
+            novig_price(c)
             rows.append(c)
             emit(dict(c, type="row"))
         else:
@@ -613,7 +640,8 @@ def main():
         rows.sort(key=lambda c: -c["ev"])
         for c in rows[:a.top or None]:
             print(f"{c['ev']:+6.1%}  {c['player'][:28]:28s} {c['label'][:34]:34s} fair {c['fair']:+5d}  Kalshi {c['slip']:+5d} "
-                  f"({c['slip_x']:.2f}x, Yes at {c['quote']:.3f})" + ("  ~" if c["rough"] else ""))
+                  f"({c['slip_x']:.2f}x, Yes at {c['quote']:.3f})" + (f"  Novig {c['novig_x']:.2f}x" if c.get("novig_x") else "")
+                  + ("  ~" if c["rough"] else ""))
         print(f"{len(rows)} of {len(cands)} priced in {time.time() - t0:.0f}s")
 
 

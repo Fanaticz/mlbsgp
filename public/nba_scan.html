@@ -490,7 +490,7 @@ function detail(c) {
       c.games ? `${c.games} games${c.kind === "mate" ? " together" : ""}` : c.role ? "league-wide r for his position and ice time" : "position average r") : null,
     `books ${c.legs.map(L => (100 * L.width).toFixed(1)).join(" / ")}¢`,
     c.book === "dk" ? `DraftKings’ parlay price; its two legs multiplied would pay ${c.legs_x.toFixed(2)}x` :
-    c.book === "kalshi" ? `Kalshi’s best answer: Yes at ${(c.quote * 100).toFixed(1)}¢ a contract (${c.raw_x.toFixed(2)}x) before its fee` : `quote ${c.raw_x.toFixed(2)}x before fee`,
+    c.book === "kalshi" ? `Kalshi’s best answer: Yes at ${(c.quote * 100).toFixed(1)}¢ a contract (${c.raw_x.toFixed(2)}x) before its fee` + (c.novig_x ? ` · Novig pays ${c.novig_x.toFixed(2)}x for the same slip (${c.novig_ev >= 0 ? "+" : ""}${(100 * c.novig_ev).toFixed(1)}%)` : ` · Novig has no price for this slip`) : `quote ${c.raw_x.toFixed(2)}x before fee`,
     c.first_x && c.asks > 1 ? (Math.abs(c.first_x - c.slip_x) > 0.005 ? `first quote ${c.first_x.toFixed(2)}x, settled over ${c.asks} asks` : `same price on ${c.asks} asks`) : null,
     c.qk > 0 ? `${c.qk.toFixed(2)}u` : null,
     c.forced ? "threes alone clear the points line" : null,
@@ -618,7 +618,7 @@ function render() {
           `+${others.length} more${others[0].ev > c.ev ? `, to ${pct(others[0].ev)}` : ""}`}</button>` : "")}</div>` +
       `<div class="legs">${esc(c.label)}${c.model ? `<span class="rough" title="A higher line: fair value is modelled from the main line, not read off a book.">*</span>` : ""}${c.rough ? `<span class="rough" title="A leg sits on a Novig book wider than 4¢: rough fair value. Check sharp odds.">~</span>` : ""}</div>` +
       `<div class="num fair"><span class="lab">Fair</span>${am(c.fair)}</div>` +
-      `<div class="num"><span class="lab">${c.book === "dk" ? "DK" : c.book === "kalshi" ? "Kalshi" : "Novig"}</span>${nvLink(c, c.slip_x.toFixed(2) + "x")}</div>` +
+      `<div class="num"><span class="lab">${c.book === "dk" ? "DK" : c.book === "kalshi" ? "Kalshi" : "Novig"}</span>${nvLink(c, c.slip_x.toFixed(2) + "x")}${c.book === "kalshi" && c.novig_x ? `<small style="display:block;color:var(--muted)" title="What Novig's slip pays for the same legs">NV ${c.novig_x.toFixed(2)}x</small>` : ""}</div>` +
       `<div class="num ev ${c.ev >= 0 ? "pos" : "neg"}">${pct(c.ev)}</div>` +
       `<div class="num qk"><span class="lab">QK</span>${c.qk > 0 ? c.qk.toFixed(2) + "u" : "—"}</div>` +
       `<div class="num"><span class="lab">QK $</span>${c.qk > 0 ? "$" + Math.round(c.qk * UNIT).toLocaleString() : "—"}</div>` +

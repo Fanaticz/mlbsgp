@@ -2,6 +2,14 @@
 
 ## 2026-11-16 session
 
+### Kalshi Scan: Novig's price for the same slip beside Kalshi's
+Max, 11-16: to double check the Kalshi prices, show the fair value and Novig's price too.
+
+- **Added** (`novig_price` in `scan_kalshi.py`; the row and its opened line on the page): each priced Kalshi row also asks Novig for the same slip, where Novig lists every leg on the same line (25+ points is its Over 24.5; the underdog covering and the Under are its own outcomes). The row shows `NV 2.89x` under Kalshi's price; opened, "Novig pays 2.89x for the same slip" with its EV at the row's fair value. The fair value was on the row already. A refresh asks Novig again.
+- **What it tells you**: Kalshi far above both the fair value and Novig is the row to doubt first.
+- **Cost**: one more Novig quote for each priced row, on top of what Novig's own boards ask from this server.
+- **Checked** with real Novig quotes on six live slips (two each NBA, NFL, CBB): fair 5.70x against Novig 5.63x, 3.00x / 2.89x, 2.58x / 2.59x, 2.45x / 2.43x, 3.74x / 3.32x, 4.12x / 4.07x. The page was not opened to look at it.
+
 ### Kalshi Scan: a refresh no longer keeps an old fair value
 Max, 11-16: Tristan da Silva 15+ points · 3+ threes at +12.5% (fair +225, Kalshi 3.66x) looks weird; every book has his 15+ points alone at +228 to +270.
 
