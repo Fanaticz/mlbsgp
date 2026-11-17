@@ -11,6 +11,18 @@ Max, 11-17: first dunk is now on DK (a screenshot of NY at TOR: ten starters and
 - **A new note on the page**: DK names its own ten starters. Where they differ from the lineup the page used, the page says who, because Other's price hangs on it. Tonight: POR at MIN (DK names Terrence Shannon Jr.; Rotowire has Jonathan Kuminga starting, questionable) and CHA at LAL (DK names Grayson Allen; Rotowire has Sion James).
 - **Checked**: the page in a browser against the local server with live Rotowire lineups and live DK prices, all five games.
 - **Not checked**: how DK settles a named player who does not start.
+### Novig Scan: a long bet chip no longer pushes the page sideways
+Max, 11-17: the page is getting off-centre (screenshot: the board scrolled left, a My bets chip running past the right edge).
+
+- **Cause**: a My bets chip is one unbroken line, and one with two long team-total legs ("SMU team total Under 92.5 · Oral Roberts team total Under 65.5 · 3.35x") is wider than a phone, so the whole page could be dragged sideways.
+- **Change** (`.chip` in `public/nba_scan.html`): a chip is at most the width of the screen; the slip's text is cut short with "…" and the name, stake and × stay. The full text is still in the chip's title.
+- **Checked** in a 390px browser with stand-in chips of that length: the page is exactly as wide as the screen. Not looked at on the live board.
+
+### Novig Scan: the All tab folds a slip's other lines under it
+Max, 11-17: do the "+3 more" when the lines are like that (XAV Under 96.5 + CLEV Under 62.5, then Under 97.5 + Under 62.5 as its own row); it clogs the feed.
+
+- **Change** (`shape`, `cardOf` in `render`, `public/nba_scan.html`): on the All tab, rows of one board that are the same slip at different lines (same game or player, same legs and sides) are one card. Its head is the best of them by EV; the rest sit under a "+N more" chip. A different slip on the same game (CLEV +34.5 + CLEV Under 62.5) keeps its own row. The other tabs are as they were.
+- **Checked** in a phone-sized browser on stand-in rows of the screenshot's two games: three cards from six rows, the chip opening and closing its own card only. Not looked at on the live board.
 
 ### First Dunk: rebuilt on possessions, with lineups and statuses set automatically and DraftKings' "Other" line
 Max, 11-17: a spec for the model (possession rates, pace, opponent, tip, rotation, closed form and Monte Carlo, `price_game`, walk-forward validation), then: pull prices from DK, pull starting lineups from somewhere, DK lists the ten starters and then Other, and the tool should set starting / bench / out itself and adjust for a doubtful starter. This replaces the per-minute model of the entry below.
@@ -54,6 +66,12 @@ Max, 11-17: no games are left; NFL pick up Thursday, NBA do tomorrow, soccer unt
 - **A board with no open game at all** rests ten minutes and is asked again, like one just priced. If Novig's game list can't be read, the pass is today's games, as before.
 - **The page** says "each board's next day of games" where it said "today's games", and names the day the last pass ran through.
 - **Checked**: both files load; Novig's live game lists read for NBA, NFL and soccer (soonest: tonight, Thursday, Friday). **Not checked**: no auto-scan pass was run here (no passcode or cycle on this machine), and the page was not opened.
+
+### Novig Scan: the Bet button on Novig rows is gone
+Max, 11-17: remove the Novig button.
+
+- **Change**: the button, its "Placed it?" question and the stake on the `/n` link are all taken out; the page and `/n` are as they were before the entry below. A row's Novig price is still the link into Novig, and a bet is still noted in the opened row.
+- **Checked**: nothing of the button is left in the page or the server, and the server file loads. Not opened in a browser.
 
 ### Novig Scan: a Bet button on Novig rows (opens Novig with the slip and stake filled in)
 Max, 11-17: can we make something where Novig will bet itself? (Asked which he meant: a Bet button on Novig rows.)

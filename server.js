@@ -2910,10 +2910,7 @@ const NV_ALL_BOARDS = ['nba', 'ladder', 'nbateam', 'nfl', 'nflladder', 'soccer',
 app.get('/n/:ids', (req, res) => {
   const ids = String(req.params.ids).split(',');
   if (ids.length > 8 || !ids.every(i => /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(i))) return res.status(404).send('not a slip');
-  // ?amt=<dollars>: the stake to put on the slip (the scanner's Bet button). Novig's link takes
-  // it after a partner id (docs.novig.com/affiliates/deeplinking), which it uses only for tracking.
-  const amt = /^[1-9]\d{0,4}$/.test(String(req.query.amt || '')) ? '/evc/' + req.query.amt : '';
-  const tail = 'events/' + ids.join(',') + amt, web = 'https://novig.com/' + tail, appUrl = 'novigapp://' + tail;
+  const tail = 'events/' + ids.join(','), web = 'https://novig.com/' + tail, appUrl = 'novigapp://' + tail;
   res.set('Cache-Control', 'no-store');
   if (!/iphone|ipad|ipod|android/i.test(req.get('User-Agent') || '')) return res.redirect(302, web);
   res.type('html').send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Open in Novig</title>
