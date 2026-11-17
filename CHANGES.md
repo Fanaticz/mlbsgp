@@ -2,6 +2,12 @@
 
 ## 2026-11-17 session
 
+### Novig Scan: the All tab folds a slip's other lines under it
+Max, 11-17: do the "+3 more" when the lines are like that (XAV Under 96.5 + CLEV Under 62.5, then Under 97.5 + Under 62.5 as its own row); it clogs the feed.
+
+- **Change** (`shape`, `cardOf` in `render`, `public/nba_scan.html`): on the All tab, rows of one board that are the same slip at different lines (same game or player, same legs and sides) are one card. Its head is the best of them by EV; the rest sit under a "+N more" chip. A different slip on the same game (CLEV +34.5 + CLEV Under 62.5) keeps its own row. The other tabs are as they were.
+- **Checked** in a phone-sized browser on stand-in rows of the screenshot's two games: three cards from six rows, the chip opening and closing its own card only. Not looked at on the live board.
+
 ### First Dunk: rebuilt on possessions, with lineups and statuses set automatically and DraftKings' "Other" line
 Max, 11-17: a spec for the model (possession rates, pace, opponent, tip, rotation, closed form and Monte Carlo, `price_game`, walk-forward validation), then: pull prices from DK, pull starting lineups from somewhere, DK lists the ten starters and then Other, and the tool should set starting / bench / out itself and adjust for a doubtful starter. This replaces the per-minute model of the entry below.
 

@@ -304,7 +304,7 @@ async function requote(key) {
   BUSY.delete(key); render();
 }
 let NOTE = "";             // a short message under the status line
-const GOPEN = new Set();   // players whose other rows are unfolded
+const GOPEN = new Set();   // cards whose other rows are unfolded
 // The passcode (the server's NOVIG_SCAN_KEY), kept on this device once entered.
 const KEYLS = "nbaScanKey";
 let KEY = "";
@@ -621,7 +621,10 @@ function render() {
   const byId = new Map();
   // NFL shows every row on its own (a player's props, stacks and game-line
   // slips are different bets, not versions of one).
-  const cardOf = c => ALL() ? rk(c) : LEAGUE === "nfl" || LEAGUE === "nbateam" || LEAGUE.startsWith("nhl") ? c.key : c.id;
+  // All: a slip and the same slip at other lines (XAV Under 96.5 + CLEV Under
+  // 62.5, then Under 97.5 + Under 62.5) are one card, headed by the best of them.
+  const shape = c => [c.board, c.id, c.kind || "", ...c.legs.map(L => [L.stat, L.team || "", L.name || L.player || "", L.side || "", L.half ? 1 : 0].join(":"))].join("|");
+  const cardOf = c => ALL() ? shape(c) : LEAGUE === "nfl" || LEAGUE === "nbateam" || LEAGUE.startsWith("nhl") ? c.key : c.id;
   for (const c of rows) (byId.get(cardOf(c)) || byId.set(cardOf(c), []).get(cardOf(c))).push(c);
   const mainOf = g => g.find(c => c.main) ||
     g.filter(c => c.tier === 1).sort((a, b) => Math.abs(a.legs[1].p - 0.5) - Math.abs(b.legs[1].p - 0.5))[0];
@@ -629,7 +632,7 @@ function render() {
   for (const g of byId.values()) {
     const shown = g.filter(pass);
     if (!shown.length) continue;
-    const head = (!pair && mainOf(g)) || shown[0];
+    const head = (!ALL() && !pair && mainOf(g)) || shown[0];
     cards.push({ head, others: shown.filter(c => c !== head) });
   }
   cards.sort((a, b) => b.head.ev - a.head.ev);
@@ -698,7 +701,7 @@ function render() {
     const one = (c, sub, others) =>
       `<div class="row${sub ? " sub" : ""}${isOld(c) ? " old" : ""}${liveBets().some(b => b.key === c.key) ? " has" : ""}" data-k="${esc(rk(c))}">` +
       `<div class="who">${sub ? "" : `${c.board ? `<span class="tag">${BOARD[c.board]}</span>` : ""}<b>${esc(c.player)}</b>${c.gtd ? `<span class="tag q" title="${esc(c.gtd)}">Q</span>` : ""}<small>${esc(c.team)}${c.starts ? " · " + tip(c.starts) : ""}</small>` +
-        (others && others.length ? `<button type="button" class="more" data-g="${esc(c.id)}">${GOPEN.has(c.id) ? "hide" :
+        (others && others.length ? `<button type="button" class="more" data-g="${esc(cardOf(c))}">${GOPEN.has(cardOf(c)) ? "hide" :
           `+${others.length} more${others[0].ev > c.ev ? `, to ${pct(others[0].ev)}` : ""}`}</button>` : "")}</div>` +
       `<div class="legs">${esc(c.label)}${c.model ? `<span class="rough" title="A higher line: fair value is modelled from the main line, not read off a book.">*</span>` : ""}${c.rough ? `<span class="rough" title="A leg sits on a Novig book wider than 4¢: rough fair value. Check sharp odds.">~</span>` : ""}</div>` +
       `<div class="num fair"><span class="lab">Fair</span>${am(c.fair)}</div>` +
@@ -710,7 +713,7 @@ function render() {
       `<div class="num"><span class="lab">Age</span>${age(c)}<button type="button" class="re${BUSY.has(c.key) ? " spin" : ""}" data-re="${esc(rk(c))}" title="Price this slip again: today’s leg prices and a new Novig quote"${BUSY.has(c.key) ? " disabled" : ""}>↻</button></div>` +
       betLine(c, sub) + kbetLine(c) + (OPEN.has(rk(c)) ? detail(c) : "") + `</div>`;
     rowsEl.innerHTML = cards.map(({ head, others }) =>
-      one(head, false, others) + (GOPEN.has(head.id) ? others.map(c => one(c, true)).join("") : "")).join("");
+      one(head, false, others) + (GOPEN.has(cardOf(head)) ? others.map(c => one(c, true)).join("") : "")).join("");
     rowsEl.querySelectorAll(".more").forEach(b => b.onclick = e => {
       e.stopPropagation();
       const g = b.dataset.g;
