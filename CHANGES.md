@@ -2,6 +2,12 @@
 
 ## 2026-11-16 session
 
+### Kalshi Scan: the Bet button is on the row
+Max, 11-16: "I don't see it" (the button was inside the opened row; his rows were closed).
+
+- **Change**: a Kalshi row above fair shows **Bet $100 at 6.69x** on the row itself, open or not, so a play is one press. What happened shows beside it. A stake typed in the opened row still overrides the $100.
+- **Checked** in a phone-sized browser against the stand-in: the button on a closed row, one press, the bought message.
+
 ### Kalshi Scan: the Bet button stakes a flat $100
 Max, 11-16: just do $100 for the Kalshi bets.
 
