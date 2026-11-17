@@ -353,7 +353,6 @@ def cbb_candidates(a):
     same lines; a game Novig doesn't list, or whose teams can't be matched by
     name, is left out (Kalshi's own college books are 8 to 10 cents wide)."""
     shapes = json.load(open(scan.CBB_LINES))
-    S, buckets = shapes["shapes"]["fav_cover+over"], shapes["buckets"]
     now, games = time.time() * 1000, {}
     for kind, series in (("spread", "KXNCAAMBSPREAD"), ("total", "KXNCAAMBTOTAL")):
         for m in _markets(series):
@@ -420,10 +419,7 @@ def cbb_candidates(a):
         po, wt = t["p"][0], t["spread"]
         if not (a.lo <= pf <= a.hi and a.lo <= po <= a.hi):
             continue
-        band = next((b for b, (lo, hi) in zip(S["by_spread"], buckets) if lo <= ks["line"] < hi), None)
-        r = S["all"]["r"]
-        if band and band["n"] >= scan.CBB_MIN_GAMES and not band["r_lo"] <= r <= band["r_hi"]:
-            r = band["r"]
+        r = scan.cbb_r(shapes, "fav_cover+over", ks["line"])["r"]
         fav, dog = name[ks["team"]], next(x for x in n if x != name[ks["team"]])
         legs = {"fav": {"stat": "cover", "side": "over", "yes": True, "p": pf, "text": f"{fav} -{ks['line']:g}"},
                 "dog": {"stat": "cover", "side": "under", "yes": False, "p": 1 - pf, "text": f"{dog} +{ks['line']:g}"},

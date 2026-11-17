@@ -2,6 +2,16 @@
 
 ## 2026-11-17 session
 
+### CBB correlations follow a curve by size of spread; more bands tested worse
+Max, 11-17: another slip where DraftKings pays more than the fair (Xavier Under 95.5 + Cleveland State Under 62.5: fair +190, DK +216); is this wrong anywhere else, and would more bands make it better?
+
+- **More bands, tested** (each season held out in turn, the other two fitted; scored on how well the fitted r predicts which legs hit): nine spread bands each on its own r predicted the held-out season **worse** than one number for six of seven shapes (a 30+ band is about 370 games and its r swings by season). A smooth curve through the nine bands predicted better than one number and better than four bands for both team totals Under, the underdog's team total with the game total, and the spread with the total. Splitting 20+ into 20 to 30 and 30+ was also tried on the board's own rule and sent a 33-point game back to +0.36.
+- **Change** (`curve` in `scripts/cbb_line_correlations.py`; `cbb_r` in `scan.py`, read by the Novig and Kalshi CBB boards; `public/data/cbb_line_correlations.json` rebuilt, about two and a half minutes): each shape gets a quadratic by spread through nine bands, flat past the top band's average spread, with a jackknife range. The board reads the curve where its change from a 5- to a 30-point spread is over three standard errors, and one r at every spread otherwise. The four-band rule is gone.
+- **What the board uses now**: both team totals Under +0.37 to a 10-point spread, +0.35 at 15, +0.33 at 20, +0.29 at 25, +0.25 at 30, +0.20 at 35 (was +0.36, and +0.25 at 20 and up). Spread + total -0.04 to 10 points, +0.01 at 20, +0.12 at 30 (was -0.03, +0.14 at 20 and up). One r at every spread: underdog covers + his team total Under -0.60, the favourite's team total Under + Under +0.83, first-half spread + spread +0.63 (its +0.69 at 20 and up is gone: the curve's rise is two standard errors, not three).
+- **The two slips**: Xavier + Cleveland State (33 points) r +0.22, fair +213 against DraftKings' +216, Novig's 3.50x +11.8% (the board showed +20.8%). Ole Miss + Nicholls (29 points) r +0.26, fair +231 against DK's +232, Novig's 3.54x +6.9%.
+- **Anywhere else**: the NBA game-line slips use the same four-band rule, so the same test was run on their 4,133 games: no curve, line or set of bands beat one number on held-out seasons (NBA spreads stop near 15 points, where college's fall has barely started). Left as it is. Not tested: college football's game-line slips (a model fitted to each game's own ladders, with no history in the repo to test against), soccer corners (already by strength of favourite), NHL lines and the NFL's line slips (three spread groups).
+- **Checked**: each shape's r read back through `cbb_r` at spreads of 0 to 45, an unmeasured shape, and both slips' fair values. No live pass was run; rows on the board keep their old fair values until their next pass.
+
 ### CBB correlations: measured more steadily, and both team totals Under drops to +0.25 in lopsided games
 Max, 11-17: DraftKings pays +232 on Ole Miss Under 85.5 + Nicholls Under 56.5 where the board's fair is +212, and Gordon Bombay saw fair below DK on a few CBB slips; research it and update the correlation if needed.
 

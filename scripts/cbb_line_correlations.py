@@ -16,10 +16,11 @@ the board asks, by size of spread, the copula correlation r of the two
 legs' hit / miss record: the r at which a Gaussian copula with the legs' own
 hit rates gives the share of games where both hit, averaged over each leg's
 line and the lines 2 and 4 points either side of it (the line alone reads
-half as steadily; it is kept as r_line). Pushes are left out. A spread band
-gets its own r on the board only where the all-games r is outside the band's
-two-sigma range: both team totals Under is +0.36 overall but +0.25 at
-spreads of 20 and up, which the line alone was too noisy to show.
+half as steadily; it is kept as r_line). Pushes are left out. By size of
+spread the board reads each shape's curve (a quadratic through nine spread
+bands), where the curve is a real change: both team totals Under is +0.37
+to a 10-point spread, +0.32 at 20, +0.26 at 29 and +0.22 at 33. A shape
+with no real change has one r at every spread. by_spread is for reading.
 Posted team totals and first-half spreads aren't in the feed, so a team's
 total line is (total -/+ spread) / 2 and the first-half spread is the
 closing spread times the slope of first-half margin on it. r describes how
@@ -47,6 +48,9 @@ CORE = "https://sports.core.api.espn.com/v2/sports/basketball/leagues/mens-colle
 BUCKETS = [(0, 6), (6, 12), (12, 20), (20, 99)]   # by the closing spread, points
 CUTS = (-4, -2, 0, 2, 4)   # each leg's line and the lines this many points off it
 BLOCKS = 20                # jackknife blocks for a correlation's range
+FINE = [(0, 3), (3, 6), (6, 9), (9, 12), (12, 16), (16, 20), (20, 25), (25, 30), (30, 99)]   # the bands the curve by spread is drawn through
+CURVE_AT = tuple(range(0, 41))   # the spreads the curve is written out at
+CURVE_Z = 3.0              # the curve is used where its change from a 5- to a 30-point spread is this many standard errors
 
 
 def get(url):
@@ -65,7 +69,7 @@ def copula_r(j, a, b):
     hit j of the time (sgp.joint, solved by bisection). Not sgp.devig_r:
     that is the devig tool's own scale, about two thirds of this."""
     lo, hi = -0.999, 0.999
-    for _ in range(24):
+    for _ in range(18):
         mid = (lo + hi) / 2
         if sgp.joint(mid, a, b) < j:
             lo = mid
@@ -145,43 +149,85 @@ def build():
         "fav_1h_cover+fav_cover": (("h", 1), ("m", 1)), "dog_1h_cover+dog_cover": (("h", -1), ("m", -1)),
     }
 
-    def measure(games, legs):
-        """r: the copula r averaged over each leg's line moved 0, 2 and 4
-        points either way (25 pairs of lines), which reads about twice as
-        steadily as the line alone and is what a slip a line or two off the
-        main one needs. Its two-sigma range is a jackknife over BLOCKS random
-        blocks of games. r_line, both, pa, pb: the line alone, as before."""
+    for i, g in enumerate(G):
+        g["b"] = i * 7919 % BLOCKS   # its jackknife block
+    cells = [(ca, cb) for ca in CUTS for cb in CUTS]
+
+    def tally(games, legs):
+        """Per block and pair of lines: games, a hits, b hits, both (a push on either line left out)."""
         (ka, sa), (kb, sb) = legs
-        v = [(sa * g[ka], sb * g[kb]) for g in games if g.get(ka) is not None and g.get(kb) is not None]
-        if sum(1 for x, y in v if x and y) < 150:
-            return None
-        cells = [(ca, cb) for ca in CUTS for cb in CUTS]
-        tally = [[[0, 0, 0, 0] for _ in cells] for _ in range(BLOCKS)]   # per block and pair of lines: games, a hits, b hits, both
-        for i, (x, y) in enumerate(v):
-            t = tally[i * 7919 % BLOCKS]
-            for c, (ca, cb) in zip(t, cells):
-                if x != ca and y != cb:   # on the line is a push
+        t = [[[0, 0, 0, 0] for _ in cells] for _ in range(BLOCKS)]
+        for g in games:
+            if g.get(ka) is None or g.get(kb) is None:
+                continue
+            x, y = sa * g[ka], sb * g[kb]
+            for c, (ca, cb) in zip(t[g["b"]], cells):
+                if x != ca and y != cb:
                     c[0] += 1
                     c[1] += x > ca
                     c[2] += y > cb
                     c[3] += x > ca and y > cb
-        tot = [[sum(t[k][q] for t in tally) for q in range(4)] for k in range(len(cells))]
+        return t, [[sum(b[k][q] for b in t) for q in range(4)] for k in range(len(cells))]
 
-        def avg(less=None):
-            rs = []
-            for k, c in enumerate(tot):
-                n, a, b, j = (c[q] - (tally[less][k][q] if less is not None else 0) for q in range(4))
-                rs.append(copula_r(j / n, a / n, b / n))
-            return sum(rs) / len(rs)
-        r, jack = avg(), [avg(i) for i in range(BLOCKS)]
-        se = math.sqrt((BLOCKS - 1) / BLOCKS * sum((x - sum(jack) / BLOCKS) ** 2 for x in jack))
+    def avg(t, tot, less=None):
+        """The copula r averaged over the 25 pairs of lines, with one block of games left out."""
+        rs = []
+        for k, c in enumerate(tot):
+            n, a, b, j = (c[q] - (t[less][k][q] if less is not None else 0) for q in range(4))
+            rs.append(copula_r(j / n, a / n, b / n))
+        return sum(rs) / len(rs)
+
+    def jse(full, jack):
+        return math.sqrt((BLOCKS - 1) / BLOCKS * sum((x - sum(jack) / BLOCKS) ** 2 for x in jack))
+
+    def measure(games, legs):
+        """r: the copula r averaged over each leg's line moved 0, 2 and 4
+        points either way (25 pairs of lines), which reads about twice as
+        steadily as the line alone and is what a slip a line or two off the
+        main one needs. Its two-sigma range is a jackknife over BLOCKS
+        blocks of games. r_line, both, pa, pb: the line alone."""
+        t, tot = tally(games, legs)
         n, a, b, j = tot[cells.index((0, 0))]
+        if n < 150:
+            return None
+        r = avg(t, tot)
+        se = jse(r, [avg(t, tot, i) for i in range(BLOCKS)])
         return {"n": n, "pa": round(a / n, 4), "pb": round(b / n, 4), "both": round(j / n, 4), "r_line": round(copula_r(j / n, a / n, b / n), 3),
                 "r": round(r, 3), "se": round(se, 4), "r_lo": round(r - 2 * se, 3), "r_hi": round(r + 2 * se, 3)}
+
+    def curve(legs):
+        """r by size of spread: a quadratic through the r of each of FINE's
+        bands (weighted by games), flat past the top band's average spread.
+        More bands on their own predicted held-out seasons worse than one
+        number; this predicted them better (11-17). Kept only where the
+        curve's drop or rise from a 5-point to a 30-point spread is over
+        CURVE_Z jackknife standard errors: otherwise the shape has one r."""
+        bands = [[g for g in G if lo <= g["s"] < hi] for lo, hi in FINE]
+        xs = [sum(g["s"] for g in b) / len(b) for b in bands]
+        ts = [tally(b, legs) for b in bands]
+        ws = [tot[cells.index((0, 0))][0] for _, tot in ts]
+
+        def fit(less=None):
+            ys = [avg(t, tot, less) for t, tot in ts]
+            A = [[sum(w * x ** (i + k) for w, x in zip(ws, xs)) for k in range(3)] for i in range(3)]
+            c = [sum(w * y * x ** i for w, x, y in zip(ws, xs, ys)) for i in range(3)]
+            for i in range(3):   # Gauss-Jordan on the 3 x 3 normal equations
+                piv = A[i][i]
+                A[i], c[i] = [v / piv for v in A[i]], c[i] / piv
+                for k in range(3):
+                    if k != i:
+                        f = A[k][i]
+                        A[k], c[k] = [v - f * u for v, u in zip(A[k], A[i])], c[k] - f * c[i]
+            return [c[0] + c[1] * z + c[2] * z * z for z in (min(sp, xs[-1]) for sp in CURVE_AT)]
+        full, jack = fit(), [fit(i) for i in range(BLOCKS)]
+        se = [jse(full[k], [jk[k] for jk in jack]) for k in range(len(CURVE_AT))]
+        lo, hi = CURVE_AT.index(5), CURVE_AT.index(30)
+        z = (full[hi] - full[lo]) / (jse(0, [jk[hi] - jk[lo] for jk in jack]) or 1e-9)
+        return {"z": round(z, 2), "used": abs(z) >= CURVE_Z, "at": list(CURVE_AT), "r": [round(v, 3) for v in full], "se": [round(v, 4) for v in se]}
     out = {"generated_at": time.strftime("%Y-%m-%d"), "games": len(G), "first_half_slope": round(slope, 3),
            "days": [rows[0][0], max(r[0] for r in rows)], "buckets": BUCKETS, "shapes": {}}
     for name, legs in shapes.items():
-        out["shapes"][name] = {"all": measure(G, legs),
+        out["shapes"][name] = {"all": measure(G, legs), "curve": curve(legs),
                                "by_spread": [measure([g for g in G if lo <= g["s"] < hi], legs) for lo, hi in BUCKETS]}
     json.dump(out, open(OUT, "w"), indent=1)
     print(f"{len(G)} games with a closing spread and total, {len(H)} with a halftime score; 1H spread = {slope:.3f} x spread")
@@ -189,6 +235,9 @@ def build():
         a = v["all"]
         print(f"{name:28s} n {a['n']:6d}  both {a['both']:.3f}  r {a['r']:+.3f} ({a['r_lo']:+.2f} to {a['r_hi']:+.2f}), on the line alone {a['r_line']:+.2f}  by spread: "
               + "  ".join("  -  " if b is None else f"{b['r']:+.2f}" for b in v["by_spread"]))
+        c = v["curve"]
+        print(" " * 28 + (f" curve (z {c['z']:+.1f}): " + "  ".join(f"{sp}: {r:+.2f}" for sp, r in zip(c["at"], c["r"]) if sp % 5 == 0) if c["used"]
+                          else f" one r at every spread (curve z {c['z']:+.1f})"))
 
 
 if __name__ == "__main__":

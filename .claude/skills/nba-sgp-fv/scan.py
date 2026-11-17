@@ -239,10 +239,12 @@ game, 0.10 at a 30-point spread), so there is no underdog-moneyline slip.
 The correlations on this board are measured, not modelled: each shape's
 copula r on 17,319 games of 2023-24 to 2025-26 against closing lines, by
 size of spread (scripts/cbb_line_correlations.py): underdog covers + his
-team total Under -0.60, a team total Under + game Under +0.83, both team
-totals Under +0.36 (+0.25 at spreads of 20 and up: DraftKings paid more than
-the +0.37 fair on those, 11-17), first-half spread + spread +0.63 (+0.69 at
-20 and up), spread + total -0.03 (+0.14 at 20 and up).
+team total Under -0.60, the favourite's team total Under + game Under
++0.83, first-half spread + spread +0.63, each the same at every spread; and
+two that follow a curve by spread (cbb_r): both team totals Under +0.37 to a
+10-point spread, +0.33 at 20, +0.25 at 30, +0.20 at 35 (DraftKings paid more
+than the one-r fair on those, 11-17), and spread + total -0.04 to 10 points,
++0.01 at 20, +0.12 at 30.
 Each two-leg slip is asked again with each leg moved one line either way,
 where that line has a fair value (Pinnacle's on team totals and the first
 half, Novig's own tight book on the game's spread and total): Novig's price
@@ -1323,7 +1325,6 @@ CFB_KAPPA = 0.5            # corr(favourite's margin, total) = CFB_KAPPA x sprea
 LINE_BOARDS = {"cfb": {"league": "NCAAF", "sd": (14.6, 15.0), "dogml": True, "pin": False, "own": True},
                "cbb": {"league": "NCAAB", "sd": (12.0, 16.5), "dogml": False, "pin": True, "own": False}}
 CBB_LINES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "public", "data", "cbb_line_correlations.json")
-CBB_MIN_GAMES = 400        # a spread band with fewer games than this uses the all-games r
 CFB_MIN_DOG = 0.10         # no underdog-moneyline slips on a longer shot than this
 
 
@@ -1340,6 +1341,25 @@ def cfb_fit(points, default_sd):
             return -(sz - b * sx) / n / b, -1 / b
     x, p = min(points, key=lambda q: abs(q[1] - 0.5))
     return x + default_sd * sgp.nppf(p), default_sd
+
+
+def cbb_r(measured, shape, spread):
+    """A CBB shape's measured r at this size of spread ({"r", "n"}), or None
+    for a shape that wasn't measured. Its curve by spread where the curve is
+    a real change (cbb_line_correlations.py: both team totals Under falls
+    from +0.37 to +0.22 at a 33-point spread; DraftKings paid more than the
+    one-r fair on those, 11-17), else the all-games r. Spread bands on their
+    own were tried first: four bands missed the fall and nine were noise."""
+    v = (measured.get("shapes") or {}).get(shape)
+    if not v:
+        return None
+    c = v.get("curve")
+    if not (c and c["used"]):
+        return v["all"]
+    x = min(max(spread, c["at"][0]), c["at"][-1])
+    i = min(int(x - c["at"][0]), len(c["at"]) - 2)
+    r = c["r"][i] + (c["r"][i + 1] - c["r"][i]) * (x - c["at"][i])
+    return {"r": round(r, 3), "n": v["all"]["n"]}
 
 
 def cfb_candidates(a):
@@ -1362,21 +1382,7 @@ def cfb_candidates(a):
     if a.league == "cbb" and os.path.exists(CBB_LINES):
         measured = json.load(open(CBB_LINES))
 
-    def measured_r(shape, spread):
-        v = (measured.get("shapes") or {}).get(shape)
-        if not v:
-            return None
-        band = next((b for (lo, hi), b in zip(measured["buckets"], v["by_spread"]) if lo <= spread < hi), None)
-        # A spread band's own r only where it is a real difference: enough
-        # games, and the all-games r outside the band's two-sigma range. The
-        # 20+ band of underdog covers + his total Under reads -0.55 on 1,271
-        # games against -0.60 overall (range -0.61 to -0.49; 30+ spreads alone
-        # -0.65), which put every big underdog at the top of the board on noise.
-        # Both team totals Under at 20+ is the other way: +0.25 (+0.20 to +0.31)
-        # against +0.36, a real drop, and the band's r is used.
-        if band and band["n"] >= CBB_MIN_GAMES and not band["r_lo"] <= v["all"]["r"] <= band["r_hi"]:
-            return band
-        return v["all"]
+    measured_r = lambda shape, spread: cbb_r(measured, shape, spread)   # noqa: E731
     games = {}
     for m in items:
         games.setdefault(m["eventId"], []).append(m)
