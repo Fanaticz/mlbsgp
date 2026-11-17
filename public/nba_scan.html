@@ -702,7 +702,7 @@ function render() {
   } else {
     const one = (c, sub, others) =>
       `<div class="row${sub ? " sub" : ""}${isOld(c) ? " old" : ""}${liveBets().some(b => b.key === c.key) ? " has" : ""}" data-k="${esc(rk(c))}">` +
-      `<div class="who">${sub ? "" : `${c.board ? `<span class="tag">${BOARD[c.board]}</span>` : ""}<b>${esc(c.player)}</b>${c.gtd ? `<span class="tag q" title="${esc(c.gtd)}">Q</span>` : ""}<small>${esc(c.team)}${c.starts ? " · " + tip(c.starts) : ""}</small>` +
+      `<div class="who">${sub ? "" : `${c.board ? `<span class="tag">${BOARD[c.board]}</span>` : ""}<b>${esc(c.player)}</b>${c.gtd ? `<span class="tag q" title="${esc(c.gtd)}">GTD</span>` : ""}<small>${esc(c.team)}${c.starts ? " · " + tip(c.starts) : ""}</small>` +
         (others && others.length ? `<button type="button" class="more" data-g="${esc(cardOf(c))}">${GOPEN.has(cardOf(c)) ? "hide" :
           `+${others.length} more${others[0].ev > c.ev ? `, to ${pct(others[0].ev)}` : ""}`}</button>` : "")}</div>` +
       `<div class="legs">${esc(c.label)}${c.model ? `<span class="rough" title="A higher line: fair value is modelled from the main line, not read off a book.">*</span>` : ""}${c.rough ? `<span class="rough" title="A leg sits on a Novig book wider than 4¢: rough fair value. Check sharp odds.">~</span>` : ""}</div>` +
@@ -779,7 +779,7 @@ function render() {
     `${S.data ? ` (data ${S.data})` : ""}. `) + `Novig: the multiplier on its slip, its public quote after the 10% parlay fee. ` +
     `Novig’s first quote on a slip is often not its price (it can be far higher, and is gone half a minute later), so a slip that comes back above fair is asked again until two quotes in a row agree, and the row shows that settled price. ` +
     `Quotes still move by a few percent between asks and last about 30 seconds, so a row is a lead to re-check on the slip, and against sharp odds, before betting. ` +
-    `NFL and NBA players ESPN lists as out, on injured reserve, suspended or doubtful are left off (the count is in the line at the top), and a player listed questionable or day-to-day (ESPN's GTD) carries a Q: Novig can keep their props open for hours. ` +
+    `NFL and NBA players ESPN lists as out, on injured reserve, suspended or doubtful are left off (the count is in the line at the top), and a player listed questionable or day-to-day (ESPN's GTD) carries a GTD tag: Novig can keep their props open for hours. ` +
     `Nothing is asked of Novig until you press Fetch or switch Auto-scan on; the last pass for each league stays here until the next one.`;
 }
 
