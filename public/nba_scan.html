@@ -93,6 +93,8 @@
   .betform input { width:78px; margin:0; }
   .betform button { background:none; border:1px solid var(--line); color:var(--txt); border-radius:8px; padding:6px 11px; font-size:12.5px; cursor:pointer; }
   .betform .mine { color:var(--pos); }
+  .betform .kbet { border-color:var(--pos); color:var(--pos); font-weight:600; }
+  .betform .kmsg { color:var(--txt); }
   .betform .x { padding:1px 7px; color:var(--muted); margin-left:2px; }
   #hidebets { background:none; border:1px solid var(--line); color:var(--muted); border-radius:8px; padding:7px 11px; font-size:13px; cursor:pointer; }
   .betline { grid-column:1 / -1; padding-top:5px; font-size:12.5px; color:var(--pos); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -192,6 +194,7 @@
   <button type="submit" style="margin-left:6px;background:var(--accent);border:0;border-radius:8px;padding:10px 16px;font-weight:600;font-size:14px">Open</button>
 </form>
 <div class="mybets" id="mybets" style="display:none"></div>
+<div class="mybets" id="kpos" style="display:none"></div>
 <div class="board">
   <div class="head">
     <div>Player</div><div>Legs</div><div class="num">Fair</div><div class="num" id="bookhead">Novig</div>
@@ -323,6 +326,72 @@ function kalshiLock() {   // the server refused it: forget it and ask once more
   kalshiAsk();
 }
 const kalshiNote = () => { if (KPAGE && !KKEY) document.getElementById("rows").innerHTML = '<div class="empty">Locked. Click the title three times to enter the Kalshi passcode.</div>'; };
+// What the account already holds on Kalshi (GET /api/nba/kalshi-positions, read
+// once a minute and after a bet): a strip above the board and a line on the
+// row whose legs match.
+let KPOS = [], KPOS_ERR = "";
+const legKey = legs => legs.map(L => `${L.id}:${L.side}`).sort().join("|");
+const rowLegKey = c => legKey((c.legs || []).map(L => ({ id: L.id, side: L.yes === false ? "no" : "yes" })));
+const held = c => (c.book === "kalshi" ? KPOS.filter(h => h.legs.length && legKey(h.legs) === rowLegKey(c)) : []);
+function heldLine(c) {
+  const h = held(c);
+  if (!h.length) return "";
+  const n = h.reduce((s, x) => s + x.contracts, 0), cost = h.reduce((s, x) => s + x.cost, 0);
+  return `<div class="betline">On Kalshi: <b>${usd(cost)}</b> in, pays <b>${usd(Math.abs(n))}</b>` +
+    (cost > 0 && n > 0 ? ` (${(n / cost).toFixed(2)}x before fees)` : "") + (n < 0 ? " · on the NO side" : "") + `</div>`;
+}
+function kposStrip() {
+  const el = document.getElementById("kpos");
+  if (!el) return;
+  el.style.display = KPAGE && (KPOS.length || KPOS_ERR) ? "" : "none";
+  if (!KPAGE) return;
+  const cost = KPOS.reduce((s, x) => s + x.cost, 0);
+  el.innerHTML = KPOS_ERR && !KPOS.length ? `<span class="t">On Kalshi: could not be read (${esc(KPOS_ERR)})</span>` :
+    `<span class="t">On Kalshi <b>${usd(cost)}</b> in ${KPOS.length} ${KPOS.length === 1 ? "combo" : "combos"}</span>` +
+    KPOS.slice().sort((a, b) => b.cost - a.cost).map(h =>
+      `<span class="chip" title="${esc(h.ticker)}">${esc(String(h.title).replace(/\byes /g, "").replace(/,/g, " · "))}<b>${usd(h.cost)}</b>` +
+      `<small>pays ${usd(Math.abs(h.contracts))}${h.contracts < 0 ? " · NO side" : ""}</small></span>`).join("");
+}
+async function kposLoad() {
+  if (!KPAGE || !KEY || !KKEY) return;
+  try {
+    const r = await fetch("/api/nba/kalshi-positions", { cache: "no-store", headers: { "X-Scan-Key": KEY, "X-Kalshi-Key": KKEY } });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok) { KPOS = Array.isArray(j.positions) ? j.positions : []; KPOS_ERR = j.error || ""; }
+  } catch (_) { /* the next read will do */ }
+  kposStrip();
+  if (S) render();
+}
+setTimeout(kposLoad, 1500);
+setInterval(kposLoad, 60 * 1000);
+// The Bet button on a Kalshi row: the server places it (POST /api/nba/kalshi-bet) and says what was bought.
+const KMSG = new Map();
+let KBETTING = false;
+async function kalshiBet(b) {
+  const id = b.dataset.kbet, c = S && S.rows.find(r => rk(r) === id), f = b.closest(".det");
+  if (!c || KBETTING) return;
+  const typed = parseFloat(f.querySelector(".stake").value);
+  const stake = typed > 0 ? typed : Math.max(1, Math.round(c.wager || 0));
+  // The typed stake is this bet's: empty the box so the "I bet this" form doesn't save it a second time.
+  f.querySelector(".stake").value = ""; f.querySelector(".stake").closest(".betform").dataset.saved = "1";
+  KBETTING = true; b.disabled = true; KMSG.set(id, `placing $${stake}…`); render();
+  let msg = "";
+  try {
+    const r = await fetch("/api/nba/kalshi-bet", { method: "POST", headers: { "X-Scan-Key": KEY, "X-Kalshi-Key": KKEY, "Content-Type": "application/json" },
+                                                    body: JSON.stringify({ league: c.board || LEAGUE, wide: WIDE, key: c.key, stake, x: c.slip_x }) });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.bet) {
+      const t = j.bet;
+      msg = t.side === "yes" ? `Bought: $${stake} at ${t.x.toFixed(2)}x` + (t.contracts ? ` (${t.contracts.toFixed(2)} contracts)` : "")
+        : t.side === "no" ? "WRONG SIDE: this landed on the No side of the combo. Close it on Kalshi. The button is now off."
+        : `Accepted at ${t.x.toFixed(2)}x, but no position showed within 9 seconds: look at your Kalshi positions before betting again.`;
+      if (t.side !== "no") bets({ add: { key: c.key, board: c.board || LEAGUE, player: c.player, team: c.team, label: c.label, stake, x: t.x, fair: c.fair, starts: c.starts } });
+      if (j.row && S) { const i = S.rows.findIndex(r => rk(r) === id); if (i >= 0) S.rows[i] = Object.assign({}, S.rows[i], j.row); }
+    } else msg = j.error || `not placed (${r.status})`;
+  } catch (e) { msg = "No answer from the server. The bet may or may not have gone in: look at your Kalshi positions."; }
+  KBETTING = false; KMSG.set(id, msg); render();
+  setTimeout(kposLoad, 2500);
+}
 const bookHead = () => { document.getElementById("bookhead").textContent = KALSHI(LEAGUE) ? "Kalshi" : LEAGUE === "dknba" ? "DK" : ALL() ? "Price" : "Novig"; };
 function lock(msg) {
   S = null;
@@ -402,6 +471,8 @@ const total = list => list.reduce((s, b) => s + b.stake, 0);
 // A row's own line for what I have down: on this slip (green, with a green
 // edge on the row), or, on a player's first row, on his other slips (grey).
 function betLine(c, sub) {
+  const onK = heldLine(c);
+  if (onK) return onK;   // what Kalshi says is held beats this device's own note of it
   const mine = liveBets().filter(b => b.key === c.key);
   if (mine.length) return `<div class="betline">✓ You bet <b>${usd(total(mine))}</b>` +
     (mine.length === 1 ? (mine[0].x ? ` at ${mine[0].x.toFixed(2)}x` : "") : ` in ${mine.length} bets: ${mine.map(b => usd(b.stake) + (b.x ? ` at ${b.x.toFixed(2)}x` : "")).join(", ")}`) + `</div>`;
@@ -501,7 +572,12 @@ function detail(c) {
     `<span>${mine.length ? "Add" : "I bet this"}: $</span><input type="number" class="stake" min="0" step="1" placeholder="stake" />` +
     `<span>at</span><input type="number" class="px" min="1" step="0.01" value="${c.slip_x.toFixed(2)}" /><span>x</span>` +
     `<button type="button" data-add="${esc(rk(c))}">Save</button></div>`;
-  return `<div class="det"><div class="lgs">${legs}</div><div class="tech">${tech}</div>${form}</div>`;
+  // Kalshi rows: one press buys the slip. The stake box above is the amount (the row's
+  // quarter-Kelly stake when left empty); the server refuses a price more than 1% worse.
+  const kbet = c.book === "kalshi" && c.ev > 0 ? `<div class="betform"><button type="button" class="kbet" data-kbet="${esc(rk(c))}"` +
+    ` title="Buys this combo on Kalshi now, for the stake typed above (or the row's stake). Not placed if the price is more than 1% worse than shown or the slip is no longer above fair.">` +
+    `Bet on Kalshi at ${c.slip_x.toFixed(2)}x</button><span class="kmsg">${esc(KMSG.get(rk(c)) || "")}</span></div>` : "";
+  return `<div class="det"><div class="lgs">${legs}</div><div class="tech">${tech}</div>${form}${kbet}</div>`;
 }
 
 function render() {
@@ -649,6 +725,7 @@ function render() {
       bets({ add: { key: c.key, board: c.board || LEAGUE, player: c.player, team: c.team, label: c.label, stake, x, fair: c.fair, starts: c.starts } });
     });
     rowsEl.querySelectorAll("[data-del]").forEach(b => b.onclick = () => bets({ del: b.dataset.del }));
+    rowsEl.querySelectorAll("[data-kbet]").forEach(b => b.onclick = () => kalshiBet(b));
     rowsEl.querySelectorAll(".betform input").forEach(i => { i.onkeydown = e => { if (e.key === "Enter") i.closest(".betform").querySelector("[data-add]").click(); }; 
       // Leaving the form with a stake typed saves it: the iPhone keyboard's
       // check mark only closes the keyboard, it sends no Enter. (Moving

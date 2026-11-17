@@ -2,6 +2,16 @@
 
 ## 2026-11-16 session
 
+### Kalshi Scan: a Bet button, and what is already held on Kalshi
+Max, 11-16: can we have a one click bet button? And could it show what we have already bet?
+
+- **Bet button** (`place` in `scan_kalshi.py`, run as `--bet`; `POST /api/nba/kalshi-bet`; the opened row on the Kalshi page): on a Kalshi row above fair, **Bet on Kalshi at 2.91x** buys the slip in one press, for the stake typed in the row's stake box or the row's quarter-Kelly stake when the box is empty. The legs are re-priced, a new request goes out for that stake, and the best answer is accepted. The row then reads "Bought: $2 at 2.91x (6.10 contracts)" and the bet goes on this device's bets list.
+- **What stops a bet**: the price more than 1% worse than the row showed; the slip no longer above today's fair value; a stake over $250 (`KALSHI_BET_MAX`); no Kalshi passcode; another bet in flight.
+- **The first bet is $2 at most.** Buying the combo's Yes means accepting a maker's bid for No (side "no" in Kalshi's call). That is my reading of Kalshi's docs and it has never met the real exchange, so after every bet the account's position in the combo is read back: positive is Yes. Until one bet has been seen on the Yes side the cap is $2; a bet seen on the No side turns the button off and says so.
+- **On Kalshi** (`--positions`; `GET /api/nba/kalshi-positions`): the Kalshi page shows a strip of the account's open combo positions (dollars in, what each pays), read from Kalshi once a minute and after a bet, and a row whose legs match a held combo says "On Kalshi: $2 in, pays $6.10". Read only. It shows bets placed in the app too, not just from this page.
+- **Checked** against a stand-in for Kalshi, through the server and a phone-sized browser: the $2 first-bet cap, the price floor, a bought bet, the $250 cap, the refusal without the passcode, the shut-off after a position on the No side, the button pressed on the page, the strip and the row line.
+- **Not checked: no bet has been placed on the real Kalshi.** Unknowns until the first $2 bet: whether "no" is the right side to accept; whether the Trade-only key may accept a quote; whether the position shows within the nine seconds the script waits (if not the row says to look at Kalshi before betting again).
+
 ### Kalshi Scan: Novig's price for the same slip beside Kalshi's
 Max, 11-16: to double check the Kalshi prices, show the fair value and Novig's price too.
 

@@ -29,7 +29,8 @@ for --stake dollars (POST /communications/rfqs), wait --wait seconds, read the
 makers' answers (GET /communications/quotes?rfq_id=), delete the request. A
 maker answers with a bid for No; buying Yes costs 1 - the best No bid. The fee
 is Kalshi's taker fee, 0.07 x price x (1 - price) a contract, on top.
-Nothing is ever accepted: this script has no call that trades.
+A pass and a refresh never accept anything. The one call that trades is
+place() (--bet), run only when the page's Bet button is pressed.
 
 Every call that asks is signed with an account's API key:
   KALSHI_KEY_ID        the key id
@@ -518,6 +519,113 @@ def finish(c, yes, unit, kelly):
     return c
 
 
+def reprice(c, a):
+    """Re-read a row's NBA or NFL legs off Kalshi's own book and rebuild its
+    fair value at the same r (see requote). None, or why it can't be done."""
+    if a.league == "cbb":
+        return None
+    _, d = call("GET", "/markets", query={"tickers": ",".join(L["id"] for L in c["legs"]), "limit": 10}, signed=False)
+    book = {m["ticker"]: m for m in d.get("markets") or []}
+    if any(L["id"] not in book or book[L["id"]].get("status") != "active" for L in c["legs"]):
+        return "a leg is no longer open on Kalshi"
+    old = [L["p"] for L in c["legs"]]
+    for L in c["legs"]:
+        try:
+            bid, offer = float(book[L["id"]]["yes_bid_dollars"]), float(book[L["id"]]["yes_ask_dollars"])
+        except (KeyError, TypeError, ValueError):
+            return "Kalshi's book on a leg could not be read"
+        if not (0 < bid < offer < 1 and offer - bid <= a.kalshi_spread + 1e-9):
+            # No book to price the leg from now: an old fair value under a new price is worse than no row.
+            return f"{L.get('text') or 'a leg'} has no tight book on Kalshi right now: press Fetch"
+        p = sgp.devig_worst(offer, 1 - bid)[0]
+        L.update(p=p, fair=sgp.american(p), width=offer - bid, src="kalshi")
+    new = [L["p"] for L in c["legs"]]
+    if new != old:
+        lo, hi = -0.99, 0.99   # the r that gave this row's joint
+        for _ in range(30):
+            mid = (lo + hi) / 2
+            lo, hi = (mid, hi) if sgp.joint(mid, *old) < c["j"] else (lo, mid)
+        c["j"] = sgp.joint((lo + hi) / 2, *new)
+        c["devig_r"] = sgp.devig_r(c["j"], *new)
+        c["rough"] = any(L["width"] > a.max_spread + 1e-9 for L in c["legs"])
+    return None
+
+
+def place(c, a, stake, min_x, min_ev):
+    """Buy the slip on Kalshi: the page's Bet button (--bet). The only code
+    here that trades. The legs are re-priced, a request for quote is sent for
+    `stake` dollars (fees included), and the best answer is accepted only if
+    the slip still pays at least `min_x` and is at least `min_ev` above the
+    re-priced fair value. Returns ({"bet": {...}}, None) or (None, why).
+
+    Buying the combo's Yes means taking a maker's bid for No, so the side
+    accepted is "no". That reading of Kalshi's docs is checked after every
+    bet against the account's position in the combo: a positive position is
+    Yes. Anything else comes back as bet["side"] != "yes" and the server
+    stops the button."""
+    why = reprice(c, a)
+    if why:
+        return None, why
+    body = {"selected_markets": [{"market_ticker": L["id"], "event_ticker": L["event"], "side": "yes" if L.get("yes", True) else "no"} for L in c["legs"]]}
+    ticker = None
+    for coll in COLLECTIONS:
+        st, d = call("POST", f"/multivariate_event_collections/{coll}", body)
+        if st in (200, 201) and d.get("market_ticker"):
+            ticker = d["market_ticker"]
+            break
+    if not ticker:
+        return None, f"the combo could not be created: {d.get('code') or d.get('message') or st}"
+    st, d = call("POST", "/communications/rfqs", {"market_ticker": ticker, "rest_remainder": False, "target_cost_dollars": f"{stake:.2f}"})
+    rfq = d.get("id") or (d.get("rfq") or {}).get("id")
+    if st not in (200, 201) or not rfq:
+        return None, f"request for quote refused: {st} {d.get('code') or d.get('message') or ''}".strip()
+    best, accepted = None, False
+    try:
+        for _ in range(a.polls):
+            time.sleep(a.wait / a.polls)
+            _, d = call("GET", "/communications/quotes", query={"rfq_id": rfq, "rfq_user_filter": "self", "limit": 100})
+            for q in d.get("quotes") or []:
+                try:
+                    nb = float(q.get("no_bid_dollars") or 0)
+                except ValueError:
+                    continue
+                if q.get("status", "open") == "open" and 0 < nb < 1 and q.get("id") and (not best or nb > best[0]):
+                    best = (nb, q["id"])
+        if not best:
+            return None, "no maker answered"
+        yes = 1 - best[0]
+        x, p = slip_x(yes), sgp.prob(sgp.american(c["j"]))
+        if x < min_x - 1e-9:
+            return None, f"not bet: Kalshi now pays {x:.2f}x, under the {min_x:.2f}x asked for"
+        if p * x - 1 < min_ev - 1e-9:
+            return None, f"not bet: at {x:.2f}x the slip is {p * x - 1:+.1%} against today's fair value"
+        st, d = call("PUT", f"/communications/rfqs/{rfq}/quotes/{best[1]}/accept", {"accepted_side": "no"})
+        if st not in (200, 204):
+            return None, f"Kalshi did not take the acceptance: {st} {d.get('code') or d.get('message') or ''}".strip()
+        accepted = True
+    finally:
+        if not accepted:
+            call("DELETE", f"/communications/rfqs/{rfq}")
+    # The maker confirms within 3 seconds and the trade prints a second later: read the position.
+    pos = cost = None
+    for _ in range(6):
+        time.sleep(1.5)
+        _, d = call("GET", "/portfolio/positions", query={"ticker": ticker, "limit": 10})
+        for m in d.get("market_positions") or []:
+            if m.get("ticker") == ticker:
+                try:
+                    pos = float(m.get("position_fp") if m.get("position_fp") is not None else m.get("position") or 0)
+                    cost = float(m.get("market_exposure_dollars") or 0) or None
+                except (TypeError, ValueError):
+                    pass
+        if pos:
+            break
+    finish(c, yes, a.unit, a.kelly)
+    bet = {"ticker": ticker, "stake": stake, "x": x, "yes": yes, "contracts": abs(pos) if pos else None, "cost": cost,
+           "side": "yes" if pos and pos > 0 else "no" if pos and pos < 0 else "unknown", "at": time.time()}
+    return {"bet": bet, "row": c}, None
+
+
 def requote(c, a):
     """One slip again (the page's refresh button; --requote): (the row with a
     new Kalshi answer and EV, None), or (None, why). Every NBA or NFL leg is
@@ -525,31 +633,9 @@ def requote(c, a):
     rebuilt with the r that gave the row's joint; a leg with no such book
     fails the refresh instead of keeping an old fair value. College legs keep
     theirs (priced off Novig; Kalshi's college books are too wide)."""
-    if a.league != "cbb":
-        _, d = call("GET", "/markets", query={"tickers": ",".join(L["id"] for L in c["legs"]), "limit": 10}, signed=False)
-        book = {m["ticker"]: m for m in d.get("markets") or []}
-        if any(L["id"] not in book or book[L["id"]].get("status") != "active" for L in c["legs"]):
-            return None, "a leg is no longer open on Kalshi"
-        old = [L["p"] for L in c["legs"]]
-        for L in c["legs"]:
-            try:
-                bid, offer = float(book[L["id"]]["yes_bid_dollars"]), float(book[L["id"]]["yes_ask_dollars"])
-            except (KeyError, TypeError, ValueError):
-                return None, "Kalshi's book on a leg could not be read"
-            if not (0 < bid < offer < 1 and offer - bid <= a.kalshi_spread + 1e-9):
-                # No book to price the leg from now: an old fair value under a new price is worse than no row.
-                return None, f"{L.get('text') or 'a leg'} has no tight book on Kalshi right now: press Fetch"
-            p = sgp.devig_worst(offer, 1 - bid)[0]
-            L.update(p=p, fair=sgp.american(p), width=offer - bid, src="kalshi")
-        new = [L["p"] for L in c["legs"]]
-        if new != old:
-            lo, hi = -0.99, 0.99   # the r that gave this row's joint
-            for _ in range(30):
-                mid = (lo + hi) / 2
-                lo, hi = (mid, hi) if sgp.joint(mid, *old) < c["j"] else (lo, mid)
-            c["j"] = sgp.joint((lo + hi) / 2, *new)
-            c["devig_r"] = sgp.devig_r(c["j"], *new)
-            c["rough"] = any(L["width"] > a.max_spread + 1e-9 for L in c["legs"])
+    why = reprice(c, a)
+    if why:
+        return None, why
     try:
         yes, why = ask(c, a)
     except Refused as e:
@@ -561,12 +647,53 @@ def requote(c, a):
     return c, None
 
 
+def positions():
+    """The account's open combo positions (--positions; the page's "On
+    Kalshi" strip and row lines): [{"ticker", "contracts" (negative on the No
+    side), "cost" (dollars in, before fees), "title", "legs": [{"id", "side"}]}].
+    Read only."""
+    held, cursor = [], None
+    for _ in range(10):
+        q = {"count_filter": "position", "limit": 200}
+        if cursor:
+            q["cursor"] = cursor
+        _, d = call("GET", "/portfolio/positions", query=q)
+        for m in d.get("market_positions") or []:
+            try:
+                n = float(m.get("position_fp") if m.get("position_fp") is not None else m.get("position") or 0)
+            except (TypeError, ValueError):
+                continue
+            if n and str(m.get("ticker", "")).startswith("KXMVE"):
+                try:
+                    cost = float(m.get("market_exposure_dollars") or 0)
+                except (TypeError, ValueError):
+                    cost = 0.0
+                held.append({"ticker": m["ticker"], "contracts": n, "cost": cost})
+        cursor = d.get("cursor")
+        if not cursor or not d.get("market_positions"):
+            break
+    info = {}
+    for i in range(0, len(held), 40):
+        _, d = call("GET", "/markets", query={"tickers": ",".join(h["ticker"] for h in held[i:i + 40]), "limit": 1000, "mve_filter": "only"},
+                    signed=False)
+        info.update({m["ticker"]: m for m in d.get("markets") or []})
+    for h in held:
+        m = info.get(h["ticker"]) or {}
+        h["title"] = m.get("yes_sub_title") or h["ticker"]
+        h["legs"] = [{"id": L.get("market_ticker"), "side": L.get("side")} for L in m.get("mve_selected_legs") or []]
+        h["status"] = m.get("status")
+    return held
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--league", default="nba", choices=("nba", "nfl", "cbb"))
     ap.add_argument("--json", action="store_true", help="stream events as JSON lines (server.js)")
     ap.add_argument("--dry", action="store_true", help="list the slips, ask Kalshi for no price (no key needed)")
     ap.add_argument("--requote", action="store_true", help="re-ask the one slip given as JSON on stdin; print it as JSON")
+    ap.add_argument("--bet", action="store_true",
+                    help='BUYS the slip given on stdin as {"row", "stake", "min_x", "min_ev"}; prints the bet as JSON (the page\'s Bet button)')
+    ap.add_argument("--positions", action="store_true", help="print the account's open combo positions as JSON (read only)")
     ap.add_argument("--check", action="store_true", help="make one signed read to see that the key is accepted")
     ap.add_argument("--max", type=int, default=60, help="ask at most this many slips a pass (0: all)")
     ap.add_argument("--min-r", type=float, default=0.25, help="smallest r for a pair other than Points + Threes")
@@ -596,9 +723,23 @@ def main():
             raise SystemExit(f"Kalshi refused the key: {e}")
         print("key accepted" if st == 200 else f"unexpected answer: {st} {d}")
         return
+    if a.positions:
+        try:
+            print(json.dumps(positions()))
+        except Refused as e:
+            raise SystemExit(f"Kalshi refused the read of positions: {e}")
+        return
     if a.requote:
         row, why = requote(json.load(sys.stdin), a)
         print(json.dumps(row if row else {"error": why}))
+        return
+    if a.bet:
+        ask_ = json.load(sys.stdin)
+        try:
+            got, why = place(ask_["row"], a, float(ask_["stake"]), float(ask_["min_x"]), float(ask_.get("min_ev", 0)))
+        except Refused as e:
+            got, why = None, f"Kalshi refused the request: {e}"
+        print(json.dumps(got if got else {"error": why}))
         return
     if not a.dry:
         _signer()   # no key, or one that can't be read: say so before anything is fetched

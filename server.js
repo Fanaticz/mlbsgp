@@ -2902,6 +2902,78 @@ function nvRequote(league, wide, key, cb) {
   proc.stdin.on('error', () => {});
   proc.stdin.end(JSON.stringify(row));
 }
+// POST /api/nba/kalshi-bet { league, wide, key, stake, x } — the Bet button on
+// a Kalshi row: scan_kalshi.py --bet re-prices the legs, asks Kalshi for
+// `stake` dollars and accepts the best answer if the slip still pays within
+// 1% of x (the price on the row) and is not under today's fair value. Needs
+// both passcodes. One bet at a time. Stakes are capped at KALSHI_BET_MAX
+// ($250), and at $2 until one bet has been seen to land on the Yes side of
+// the combo (the account's position is read after every bet); a bet seen on
+// the No side turns the button off until the server is told otherwise.
+const NV_KBET_MAX = Math.max(1, parseFloat(process.env.KALSHI_BET_MAX) || 250);
+const NV_KBET_FILE = NV_SCAN_FILE ? path.join(path.dirname(NV_SCAN_FILE), 'kalshi_bet_state.json') : null;
+let NV_KBET = { ok: false, off: '' }, NV_KBET_BUSY = false;
+try { if (NV_KBET_FILE) NV_KBET = Object.assign(NV_KBET, JSON.parse(require('fs').readFileSync(NV_KBET_FILE, 'utf8'))); } catch (_) { /* no bet placed yet */ }
+const nvKbetSave = () => { if (NV_KBET_FILE) require('fs').writeFile(NV_KBET_FILE, JSON.stringify(NV_KBET), () => {}); };
+app.post('/api/nba/kalshi-bet', (req, res) => {
+  if (!nvBetsAuth(req, res)) return;
+  const { league, wide, key } = req.body || {};
+  const stake = Math.round(Number((req.body || {}).stake) * 100) / 100, x = Number((req.body || {}).x);
+  if (!nvKalshi(league) || (req.get('X-Kalshi-Key') || '') !== NV_KALSHI_KEY) return res.status(423).json({ error: 'locked' });
+  if (NV_KBET.off) return res.status(409).json({ error: 'Betting is off: ' + NV_KBET.off });
+  const B = NV_BOARDS.get(`${league}:${wide ? 1 : 0}`), row = B && B.rows.get(String(key));
+  if (!row) return res.status(404).json({ error: 'that slip is no longer on the board' });
+  if (!(stake >= 1) || !(x > 1)) return res.status(400).json({ error: 'a stake of $1 or more and the row\'s price are needed' });
+  const cap = NV_KBET.ok ? NV_KBET_MAX : 2;
+  if (stake > cap) return res.status(400).json({ error: NV_KBET.ok ? `the most one bet can be is $${cap}` : 'the first bet is $2 at most: it checks that the button buys the right side' });
+  if (NV_KBET_BUSY) return res.status(429).json({ error: 'another bet is being placed' });
+  NV_KBET_BUSY = true;
+  let out = '', err = '', done = false, timer = null, proc;
+  const finish = (code, body) => { if (done) return; done = true; NV_KBET_BUSY = false; clearTimeout(timer); res.status(code).json(body); };
+  try { proc = require('child_process').spawn(PYTHON, [NV_KALSHI_PY, '--bet', '--league', NV_PY_LEAGUE(league)], { stdio: ['pipe', 'pipe', 'pipe'] }); }
+  catch (e) { return finish(502, { error: 'could not start: ' + e.message }); }
+  timer = setTimeout(() => { proc.kill(); finish(504, { error: 'No answer in 60 seconds. The bet may or may not have gone in: look at your Kalshi positions before trying again.' }); }, 60 * 1000);
+  proc.stdout.on('data', c => { out += c; });
+  proc.stderr.on('data', c => { err = (err + c).slice(-2000); });
+  proc.on('error', e => finish(502, { error: 'could not start: ' + e.message }));
+  proc.on('close', () => {
+    let r = null;
+    try { r = JSON.parse(out.trim().split('\n').pop()); } catch (_) { /* not JSON */ }
+    if (!r || r.error || !r.bet) return finish(502, { error: (r && r.error) || err.trim().split('\n').pop() || 'no answer' });
+    if (r.bet.side === 'yes') NV_KBET.ok = true;
+    else if (r.bet.side === 'no') NV_KBET.off = 'the last bet landed on the No side of the combo. Close that position on Kalshi; the button stays off until this is fixed in the code.';
+    nvKbetSave();
+    NV_KPOS.at = 0;   // the next read of positions is fresh
+    console.log('[kalshi-bet]', JSON.stringify({ label: row.label, player: row.player, bet: r.bet }));
+    if (r.row && B.rows.has(r.row.key)) { r.row.type = 'row'; B.rows.set(r.row.key, r.row); nvSaveBoards(); }
+    finish(200, { bet: r.bet, row: r.row, cap: NV_KBET.ok ? NV_KBET_MAX : 2, off: NV_KBET.off, now: Date.now() });
+  });
+  proc.stdin.on('error', () => {});
+  proc.stdin.end(JSON.stringify({ row, stake, min_x: x * 0.99, min_ev: 0 }));
+});
+// GET /api/nba/kalshi-positions — the account's open combo positions on
+// Kalshi (scan_kalshi.py --positions), for the Kalshi page's "On Kalshi"
+// strip and row lines. Both passcodes. Read once a minute at most; a bet
+// clears the copy so the next read is fresh.
+let NV_KPOS = { at: 0, list: [], error: null, busy: null };
+app.get('/api/nba/kalshi-positions', (req, res) => {
+  if (!nvBetsAuth(req, res)) return;
+  if ((req.get('X-Kalshi-Key') || '') !== NV_KALSHI_KEY) return res.status(423).json({ error: 'locked' });
+  const send = () => res.json({ positions: NV_KPOS.list, error: NV_KPOS.error, at: NV_KPOS.at, now: Date.now() });
+  if (Date.now() - NV_KPOS.at < 60 * 1000) return send();
+  if (!NV_KPOS.busy) {
+    NV_KPOS.busy = new Promise(done => {
+      require('child_process').execFile(PYTHON, [NV_KALSHI_PY, '--positions'], { timeout: 45 * 1000, maxBuffer: 4 << 20 }, (e, out, err) => {
+        let list = null;
+        try { list = JSON.parse(String(out).trim().split('\n').pop()); } catch (_) { /* not JSON */ }
+        if (Array.isArray(list)) NV_KPOS = { at: Date.now(), list, error: null, busy: null };
+        else NV_KPOS = { at: Date.now(), list: NV_KPOS.list, error: String(err || (e && e.message) || 'no answer').trim().split('\n').pop().slice(0, 200), busy: null };
+        done();
+      });
+    });
+  }
+  NV_KPOS.busy.then(send);
+});
 app.post('/api/nba/novig-requote', (req, res) => {
   if (!nvBetsAuth(req, res)) return;
   const { league, wide, key } = req.body || {};
