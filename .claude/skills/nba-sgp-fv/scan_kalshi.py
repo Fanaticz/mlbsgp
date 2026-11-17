@@ -5,6 +5,7 @@
   python3 scan_kalshi.py --check    # is the key accepted? (reads the balance endpoint, asks nothing)
   python3 scan_kalshi.py            # ask them and print the best
   python3 scan_kalshi.py --json     # one JSON event per line (server.js: the Kalshi NBA board)
+  python3 scan_kalshi.py --league nbaline   # a player's prop with a game line (nbaline_candidates)
 
 What it asks, per player with open Kalshi props on a game that has not started:
   1  Points Yes + Threes Yes (the player's shrunk correlation, as on the Novig board).
@@ -223,7 +224,7 @@ def pick_leg(stat, kal, nv_rows, a):
 
 WORD = {"pts": "points", "reb": "rebounds", "ast": "assists", "tpm": "threes", "rec": "receptions", "yds": "receiving yards",
         "td": "touchdowns", "att": "pass attempts", "cmp": "completions", "pyds": "passing yards", "ptd": "passing TDs",
-        "car": "carries", "ryds": "rushing yards", "rry": "rush + rec yards"}
+        "car": "carries", "ryds": "rushing yards", "rry": "rush + rec yards", "pra": "pts + reb + ast"}
 
 
 def nfl_candidates(a):
@@ -449,6 +450,177 @@ def cbb_candidates(a):
     return (out[:a.max] if a.max else out), {"generated_at": shapes["generated_at"]}
 
 
+LINE_SERIES = {"KXNBASPREAD": "cover", "KXNBATOTAL": "tot", "KXNBATEAMTOTAL": "tt", "KXNBA1HSPREAD": "h1cover",
+               "KXNBA1HTOTAL": "h1tot"}
+LINE_NOVIG = {"SPREAD": "cover", "TOTAL": "tot", "TEAM_TOTAL": "tt", "SPREAD_1H": "h1cover", "TOTAL_1H": "h1tot"}
+LINE_STATS = dict(SERIES, KXNBAPRA="pra")
+NEAR_EVEN = 0.13      # a leg of a prop + line slip is within this of 50%: the r's are measured at about the median
+
+
+def nbaline_candidates(a):
+    """NBA prop + game line (--league nbaline): a player's milestone with a
+    game line on the side that goes with it, and his Under (No on the same
+    milestone) with the other side. The lines: his team covering, his team's
+    total, the other team's total, the game total, the first half's spread
+    and total (--team-lines). The r is scan.nba_prop_r's: league-wide for a
+    player with that line on a team with tonight's spread, less one standard
+    error; asked where the fitted |r| is at least --line-r, and each player's
+    --per highest pairings, as on the Novig NBA Team board.
+
+    Kalshi lists "X wins by over 7.5", "Over 231.5" and "X over 110.5": the
+    other team covering and an Under are No legs on those markets. Every leg
+    is priced like a prop leg: the tighter of Novig's book on the same line
+    and Kalshi's own, and it sits within 13 points of 50%."""
+    T = json.load(open(scan.NBA_LINES))
+    d, by = sgp.load()
+    key = {novig.norm(n): p for n, p in by.items()}
+    now, games = time.time() * 1000, {}   # Kalshi's game code -> {"starts", kind: [row]}
+    for series, kind in LINE_SERIES.items():
+        for m in _markets(series):
+            try:
+                starts = (time.mktime(time.strptime(m["occurrence_datetime"][:19], "%Y-%m-%dT%H:%M:%S")) - time.timezone - TIP_S) * 1000
+                row = {"line": float(m["floor_strike"]), "ticker": m["ticker"], "event": m["event_ticker"],
+                       "bid": float(m["yes_bid_dollars"]), "ask": float(m["yes_ask_dollars"])}
+            except (KeyError, TypeError, ValueError):
+                continue
+            if starts <= now or (a.before and starts >= a.before):
+                continue
+            if kind in ("cover", "h1cover", "tt"):
+                t = re.match(r"([A-Z]+)\d+$", m["ticker"].rsplit("-", 1)[-1])
+                if not t:
+                    continue
+                row["team"] = t.group(1)
+            games.setdefault(m["event_ticker"].split("-", 1)[1], {"starts": starts}).setdefault(kind, []).append(row)
+    # Novig's books on the same lines: {frozenset of the two team codes: {(kind, team or None, line): (p Yes, width, Yes id, No id)}}
+    nv, by_event = {}, {}
+    for m in novig.catalog({"league": "NBA", "eventStatus": "OPEN_PREGAME", "marketType": "MONEY," + ",".join(LINE_NOVIG)}):
+        by_event.setdefault(m["eventId"], []).append(m)
+    for ms in by_event.values():
+        sub = {o.get("subjectId"): o["name"] for m in ms if m["marketType"] == "MONEY" for o in m["outcomes"]}
+        if len(sub) != 2:
+            continue
+        book = nv.setdefault(frozenset(sub.values()), {"starts": ms[0]["startsTs"]})
+        for m in ms:
+            kind, t = LINE_NOVIG.get(m["marketType"]), scan.two_way(m)
+            if not kind or not t or t["spread"] > a.max_spread + 1e-9:
+                continue
+            if kind in ("cover", "h1cover"):
+                for i, n in enumerate(t["names"]):   # "LAL -3.5" is Kalshi's "LAL wins by over 3.5"
+                    x = re.match(r"(\S+) -(\d+(?:\.\d+)?)$", n)
+                    if x:
+                        book[(kind, x.group(1), float(x.group(2)))] = (t["p"][i], t["spread"], t["ids"][i], t["ids"][1 - i])
+            elif kind == "tt":
+                tm = sub.get(m["outcomes"][0].get("subjectId"))
+                if tm:
+                    book[(kind, tm, t["strike"])] = (t["p"][0], t["spread"], t["ids"][0], t["ids"][1])
+            else:
+                book[(kind, None, t["strike"])] = (t["p"][0], t["spread"], t["ids"][0], t["ids"][1])
+    for code, g in games.items():
+        teams = {r["team"] for k in ("cover", "tt", "h1cover") for r in g.get(k, [])}
+        book = next((b for ts, b in nv.items() if ts == teams or (len(teams) < 2 and all(t in code for t in ts))), {})
+        g["starts"], g["teams"] = book.get("starts", g["starts"]), teams
+        for kind in LINE_SERIES.values():
+            for r in g.get(kind, []):
+                books, n = [], book.get((kind, r.get("team"), r["line"]))
+                if n:
+                    books.append((n[1], n[0], "novig"))
+                if 0 < r["bid"] < r["ask"] < 1 and r["ask"] - r["bid"] <= a.kalshi_spread + 1e-9:
+                    books.append((r["ask"] - r["bid"], sgp.devig_worst(r["ask"], 1 - r["bid"])[0], "kalshi"))
+                if not books:
+                    continue
+                width, p, src = min(books)
+                if len(books) == 2 and abs(books[0][0] - books[1][0]) <= 0.01 + 1e-9:
+                    width, p, src = max(books)[0], (books[0][1] + books[1][1]) / 2, "both"
+                r.update(p=p, width=width, src=src, nv=n and (n[2], n[3]))
+        # who is favoured and by how much: the full-game "wins by over" nearest even money
+        sp = [r for r in g.get("cover", []) if "p" in r and 0.25 <= r["p"] <= 0.75]
+        if sp:
+            m = min(sp, key=lambda r: abs(r["p"] - 0.5) + r["width"])
+            g["fav"], g["spread"] = m["team"], m["line"]
+
+    def line_leg(g, kind, team, yes):
+        """The game-line leg nearest even money: team covering (or its total
+        going Over) when yes, the Under when not. A team covering is Yes on
+        its own "wins by over" or No on the other team's."""
+        half, opts = " 1H" if kind.startswith("h1") else "", []
+        for r in g.get(kind, []):
+            if "p" not in r:
+                continue
+            if kind.endswith("cover"):
+                y = r["team"] == team
+                text = f"{team} {'-' if y else '+'}{r['line']:g}{half}"
+            elif kind == "tt":
+                if r["team"] != team:
+                    continue
+                y, text = yes, f"{team} team total {'Over' if yes else 'Under'} {r['line']:g}"
+            else:
+                y, text = yes, f"{'Over' if yes else 'Under'} {r['line']:g}{half}"
+            p = r["p"] if y else 1 - r["p"]
+            if abs(p - 0.5) <= NEAR_EVEN:
+                L = {"stat": kind, "side": "over" if y else "under", "yes": y, "line": r["line"], "p": p, "fair": sgp.american(p),
+                     "width": r["width"], "id": r["ticker"], "event": r["event"], "src": r["src"], "text": text}
+                if r.get("nv") and r["nv"][0 if y else 1]:
+                    L["nv"] = r["nv"][0 if y else 1]
+                opts.append(L)
+        return min(opts, key=lambda L: abs(L["p"] - 0.5) + L["width"]) if opts else None
+
+    board = kalshi_props(a.before, LINE_STATS)
+    markets = novig.fetch("NBA", scan.NBA_TEAM_STATS)
+    out = []
+    for nm, info in board.items():
+        p, g = key.get(nm), games.get(info["game"])
+        if not p or not g or "fav" not in g or info["team"] not in g["teams"] or len(g["teams"]) != 2:
+            continue
+        season = (p.get("by_season") or {}).get(str(p.get("latest_season"))) or {}
+        if ((season if season.get("games", 0) >= 5 else p).get("min_mean") or 0) < scan.NBA_MIN_MINUTES:
+            continue   # a bench player's numbers go the other way in a blowout (scan.nba_team_candidates)
+        me = info["team"]
+        them = next(t for t in g["teams"] if t != me)
+        my_spread = -g["spread"] if me == g["fav"] else g["spread"]
+        _, rows = novig.ladder(markets, p["name"])
+        mine = []
+        for stat, kal in info["stats"].items():
+            la = pick_leg(stat, kal, rows.get(stat, []), a)
+            if not la or abs(la["p"] - 0.5) > NEAR_EVEN:
+                continue
+            n = int(la["line"] + 0.5)
+            la.update(yes=True, text=f"{n}+ {WORD[stat]}")
+            same = next((r for r in rows.get(stat, []) if r["line"] == la["line"]), None)
+            lu = dict(la, side="under", yes=False, p=1 - la["p"], fair=sgp.american(1 - la["p"]), text=f"under {n} {WORD[stat]}")
+            lu.pop("nv", None)
+            if same and same["ids"].get("under"):
+                lu["nv"] = same["ids"]["under"]
+            avg = scan.nba_role(stat, {"line": la["line"], "fo": la["p"]})
+            for ev in a.team_lines:
+                _, kind, whose = scan.NBA_PROP_LINES[ev]
+                fit, r, games_n = scan.nba_prop_r(T, stat, avg, ev, my_spread)
+                if fit is None or not r:
+                    continue
+                if fit < 0 and kind.endswith("cover"):   # goes against his own team covering
+                    if fit > -scan.NBA_AGAINST_R or my_spread > -scan.NBA_AGAINST_SPREAD:
+                        continue
+                elif abs(fit) < a.line_r:
+                    continue
+                team = them if whose == "theirs" else me
+                for over in (1, -1):   # his Over with the side that goes with it, his Under with the other
+                    way = over if r > 0 else -over
+                    lb = line_leg(g, kind, team if way > 0 or not kind.endswith("cover") else next(t for t in g["teams"] if t != team), way > 0)
+                    if not lb:
+                        continue
+                    lp, rr = la if over > 0 else lu, abs(r)
+                    j = sgp.joint(rr, lp["p"], lb["p"])
+                    mine.append({"key": f"{lp['id']}:{'y' if lp['yes'] else 'n'},{lb['id']}:{'y' if lb['yes'] else 'n'}", "tier": 1,
+                                 "player": p["name"], "id": p["athlete_id"], "team": me, "starts": g["starts"],
+                                 "legs": [dict(lp), dict(lb)], "label": f"{lp['text']} · {lb['text']}", "r": rr, "j": j, "forced": False,
+                                 "devig_r": sgp.devig_r(j, lp["p"], lb["p"]), "book": "kalshi", "event": info["game"], "kind": ev,
+                                 "line": ev, "role": True, "spread": my_spread, "fit_r": abs(fit), "games": games_n,
+                                 "rough": any(L["width"] > a.max_spread + 1e-9 for L in (lp, lb)), "legs_x": 1 / (lp["p"] * lb["p"])})
+        best = sorted({(c["legs"][0]["stat"], c["line"]): c["r"] for c in mine}.items(), key=lambda kv: -kv[1])[:a.per]
+        out += [c for c in mine if (c["legs"][0]["stat"], c["line"]) in dict(best)]
+    out.sort(key=lambda c: (c["starts"], -c["r"]))
+    return (out[:a.max] if a.max else out), d
+
+
 def ask(c, a):
     """(Yes price a contract before the fee, None) for the slip, or (None, why)."""
     body = {"selected_markets": [{"market_ticker": L["id"], "event_ticker": L["event"], "side": "yes" if L.get("yes", True) else "no"} for L in c["legs"]]}
@@ -538,6 +710,7 @@ def reprice(c, a):
             # No book to price the leg from now: an old fair value under a new price is worse than no row.
             return f"{L.get('text') or 'a leg'} has no tight book on Kalshi right now: press Fetch"
         p = sgp.devig_worst(offer, 1 - bid)[0]
+        p = p if L.get("yes", True) else 1 - p   # a No leg: the other side of the same book
         L.update(p=p, fair=sgp.american(p), width=offer - bid, src="kalshi")
     new = [L["p"] for L in c["legs"]]
     if new != old:
@@ -687,7 +860,7 @@ def positions():
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--league", default="nba", choices=("nba", "nfl", "cbb"))
+    ap.add_argument("--league", default="nba", choices=("nba", "nbaline", "nfl", "cbb"))
     ap.add_argument("--json", action="store_true", help="stream events as JSON lines (server.js)")
     ap.add_argument("--dry", action="store_true", help="list the slips, ask Kalshi for no price (no key needed)")
     ap.add_argument("--requote", action="store_true", help="re-ask the one slip given as JSON on stdin; print it as JSON")
@@ -699,6 +872,10 @@ def main():
     ap.add_argument("--min-r", type=float, default=0.25, help="smallest r for a pair other than Points + Threes")
     ap.add_argument("--max-spread", type=float, default=novig.MAX_SPREAD, help="widest Novig book a leg's fair value is read from")
     ap.add_argument("--kalshi-spread", type=float, default=0.05, help="widest Kalshi book a leg's fair value is read from when Novig has none")
+    ap.add_argument("--line-r", type=float, default=0.30, help="nbaline: smallest fitted |r| between a prop and a game line")
+    ap.add_argument("--per", type=int, default=2, help="nbaline: pairings asked per player, highest r first (each as its Over and its Under slip)")
+    ap.add_argument("--team-lines", nargs="+", default=list(scan.NBA_PROP_LINES), choices=tuple(scan.NBA_PROP_LINES),
+                    help="nbaline: the game lines a prop is asked with (default: all six)")
     ap.add_argument("--lo", type=float, default=0.15, help="a leg's fair value is at least this")
     ap.add_argument("--hi", type=float, default=0.85, help="and at most this")
     ap.add_argument("--stake", type=float, default=100.0, help="dollars each request for quote is sized at")
@@ -743,9 +920,9 @@ def main():
         return
     if not a.dry:
         _signer()   # no key, or one that can't be read: say so before anything is fetched
-    cands, d = nfl_candidates(a) if a.league == "nfl" else cbb_candidates(a) if a.league == "cbb" else candidates(a)
+    cands, d = nfl_candidates(a) if a.league == "nfl" else cbb_candidates(a) if a.league == "cbb" else nbaline_candidates(a) if a.league == "nbaline" else candidates(a)
     # Each row links to its game's page on Kalshi, where the combo is built (no link fills the slip in).
-    game = {"nba": "kxnbagame", "nfl": "kxnflgame", "cbb": "kxncaambgame"}[a.league]
+    game = {"nba": "kxnbagame", "nbaline": "kxnbagame", "nfl": "kxnflgame", "cbb": "kxncaambgame"}[a.league]
     for c in cands:
         c["url"] = f"https://kalshi.com/markets/{game}/game/{game}-{c['event'].lower()}"
     emit({"type": "start", "total": len(cands), "players": len({c["id"] for c in cands}), "league": "kalshi" + a.league,

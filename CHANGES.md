@@ -2,6 +2,16 @@
 
 ## 2026-11-16 session
 
+### Kalshi Scan: a Kalshi NBA Lines board (a player's prop with a game line)
+Max, 11-16: any other NBA combos we can do on Kalshi? Yes, test it out.
+
+- **The board** (`nbaline_candidates` in `scan_kalshi.py`, `--league nbaline`; the `kalshinbaline` board; a **Kalshi NBA Lines** tab on the Kalshi page): a player's milestone (points, rebounds, assists, threes, or points + rebounds + assists) with the side of a game line that goes with it, and his Under (No on the same milestone) with the other side. The lines: his team covering, his team's total, the other team's total, the game total, the first half's spread and total. The other team covering and an Under are No legs on Kalshi's "wins by over" and "Over" markets.
+- **The r** is the Novig NBA Team board's (`nba_line_correlations.json`: league-wide for a player with that line on a team with tonight's spread, less one standard error). Asked where the fitted r is 0.30 or better (`--line-r`; the Novig board uses 0.42 and the spread only), each player's two strongest pairings (`--per`), 60 slips a pass, earliest game first.
+- **Fair values**: every leg within 13 points of 50%, priced like a prop leg: the tighter of Novig's book on the same line and Kalshi's own.
+- **Refresh and Bet on a No leg**: `reprice` read every leg as its Yes side; a No leg now takes the other side of the same book. (College rows were never re-read, so nothing was wrong before.)
+- **Checked** on the one game not yet started (PHX at DEN): 16 slips built from live lines; with Kalshi's signed calls faked, each went out with the right Yes / No sides, and Novig's own price for the same 16 slips came in between 7% under and 5% over this board's fair values.
+- **Not checked**: no real Kalshi price has been seen on this board (no key on this machine), and the tab was not opened in a browser.
+
 ### Kalshi Scan: bets are $25 for tonight
 Max, 11-16: limit it to $25 for tonight.
 
