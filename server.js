@@ -2702,8 +2702,7 @@ async function nvOutRefresh() {
       // "Day-To-Day", and the word is in the note ("Tyson (ankle) has been
       // downgraded to doubtful for Monday's game", 11-16: he headed the board
       // at +22% an hour after that). So a Day-To-Day note about today's game
-      // is read: doubtful or out hides the player, questionable flags him.
-      // A note about another day's game says nothing about tonight.
+      // is read: doubtful or out hides the player.
       const today = new Intl.DateTimeFormat('en-US', { timeZone: NV_TZ, weekday: 'long' }).format(Date.now());
       for (const t of (await r.json()).injuries || []) {
         for (const i of t.injuries || []) {
@@ -2711,9 +2710,12 @@ async function nvOutRefresh() {
           const note = String(i.shortComment || '');
           if (/^day-to-day$/i.test(status)) {
             const day = (note.match(/\b(Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday)'s\b/) || [])[1];
-            if (day !== today) continue;
-            if (/\b(doubtful|ruled out|is out|out for|won't play|will not play|will miss|will sit)\b/i.test(note) && !/\bupgraded\b/i.test(note)) status = 'Doubtful';
-            else if (/\bquestionable\b/i.test(note)) status = 'Questionable';
+            // Any other Day-To-Day player is a game-time decision and is
+            // flagged, whatever day his note is about (11-17: Kuminga left
+            // Monday's game hurt, the note only described Monday, and he
+            // headed Tuesday's board unflagged).
+            if (day === today && /\b(doubtful|ruled out|is out|out for|won't play|will not play|will miss|will sit)\b/i.test(note) && !/\bupgraded\b/i.test(note)) status = 'Doubtful';
+            else status = 'Questionable';
           }
           if (/^questionable$/i.test(status)) { maybe.set(nvName((i.athlete || {}).displayName), note || 'Questionable'); continue; }
           if (!/^(out|injured reserve|suspension|doubtful)$/i.test(status)) continue;
