@@ -1,5 +1,16 @@
 # Changes
 
+## 2026-11-17 session
+
+### Novig Scan: a Bet button on Novig rows (opens Novig with the slip and stake filled in)
+Max, 11-17: can we make something where Novig will bet itself? (Asked which he meant: a Bet button on Novig rows.)
+
+- **Why it is not the Kalshi button**: Novig's API (docs.novig.com, read 11-17) signs straight orders and lets a maker price parlays, but has no call that buys a parlay from an account. The server can't place one. The only other way is the app's own private calls with a login, which is not built here.
+- **The button** (`nbetLine` in `nba_scan.html`): a Novig row above fair shows **Bet $107 at 8.30x** on the row. One press opens Novig with the legs and the row's QK $ already on the slip; the bet is confirmed in Novig. Novig's link takes a stake after a partner id (`events/<outcome ids>/<partner>/<amount>`, docs.novig.com/affiliates/deeplinking); the partner id sent is `evc`. On a phone it opens the app (`novigapp://`), on a computer `/n/<ids>?amt=107` on this server, which goes to novig.com.
+- **After the press** the row asks "Placed it?": **Save $107 at 8.30x** puts it under My bets in one press, **No** clears it. A different stake is still typed in the opened row.
+- **Checked** in a desktop and a phone-sized browser against the local server, on a real CBB row marked above fair for the test: the link each one opens, the question on the row, the saved bet. `/n` with and without `amt`.
+- **Not checked**: that Novig fills the stake in. novig.com answered this machine with a bot check, and the docs show the amount for the web link only, not for `novigapp://`. If the app opens the slip without the stake, or not at all, the partner id or the amount is what to take off.
+
 ## 2026-11-16 session
 
 ### Kalshi Scan: a Kalshi NBA Lines board (a player's prop with a game line)
