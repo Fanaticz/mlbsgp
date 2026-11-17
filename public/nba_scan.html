@@ -573,9 +573,9 @@ function detail(c) {
     `<span>at</span><input type="number" class="px" min="1" step="0.01" value="${c.slip_x.toFixed(2)}" /><span>x</span>` +
     `<button type="button" data-add="${esc(rk(c))}">Save</button></div>`;
   // Kalshi rows: one press buys the slip. The stake box above is the amount (the row's
-  // quarter-Kelly stake when left empty); the server refuses a price more than 1% worse.
+  // quarter-Kelly stake when left empty); the server refuses any price worse than the one shown.
   const kbet = c.book === "kalshi" && c.ev > 0 ? `<div class="betform"><button type="button" class="kbet" data-kbet="${esc(rk(c))}"` +
-    ` title="Buys this combo on Kalshi now, for the stake typed above (or the row's stake). Not placed if the price is more than 1% worse than shown or the slip is no longer above fair.">` +
+    ` title="Buys this combo on Kalshi now, for the stake typed above (or the row's stake). Not placed if Kalshi's price has dropped below the one shown or the slip is no longer above fair.">` +
     `Bet on Kalshi at ${c.slip_x.toFixed(2)}x</button><span class="kmsg">${esc(KMSG.get(rk(c)) || "")}</span></div>` : "";
   return `<div class="det"><div class="lgs">${legs}</div><div class="tech">${tech}</div>${form}${kbet}</div>`;
 }
