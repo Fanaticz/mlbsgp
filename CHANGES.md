@@ -2,6 +2,19 @@
 
 ## 2026-11-17 session
 
+### First Dunk: a review of the model, and five things fixed
+Max, 11-17: review the model again, check for bugs.
+
+- **Fixed: the page priced the whole bench as if every man would play.** The backtest knew who got into each game (21.5 players a game); the page cannot, and priced everyone who had played lately (26.8). Priced that way, "Other" came out at 15.7% against the 12.6% that happened, so the Other EVs shown against DK's first prices were too high. A man off the bench is now weighted by the share of his team's last ten games he got into (`app`; shown on his row as "gets in 70%"), and the bench multiplier was refitted to 0.75 under those conditions. Priced the way the page prices it, Other is now 12.6% against 12.6% (`--backtest` prints both versions; 2,664 games). Against tonight's DK prices that moved Other from +112% to +90% in POR at MIN, +46% to +27% in CHA at LAL, +33% to +18% in UTAH at LAC.
+- **Fixed: eight All-Star games were in the data.** ESPN files them as regular season (East/West, the 2025 and 2026 mini-tournaments). One had 44 dunks, all credited to the players the model most cares about. Only the 30 clubs are kept now (3,898 games).
+- **Fixed: a man coming back from injury was held out.** A player with no game in his team's last three stayed at 0% even when Rotowire listed him probable or questionable. Rotowire's chance now stands.
+- **Fixed: a hole in ESPN's play-by-play went unnoticed.** One game in a sample of 60 was missing five made baskets. Each game's made baskets are now counted against the box score and a game short by more than two is left out of the backtest and the on-floor patterns (1 game; 6 more are short by one or two).
+- **Fixed in `price_game`**: a starter just traded in (his last game was for another team) was dropped from his new team; the date cut-off is ESPN's UTC day, now said in its notes.
+- **Checked and found sound**: dunk detection against the raw play-by-play of 60 random games (607 dunk plays; every missed or blocked dunk left out, none hidden under another play type; the shooter matched the box score for 1,322 of 1,327 player-games, the other five being the game with the hole). Each team's possessions within 1.1 of the other's on average; players' on-floor possessions add to five times the team's. The fitted season weights still win in the first 20 games of a season (785 games), where we are now. Bench players and players running hot both land on their priced rates.
+- **Known and left**: favourites priced 40% and up made it 39.8% (241 of them, priced 45.2%), and starting guards made it 8% less often than priced. The page's pricing now runs through `FD.context` / `FD.entry` and is checked end to end against Python on a real game from the model file (within 0.002 points; 20 checks).
+- **Backtest after the fixes**, knowing who played: log loss 2.177 (the first dunker priced at 11.3%, against 9.3% and 6.2% for the two baselines), top pick 29.1%, top three 60.7%. Monte Carlo within 0.18 points on the same rotation.
+- **Checked**: the page in a browser against the local server with live Rotowire lineups and live DK prices, all five games.
+
 ### First Dunk: DraftKings' market is found (Quick Hits, "1st Dunk Scorer")
 Max, 11-17: first dunk is now on DK (a screenshot of NY at TOR: ten starters and Other).
 

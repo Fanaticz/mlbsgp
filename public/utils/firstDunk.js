@@ -108,6 +108,30 @@
     return out;
   }
 
+  // One team's side of a matchup, from the model file D (public/data/nba_first_dunk.json):
+  // possessions a minute and the multipliers on its players' rates. State.team_ctx in Python.
+  function context(D, abbr, opp, home) {
+    var P = D.params, t = D.teams[abbr], o = D.teams[opp], avg = D.league.ppg;
+    var mult = o.d;
+    if (P.to_pow) mult *= Math.pow(o.to, P.to_pow);
+    if (P.off_pow) mult *= Math.pow(t.o, P.off_pow);
+    if (P.home) mult *= home ? 1 + P.home : 1 - P.home;
+    var tipP = Math.min(0.9, Math.max(0.1, 0.5 + (t.tip - o.tip)));
+    return { pace: avg * (t.pace / avg) * (o.pace / avg) / GAME_MIN, mult: mult,
+             early: P.early_pow ? Math.pow(t.e, P.early_pow) : 1,
+             tip: P.tip_pow ? 1 + P.tip_pow * (2 * tipP - 1) : 1 };
+  }
+
+  // One player's pricing row. st: starts (1) or comes off the bench (0). app: for a bench
+  // man, his chance of getting into the game at all. lam: his rate, if not the model file's.
+  // State.entry in Python.
+  function entry(D, id, team, st, ctx, app, lam) {
+    var p = D.players[id];
+    var rate = (lam == null ? p.lam : lam) * ctx.pace * ctx.mult * (st ? 1 : D.params.bench * (app == null ? 1 : app));
+    return { id: id, t: team, rate: rate, early: ctx.early, tip: ctx.tip,
+             curve: st ? p.cs : p.cb, after: st ? p.as : p.ab };
+  }
+
   function probToAmerican(p) {
     if (!(p > 0) || !(p < 1)) return '';
     return p >= 0.5 ? '-' + Math.round(100 * p / (1 - p)) : '+' + Math.round(100 * (1 - p) / p);
@@ -133,7 +157,7 @@
       .replace(/\s+(jr|sr|ii|iii|iv|v)$/g, '').replace(/\s+/g, ' ').trim();
   }
 
-  var api = { price: price, mix: mix, probToAmerican: probToAmerican, parsePrice: parsePrice, normName: normName,
+  var api = { price: price, mix: mix, context: context, entry: entry, probToAmerican: probToAmerican, parsePrice: parsePrice, normName: normName,
               CURVE_MIN: CURVE_MIN, GAME_MIN: GAME_MIN, EARLY_MIN: EARLY_MIN };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.FirstDunk = api;
