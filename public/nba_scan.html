@@ -365,7 +365,7 @@ async function kposLoad() {
 setTimeout(kposLoad, 1500);
 setInterval(kposLoad, 60 * 1000);
 // The Bet button on a Kalshi row: the server places it (POST /api/nba/kalshi-bet) and says what was bought.
-const KMSG = new Map(), KBET_STAKE = 100;   // one press stakes this unless a stake is typed (Max, 11-16)
+const KMSG = new Map(), KBET_STAKE = 25;   // one press stakes this unless a stake is typed (Max, 11-16)
 let KBETTING = false;
 async function kalshiBet(b) {
   const id = b.dataset.kbet, c = S && S.rows.find(r => rk(r) === id), f = b.closest(".row") && b.closest(".row").querySelector(".det");
@@ -476,7 +476,7 @@ function kbetLine(c) {
   const msg = KMSG.get(rk(c)) || "";
   if (c.book !== "kalshi" || !(c.ev > 0 || msg)) return "";
   return `<div class="betform kbetrow" style="grid-column:1 / -1">` + (c.ev > 0 ? `<button type="button" class="kbet" data-kbet="${esc(rk(c))}"` +
-    ` title="Buys this combo on Kalshi now: $100, or the stake typed in the opened row. Not placed if the price is more than 1% worse than shown or the slip is no longer above fair.">` +
+    ` title="Buys this combo on Kalshi now: $25, or a smaller stake typed in the opened row. Not placed if the price is more than 1% worse than shown or the slip is no longer above fair.">` +
     `Bet $${KBET_STAKE} at ${c.slip_x.toFixed(2)}x</button>` : "") + `<span class="kmsg">${esc(msg)}</span></div>`;
 }
 function betLine(c, sub) {

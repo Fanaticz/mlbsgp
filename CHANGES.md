@@ -2,6 +2,13 @@
 
 ## 2026-11-16 session
 
+### Kalshi Scan: bets are $25 for tonight
+Max, 11-16: limit it to $25 for tonight.
+
+- **Change**: one press of the Bet button stakes $25 (it was $100), and the server refuses any bet over $25 (it was $250), so a typed stake can't go higher either. `KBET_STAKE` in the page, `NV_KBET_MAX` in `server.js`.
+- **To undo after tonight**: put both back (or set `KALSHI_BET_MAX` in Railway for the cap alone). Nothing does it by itself.
+- **Checked**: both files load.
+
 ### Kalshi Scan: the Bet button's first real bet landed on the right side
 Max, 11-16: "Placed" (Lendeborg 25+ points with Podziemski 20+ points, the $2 test).
 
