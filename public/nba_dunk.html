@@ -52,6 +52,14 @@
   .role button { background:transparent; color:var(--muted); border:0; padding:3px 8px; font-size:12px; cursor:pointer; }
   .role button.on { background:var(--accent); color:#1a1a1a; font-weight:600; }
   .role button.on.o { background:#3a444f; color:var(--txt); }
+  .st { font-size:12px; }
+  .st b { font-weight:600; }
+  .st .pl { color:var(--accent); margin-left:5px; }
+  tr.oth td { border-top:1px solid var(--line); font-weight:600; }
+  .hot { color:var(--accent); font-size:11px; margin-left:6px; }
+  .tstats { padding:7px 12px; font-size:12.5px; color:var(--muted); border-bottom:1px solid var(--line); display:flex; flex-wrap:wrap; gap:4px 22px; }
+  .tstats b { color:var(--txt); }
+  details.more > summary { cursor:pointer; padding:7px 12px; font-size:12.5px; color:var(--muted); }
   input.px { width:74px; background:var(--bg); color:var(--txt); border:1px solid var(--line);
     border-radius:6px; padding:4px 6px; font-size:13px; text-align:right; }
   input.px.dk { border-color:#3a5a7a; }
@@ -62,7 +70,7 @@
   .err { color:var(--neg); padding:20px 22px; }
   .foot { padding:16px 22px 30px; color:var(--muted); font-size:12.5px; max-width:980px; }
   .foot b { color:var(--txt); }
-  .foot table { min-width:0; width:auto; margin-top:6px; }
+  .foot table { min-width:0; width:auto; max-width:100%; margin-top:6px; display:block; overflow-x:auto; }
   .foot td, .foot th { padding:3px 10px; font-size:12px; }
   @media (max-width:640px) {
     header, .controls, .explain, .foot { padding-left:14px; padding-right:14px; }
@@ -84,15 +92,16 @@
     <button class="b" id="next" type="button" aria-label="Next day">›</button>
   </div>
   <button class="b" id="dkBtn" type="button">Refresh DK prices</button>
-  <button class="b" id="resetBtn" type="button">Reset lineups</button>
+  <button class="b" id="luBtn" type="button">Refresh lineups</button>
+  <button class="b" id="resetBtn" type="button" style="display:none">Undo my lineup changes</button>
   <div class="status" id="status"></div>
 </div>
 
 <div class="explain">
-  Fair odds on who makes the game's <b>first dunk</b>. Each player's rate is his dunks per minute (last season counts
-  three quarters, and a thin sample leans on his position's average), scaled by how many dunks the other team allows and
-  by when he is usually on the floor as a starter or off the bench. <b>Set each game's starters</b> before trusting a
-  number: a man who starts is worth several times the same man off the bench. EV is fair chance × the price − 1.
+  Fair odds on who makes the game's <b>first dunk</b>. Lineups set themselves: the starting five and each man's status
+  come from Rotowire (ESPN's injury list and the last game's five until Rotowire posts a game). A starter who is
+  questionable, doubtful or probable is priced both ways, with his chance of playing, and his replacement steps in when he
+  sits. <b>Other</b> is everyone outside the ten starters, the way DraftKings lists the market. EV is fair chance × the price − 1.
 </div>
 
 <div id="games"></div>
@@ -103,7 +112,7 @@
 (function () {
   'use strict';
   var FD = window.FirstDunk;
-  var D = null, INJ = {}, DK = null, DKERR = '', GAMES = [], SBERR = '', LOADING = true, FIRST = true;
+  var D = null, INJ = {}, LU = null, LUERR = '', DK = null, DKERR = '', GAMES = [], SBERR = '', LOADING = true, FIRST = true;
   var day = todayET();
 
   function $(id) { return document.getElementById(id); }
@@ -130,6 +139,8 @@
   }
   var ROLES = {}, PRICES = {};
   function loadSaved() { ROLES = store('fd:roles:' + day) || {}; PRICES = store('fd:px:' + day) || {}; }
+  function pct(x, d) { return (100 * x).toFixed(d == null ? 1 : d) + '%'; }
+  var TAGS = { out:'Out', ofs:'Out for season', doubt:'Doubtful', ques:'Questionable', gtd:'Game-time decision', prob:'Probable' };
 
   // ---- lineups ----------------------------------------------------------
   function teamPlayers(abbr) {
@@ -137,48 +148,109 @@
     for (var id in D.players) if (D.players[id].t === abbr) out.push(id);
     return out;
   }
-  // start / bench / out for every player on a team, before any change made here
-  function defaults(abbr) {
-    var t = D.teams[abbr], ids = teamPlayers(abbr), role = {}, why = {};
-    ids.forEach(function (id) {
-      var p = D.players[id], inj = INJ[id];
-      if (inj && inj.status === 'out') { role[id] = 'o'; why[id] = 'out (ESPN)'; }
-      else if (!p.last || p.last < t.since) { role[id] = 'o'; why[id] = 'not in the last 3 games'; }
-      else { role[id] = 'b'; if (inj) why[id] = 'game-time decision'; }
-    });
-    var st = (t.starters || []).filter(function (id) { return role[id] === 'b'; });
-    // a starter who is out is replaced by the available man with the most minutes a game
-    var rest = ids.filter(function (id) { return role[id] === 'b' && st.indexOf(id) < 0; })
-      .sort(function (a, b) { return mpg(b) - mpg(a); });
-    while (st.length < 5 && rest.length) { var id = rest.shift(); st.push(id); why[id] = (why[id] ? why[id] + '; ' : '') + 'starting for a man who is out'; }
-    st.forEach(function (id) { role[id] = 's'; });
-    return { role: role, why: why };
-  }
   function mpg(id) { var p = D.players[id]; return p.g ? p.min / p.g : (p.pg ? p.pmin / p.pg * 0.5 : 0); }
+  function rwGame(g) {
+    if (!LU || !LU.games) return null;
+    for (var i = 0; i < LU.games.length; i++) {
+      var x = LU.games[i];
+      if (x.date === day && x.away === g.away && x.home === g.home) return x;
+    }
+    return null;
+  }
+  // Each player of one team: listed to start or not, his chance of playing, and why.
+  // From Rotowire when it has the game; else the last game's five and ESPN's injury list.
+  function lineup(abbr, rw) {
+    var t = D.teams[abbr], ids = teamPlayers(abbr), rows = {}, missing = [];
+    var byName = {};
+    ids.forEach(function (id) {
+      byName[FD.normName(D.players[id].n)] = id;
+      var p = D.players[id];
+      var recent = p.last && p.last >= t.since;
+      rows[id] = { id: id, t: abbr, st: 0, play: recent ? 1 : 0, tag: '', why: recent ? '' : 'has not played in the last 3 games',
+                   sub: -(p.rs * 100 + mpg(id)) };
+    });
+    var src;
+    if (rw && rw.starters.length) {
+      src = rw.status === 'confirmed' ? 'confirmed' : 'expected';
+      rw.starters.forEach(function (s) {
+        var id = byName[FD.normName(s.name)];
+        if (!id) { missing.push(s.name); return; }
+        rows[id].st = 1; rows[id].play = s.play; rows[id].tag = s.tag; rows[id].why = '';
+      });
+      rw.others.forEach(function (s) {
+        var id = byName[FD.normName(s.name)];
+        if (!id || rows[id].st) return;
+        // a man who has not been playing stays out even when he is listed as better than out
+        rows[id].tag = s.tag;
+        if (rows[id].play > 0 || s.play === 0) rows[id].play = Math.min(rows[id].play, s.play);
+      });
+    } else {
+      src = 'last';
+      ids.forEach(function (id) {
+        var inj = INJ[id];
+        if (!inj) return;
+        rows[id].tag = inj.status === 'out' ? 'out' : 'gtd';
+        rows[id].play = Math.min(rows[id].play, inj.status === 'out' ? 0 : D.play_p.gtd);
+        rows[id].note = inj.note;
+      });
+      (t.starters || []).forEach(function (id) { if (rows[id]) rows[id].st = 1; });
+    }
+    // what was changed by hand on this page
+    ids.forEach(function (id) {
+      var o = ROLES[id];
+      if (!o) return;
+      rows[id].changed = true;
+      if (o === 'o') rows[id].play = 0;
+      else { rows[id].play = 1; rows[id].st = o === 's' ? 1 : 0; }
+    });
+    return { rows: ids.map(function (id) { return rows[id]; }), src: src, missing: missing };
+  }
+
+  function ctx(abbr, opp, home) {
+    var P = D.params, t = D.teams[abbr], o = D.teams[opp], avg = D.league.ppg;
+    var mult = o.d;
+    if (P.to_pow) mult *= Math.pow(o.to, P.to_pow);
+    if (P.off_pow) mult *= Math.pow(t.o, P.off_pow);
+    if (P.home) mult *= home ? 1 + P.home : 1 - P.home;
+    var tipP = Math.min(0.9, Math.max(0.1, 0.5 + (t.tip - o.tip)));
+    return { pace: avg * (t.pace / avg) * (o.pace / avg) / FD.GAME_MIN, mult: mult,
+             early: P.early_pow ? Math.pow(t.e, P.early_pow) : 1,
+             tip: P.tip_pow ? 1 + P.tip_pow * (2 * tipP - 1) : 1 };
+  }
 
   function priceGame(g) {
-    var rows = [];
-    [g.away, g.home].forEach(function (abbr, ti) {
-      var opp = ti === 0 ? g.home : g.away;
-      if (!D.teams[abbr] || !D.teams[opp]) return;
-      var def = defaults(abbr);
-      teamPlayers(abbr).forEach(function (id) {
-        var p = D.players[id];
-        var role = ROLES[id] || def.role[id];
-        rows.push({ id: id, p: p, team: abbr, role: role, changed: !!ROLES[id] && ROLES[id] !== def.role[id],
-                    why: def.why[id] || '', lam: p.lam, d: D.teams[opp].d,
-                    curve: role === 's' ? p.cs : p.cb, after: role === 's' ? p.as : p.ab });
-      });
+    if (!D.teams[g.away] || !D.teams[g.home]) return null;
+    var rw = rwGame(g);
+    var la = lineup(g.away, rw && rw.teams[g.away]), lh = lineup(g.home, rw && rw.teams[g.home]);
+    var rows = la.rows.concat(lh.rows);
+    var cx = {}; cx[g.away] = ctx(g.away, g.home, 0); cx[g.home] = ctx(g.home, g.away, 1);
+    var team = {}; rows.forEach(function (r) { team[r.id] = r.t; });
+    function entries(swap) {
+      return function (lu) {
+        return Object.keys(lu).map(function (id) {
+          var p = D.players[id], c = cx[team[id]], st = lu[id];
+          var lam = swap && swap === id ? p.lam10 : p.lam;
+          return { id: id, t: team[id], rate: lam * c.pace * c.mult * (st ? 1 : D.params.bench), early: c.early, tip: c.tip,
+                   curve: st ? p.cs : p.cb, after: st ? p.as : p.ab };
+        });
+      };
+    }
+    var res = FD.mix(rows, entries(null), D.m, D.params.gamma);
+    rows.forEach(function (r) {
+      r.p = D.players[r.id];
+      r.prob = res.probs[r.id] || 0;
+      // a man whose last ten games run well off his full rate: what he would be priced at on those
+      if (r.play > 0 && r.p.r10[1] >= 8 && Math.abs(r.p.lam10 / r.p.lam - 1) > 0.25 && r.prob >= 0.02) {
+        var alt = FD.mix(rows, entries(r.id), D.m, D.params.gamma).probs[r.id] || 0;
+        if (Math.abs(alt / r.prob - 1) > 0.25) r.alt = alt;
+      }
     });
-    var live = rows.filter(function (r) { return r.role !== 'o'; });
-    var out = live.length ? FD.price(live, D.m, D.params.gamma) : { probs: {}, noDunk: 1 };
-    rows.forEach(function (r) { r.prob = r.role === 'o' ? 0 : (out.probs[r.id] || 0); });
-    rows.sort(function (a, b) { return (b.prob - a.prob) || ((a.role === 'o') - (b.role === 'o')) || (b.lam - a.lam); });
-    return rows;
+    rows.sort(function (a, b) { return (b.prob - a.prob) || (b.p.lam - a.p.lam); });
+    return { rows: rows, res: res, src: {}, la: la, lh: lh, rw: rw };
   }
 
   // ---- DraftKings -------------------------------------------------------
-  // The DK game whose dunk market names this game's players; { name, prices: {id: {dec, am}}, others: [names] }
+  // The DK game whose dunk market names this game's players.
   function dkFor(rows) {
     if (!DK || !DK.events) return null;
     var byName = {};
@@ -186,18 +258,19 @@
     var best = null;
     DK.events.forEach(function (ev) {
       (ev.markets || []).forEach(function (m) {
-        var px = {}, n = 0, extra = [];
+        var px = {}, n = 0, extra = [], other = null, hold = 0;
         (m.selections || []).forEach(function (s) {
           var id = byName[FD.normName(s.label)];
           var dec = Number(s.decimal) || FD.parsePrice(s.american);
-          if (id && dec > 1) { px[id] = { dec: dec, am: s.american || '' }; n++; }
-          else if (dec > 1) extra.push(s.label + ' ' + (s.american || dec));
+          if (!(dec > 1)) return;
+          hold += 1 / dec;
+          if (id) { px[id] = { dec: dec, am: s.american || '' }; n++; }
+          else if (/^(any\s+)?other|^(the\s+)?field/i.test(s.label.trim())) other = { dec: dec, am: s.american || '', label: s.label };
+          else extra.push(s.label + ' ' + (s.american || dec));
         });
         if (n < 3) return;
         var first = /(1st|first)/i.test(m.name);
-        var hold = 0;
-        (m.selections || []).forEach(function (s) { var d = Number(s.decimal) || FD.parsePrice(s.american); if (d > 1) hold += 1 / d; });
-        var cand = { name: m.name, prices: px, n: n, first: first, extra: extra, hold: hold, others: [] };
+        var cand = { name: m.name, prices: px, n: n, first: first, extra: extra, other: other, hold: hold, others: [] };
         if (!best || (first && !best.first) || (first === best.first && n > best.n)) {
           if (best) cand.others = best.others.concat([best.name]);
           best = cand;
@@ -213,62 +286,107 @@
     var ev = prob * dec - 1;
     return '<span class="' + (ev > 0 ? 'pos' : 'neg') + '">' + (ev > 0 ? '+' : '') + (100 * ev).toFixed(1) + '%</span>';
   }
+  function srcText(abbr, l) {
+    if (l.src === 'confirmed') return abbr + ': confirmed five (Rotowire)';
+    if (l.src === 'expected') return abbr + ': expected five (Rotowire)';
+    return abbr + ': last game\'s five, ESPN\'s injury list';
+  }
+  function teamLine(abbr) {
+    var t = D.teams[abbr], L = D.league;
+    return '<span><b>' + esc(abbr) + '</b> ' + (t.dk / t.g).toFixed(1) + ' dunks a game (' + t.dk100 + ' per 100 possessions, league ' + L.dk100 +
+      ') · allows ' + (t.allowed / t.g).toFixed(1) + ' (' + t.allowed100 + ' per 100) · first dunk of the game in ' + t.first + ' of ' + t.g +
+      (t.tfirst != null ? ' · its own first after ' + t.tfirst.toFixed(1) + ' min on average' : '') + '</span>';
+  }
+  function priceInput(key, auto, name) {
+    var typed = PRICES[key];
+    var val = typed != null && typed !== '' ? typed : (auto ? (auto.am || auto.dec) : '');
+    return '<input class="px' + (auto && !typed ? ' dk' : '') + '" inputmode="text" data-id="' + esc(key) + '" value="' + esc(val) +
+      '" placeholder="' + (auto ? esc(auto.am) : '') + '" aria-label="Price for ' + esc(name) + '">';
+  }
+  function decFor(key, auto) { var typed = PRICES[key]; return typed ? FD.parsePrice(typed) : (auto ? auto.dec : null); }
+
   function render() {
     $('dateLbl').textContent = nice(day);
+    $('resetBtn').style.display = Object.keys(ROLES).length ? '' : 'none';
     var el = $('games');
     if (!D) return;
     if (SBERR) { el.innerHTML = '<div class="err">' + esc(SBERR) + '</div>'; return; }
     if (LOADING) { el.innerHTML = '<div class="explain" style="padding-top:18px">Loading the schedule…</div>'; return; }
     if (!GAMES.length) { el.innerHTML = '<div class="explain" style="padding-top:18px">No NBA games on ' + esc(nice(day)) + '.</div>'; return; }
     var html = '';
-    GAMES.forEach(function (g, gi) {
-      var rows = priceGame(g);
-      var dk = dkFor(rows);
-      var share = {};
-      rows.forEach(function (r) { share[r.team] = (share[r.team] || 0) + r.prob; });
-      var nst = {};
-      rows.forEach(function (r) { if (r.role === 's') nst[r.team] = (nst[r.team] || 0) + 1; });
-      var top = rows.length ? rows[0].prob : 0;
+    GAMES.forEach(function (g) {
+      var G = priceGame(g);
       html += '<div class="game"><div class="ghd"><span class="nm">' + esc(g.away) + ' at ' + esc(g.home) + '</span>' +
-        '<span class="muted">' + esc(g.when) + (g.state !== 'pre' ? ' · ' + esc(g.detail) : '') + '</span>' +
-        '<span class="split">first dunk: <b>' + esc(g.away) + ' ' + (100 * (share[g.away] || 0)).toFixed(0) + '%</b> · <b>' +
-        esc(g.home) + ' ' + (100 * (share[g.home] || 0)).toFixed(0) + '%</b></span></div>';
-      if (!rows.length) { html += '<div class="note warn">No data for one of these teams.</div></div>'; return; }
-      var notes = [];
-      [g.away, g.home].forEach(function (t) { if ((nst[t] || 0) !== 5) notes.push(t + ' has ' + (nst[t] || 0) + ' starters set, not 5'); });
-      if (g.state !== 'pre') notes.push('this game has started; these are the odds as of the tip');
-      if (notes.length) html += '<div class="note warn">' + esc(notes.join(' · ')) + '</div>';
+        '<span class="muted">' + esc(g.when) + (g.state !== 'pre' ? ' · ' + esc(g.detail) : '') + '</span>';
+      if (!G) { html += '</div><div class="note warn">No data for one of these teams.</div></div>'; return; }
+      var rows = G.rows, res = G.res, dk = dkFor(rows);
+      html += '<span class="split">first dunk: <b>' + esc(g.away) + ' ' + pct(res.team[g.away] || 0, 0) + '</b> · <b>' +
+        esc(g.home) + ' ' + pct(res.team[g.home] || 0, 0) + '</b> · expected after <b>' + res.tFirst.toFixed(1) + ' min</b> (' +
+        esc(g.away) + '\'s own first ' + (res.tTeam[g.away] || 0).toFixed(1) + ', ' + esc(g.home) + '\'s ' + (res.tTeam[g.home] || 0).toFixed(1) + ')</span></div>';
+      html += '<div class="tstats">' + teamLine(g.away) + teamLine(g.home) + '</div>';
+      var notes = [], warn = [];
+      notes.push(srcText(g.away, G.la) + ' · ' + srcText(g.home, G.lh) + (res.scenarios > 1 ? ' · ' + res.scenarios + ' possible lineups priced and weighted' : ''));
+      [[g.away, G.la], [g.home, G.lh]].forEach(function (x) {
+        var n = x[1].rows.filter(function (r) { return r.st && r.play > 0; }).length;
+        if (n !== 5) warn.push(x[0] + ' has ' + n + ' starters, not 5');
+        if (x[1].missing.length) warn.push(x[0] + ' starter not in the data: ' + x[1].missing.join(', '));
+      });
+      if (g.state !== 'pre') warn.push('this game has started; these are the odds as of the tip');
+      html += '<div class="note">' + esc(notes.join(' · ')) + '</div>';
+      if (warn.length) html += '<div class="note warn">' + esc(warn.join(' · ')) + '</div>';
+      // "Other": everyone DraftKings does not list by name; before it lists anyone, everyone but the ten starters
+      var named = {};
+      rows.forEach(function (r) { if (dk ? dk.prices[r.id] : (r.st && r.play > 0)) named[r.id] = 1; });
+      var other = 0;
+      rows.forEach(function (r) { if (!named[r.id]) other += r.prob; });
       if (dk) {
-        html += '<div class="note">DraftKings: <b style="color:var(--txt)">' + esc(dk.name) + '</b>, ' + dk.n + ' players matched, prices add to ' +
-          (100 * dk.hold).toFixed(0) + '%' + (dk.first ? '' : ' · <span style="color:var(--accent)">the market\'s name does not say "first"; check it is the first-dunk market</span>') +
+        html += '<div class="note">DraftKings: <b style="color:var(--txt)">' + esc(dk.name) + '</b>, ' + dk.n + ' players' + (dk.other ? ' and ' + esc(dk.other.label) : '') +
+          ', prices add to ' + pct(dk.hold, 0) + (dk.first ? '' : ' · <span style="color:var(--accent)">the market\'s name does not say "first"; check it is the first-dunk market</span>') +
+          (dk.other ? '' : ' · <span style="color:var(--accent)">no "Other" line found</span>') +
           (dk.extra.length ? ' · not matched to a player here: ' + esc(dk.extra.join(', ')) : '') +
           (dk.others.length ? ' · also listed: ' + esc(dk.others.join(', ')) : '') + '</div>';
       } else {
         html += '<div class="note">' + (DKERR ? 'DraftKings did not answer (' + esc(DKERR) + '). ' : (DK ? 'No dunk market on DraftKings for this game yet. ' : 'DraftKings prices loading… ')) +
-          'Type a price in the Price column (+650, or 7.5 for decimal).</div>';
+          'A price can be typed in the Price column (+650, or 7.5 for decimal).</div>';
       }
-      html += '<div class="wrap"><table><thead><tr><th class="l">Player</th><th class="l">Tonight</th><th>Dunks</th><th>Per 36</th>' +
-        '<th>Fair</th><th>Fair odds</th><th>Price</th><th>EV</th></tr></thead><tbody>';
-      rows.forEach(function (r) {
-        var p = r.p, typed = PRICES[r.id], auto = dk && dk.prices[r.id];
-        var dec = typed ? FD.parsePrice(typed) : (auto ? auto.dec : null);
-        var val = typed != null && typed !== '' ? typed : (auto ? (auto.am || auto.dec) : '');
+      var head = '<thead><tr><th class="l">Player</th><th class="l">Tonight</th><th>Dunks</th><th>Per 100</th>' +
+        '<th>Fair</th><th>Fair odds</th><th>Price</th><th>EV</th><th class="l">Change</th></tr></thead>';
+      var top = rows.length ? rows[0].prob : 0;
+      function row(r) {
+        var p = r.p, auto = dk && dk.prices[r.id];
         var dunks = p.g ? p.dk + ' in ' + p.g : (p.pg ? '<span class="muted">' + p.pdk + ' in ' + p.pg + ' last yr</span>' : '–');
-        html += '<tr class="' + (r.role === 'o' ? 'out' : '') + '" data-id="' + r.id + '" data-prob="' + r.prob + '">' +
-          '<td class="l"><span class="nm">' + esc(p.n) + '</span><span class="tm">' + esc(r.team) + ' ' + esc(p.pos) + '</span>' +
-          (r.why ? '<span class="tag" title="' + esc((INJ[r.id] || {}).note || '') + '">' + esc(r.why) + '</span>' : '') +
-          (r.changed ? '<span class="tag">changed</span>' : '') + '</td>' +
-          '<td class="l"><span class="role" data-id="' + r.id + '">' +
-          ['s', 'b', 'o'].map(function (k) {
-            return '<button type="button" data-r="' + k + '" class="' + (r.role === k ? 'on ' + k : '') + '">' + { s:'Start', b:'Bench', o:'Out' }[k] + '</button>';
-          }).join('') + '</span></td>' +
-          '<td>' + dunks + '</td><td>' + (36 * p.lam).toFixed(2) + '</td>' +
-          '<td>' + (r.role === 'o' ? '–' : '<span class="bar" style="width:' + Math.round(46 * r.prob / (top || 1)) + 'px"></span>' + (100 * r.prob).toFixed(1) + '%') + '</td>' +
-          '<td>' + (r.role === 'o' ? '–' : FD.probToAmerican(r.prob)) + '</td>' +
-          '<td><input class="px' + (auto && !typed ? ' dk' : '') + '" inputmode="text" data-id="' + r.id + '" value="' + esc(val) + '" placeholder="' + (auto ? esc(auto.am) : '') + '" aria-label="Price for ' + esc(p.n) + '"></td>' +
-          '<td class="ev">' + evCell(r.prob, dec) + '</td></tr>';
-      });
-      html += '</tbody></table></div></div>';
+        var tn = r.play <= 0 ? '<b>Out</b>' : '<b>' + (r.st ? 'Start' : 'Bench') + '</b>';
+        if (r.tag && r.play > 0) tn += '<span class="pl" title="' + esc(r.note || '') + '">' + esc(TAGS[r.tag] || r.tag) + (r.play < 1 ? ', ' + pct(r.play, 0) + ' to play' : '') + '</span>';
+        else if (r.play > 0 && r.play < 1) tn += '<span class="pl">' + pct(r.play, 0) + ' to play</span>';
+        if (r.play <= 0 && (r.tag || r.why)) tn += '<span class="tm">' + esc(r.tag ? (TAGS[r.tag] || r.tag) : r.why) + '</span>';
+        if (r.changed) tn += '<span class="tag">set by you</span>';
+        var cur = r.play <= 0 ? 'o' : (r.st ? 's' : 'b');
+        return '<tr class="' + (r.play <= 0 ? 'out' : '') + '" data-prob="' + r.prob + '">' +
+          '<td class="l"><span class="nm">' + esc(p.n) + '</span><span class="tm">' + esc(r.t) + ' ' + esc(p.pos) + '</span>' +
+          (r.alt != null ? '<span class="hot" title="His rate over his last ten games against his full rate">last 10: ' + p.r10[0] + ' dunks in ' + p.r10[1] + ' → ' + pct(r.alt) + ' on those</span>' : '') + '</td>' +
+          '<td class="l st">' + tn + '</td>' +
+          '<td>' + dunks + '</td><td>' + (100 * p.lam).toFixed(2) + '</td>' +
+          '<td>' + (r.play <= 0 ? '–' : '<span class="bar" style="width:' + Math.round(46 * r.prob / (top || 1)) + 'px"></span>' + pct(r.prob)) + '</td>' +
+          '<td>' + (r.play <= 0 ? '–' : FD.probToAmerican(r.prob)) + '</td>' +
+          '<td>' + priceInput(r.id, auto, p.n) + '</td>' +
+          '<td class="ev">' + evCell(r.prob, decFor(r.id, auto)) + '</td>' +
+          '<td class="l"><span class="role" data-id="' + r.id + '">' + ['s', 'b', 'o'].map(function (k) {
+            return '<button type="button" data-r="' + k + '" class="' + (cur === k ? 'on ' + k : '') + '">' + { s:'S', b:'B', o:'Out' }[k] + '</button>';
+          }).join('') + '</span></td></tr>';
+      }
+      var main = rows.filter(function (r) { return r.play > 0 && (named[r.id] || r.prob >= 0.005); });
+      var rest = rows.filter(function (r) { return main.indexOf(r) < 0; });
+      var okey = 'other:' + g.id;
+      html += '<div class="wrap"><table>' + head + '<tbody>' + main.map(row).join('') +
+        '<tr class="oth" data-prob="' + other + '"><td class="l">Other<span class="tm">' + (dk ? 'anyone DraftKings does not name' : 'anyone but the ten starters') + '</span></td>' +
+        '<td></td><td></td><td></td><td>' + pct(other) + '</td><td>' + FD.probToAmerican(other) + '</td>' +
+        '<td>' + priceInput(okey, dk && dk.other, 'Other') + '</td><td class="ev">' + evCell(other, decFor(okey, dk && dk.other)) + '</td><td></td></tr>' +
+        '</tbody></table></div>';
+      if (rest.length) {
+        html += '<details class="more"><summary>' + rest.filter(function (r) { return r.play > 0; }).length + ' more under 0.5%, ' +
+          rest.filter(function (r) { return r.play <= 0; }).length + ' out</summary><div class="wrap"><table>' + head + '<tbody>' + rest.map(row).join('') + '</tbody></table></div></details>';
+      }
+      html += '</div>';
     });
     el.innerHTML = html;
   }
@@ -277,9 +395,11 @@
     var b = e.target.closest('.role button');
     if (!b) return;
     var id = b.parentNode.getAttribute('data-id');
-    ROLES[id] = b.getAttribute('data-r');
+    if (b.classList.contains('on') && ROLES[id]) delete ROLES[id]; else ROLES[id] = b.getAttribute('data-r');
     store('fd:roles:' + day, ROLES);
+    var open = [].map.call(document.querySelectorAll('details.more'), function (d) { return d.open; });
     render();
+    [].forEach.call(document.querySelectorAll('details.more'), function (d, i) { d.open = !!open[i]; });
   });
   $('games').addEventListener('input', function (e) {
     var inp = e.target;
@@ -295,6 +415,7 @@
   $('prev').addEventListener('click', function () { day = shift(day, -1); loadDay(); });
   $('next').addEventListener('click', function () { day = shift(day, 1); loadDay(); });
   $('dkBtn').addEventListener('click', function () { loadDK(true); });
+  $('luBtn').addEventListener('click', function () { loadLineups(true); });
 
   // ---- data -------------------------------------------------------------
   function getJSON(url) {
@@ -327,40 +448,76 @@
       render();
     }).catch(function (e) { if (want === day) { FIRST = false; LOADING = false; SBERR = 'Could not load the schedule: ' + e.message; render(); } });
   }
+  var STATUS = { dk: '', lu: '' };
+  function status() { $('status').textContent = [STATUS.lu, STATUS.dk].filter(Boolean).join(' · '); }
+  function loadLineups(fresh) {
+    var b = $('luBtn');
+    b.disabled = true;
+    getJSON('api/nba/lineups' + (fresh ? '?fresh=1' : '')).then(function (j) {
+      LU = j; LUERR = '';
+      var days = {};
+      (j.games || []).forEach(function (g) { days[g.date] = (days[g.date] || 0) + 1; });
+      STATUS.lu = 'Rotowire lineups: ' + (Object.keys(days).sort().map(function (d) { return days[d] + (days[d] === 1 ? ' game for ' : ' games for ') + nice(d); }).join(', ') || 'none posted') + (j.stale ? ' (old copy)' : '');
+    }).catch(function (e) { LUERR = e.message; STATUS.lu = 'Rotowire did not answer; using each team\'s last five and ESPN\'s injury list'; })
+      .then(function () { b.disabled = false; status(); render(); });
+  }
   function loadDK(fresh) {
     var b = $('dkBtn');
-    b.disabled = true; $('status').textContent = 'Asking DraftKings…';
+    b.disabled = true; STATUS.dk = 'Asking DraftKings…'; status();
     getJSON('api/dk/nba-first-dunk' + (fresh ? '?fresh=1' : '')).then(function (j) {
       DK = j; DKERR = '';
       var n = 0;
       (j.events || []).forEach(function (ev) { n += (ev.markets || []).length; });
-      $('status').textContent = 'DraftKings: ' + n + ' dunk market' + (n === 1 ? '' : 's') + ' across ' + (j.events || []).length +
-        ' games not yet started · ' + new Date().toLocaleTimeString(undefined, { hour:'numeric', minute:'2-digit' });
-    }).catch(function (e) { DK = DK || { events: [] }; DKERR = e.message; $('status').textContent = 'DraftKings did not answer: ' + e.message; })
-      .then(function () { b.disabled = false; render(); });
+      STATUS.dk = 'DraftKings: ' + n + ' dunk market' + (n === 1 ? '' : 's') + ' across ' + (j.events || []).length +
+        ' games not yet started, ' + new Date().toLocaleTimeString(undefined, { hour:'numeric', minute:'2-digit' });
+    }).catch(function (e) { DK = DK || { events: [] }; DKERR = e.message; STATUS.dk = 'DraftKings did not answer: ' + e.message; })
+      .then(function () { b.disabled = false; status(); render(); });
   }
   function foot() {
-    var bt = D.backtest, f = function (x) { return (100 * x).toFixed(1) + '%'; };
-    var h = '<b>How it has done.</b> ' + bt.n.toLocaleString() + ' games since the start of last season, each priced only from games before it and with the starters known: ' +
-      'the top pick made the first dunk ' + f(bt.top) + ' of the time. The first dunk came in the first quarter ' + f(1 - bt.after_q1) + ' of the time' +
-      (D.league.first_median_sec ? ' (half of them within ' + (D.league.first_median_sec / 60).toFixed(1) + ' minutes)' : '') + '.' +
+    var bt = D.backtest, P = D.params;
+    var h = '<b>How it has done.</b> ' + bt.n.toLocaleString() + ' games over the last three seasons, each priced only from games before it and with the starters known: ' +
+      'the first dunker was the model\'s top pick ' + pct(bt.top) + ' of the time and in its top three ' + pct(bt.top3) + '. ' +
+      'It priced the first dunk ' + bt.t_pred.toFixed(1) + ' minutes in on average; it came after ' + bt.t_act.toFixed(1) + '. ' +
+      '"Other" (anyone but the ten starters) was priced ' + pct(bt.other_pred) + ' and happened ' + pct(bt.other_hit) + '.' +
       '<table><thead><tr><th class="l">Priced at</th><th>Players</th><th>Avg priced</th><th>Made it</th></tr></thead><tbody>';
     bt.cal.forEach(function (c) {
       if (c.n) h += '<tr><td class="l">' + (100 * c.lo).toFixed(0) + '–' + (100 * c.hi).toFixed(0) + '%</td><td>' + c.n.toLocaleString() +
-        '</td><td>' + f(c.pred) + '</td><td>' + f(c.hit) + '</td></tr>';
+        '</td><td>' + pct(c.pred) + '</td><td>' + pct(c.hit) + '</td></tr>';
     });
-    h += '</tbody></table><p>Per 36 is the rate the model uses, not his raw count. Not in the model: tonight\'s spread and total, who guards whom, ' +
-      'and a new starter\'s actual minutes (he gets the usual pattern for a starter of his minutes).</p>';
+    h += '</tbody></table><p><b>Per 100</b> is the rate the model uses: his made dunks per 100 team possessions on the floor, this season at full weight, last season at ' +
+      P.w1 + (P.w2 ? ' and the one before at ' + P.w2 : '') + ', with ' + P.prior_poss + ' possessions of his position\'s average mixed in. ' +
+      'A status\'s chance of playing is Rotowire\'s own where it gives one; otherwise probable ' + pct(D.play_p.prob, 0) + ', questionable ' + pct(D.play_p.ques, 0) +
+      ', doubtful ' + pct(D.play_p.doubt, 0) + '. S / B / Out in the last column overrides a player by hand; press it again to hand him back.</p>';
+    if (D.flags && D.flags.length) {
+      h += '<p><b>Running hot or cold.</b> Players whose last ten games are more than 25% off their full rate (dunks per 100 possessions):</p>' +
+        '<table><thead><tr><th class="l">Player</th><th>Full</th><th>Last 10</th><th>Move</th></tr></thead><tbody>' +
+        D.flags.slice(0, 25).map(function (f) {
+          return '<tr><td class="l">' + esc(f.n) + '<span class="tm">' + esc(f.t) + '</span></td><td>' + f.full.toFixed(2) + '</td><td>' + f.last10.toFixed(2) +
+            '</td><td class="' + (f.move > 0 ? 'pos' : 'neg') + '">' + (f.move > 0 ? '+' : '') + (100 * f.move).toFixed(0) + '%</td></tr>';
+        }).join('') + '</tbody></table>';
+    }
     $('foot').innerHTML = h;
   }
+
+  // DraftKings posts this market close to the tip, once the fives are known, and
+  // lineups firm up through the evening: ask both again every three minutes while
+  // the page is on screen and a game of the day has yet to start.
+  setInterval(function () {
+    if (document.hidden || !D || $('dkBtn').disabled) return;
+    if (!GAMES.some(function (g) { return g.state === 'pre'; })) return;
+    if (document.activeElement && document.activeElement.classList && document.activeElement.classList.contains('px')) return;
+    loadLineups(false); loadDK(false);
+    getJSON('api/nba/injuries').then(function (j) { INJ = j.players || {}; }).catch(function () {});
+  }, 3 * 60 * 1000);
 
   getJSON('data/nba_first_dunk.json').then(function (d) {
     D = d;
     $('meta').textContent = d.games.toLocaleString() + ' games through ' + d.through + ' · ' + Object.keys(d.players).length +
-      ' players · the league makes ' + d.league.dunks_pg + ' dunks a game this season';
+      ' players · the league makes ' + d.league.dunks_pg + ' dunks a game this season (' + d.league.dk100 + ' per 100 possessions)';
     foot();
     loadDay();
     getJSON('api/nba/injuries').then(function (j) { INJ = j.players || {}; render(); }).catch(function () {});
+    loadLineups(false);
     loadDK(false);
   }).catch(function (e) {
     $('meta').textContent = '';

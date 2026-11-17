@@ -2476,6 +2476,24 @@ app.get('/api/nba/injuries', async (_req, res) => {
   }
 });
 
+// GET /api/nba/lineups — starting fives and injury statuses for today's and
+// tomorrow's games, from Rotowire's lineups page (nbaLineups.js). Each game
+// carries the date it is for. Cached three minutes; an old answer is served,
+// marked stale, when Rotowire stops answering.
+let NBA_LU_CACHE = null;
+app.get('/api/nba/lineups', async (req, res) => {
+  if (!req.query.fresh && NBA_LU_CACHE && Date.now() - NBA_LU_CACHE.ts < 3 * 60 * 1000) return res.json(NBA_LU_CACHE.body);
+  try {
+    const body = await require('./nbaLineups.js').fetchLineups();
+    body.fetched = new Date().toISOString();
+    NBA_LU_CACHE = { ts: Date.now(), body };
+    return res.json(body);
+  } catch (e) {
+    if (NBA_LU_CACHE) return res.json(Object.assign({}, NBA_LU_CACHE.body, { stale: true }));
+    return res.status(502).json({ error: 'Rotowire lineups failed: ' + e.message });
+  }
+});
+
 // GET /api/dk/nba-first-dunk — DraftKings' markets with "dunk" in the name for
 // tonight's NBA games, each selection with its price (dk_api.py
 // nba_named_markets; one request a game). Cached two minutes.

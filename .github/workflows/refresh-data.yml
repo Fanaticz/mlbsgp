@@ -66,9 +66,10 @@ jobs:
         continue-on-error: true
         run: python scripts/nba_line_correlations.py --fetch
 
-      # New NBA finals' play-by-play (every made dunk, who was on the floor),
-      # then the first-dunk rates behind the FIRST DUNK tab rebuilt. Only games
-      # not already in public/data/nba_dunk_games.json are asked for.
+      # New NBA finals' play-by-play (every made dunk, who was on the floor,
+      # possessions), then the first-dunk rates behind the FIRST DUNK tab
+      # rebuilt and backtested. Only games not already in
+      # public/data/nba_dunk_games.json are asked for.
       - name: Refresh NBA first-dunk model
         continue-on-error: true
         run: python scripts/nba_first_dunk.py --fetch
