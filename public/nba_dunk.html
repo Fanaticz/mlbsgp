@@ -166,8 +166,9 @@
       byName[FD.normName(D.players[id].n)] = id;
       var p = D.players[id];
       var recent = p.last && p.last >= t.since;
+      // app: a bench man's chance of getting into the game (the share of the team's last ten he played in)
       rows[id] = { id: id, t: abbr, st: 0, play: recent ? 1 : 0, tag: '', why: recent ? '' : 'has not played in the last 3 games',
-                   sub: -(p.rs * 100 + mpg(id)) };
+                   app: p.app, sub: -(p.rs * 100 + mpg(id)) };
     });
     var src;
     if (rw && rw.starters.length) {
@@ -180,9 +181,10 @@
       rw.others.forEach(function (s) {
         var id = byName[FD.normName(s.name)];
         if (!id || rows[id].st) return;
-        // a man who has not been playing stays out even when he is listed as better than out
+        // Rotowire's call stands, also for a man coming back: listed questionable after weeks out, he is 50% to play
         rows[id].tag = s.tag;
-        if (rows[id].play > 0 || s.play === 0) rows[id].play = Math.min(rows[id].play, s.play);
+        rows[id].play = s.play;
+        if (s.play > 0) { rows[id].why = ''; rows[id].app = Math.max(rows[id].app, 0.6); }
       });
     } else {
       src = 'last';
@@ -191,6 +193,7 @@
         if (!inj) return;
         rows[id].tag = inj.status === 'out' ? 'out' : 'gtd';
         rows[id].play = Math.min(rows[id].play, inj.status === 'out' ? 0 : D.play_p.gtd);
+        if (rows[id].play > 0) rows[id].app = Math.max(rows[id].app, 0.6);
         rows[id].note = inj.note;
       });
       (t.starters || []).forEach(function (id) { if (rows[id]) rows[id].st = 1; });
@@ -201,21 +204,9 @@
       if (!o) return;
       rows[id].changed = true;
       if (o === 'o') rows[id].play = 0;
-      else { rows[id].play = 1; rows[id].st = o === 's' ? 1 : 0; }
+      else { rows[id].play = 1; rows[id].st = o === 's' ? 1 : 0; rows[id].app = 1; }
     });
     return { rows: ids.map(function (id) { return rows[id]; }), src: src, missing: missing };
-  }
-
-  function ctx(abbr, opp, home) {
-    var P = D.params, t = D.teams[abbr], o = D.teams[opp], avg = D.league.ppg;
-    var mult = o.d;
-    if (P.to_pow) mult *= Math.pow(o.to, P.to_pow);
-    if (P.off_pow) mult *= Math.pow(t.o, P.off_pow);
-    if (P.home) mult *= home ? 1 + P.home : 1 - P.home;
-    var tipP = Math.min(0.9, Math.max(0.1, 0.5 + (t.tip - o.tip)));
-    return { pace: avg * (t.pace / avg) * (o.pace / avg) / FD.GAME_MIN, mult: mult,
-             early: P.early_pow ? Math.pow(t.e, P.early_pow) : 1,
-             tip: P.tip_pow ? 1 + P.tip_pow * (2 * tipP - 1) : 1 };
   }
 
   function priceGame(g) {
@@ -223,15 +214,13 @@
     var rw = rwGame(g);
     var la = lineup(g.away, rw && rw.teams[g.away]), lh = lineup(g.home, rw && rw.teams[g.home]);
     var rows = la.rows.concat(lh.rows);
-    var cx = {}; cx[g.away] = ctx(g.away, g.home, 0); cx[g.home] = ctx(g.home, g.away, 1);
-    var team = {}; rows.forEach(function (r) { team[r.id] = r.t; });
+    var cx = {}; cx[g.away] = FD.context(D, g.away, g.home, 0); cx[g.home] = FD.context(D, g.home, g.away, 1);
+    var by = {}; rows.forEach(function (r) { by[r.id] = r; });
     function entries(swap) {
       return function (lu) {
         return Object.keys(lu).map(function (id) {
-          var p = D.players[id], c = cx[team[id]], st = lu[id];
-          var lam = swap && swap === id ? p.lam10 : p.lam;
-          return { id: id, t: team[id], rate: lam * c.pace * c.mult * (st ? 1 : D.params.bench), early: c.early, tip: c.tip,
-                   curve: st ? p.cs : p.cb, after: st ? p.as : p.ab };
+          var r = by[id];
+          return FD.entry(D, id, r.t, lu[id], cx[r.t], r.app, swap && swap === id ? D.players[id].lam10 : null);
         });
       };
     }
@@ -340,6 +329,14 @@
       var other = 0;
       rows.forEach(function (r) { if (!named[r.id]) other += r.prob; });
       if (dk) {
+        // DraftKings names its own ten starters; where they differ from the lineup used here, Other's price hangs on who is right
+        var dkOnly = rows.filter(function (r) { return dk.prices[r.id] && !(r.st && r.play > 0); }).map(function (r) { return r.p.n + ' (' + (r.play <= 0 ? 'out' : 'bench') + ' here)'; });
+        var luOnly = rows.filter(function (r) { return r.st && r.play > 0 && !dk.prices[r.id]; }).map(function (r) { return r.p.n + (r.play < 1 ? ' (' + pct(r.play, 0) + ' to play)' : ''); });
+        if (dkOnly.length || luOnly.length) {
+          html += '<div class="note warn">DraftKings\' ten differ from this lineup' + (dkOnly.length ? ': it names ' + esc(dkOnly.join(', ')) : '') +
+            (luOnly.length ? (dkOnly.length ? '; it does not name ' : ': it does not name ') + esc(luOnly.join(', ')) + ', who starts here and so counts toward Other' : '') +
+            '. Other\'s EV depends on which is right.</div>';
+        }
         html += '<div class="note">DraftKings: <b style="color:var(--txt)">' + esc(dk.name) + '</b>, ' + dk.n + ' players' + (dk.other ? ' and ' + esc(dk.other.label) : '') +
           ', prices add to ' + pct(dk.hold, 0) + (dk.first ? '' : ' · <span style="color:var(--accent)">the market\'s name does not say "first"; check it is the first-dunk market</span>') +
           (dk.other ? '' : ' · <span style="color:var(--accent)">no "Other" line found</span>') +
@@ -359,6 +356,7 @@
         if (r.tag && r.play > 0) tn += '<span class="pl" title="' + esc(r.note || '') + '">' + esc(TAGS[r.tag] || r.tag) + (r.play < 1 ? ', ' + pct(r.play, 0) + ' to play' : '') + '</span>';
         else if (r.play > 0 && r.play < 1) tn += '<span class="pl">' + pct(r.play, 0) + ' to play</span>';
         if (r.play <= 0 && (r.tag || r.why)) tn += '<span class="tm">' + esc(r.tag ? (TAGS[r.tag] || r.tag) : r.why) + '</span>';
+        if (r.play > 0 && !r.st && r.app < 0.95) tn += '<span class="tm" title="The share of the team\'s last ten games he got into">gets in ' + pct(r.app, 0) + '</span>';
         if (r.changed) tn += '<span class="tag">set by you</span>';
         var cur = r.play <= 0 ? 'o' : (r.st ? 's' : 'b');
         return '<tr class="' + (r.play <= 0 ? 'out' : '') + '" data-prob="' + r.prob + '">' +
@@ -478,7 +476,8 @@
     var h = '<b>How it has done.</b> ' + bt.n.toLocaleString() + ' games over the last three seasons, each priced only from games before it and with the starters known: ' +
       'the first dunker was the model\'s top pick ' + pct(bt.top) + ' of the time and in its top three ' + pct(bt.top3) + '. ' +
       'It priced the first dunk ' + bt.t_pred.toFixed(1) + ' minutes in on average; it came after ' + bt.t_act.toFixed(1) + '. ' +
-      '"Other" (anyone but the ten starters) was priced ' + pct(bt.other_pred) + ' and happened ' + pct(bt.other_hit) + '.' +
+      'Priced the way this page has to, with the starters known but not which of the bench will get in (' + bt.pool.cands.toFixed(1) +
+      ' candidates a game), "Other" was priced ' + pct(bt.pool.other_pred) + ' and happened ' + pct(bt.pool.other_hit) + '.' +
       '<table><thead><tr><th class="l">Priced at</th><th>Players</th><th>Avg priced</th><th>Made it</th></tr></thead><tbody>';
     bt.cal.forEach(function (c) {
       if (c.n) h += '<tr><td class="l">' + (100 * c.lo).toFixed(0) + '–' + (100 * c.hi).toFixed(0) + '%</td><td>' + c.n.toLocaleString() +

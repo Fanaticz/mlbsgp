@@ -69,7 +69,7 @@ PARAMS = {
     "early_pow": 0.0,     # power on the team's opening-six-minutes dunks over expected
     "tip_pow": 0.0,       # opening-minute bump for the team likelier to win the tip
     "home": 0.06,         # the home team's rates up by this share, the visitors' down by it
-    "bench": 0.8,         # multiplier on the rate of a man who comes off the bench
+    "bench": 0.75,        # multiplier on the rate of a man who comes off the bench (times his chance of getting in)
 }
 PLAY_P = {"out": 0.0, "ofs": 0.0, "doubt": 0.15, "ques": 0.5, "gtd": 0.5, "prob": 0.85}
 POS_GROUP = {"PG": "G", "SG": "G", "G": "G", "SF": "F", "PF": "F", "F": "F", "C": "C"}
@@ -96,6 +96,16 @@ def _elapsed(period: int, clock: float) -> float:
     return 2880 + (period - 5) * 300 + (300 - clock)
 
 
+FG_KEY = "fieldGoalsMade-fieldGoalsAttempted"
+
+
+def _made(v) -> int:
+    try:
+        return int(str(v).split("-")[0])
+    except (TypeError, ValueError):
+        return 0
+
+
 def _mins(v) -> float:
     try:
         return float(str(v).split(":")[0])
@@ -105,7 +115,7 @@ def _mins(v) -> float:
 
 NOT_ON_FLOOR = ("technical", "eject", "timeout", "review", "challenge", "delay", "end ", "substitution")
 LAST_FT = ("free throw - 2 of 2", "free throw - 3 of 3")
-GAMES_V = 2   # bump when parse_game's row changes; older rows are pulled again
+GAMES_V = 3   # bump when parse_game's row changes; older rows are pulled again
 
 
 def parse_game(eid: str, data: dict, season: int) -> dict | None:
@@ -124,9 +134,14 @@ def parse_game(eid: str, data: dict, season: int) -> dict | None:
                                        "h": 1 if c.get("homeAway") == "home" else 0, "poss": 0, "lto": 0}
     if len(teams) != 2:
         return None
+    # ESPN files the All-Star games (East/West, Stars/Stripes/World, ...) as regular season; the 30 clubs are ids 1-30
+    if not all(t.isdigit() and 1 <= int(t) <= 30 for t in teams):
+        return None
     tids = list(teams)
     other = {tids[0]: tids[1], tids[1]: tids[0]}
     players: dict[str, dict] = {}
+    box_fgm = defaultdict(int)
+    pbp_fgm = defaultdict(int)
     for tblock in (data.get("boxscore") or {}).get("players", []):
         tid = str(tblock["team"]["id"])
         for sb in tblock.get("statistics", []):
@@ -138,7 +153,10 @@ def parse_game(eid: str, data: dict, season: int) -> dict | None:
                 mn = _mins(st[ix["minutes"]])
                 if mn <= 0:
                     continue
-                ath = a["athlete"]
+                ath = a.get("athlete") or {}
+                if not ath.get("id"):
+                    continue
+                box_fgm[tid] += _made(st[ix[FG_KEY]]) if FG_KEY in ix else 0
                 players[str(ath["id"])] = {
                     "n": ath.get("displayName", ""), "t": tid, "min": mn,
                     "st": 1 if a.get("starter") else 0,
@@ -241,6 +259,7 @@ def parse_game(eid: str, data: dict, season: int) -> dict | None:
                 tip = players[g]["t"] if g in players else (tid if tid in teams else "")
             made_fg = p.get("scoringPlay") and p.get("shootingPlay") and "free throw" not in low
             if made_fg:
+                pbp_fgm[tid] += 1
                 possession(tid)
                 if "dunk" in low and parts and parts[0] in players:
                     dunks.append([round(t, 1), parts[0]])
@@ -265,9 +284,11 @@ def parse_game(eid: str, data: dict, season: int) -> dict | None:
         out_p[aid] = [p["n"], p["t"], p["pos"], p["st"], int(p["min"]), p["dk"], curve, p["poss"]]
         err += abs(p["sec"] / 60 - p["min"])
         n += 1
+    # made baskets in the box score that the play-by-play does not have: a hole in it, where a dunk may be missing
+    gap = sum(max(0, box_fgm[t] - pbp_fgm[t]) for t in tids)
     return {"id": eid, "v": GAMES_V, "s": season, "d": (comp.get("date") or "")[:10], "teams": teams,
-            "p": out_p, "dunks": dunks, "tip": tip or "", "ok": 1 if on_ok else 0,
-            "merr": round(err / n, 2) if n else None}
+            "p": out_p, "dunks": dunks, "tip": tip or "", "ok": 1 if on_ok and gap <= 2 else 0,
+            "merr": round(err / n, 2) if n else None, "gap": gap}
 
 
 def fetch(seasons: list[int], workers: int) -> list[dict]:
@@ -593,22 +614,51 @@ class State:
         tip = 1.0 + self.P["tip_pow"] * (2 * self.tip_p(tid, opp, season) - 1) if self.P["tip_pow"] else 1.0
         return {"pace": pace, "mult": mult, "early": early, "tip": tip}
 
-    def entry(self, aid, tid, pos, st, ctx, season, lam=None):
+    def app(self, aid, tid):
+        """Share of the team's last ten games this man got into. Before a game
+        nobody knows which of the bench will play; this is his chance of it."""
+        l10 = (self.tinfo.get(tid) or {}).get("dates10") or []
+        if not l10:
+            return 1.0
+        mine = {d for d, t in (self.meta.get(aid) or {}).get("gd", []) if t == tid}
+        return len(mine & set(l10)) / len(l10)
+
+    def pool(self, tid, starters=()):
+        """Who might play for a team tonight: everyone who got into one of its last three games, and the starters."""
+        last3 = set(((self.tinfo.get(tid) or {}).get("dates10") or [])[-3:])
+        out = [a for a, m in self.meta.items()
+               if m["t"] == tid and a not in starters and any(t == tid and d in last3 for d, t in m.get("gd", []))]
+        return list(starters) + out
+
+    def entry(self, aid, tid, pos, st, ctx, season, lam=None, app=1.0):
+        """app: for a man off the bench, his chance of getting into the game at all (1 when it is known he plays)."""
         c, after = self.curve(aid, st, season)
         lam = self.lam(aid, pos, season) if lam is None else lam
         return {"id": aid, "t": tid, "st": st, "lam": lam,
-                "rate": lam * ctx["pace"] * ctx["mult"] * (1.0 if st else self.P["bench"]),
+                "rate": lam * ctx["pace"] * ctx["mult"] * (1.0 if st else self.P["bench"] * app),
                 "early": ctx["early"], "tip": ctx["tip"], "curve": c, "after": after}
 
-    def entries(self, game, lineup=None):
-        """Pricing rows for a game. lineup: {aid: (team id, pos, starter)}; the box score's by default."""
-        if lineup is None:
-            lineup = {aid: (p[1], p[2], p[3]) for aid, p in game["p"].items()}
+    def entries(self, game, lineup=None, pool=False):
+        """Pricing rows for a game. lineup: {aid: (team id, pos, starter)}; the box score's by default.
+        pool=True prices it the way it has to be priced beforehand: the starters are known, but the
+        bench is everyone who might play, each weighted by how often he gets in."""
         tids = list(game["teams"])
+        app = {}
+        if pool:
+            lineup = {}
+            for tid in tids:
+                starters = [a for a, p in game["p"].items() if p[1] == tid and p[3]]
+                for a in self.pool(tid, starters):
+                    st_ = 1 if a in starters else 0
+                    lineup[a] = (tid, game["p"][a][2] if a in game["p"] else self.meta[a]["pos"], st_)
+                    app[a] = 1.0 if st_ else self.app(a, tid)
+        elif lineup is None:
+            lineup = {aid: (p[1], p[2], p[3]) for aid, p in game["p"].items()}
         hm = {t: game["teams"][t]["h"] for t in tids}
         ctx = {tids[0]: self.team_ctx(tids[0], tids[1], game["s"], hm[tids[0]]),
                tids[1]: self.team_ctx(tids[1], tids[0], game["s"], hm[tids[1]])}
-        return [self.entry(aid, tid, pos, st, ctx[tid], game["s"]) for aid, (tid, pos, st) in lineup.items()]
+        return [self.entry(aid, tid, pos, st, ctx[tid], game["s"], app=app.get(aid, 1.0))
+                for aid, (tid, pos, st) in lineup.items()]
 
     def update(self, game, ent=None):
         s = game["s"]
@@ -660,6 +710,7 @@ class State:
             got[tid] += dk
             m.update(n=name, pos=pos, t=tid, d=game["d"])
             m["recent"] = (m["recent"] + [(st, mn, dk, ps)])[-10:]
+            m["gd"] = (m.get("gd", []) + [(game["d"], tid)])[-12:]
         first_by = {}
         for t, aid in game["dunks"]:
             if aid in game["p"]:
@@ -683,6 +734,7 @@ class State:
                     tm["first"] += 1
             self.tinfo[tid] = {"a": game["teams"][tid]["a"], "d": game["d"],
                                "dates": ((self.tinfo.get(tid) or {}).get("dates") or [])[-2:] + [game["d"]],
+                               "dates10": ((self.tinfo.get(tid) or {}).get("dates10") or [])[-9:] + [game["d"]],
                                "st": [aid for aid, p in game["p"].items() if p[1] == tid and p[3]]}
             self.lg[s]["poss"] += game["teams"][tid]["poss"]
             self.lg[s]["lto"] += game["teams"][tid]["lto"]
@@ -746,7 +798,9 @@ def mix(rows: list[dict], make_entries, m, gamma=1.0, max_unsure=8) -> dict:
 EDGES = [0, 0.02, 0.05, 0.10, 0.15, 0.20, 0.30, 1.01]
 
 
-def backtest(games, verbose=True, **kw):
+def backtest(games, verbose=True, pool=False, **kw):
+    """pool=False: each game priced knowing who played (the bench that got in). pool=True: priced the
+    way the page has to, with the starters known and the bench everyone who might get in."""
     st = State(**kw)
     gamma = st.P["gamma"]
     first = min(g["s"] for g in games)
@@ -758,6 +812,7 @@ def backtest(games, verbose=True, **kw):
     nodunk = late = 0
     t_pred = t_act = 0.0
     oth_p = oth_hit = 0.0
+    absent = cands = 0
     for g in games:
         ent = st.entries(g)
         if g["s"] > first and g.get("ok"):
@@ -765,9 +820,12 @@ def backtest(games, verbose=True, **kw):
                 nodunk += 1
             else:
                 t1, who = g["dunks"][0]
-                res = price(ent, st.mult(g["s"]), gamma)
+                pe = st.entries(g, pool=True) if pool else ent
+                res = price(pe, st.mult(g["s"]), gamma)
                 probs = res["probs"]
-                starters = [e["id"] for e in ent if e["st"]]
+                starters = [e["id"] for e in pe if e["st"]]
+                cands += len(pe)
+                absent += 0 if who in probs else 1
                 # baselines: the ten starters evenly; the starters by dunks a game so far
                 dpg = {}
                 for a in starters:
@@ -775,11 +833,11 @@ def backtest(games, verbose=True, **kw):
                     dpg[a] = (st._sum(t, g["s"], lambda r: r["dk"]) + 0.3) / (st._sum(t, g["s"], lambda r: r["g"]) + 3)
                 tot = sum(dpg.values())
                 eps = 0.03   # what the baselines leave for the bench, split evenly
-                nb = max(1, len(ent) - len(starters))
+                nb = max(1, len(pe) - len(starters))
                 pu = (1 - eps) / len(starters) if who in starters else eps / nb
                 pb = (1 - eps) * dpg[who] / tot if who in starters else eps / nb
                 n += 1
-                ll -= math.log(max(probs[who], 1e-9))
+                ll -= math.log(max(probs.get(who, 0.0), 1e-4))
                 ll_u -= math.log(pu)
                 ll_b -= math.log(pb)
                 rank = sorted(probs, key=probs.get, reverse=True)
@@ -788,9 +846,9 @@ def backtest(games, verbose=True, **kw):
                 late += 1 if t1 >= 720 else 0
                 t_pred += res["t_first"]
                 t_act += t1 / 60
-                oth_p += sum(probs[e["id"]] for e in ent if not e["st"])
+                oth_p += sum(probs[e["id"]] for e in pe if not e["st"])
                 oth_hit += 0 if who in starters else 1
-                for e in ent:
+                for e in pe:
                     pr = probs[e["id"]]
                     hit = 1 if e["id"] == who else 0
                     for bi in range(len(EDGES) - 1):
@@ -799,7 +857,7 @@ def backtest(games, verbose=True, **kw):
                             cal[bi][1] += pr
                             cal[bi][2] += hit
                             break
-                    pos = POS_GROUP.get(g["p"][e["id"]][2], "?")
+                    pos = POS_GROUP.get(g["p"][e["id"]][2] if e["id"] in g["p"] else st.meta[e["id"]]["pos"], "?")
                     for key in ("starter" if e["st"] else "bench", "pos " + pos,
                                 "home" if g["teams"][e["t"]]["h"] else "away",
                                 "won the tip" if g.get("tip") == e["t"] else "lost the tip"):
@@ -808,13 +866,15 @@ def backtest(games, verbose=True, **kw):
         st.update(g, ent)
     res = {"n": n, "ll": ll / n, "ll_even": ll_u / n, "ll_dpg": ll_b / n, "top": top / n, "top3": top3 / n,
            "no_dunk": nodunk, "after_q1": late / n, "t_pred": t_pred / n, "t_act": t_act / n,
-           "other_pred": oth_p / n, "other_hit": oth_hit / n,
+           "other_pred": oth_p / n, "other_hit": oth_hit / n, "cands": cands / n, "absent": absent,
            "cal": [{"lo": EDGES[i], "hi": min(1.0, EDGES[i + 1]), "n": c[0],
                     "pred": c[1] / c[0] if c[0] else None, "hit": c[2] / c[0] if c[0] else None}
                    for i, c in enumerate(cal)],
            "groups": {k: {"pred": v[0] / n, "hit": v[1] / n} for k, v in sorted(grp.items())}}
     if verbose:
-        print(f"{n} games priced from what was known before each ({nodunk} more had no dunk)")
+        print(f"{n} games priced from what was known before each ({nodunk} more had no dunk), "
+              + (f"bench = everyone who might play ({res['cands']:.1f} candidates a game; the first dunker was not among them {absent} times)"
+                 if pool else f"bench = the men who got in ({res['cands']:.1f} a game)"))
         print(f"log loss  model {res['ll']:.4f}   starters by dunks a game {res['ll_dpg']:.4f}   ten starters evenly {res['ll_even']:.4f}")
         print(f"first dunker was the top pick {100 * res['top']:.1f}%, in the top three {100 * res['top3']:.1f}%")
         print(f"minutes to the first dunk: priced {res['t_pred']:.2f}, happened {res['t_act']:.2f}; after Q1 {100 * res['after_q1']:.1f}%")
@@ -913,7 +973,7 @@ def build(games, roster: dict | None):
             "n": m["n"], "t": abbr[tid], "pos": m["pos"],
             "g": cur["g"], "min": int(cur["min"]), "dk": cur["dk"], "poss": cur["poss"],
             "pg": prev["g"], "pmin": int(prev["min"]), "pdk": prev["dk"],
-            "lam": round(lam, 6), "lam10": round(lam10, 6),
+            "lam": round(lam, 6), "lam10": round(lam10, 6), "app": round(st.app(aid, tid), 3),
             "r10": [sum(r[2] for r in rec), len(rec)],
             "rs": sum(1 for r in rec[-5:] if r[0]), "rn": len(rec[-5:]),
             "last": m["d"], "cs": r3(cs), "as": round(a_s, 3), "cb": r3(cb), "ab": round(a_b, 3),
@@ -925,6 +985,8 @@ def build(games, roster: dict | None):
     firsts = sorted(g["dunks"][0][0] for g in games if g["s"] >= season - 1 and g["dunks"])
     lg = st.lg[season]
     bt = backtest(games, verbose=False)
+    bp = backtest(games, verbose=False, pool=True)
+    bt["pool"] = {k: bp[k] for k in ("n", "ll", "top", "top3", "other_pred", "other_hit", "cands", "absent")}
     return {
         "built": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"),
         "season": season, "games": len(games), "through": games[-1]["d"],
@@ -951,11 +1013,37 @@ def _norm(n: str) -> str:
     return re.sub(r"\s+", " ", n).strip()
 
 
+def matchup(st, th, ta, home_starters, away_starters, season, play=None):
+    """The rows mix() prices for one game, and the function that turns a lineup into pricing rows.
+    Each team: its starters, and everyone who got into one of its last three games, a bench man
+    weighted by how often he gets in. A man whose status is given (play) and who is expected to
+    play is not marked down for games he missed."""
+    play = play or {}
+    rows = []
+    for tid, starters in ((ta, away_starters), (th, home_starters)):
+        for a in st.pool(tid, starters):
+            rec = st.meta[a]["recent"]
+            app = st.app(a, tid)
+            if a in play and play[a] > 0:
+                app = max(app, 0.6)
+            rows.append({"id": a, "t": tid, "st": 1 if a in starters else 0, "play": play.get(a, 1.0), "app": app,
+                         "sub": -(sum(r[0] for r in rec[-5:]) * 100 + (st.mpg(a, season) or 0))})
+    ctx = {th: st.team_ctx(th, ta, season, 1), ta: st.team_ctx(ta, th, season, 0)}
+    by = {r["id"]: r for r in rows}
+
+    def make(lineup):
+        return [st.entry(a, by[a]["t"], st.meta[a]["pos"], s_, ctx[by[a]["t"]], season, app=by[a]["app"])
+                for a, s_ in lineup.items()]
+
+    return rows, make
+
+
 def price_game(home_starters, away_starters, date=None, home=None, away=None, status=None, odds=None, games=None):
     """Fair odds on the first dunk of one game.
 
     home_starters / away_starters: five names (or ESPN ids) each. date: price
-    from games before this day (YYYY-MM-DD; default: every game on file).
+    from games before this day (YYYY-MM-DD, by ESPN's UTC date, on which a
+    night game in the US falls a day later; default: every game on file).
     home / away: team abbreviations, only needed when the starters don't settle
     it. status: {name: "out" | "doubt" | "ques" | "prob" | a chance of
     playing}. odds: {name: American or decimal price}, with "Other" for the
@@ -995,21 +1083,7 @@ def price_game(home_starters, away_starters, date=None, home=None, away=None, st
 
     th, ta = team_of(hs, home), team_of(as_, away)
     play = {find(k): (PLAY_P[v] if isinstance(v, str) else float(v)) for k, v in (status or {}).items()}
-    rows = []
-    for tid, starters in ((ta, as_), (th, hs)):
-        since = st.tinfo[tid]["dates"][0]
-        pool = [a for a, m in st.meta.items() if m["t"] == tid and (m["d"] >= since or a in starters)]
-        for a in pool:
-            rec = st.meta[a]["recent"]
-            rows.append({"id": a, "t": tid, "st": 1 if a in starters else 0, "play": play.get(a, 1.0),
-                         "sub": -(sum(r[0] for r in rec[-5:]) * 100 + (st.mpg(a, season) or 0))})
-    ctx = {th: st.team_ctx(th, ta, season, 1), ta: st.team_ctx(ta, th, season, 0)}
-
-    def make(lineup):
-        return [st.entry(a, st.meta[a]["t"] if a not in hs + as_ else (th if a in hs else ta),
-                         st.meta[a]["pos"], s_, ctx[th if any(r["id"] == a and r["t"] == th for r in rows) else ta], season)
-                for a, s_ in lineup.items()]
-
+    rows, make = matchup(st, th, ta, hs, as_, season, play)
     res = mix(rows, make, st.mult(season), PARAMS["gamma"])
     px = {}
     for k, v in (odds or {}).items():
@@ -1099,8 +1173,21 @@ def write_fixture(games):
         for role in (0, 1):
             both[f"{e['id']}:{role}"] = st.entry(e["id"], e["t"], g["p"][e["id"]][2], role, ctx[e["t"]], g["s"])
     mx = mix(rows, lambda lineup: [both[f"{a}:{s_}"] for a, s_ in lineup.items()], m, 1.15)
+    # the page's own road: the model file's rounded numbers, a pre-game bench, one starter unsure
+    full = State()
+    for x in games:
+        full.update(x)
+    season = max(x["s"] for x in games)
+    ta, th = [t for t in tids if not g["teams"][t]["h"]][0], [t for t in tids if g["teams"][t]["h"]][0]
+    hs, as_ = full.tinfo[th]["st"], full.tinfo[ta]["st"]
+    prow, pmake = matchup(full, th, ta, hs, as_, season, {hs[0]: 0.5})
+    pres = mix(prow, pmake, full.mult(season), PARAMS["gamma"])
+    page = {"through": games[-1]["d"], "away": g["teams"][ta]["a"], "home": g["teams"][th]["a"],
+            "rows": [{"id": r["id"], "t": g["teams"][r["t"]]["a"], "st": r["st"], "play": r["play"], "sub": r["sub"],
+                      "tagged": 1 if r["id"] == hs[0] else 0} for r in prow],
+            "probs": pres["probs"], "team": {g["teams"][t]["a"]: v for t, v in pres["team"].items()}}
     with open(FIXTURE, "w") as fh:
-        json.dump({"game": g["id"], "m": m, "gamma": 1.15, "entries": ent, "probs": res["probs"], "no_dunk": res["no_dunk"],
+        json.dump({"game": g["id"], "m": m, "gamma": 1.15, "entries": ent, "page": page, "probs": res["probs"], "no_dunk": res["no_dunk"],
                    "team": res["team"], "t_first": res["t_first"], "t_team": res["t_team"],
                    "rows": rows, "both": both, "mixed": mx}, fh, separators=(",", ":"))
     print(f"wrote {FIXTURE}", file=sys.stderr)
@@ -1133,6 +1220,8 @@ def main() -> None:
         return
     if args.backtest:
         backtest(games)
+        print()
+        backtest(games, pool=True)
         return
     if args.mc:
         return check_mc(games)

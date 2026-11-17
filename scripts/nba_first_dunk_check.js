@@ -31,6 +31,21 @@ ok('unsure starters: team shares and minutes match', gap(mx.team, c.mixed.team) 
 const unsure = c.rows.filter((r) => r.play < 1).map((r) => r.id);
 ok('a 50% starter is worth less than when he is sure to play', unsure.every((id) => mx.probs[id] < out.probs[id]));
 
+// the page's own road: the model file's rounded numbers, a pre-game bench, one starter at 50%
+const D = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'public', 'data', 'nba_first_dunk.json'), 'utf8'));
+const pc = c.page;
+if (pc.through !== D.through || pc.rows.some((r) => !D.players[r.id])) {
+  console.log('skip the model file is newer than the fixture (or a player left his roster); rewrite it with --fixture');
+} else {
+  const cx = { [pc.away]: FD.context(D, pc.away, pc.home, 0), [pc.home]: FD.context(D, pc.home, pc.away, 1) };
+  const by = {};
+  pc.rows.forEach((r) => { by[r.id] = Object.assign({}, r, { app: r.tagged ? Math.max(D.players[r.id].app, 0.6) : D.players[r.id].app }); });
+  const pm = FD.mix(pc.rows, (lu) => Object.keys(lu).map((id) => FD.entry(D, id, by[id].t, lu[id], cx[by[id].t], by[id].app)), D.m, D.params.gamma);
+  const g1 = gap(pm.probs, pc.probs);
+  ok(`page pricing of ${pc.away} at ${pc.home} from the model file matches Python (${pc.rows.length} candidates, ${pm.scenarios} lineups)`,
+    g1 < 2e-3 && gap(pm.team, pc.team) < 2e-3, `largest gap ${(100 * g1).toFixed(3)} points`);
+}
+
 // Rotowire's page
 const LU = require('../nbaLineups.js');
 const li = (name, pos, cls, tag) => `<li class="lineup__player ${cls}" title="x"><div class="lineup__pos">${pos}</div><a title="${name}" href="#">x</a>${tag ? `<span class="lineup__inj">${tag}</span>` : ''}</li>`;
