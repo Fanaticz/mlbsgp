@@ -365,13 +365,13 @@ async function kposLoad() {
 setTimeout(kposLoad, 1500);
 setInterval(kposLoad, 60 * 1000);
 // The Bet button on a Kalshi row: the server places it (POST /api/nba/kalshi-bet) and says what was bought.
-const KMSG = new Map();
+const KMSG = new Map(), KBET_STAKE = 100;   // one press stakes this unless a stake is typed (Max, 11-16)
 let KBETTING = false;
 async function kalshiBet(b) {
   const id = b.dataset.kbet, c = S && S.rows.find(r => rk(r) === id), f = b.closest(".det");
   if (!c || KBETTING) return;
   const typed = parseFloat(f.querySelector(".stake").value);
-  const stake = typed > 0 ? typed : Math.max(1, Math.round(c.wager || 0));
+  const stake = typed > 0 ? typed : KBET_STAKE;
   // The typed stake is this bet's: empty the box so the "I bet this" form doesn't save it a second time.
   f.querySelector(".stake").value = ""; f.querySelector(".stake").closest(".betform").dataset.saved = "1";
   KBETTING = true; b.disabled = true; KMSG.set(id, `placing $${stake}…`); render();
@@ -382,10 +382,11 @@ async function kalshiBet(b) {
     const j = await r.json().catch(() => ({}));
     if (r.ok && j.bet) {
       const t = j.bet;
-      msg = t.side === "yes" ? `Bought: $${stake} at ${t.x.toFixed(2)}x` + (t.contracts ? ` (${t.contracts.toFixed(2)} contracts)` : "")
+      msg = t.side === "yes" ? `Bought: $${t.stake} at ${t.x.toFixed(2)}x` + (t.contracts ? ` (${t.contracts.toFixed(2)} contracts)` : "") +
+          (j.first ? `. That was the $2 test of the button and it landed on the Yes side: the next press bets the full amount.` : "")
         : t.side === "no" ? "WRONG SIDE: this landed on the No side of the combo. Close it on Kalshi. The button is now off."
         : `Accepted at ${t.x.toFixed(2)}x, but no position showed within 9 seconds: look at your Kalshi positions before betting again.`;
-      if (t.side !== "no") bets({ add: { key: c.key, board: c.board || LEAGUE, player: c.player, team: c.team, label: c.label, stake, x: t.x, fair: c.fair, starts: c.starts } });
+      if (t.side !== "no") bets({ add: { key: c.key, board: c.board || LEAGUE, player: c.player, team: c.team, label: c.label, stake: t.stake, x: t.x, fair: c.fair, starts: c.starts } });
       if (j.row && S) { const i = S.rows.findIndex(r => rk(r) === id); if (i >= 0) S.rows[i] = Object.assign({}, S.rows[i], j.row); }
     } else msg = j.error || `not placed (${r.status})`;
   } catch (e) { msg = "No answer from the server. The bet may or may not have gone in: look at your Kalshi positions."; }
@@ -572,11 +573,10 @@ function detail(c) {
     `<span>${mine.length ? "Add" : "I bet this"}: $</span><input type="number" class="stake" min="0" step="1" placeholder="stake" />` +
     `<span>at</span><input type="number" class="px" min="1" step="0.01" value="${c.slip_x.toFixed(2)}" /><span>x</span>` +
     `<button type="button" data-add="${esc(rk(c))}">Save</button></div>`;
-  // Kalshi rows: one press buys the slip. The stake box above is the amount (the row's
-  // quarter-Kelly stake when left empty); the server refuses a price more than 1% worse.
+  // Kalshi rows: one press buys the slip, $100 unless a stake is typed in the box above; the server refuses a price more than 1% worse.
   const kbet = c.book === "kalshi" && c.ev > 0 ? `<div class="betform"><button type="button" class="kbet" data-kbet="${esc(rk(c))}"` +
-    ` title="Buys this combo on Kalshi now, for the stake typed above (or the row's stake). Not placed if the price is more than 1% worse than shown or the slip is no longer above fair.">` +
-    `Bet on Kalshi at ${c.slip_x.toFixed(2)}x</button><span class="kmsg">${esc(KMSG.get(rk(c)) || "")}</span></div>` : "";
+    ` title="Buys this combo on Kalshi now: $100, or the stake typed above. Not placed if the price is more than 1% worse than shown or the slip is no longer above fair.">` +
+    `Bet $${KBET_STAKE} on Kalshi at ${c.slip_x.toFixed(2)}x</button><span class="kmsg">${esc(KMSG.get(rk(c)) || "")}</span></div>` : "";
   return `<div class="det"><div class="lgs">${legs}</div><div class="tech">${tech}</div>${form}${kbet}</div>`;
 }
 

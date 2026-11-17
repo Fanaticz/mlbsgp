@@ -2918,14 +2918,17 @@ const nvKbetSave = () => { if (NV_KBET_FILE) require('fs').writeFile(NV_KBET_FIL
 app.post('/api/nba/kalshi-bet', (req, res) => {
   if (!nvBetsAuth(req, res)) return;
   const { league, wide, key } = req.body || {};
-  const stake = Math.round(Number((req.body || {}).stake) * 100) / 100, x = Number((req.body || {}).x);
+  let stake = Math.round(Number((req.body || {}).stake) * 100) / 100;
+  const x = Number((req.body || {}).x);
   if (!nvKalshi(league) || (req.get('X-Kalshi-Key') || '') !== NV_KALSHI_KEY) return res.status(423).json({ error: 'locked' });
   if (NV_KBET.off) return res.status(409).json({ error: 'Betting is off: ' + NV_KBET.off });
   const B = NV_BOARDS.get(`${league}:${wide ? 1 : 0}`), row = B && B.rows.get(String(key));
   if (!row) return res.status(404).json({ error: 'that slip is no longer on the board' });
   if (!(stake >= 1) || !(x > 1)) return res.status(400).json({ error: 'a stake of $1 or more and the row\'s price are needed' });
-  const cap = NV_KBET.ok ? NV_KBET_MAX : 2;
-  if (stake > cap) return res.status(400).json({ error: NV_KBET.ok ? `the most one bet can be is $${cap}` : 'the first bet is $2 at most: it checks that the button buys the right side' });
+  // Until one bet has been seen on the Yes side, a press stakes $2 whatever was asked for.
+  const first = !NV_KBET.ok;
+  if (first) stake = Math.min(stake, 2);
+  if (stake > NV_KBET_MAX) return res.status(400).json({ error: `the most one bet can be is $${NV_KBET_MAX}` });
   if (NV_KBET_BUSY) return res.status(429).json({ error: 'another bet is being placed' });
   NV_KBET_BUSY = true;
   let out = '', err = '', done = false, timer = null, proc;
@@ -2946,7 +2949,7 @@ app.post('/api/nba/kalshi-bet', (req, res) => {
     NV_KPOS.at = 0;   // the next read of positions is fresh
     console.log('[kalshi-bet]', JSON.stringify({ label: row.label, player: row.player, bet: r.bet }));
     if (r.row && B.rows.has(r.row.key)) { r.row.type = 'row'; B.rows.set(r.row.key, r.row); nvSaveBoards(); }
-    finish(200, { bet: r.bet, row: r.row, cap: NV_KBET.ok ? NV_KBET_MAX : 2, off: NV_KBET.off, now: Date.now() });
+    finish(200, { bet: r.bet, row: r.row, first, off: NV_KBET.off, now: Date.now() });
   });
   proc.stdin.on('error', () => {});
   proc.stdin.end(JSON.stringify({ row, stake, min_x: x * 0.99, min_ev: 0 }));

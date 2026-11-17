@@ -2,6 +2,13 @@
 
 ## 2026-11-16 session
 
+### Kalshi Scan: the Bet button stakes a flat $100
+Max, 11-16: just do $100 for the Kalshi bets.
+
+- **Change**: one press of the button stakes $100, not the row's quarter-Kelly amount; the button reads "Bet $100 on Kalshi at 2.91x". A number typed in the stake box still overrides it. The row's QK $ stays on the row as a guide.
+- **The first press**: until one bet from the button has been seen on the Yes side, a press stakes $2 whatever was asked (it was refused outright before, which a flat $100 would have hit every time). The row then says it was the $2 test and that the next press bets the full amount.
+- **Checked**: both files load. Not run against the stand-in again.
+
 ### Kalshi Scan: one unit is $100
 Max, 11-16: 1u = $100; a click and it bets; most prices match the app.
 
