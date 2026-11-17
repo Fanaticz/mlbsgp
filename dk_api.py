@@ -993,42 +993,53 @@ def get_games_nba():
 
 def nba_named_markets(pattern="dunk"):
     """Every NBA market whose name matches `pattern`, with each selection's
-    price, for the games that have not started. One request a game (the
-    event's full market list; these markets are not in the SGP feed).
+    price, for the games that have not started.
 
-    The first-dunk page asks for "dunk". DK has listed its first-scorer
-    market as one market a game with a selection a player ("1st Points
-    Scorer"); a first-dunk market is read the same way."""
+    The first-dunk page asks for "dunk". DK lists that market under Quick
+    Hits, in a subcategory of its own ("1st Dunk Scorer": one market a game,
+    the ten starters and "Other"). It is in neither the SGP feed nor an
+    event's own market list, so it is read from the league's subcategory:
+    one request for the league, one for each subcategory whose name matches."""
     import re as _re
     rx = _re.compile(pattern, _re.I)
-    base = DK_LEAGUES.rsplit("/leagues", 1)[0]
-    out = []
+    lg = _get_with_retry(f"{DK_LEAGUES}/{DK_NBA_LEAGUE_ID}").json()
+    games = {}
     for g in get_games_nba()["events"]:
         if g.get("isLive") or (g.get("status") or "NOT_STARTED") != "NOT_STARTED":
             continue
-        row = dict(g, markets=[])
+        games[str(g["id"])] = dict(g, markets=[])
+    subs = [sc for sc in lg.get("subcategories", []) or [] if rx.search(sc.get("name") or "")]
+    errors = []
+    seen = set()
+    for sc in subs:
         try:
-            j = _get_with_retry(f"{base}/events/{g['id']}/categories", attempts=3).json()
-        except Exception as e:  # noqa: BLE001  one game failing must not lose the rest
-            row["error"] = str(e)
-            out.append(row)
+            j = _get_with_retry(
+                f"{DK_LEAGUES}/{DK_NBA_LEAGUE_ID}/categories/{sc.get('categoryId')}/subcategories/{sc.get('id')}",
+                attempts=3).json()
+        except Exception as e:  # noqa: BLE001  one subcategory failing must not lose the rest
+            errors.append(f"{sc.get('name')}: {e}")
             continue
         sels = {}
         for s in j.get("selections", []) or []:
             sels.setdefault(str(s.get("marketId")), []).append(s)
         for m in j.get("markets", []) or []:
-            if not rx.search(m.get("name") or ""):
+            mid, eid = str(m.get("id")), str(m.get("eventId"))
+            # a subcategory's answer also carries the league's featured markets; keep the ones filed under it
+            if mid in seen or eid not in games or str(m.get("subcategoryId")) != str(sc.get("id")):
                 continue
-            row["markets"].append({
-                "id": str(m.get("id")), "name": m.get("name") or "",
+            seen.add(mid)
+            games[eid]["markets"].append({
+                "id": mid, "name": m.get("name") or "", "subcategory": sc.get("name") or "",
                 "selections": [{
                     "label": s.get("label") or "",
                     "decimal": s.get("trueOdds"),
                     "american": ((s.get("displayOdds") or {}).get("american") or "").replace("\u2212", "-"),
-                } for s in sels.get(str(m.get("id")), [])],
+                } for s in sels.get(mid, [])],
             })
-        out.append(row)
-    return {"pattern": pattern, "events": out}
+    out = {"pattern": pattern, "subcategories": [sc.get("name") for sc in subs], "events": list(games.values())}
+    if errors:
+        out["errors"] = errors
+    return out
 
 
 def resolve_tennis_league_by_slug(slug="french-open-men"):

@@ -2,6 +2,16 @@
 
 ## 2026-11-17 session
 
+### First Dunk: DraftKings' market is found (Quick Hits, "1st Dunk Scorer")
+Max, 11-17: first dunk is now on DK (a screenshot of NY at TOR: ten starters and Other).
+
+- **Why it was not found**: DK files the market in a subcategory of its own under Quick Hits. It is in neither the SGP feed nor a game's own market list, which is where `nba_named_markets` looked.
+- **Fix** (`dk_api.py`): the reader now takes the league's subcategories whose name matches ("1st Dunk Scorer") and reads each one: two requests for the whole slate where it was one a game.
+- **Read live**: all five of tonight's games, eleven selections each (ten starters and Other), prices adding to 116 to 117%. NY at TOR matched the screenshot price for price.
+- **A new note on the page**: DK names its own ten starters. Where they differ from the lineup the page used, the page says who, because Other's price hangs on it. Tonight: POR at MIN (DK names Terrence Shannon Jr.; Rotowire has Jonathan Kuminga starting, questionable) and CHA at LAL (DK names Grayson Allen; Rotowire has Sion James).
+- **Checked**: the page in a browser against the local server with live Rotowire lineups and live DK prices, all five games.
+- **Not checked**: how DK settles a named player who does not start.
+
 ### First Dunk: rebuilt on possessions, with lineups and statuses set automatically and DraftKings' "Other" line
 Max, 11-17: a spec for the model (possession rates, pace, opponent, tip, rotation, closed form and Monte Carlo, `price_game`, walk-forward validation), then: pull prices from DK, pull starting lineups from somewhere, DK lists the ten starters and then Other, and the tool should set starting / bench / out itself and adjust for a doubtful starter. This replaces the per-minute model of the entry below.
 
