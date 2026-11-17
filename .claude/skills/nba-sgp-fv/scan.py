@@ -239,8 +239,10 @@ game, 0.10 at a 30-point spread), so there is no underdog-moneyline slip.
 The correlations on this board are measured, not modelled: each shape's
 copula r on 17,319 games of 2023-24 to 2025-26 against closing lines, by
 size of spread (scripts/cbb_line_correlations.py): underdog covers + his
-team total Under -0.61, a team total Under + game Under +0.83, both team
-totals Under +0.37, first-half spread + spread +0.63, spread + total -0.04.
+team total Under -0.60, a team total Under + game Under +0.83, both team
+totals Under +0.36 (+0.25 at spreads of 20 and up: DraftKings paid more than
+the +0.37 fair on those, 11-17), first-half spread + spread +0.63 (+0.69 at
+20 and up), spread + total -0.03 (+0.14 at 20 and up).
 Each two-leg slip is asked again with each leg moved one line either way,
 where that line has a fair value (Pinnacle's on team totals and the first
 half, Novig's own tight book on the game's spread and total): Novig's price
@@ -1367,9 +1369,11 @@ def cfb_candidates(a):
         band = next((b for (lo, hi), b in zip(measured["buckets"], v["by_spread"]) if lo <= spread < hi), None)
         # A spread band's own r only where it is a real difference: enough
         # games, and the all-games r outside the band's two-sigma range. The
-        # 20+ band of underdog covers + his total Under read -0.55 on 1,271
-        # games against -0.61 overall (range -0.65 to -0.43; 30+ spreads alone
+        # 20+ band of underdog covers + his total Under reads -0.55 on 1,271
+        # games against -0.60 overall (range -0.61 to -0.49; 30+ spreads alone
         # -0.65), which put every big underdog at the top of the board on noise.
+        # Both team totals Under at 20+ is the other way: +0.25 (+0.20 to +0.31)
+        # against +0.36, a real drop, and the band's r is used.
         if band and band["n"] >= CBB_MIN_GAMES and not band["r_lo"] <= v["all"]["r"] <= band["r_hi"]:
             return band
         return v["all"]

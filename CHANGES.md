@@ -2,6 +2,16 @@
 
 ## 2026-11-17 session
 
+### CBB correlations: measured more steadily, and both team totals Under drops to +0.25 in lopsided games
+Max, 11-17: DraftKings pays +232 on Ole Miss Under 85.5 + Nicholls Under 56.5 where the board's fair is +212, and Gordon Bombay saw fair below DK on a few CBB slips; research it and update the correlation if needed.
+
+- **Found** (same 17,319 games): how much the two teams' scores move together falls as the spread grows. The scores' point misses against their lines correlate +0.39 under 12 points, +0.32 at 12 to 20, +0.26 at 20 to 30 and +0.14 at 30 and up (the margin's spread of results widens from 11 to 15 points there; the total's does not). The board's hit / miss number at 20+ read +0.29 with a range of +0.13 to +0.44, too wide to tell from the all-games +0.37, so +0.37 was used on every game.
+- **Change** (`measure` in `scripts/cbb_line_correlations.py`; `public/data/cbb_line_correlations.json` rebuilt): each correlation is now the hit / miss copula r averaged over each leg's line and the lines 2 and 4 points either side (25 pairs of lines), with a two-sigma range from a 20-block jackknife. Ranges are about half as wide. The line-alone number is kept as `r_line`. The scanner's rule is unchanged: a spread band's own r where the all-games r is outside that band's range.
+- **What the board uses now**: both team totals Under +0.36 (was +0.37), +0.39 at 6 to 12 points, **+0.25 at 20 and up** (range +0.20 to +0.31). First-half spread + spread +0.69 at 20 and up (was +0.63). Underdog covers + his team total Under -0.60 at every spread (was -0.61; its 20+ band, -0.55, is still inside its range). Team total Under + Under +0.83 and spread + total (-0.03; +0.14 at 20 and up) as before. The Kalshi CBB board reads the same file.
+- **The Ole Miss slip**: fair +212 becomes +232, the same as DraftKings' price; Novig's 3.54x goes from +13.5% to +6.8%.
+- **Checked**: the before and after r for each of the six shapes at spreads of 3, 9, 15 and 25 through the scanner's own rule, and that slip's fair value. No live pass was run: rows already on the board keep their old fair values until their next pass.
+- **Still soft**: team-total lines in the history are worked out from the closing spread and total, not posted ones. By season the 20+ point-miss number was +0.17, +0.12 and +0.33, so +0.25 is an average of seasons that differ.
+
 ### Novig Scan: a long bet chip no longer pushes the page sideways
 Max, 11-17: the page is getting off-centre (screenshot: the board scrolled left, a My bets chip running past the right edge).
 

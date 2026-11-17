@@ -14,7 +14,12 @@ Rows: [date, id, home, away, home 1H, away 1H, home's spread, total].
 Correlations (public/data/cbb_line_correlations.json): for each slip shape
 the board asks, by size of spread, the copula correlation r of the two
 legs' hit / miss record: the r at which a Gaussian copula with the legs' own
-hit rates gives the share of games where both hit. Pushes are left out.
+hit rates gives the share of games where both hit, averaged over each leg's
+line and the lines 2 and 4 points either side of it (the line alone reads
+half as steadily; it is kept as r_line). Pushes are left out. A spread band
+gets its own r on the board only where the all-games r is outside the band's
+two-sigma range: both team totals Under is +0.36 overall but +0.25 at
+spreads of 20 and up, which the line alone was too noisy to show.
 Posted team totals and first-half spreads aren't in the feed, so a team's
 total line is (total -/+ spread) / 2 and the first-half spread is the
 closing spread times the slope of first-half margin on it. r describes how
@@ -40,6 +45,8 @@ OUT = os.path.join(ROOT, "public", "data", "cbb_line_correlations.json")
 SITE = "https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard"
 CORE = "https://sports.core.api.espn.com/v2/sports/basketball/leagues/mens-college-basketball/events"
 BUCKETS = [(0, 6), (6, 12), (12, 20), (20, 99)]   # by the closing spread, points
+CUTS = (-4, -2, 0, 2, 4)   # each leg's line and the lines this many points off it
+BLOCKS = 20                # jackknife blocks for a correlation's range
 
 
 def get(url):
@@ -58,7 +65,7 @@ def copula_r(j, a, b):
     hit j of the time (sgp.joint, solved by bisection). Not sgp.devig_r:
     that is the devig tool's own scale, about two thirds of this."""
     lo, hi = -0.999, 0.999
-    for _ in range(50):
+    for _ in range(24):
         mid = (lo + hi) / 2
         if sgp.joint(mid, a, b) < j:
             lo = mid
@@ -139,15 +146,38 @@ def build():
     }
 
     def measure(games, legs):
+        """r: the copula r averaged over each leg's line moved 0, 2 and 4
+        points either way (25 pairs of lines), which reads about twice as
+        steadily as the line alone and is what a slip a line or two off the
+        main one needs. Its two-sigma range is a jackknife over BLOCKS random
+        blocks of games. r_line, both, pa, pb: the line alone, as before."""
         (ka, sa), (kb, sb) = legs
-        v = [(sa * g[ka] > 0, sb * g[kb] > 0) for g in games if g.get(ka) is not None and g.get(kb) is not None and g[ka] != 0 and g[kb] != 0]
-        n = len(v)
-        if n < 150:
+        v = [(sa * g[ka], sb * g[kb]) for g in games if g.get(ka) is not None and g.get(kb) is not None]
+        if sum(1 for x, y in v if x and y) < 150:
             return None
-        pa, pb, j = sum(x for x, _ in v) / n, sum(y for _, y in v) / n, sum(x and y for x, y in v) / n
-        r, se = copula_r(j, pa, pb), math.sqrt(j * (1 - j) / n)
-        return {"n": n, "pa": round(pa, 4), "pb": round(pb, 4), "both": round(j, 4), "se": round(se, 4), "r": round(r, 3),
-                "r_lo": round(copula_r(max(j - 2 * se, 1e-4), pa, pb), 3), "r_hi": round(copula_r(j + 2 * se, pa, pb), 3)}
+        cells = [(ca, cb) for ca in CUTS for cb in CUTS]
+        tally = [[[0, 0, 0, 0] for _ in cells] for _ in range(BLOCKS)]   # per block and pair of lines: games, a hits, b hits, both
+        for i, (x, y) in enumerate(v):
+            t = tally[i * 7919 % BLOCKS]
+            for c, (ca, cb) in zip(t, cells):
+                if x != ca and y != cb:   # on the line is a push
+                    c[0] += 1
+                    c[1] += x > ca
+                    c[2] += y > cb
+                    c[3] += x > ca and y > cb
+        tot = [[sum(t[k][q] for t in tally) for q in range(4)] for k in range(len(cells))]
+
+        def avg(less=None):
+            rs = []
+            for k, c in enumerate(tot):
+                n, a, b, j = (c[q] - (tally[less][k][q] if less is not None else 0) for q in range(4))
+                rs.append(copula_r(j / n, a / n, b / n))
+            return sum(rs) / len(rs)
+        r, jack = avg(), [avg(i) for i in range(BLOCKS)]
+        se = math.sqrt((BLOCKS - 1) / BLOCKS * sum((x - sum(jack) / BLOCKS) ** 2 for x in jack))
+        n, a, b, j = tot[cells.index((0, 0))]
+        return {"n": n, "pa": round(a / n, 4), "pb": round(b / n, 4), "both": round(j / n, 4), "r_line": round(copula_r(j / n, a / n, b / n), 3),
+                "r": round(r, 3), "se": round(se, 4), "r_lo": round(r - 2 * se, 3), "r_hi": round(r + 2 * se, 3)}
     out = {"generated_at": time.strftime("%Y-%m-%d"), "games": len(G), "first_half_slope": round(slope, 3),
            "days": [rows[0][0], max(r[0] for r in rows)], "buckets": BUCKETS, "shapes": {}}
     for name, legs in shapes.items():
@@ -157,7 +187,7 @@ def build():
     print(f"{len(G)} games with a closing spread and total, {len(H)} with a halftime score; 1H spread = {slope:.3f} x spread")
     for name, v in out["shapes"].items():
         a = v["all"]
-        print(f"{name:28s} n {a['n']:6d}  both {a['both']:.3f} ±{a['se']:.3f}  r {a['r']:+.3f} ({a['r_lo']:+.2f} to {a['r_hi']:+.2f})  by spread: "
+        print(f"{name:28s} n {a['n']:6d}  both {a['both']:.3f}  r {a['r']:+.3f} ({a['r_lo']:+.2f} to {a['r_hi']:+.2f}), on the line alone {a['r_line']:+.2f}  by spread: "
               + "  ".join("  -  " if b is None else f"{b['r']:+.2f}" for b in v["by_spread"]))
 
 
