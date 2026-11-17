@@ -2,13 +2,14 @@
 
 ## 2026-11-16 session
 
-### Kalshi Scan: one unit is $100, and a bet must match the price shown
-Max, 11-16: 1u = $100; a click and it bets; the price must match.
+### Kalshi Scan: one unit is $100
+Max, 11-16: 1u = $100; a click and it bets; most prices match the app.
 
 - **Unit**: the Kalshi boards size stakes at $100 a unit (`--unit` in `scan_kalshi.py`; it was $250). A row's QK $ is its quarter-Kelly units times $100, and that is what one press of the Bet button stakes when the stake box is empty. The Novig boards are unchanged.
-- **Must match**: the Bet button no longer allows a price 1% worse. The bet goes in only if Kalshi's new answer pays at least what the row showed, to the cent.
+- **Price allowance back to 1%**: "must match" was a typo for "most match" (Max: the board's prices mostly match the app's on the bets he has placed). The exact-price rule added on that misreading was taken out again the same hour: a bet goes in if Kalshi's new answer is within 1% of the row's price and the slip is still above fair.
+- **The price check**: Max reports most rows matching the app. That is his report; no pair of numbers was recorded here.
 - **Still in place**: the first bet from the button is $2 at most, until one is seen on the Yes side. Bets placed by hand in Kalshi's app don't test which side the button's call buys.
-- **Checked**: both files load. The stricter floor was not run against the stand-in again. Rows priced before this keep their $250-unit stakes until the next Fetch.
+- **Checked**: both files load. Rows priced before this keep their $250-unit stakes until the next Fetch.
 
 ### Kalshi Scan: a Bet button, and what is already held on Kalshi
 Max, 11-16: can we have a one click bet button? And could it show what we have already bet?

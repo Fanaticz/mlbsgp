@@ -2904,9 +2904,8 @@ function nvRequote(league, wide, key, cb) {
 }
 // POST /api/nba/kalshi-bet { league, wide, key, stake, x } — the Bet button on
 // a Kalshi row: scan_kalshi.py --bet re-prices the legs, asks Kalshi for
-// `stake` dollars and accepts the best answer if the slip still pays what
-// the row showed (x, to the cent: Max, 11-16, "must match") and is not under
-// today's fair value. Needs
+// `stake` dollars and accepts the best answer if the slip still pays within
+// 1% of x (the price on the row) and is not under today's fair value. Needs
 // both passcodes. One bet at a time. Stakes are capped at KALSHI_BET_MAX
 // ($250), and at $2 until one bet has been seen to land on the Yes side of
 // the combo (the account's position is read after every bet); a bet seen on
@@ -2950,7 +2949,7 @@ app.post('/api/nba/kalshi-bet', (req, res) => {
     finish(200, { bet: r.bet, row: r.row, cap: NV_KBET.ok ? NV_KBET_MAX : 2, off: NV_KBET.off, now: Date.now() });
   });
   proc.stdin.on('error', () => {});
-  proc.stdin.end(JSON.stringify({ row, stake, min_x: Math.floor(x * 100 + 1e-6) / 100, min_ev: 0 }));
+  proc.stdin.end(JSON.stringify({ row, stake, min_x: x * 0.99, min_ev: 0 }));
 });
 // GET /api/nba/kalshi-positions — the account's open combo positions on
 // Kalshi (scan_kalshi.py --positions), for the Kalshi page's "On Kalshi"
