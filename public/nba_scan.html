@@ -94,7 +94,6 @@
   .betform button { background:none; border:1px solid var(--line); color:var(--txt); border-radius:8px; padding:6px 11px; font-size:12.5px; cursor:pointer; }
   .betform .mine { color:var(--pos); }
   .betform .kbet { border-color:var(--pos); color:var(--pos); font-weight:600; }
-  .betform a.nbet { border:1px solid var(--pos); border-radius:6px; padding:4px 10px; text-decoration:none; }
   .betform .kmsg { color:var(--txt); }
   .betform .x { padding:1px 7px; color:var(--muted); margin-left:2px; }
   #hidebets { background:none; border:1px solid var(--line); color:var(--muted); border-radius:8px; padding:7px 11px; font-size:13px; cursor:pointer; }
@@ -482,23 +481,6 @@ function kbetLine(c) {
     ` title="Buys this combo on Kalshi now: $25, or a smaller stake typed in the opened row. Not placed if the price is more than 1% worse than shown or the slip is no longer above fair.">` +
     `Bet $${KBET_STAKE} at ${c.slip_x.toFixed(2)}x</button>` : "") + `<span class="kmsg">${esc(msg)}</span></div>`;
 }
-// A Novig row above fair carries a Bet button too. Novig's API has no call that buys a
-// parlay from an account, so the press opens Novig with the legs and the row's QK $
-// already on the slip (its link takes a stake: events/<outcome ids>/<partner>/<amount>);
-// the bet is confirmed there. The row then offers to note it under My bets in one press.
-const NV_PARTNER = "evc";   // the link needs a partner id before the amount; Novig only uses it for its own tracking
-const NMSG = new Map();     // rows whose Bet button was pressed: slip key -> { stake, x }
-const nvIds = c => { const ids = (c.legs || []).map(L => L.id); return ids.length && ids.every(i => /^[0-9a-f-]{36}$/i.test(i)) ? ids : null; };
-function nbetLine(c) {
-  const ids = c.book !== "kalshi" && c.book !== "dk" && nvIds(c), sent = NMSG.get(rk(c));
-  if (!ids || !(c.ev > 0 || sent)) return "";
-  const stake = Math.max(1, Math.round(c.qk * UNIT)), tail = `events/${ids.join(",")}/${NV_PARTNER}/${stake}`;
-  return `<div class="betform kbetrow" style="grid-column:1 / -1">` +
-    (c.ev > 0 ? `<a class="kbet nbet" data-nbet="${esc(rk(c))}" data-stake="${stake}" ${PHONE ? `data-app="1" href="novigapp://${tail}"` : `href="/n/${ids.join(",")}?amt=${stake}" target="_blank" rel="noopener"`}` +
-      ` title="Opens Novig with these legs and $${stake} (the row's QK $) on the slip. You confirm the bet in Novig.">Bet $${stake.toLocaleString()} at ${c.slip_x.toFixed(2)}x ↗</a>` : "") +
-    (sent ? `<span class="kmsg">Opened in Novig with ${usd(sent.stake)} on the slip. Placed it?</span>` +
-      `<button type="button" data-nsave="${esc(rk(c))}">Save ${usd(sent.stake)} at ${sent.x.toFixed(2)}x</button><button type="button" data-nno="${esc(rk(c))}">No</button>` : "") + `</div>`;
-}
 function betLine(c, sub) {
   const onK = heldLine(c);
   if (onK) return onK;   // what Kalshi says is held beats this device's own note of it
@@ -726,7 +708,7 @@ function render() {
       `<div class="num"><span class="lab">QK $</span>${c.qk > 0 ? "$" + Math.round(c.qk * UNIT).toLocaleString() : "—"}</div>` +
       `<div class="num rr">${c.r === null ? "" : (c.r >= 0 ? "+" : "−") + Math.abs(c.r).toFixed(2)}</div>` +
       `<div class="num"><span class="lab">Age</span>${age(c)}<button type="button" class="re${BUSY.has(c.key) ? " spin" : ""}" data-re="${esc(rk(c))}" title="Price this slip again: today’s leg prices and a new Novig quote"${BUSY.has(c.key) ? " disabled" : ""}>↻</button></div>` +
-      betLine(c, sub) + kbetLine(c) + nbetLine(c) + (OPEN.has(rk(c)) ? detail(c) : "") + `</div>`;
+      betLine(c, sub) + kbetLine(c) + (OPEN.has(rk(c)) ? detail(c) : "") + `</div>`;
     rowsEl.innerHTML = cards.map(({ head, others }) =>
       one(head, false, others) + (GOPEN.has(head.id) ? others.map(c => one(c, true)).join("") : "")).join("");
     rowsEl.querySelectorAll(".more").forEach(b => b.onclick = e => {
@@ -741,23 +723,6 @@ function render() {
       e.preventDefault(); e.stopPropagation();
       try { window.top.location.href = a.href; } catch (_) { location.href = a.href; }
     });
-    // The Bet button on a Novig row: Novig opens with the slip and stake filled in; the row then asks if it was placed.
-    rowsEl.querySelectorAll("[data-nbet]").forEach(a => a.onclick = e => {
-      e.stopPropagation();
-      const c = S.rows.find(r => rk(r) === a.dataset.nbet);
-      if (c) NMSG.set(rk(c), { stake: +a.dataset.stake, x: c.slip_x });
-      if (a.dataset.app) { e.preventDefault(); try { window.top.location.href = a.href; } catch (_) { location.href = a.href; } }
-      a.blur();   // focus inside a bet form reads as typing a stake, and the rows are then left alone
-      setTimeout(render, 300);
-    });
-    rowsEl.querySelectorAll("[data-nsave]").forEach(b => b.onclick = () => {
-      const c = S.rows.find(r => rk(r) === b.dataset.nsave), sent = NMSG.get(b.dataset.nsave);
-      NMSG.delete(b.dataset.nsave);
-      b.blur();
-      if (!c || !sent) return render();
-      bets({ add: { key: c.key, board: c.board || LEAGUE, player: c.player, team: c.team, label: c.label, stake: sent.stake, x: sent.x, fair: c.fair, starts: c.starts } });
-    });
-    rowsEl.querySelectorAll("[data-nno]").forEach(b => b.onclick = () => { NMSG.delete(b.dataset.nno); b.blur(); render(); });
     rowsEl.querySelectorAll("[data-add]").forEach(b => b.onclick = () => {
       const c = S.rows.find(r => rk(r) === b.dataset.add), f = b.closest(".betform");
       const stake = parseFloat(f.querySelector(".stake").value), x = parseFloat(f.querySelector(".px").value);

@@ -45,6 +45,12 @@ Max, 11-17: no games are left; NFL pick up Thursday, NBA do tomorrow, soccer unt
 - **The page** says "each board's next day of games" where it said "today's games", and names the day the last pass ran through.
 - **Checked**: both files load; Novig's live game lists read for NBA, NFL and soccer (soonest: tonight, Thursday, Friday). **Not checked**: no auto-scan pass was run here (no passcode or cycle on this machine), and the page was not opened.
 
+### Novig Scan: the Bet button on Novig rows is gone
+Max, 11-17: remove the Novig button.
+
+- **Change**: the button, its "Placed it?" question and the stake on the `/n` link are all taken out; the page and `/n` are as they were before the entry below. A row's Novig price is still the link into Novig, and a bet is still noted in the opened row.
+- **Checked**: nothing of the button is left in the page or the server, and the server file loads. Not opened in a browser.
+
 ### Novig Scan: a Bet button on Novig rows (opens Novig with the slip and stake filled in)
 Max, 11-17: can we make something where Novig will bet itself? (Asked which he meant: a Bet button on Novig rows.)
 
