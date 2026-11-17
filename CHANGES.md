@@ -6,6 +6,7 @@
 Max, 11-16: limit it to $25 for tonight.
 
 - **Change**: one press of the Bet button stakes $25 (it was $100), and the server refuses any bet over $25 (it was $250), so a typed stake can't go higher either. `KBET_STAKE` in the page, `NV_KBET_MAX` in `server.js`.
+- **QK $ on the Kalshi page is at $100 a unit** (`UNIT` in the page; it was the Novig page's $500). The earlier "1u = $100" change was made in the script, but the page works the column out itself, so it had not shown.
 - **To undo after tonight**: put both back (or set `KALSHI_BET_MAX` in Railway for the cap alone). Nothing does it by itself.
 - **Checked**: both files load.
 

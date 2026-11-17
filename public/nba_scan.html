@@ -420,7 +420,7 @@ const clock = ms => new Date(ms).toLocaleTimeString([], { hour:"numeric", minute
 const LABEL = { pts:"PTS", reb:"REB", ast:"AST", tpm:"3PM", rec:"REC", yds:"YDS", td:"TD",
                 att:"PASS ATT", cmp:"CMP", pyds:"PASS YDS", ptd:"PASS TD",
                 car:"CAR", ryds:"RUSH YDS", rry:"RUSH+REC YDS", g:"G", sog:"SOG", blk:"BLK", pra:"PTS+REB+AST" };
-const UNIT = 500;   // dollars a unit, for the QK $ column
+const UNIT = KPAGE ? 100 : 500;   // dollars a unit, for the QK $ column ($100 on the Kalshi page: Max, 11-16)
 const SOC = () => LEAGUE === "soccer";
 const ALL = () => LEAGUE === "all";
 // A row's key on this page: on the All tab two boards can hold the same key.
