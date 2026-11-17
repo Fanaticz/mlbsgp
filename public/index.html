@@ -289,6 +289,7 @@ h1 em{color:var(--ac);font-style:normal;}
   <button class="sport-btn" id="sportBtnNbaQtr" type="button" onclick="setSport('nbaqtr')" aria-pressed="false"><span class="sport-dot"></span>NBA QTRS</button>
   -->
   <button class="sport-btn" id="sportBtnNbaTm" type="button" onclick="setSport('nbatm')" aria-pressed="false"><span class="sport-dot"></span>NBA TEAMMATES</button>
+  <button class="sport-btn" id="sportBtnNbaDunk" type="button" onclick="setSport('nbadunk')" aria-pressed="false"><span class="sport-dot"></span>FIRST DUNK</button>
   <button class="sport-btn" id="sportBtnNbaScan" style="display:none" type="button" onclick="setSport('nbascan')" aria-pressed="false"><span class="sport-dot"></span>NOVIG SCAN</button>
   <button class="sport-btn" id="sportBtnKalshiScan" style="display:none" type="button" onclick="setSport('kalshiscan')" aria-pressed="false"><span class="sport-dot"></span>KALSHI SCAN</button>
   <button class="sport-btn" id="sportBtnNfl" type="button" onclick="setSport('nfl')" aria-pressed="false"><span class="sport-dot"></span>NFL</button>
@@ -748,6 +749,14 @@ h1 em{color:var(--ac);font-style:normal;}
      in a lazily-sourced iframe. -->
 <div id="page-nbatm" class="page" style="padding:0">
   <iframe id="nbaTmFrame" title="NBA Teammate Correlations" data-src="nba_teammates.html"
+    style="width:100%;height:calc(100vh - 132px);min-height:560px;border:0;display:block;background:#0f1419"></iframe>
+</div>
+<!-- NBA first dunk tab (?sport=nbadunk): fair odds on who makes each game's
+     first dunk, beside DraftKings' price. Self-contained page
+     (public/nba_dunk.html, data from scripts/nba_first_dunk.py) in a
+     lazily-sourced iframe. -->
+<div id="page-nbadunk" class="page" style="padding:0">
+  <iframe id="nbaDunkFrame" title="NBA First Dunk" data-src="nba_dunk.html"
     style="width:100%;height:calc(100vh - 132px);min-height:560px;border:0;display:block;background:#0f1419"></iframe>
 </div>
 <!-- Novig SGP scanner tab (?sport=nbascan): same-player NBA parlays ranked by
@@ -3462,11 +3471,11 @@ function getRawCorr(rc,leg1,leg2){if(!rc)return null;var s1=statOf(leg1);var s2=
    keep behaving exactly as before. NBA side is a shell in this phase —
    its page content fills in during Phase 3. */
 function getSportFromUrl(){
-  var m = window.location.search.match(/[?&]sport=(mlb|nba|tennis|worldcup|nbacorr|nbaqtr|nbatm|nbascan|kalshiscan|nfl|nhl)(?:&|$)/i);
+  var m = window.location.search.match(/[?&]sport=(mlb|nba|tennis|worldcup|nbacorr|nbaqtr|nbatm|nbadunk|nbascan|kalshiscan|nfl|nhl)(?:&|$)/i);
   return m ? m[1].toLowerCase() : 'nbacorr';
 }
 function setSport(sport){
-  if(sport !== 'nba' && sport !== 'tennis' && sport !== 'worldcup' && sport !== 'nbacorr' && sport !== 'nbaqtr' && sport !== 'nbatm' && sport !== 'nbascan' && sport !== 'kalshiscan' && sport !== 'nfl' && sport !== 'nhl') sport = 'mlb';
+  if(sport !== 'nba' && sport !== 'tennis' && sport !== 'worldcup' && sport !== 'nbacorr' && sport !== 'nbaqtr' && sport !== 'nbatm' && sport !== 'nbadunk' && sport !== 'nbascan' && sport !== 'kalshiscan' && sport !== 'nfl' && sport !== 'nhl') sport = 'mlb';
   document.body.classList.toggle('sport-mlb', sport==='mlb');
   document.body.classList.toggle('sport-nba', sport==='nba');
   document.body.classList.toggle('sport-tennis', sport==='tennis');
@@ -3476,6 +3485,7 @@ function setSport(sport){
   document.body.classList.toggle('sport-nhl', sport==='nhl');
   document.body.classList.toggle('sport-nbaqtr', sport==='nbaqtr');
   document.body.classList.toggle('sport-nbatm', sport==='nbatm');
+  document.body.classList.toggle('sport-nbadunk', sport==='nbadunk');
   document.body.classList.toggle('sport-nbascan', sport==='nbascan');
   document.body.classList.toggle('sport-kalshiscan', sport==='kalshiscan');
   var show = function(id, on){var el=document.getElementById(id); if(el) el.style.display = on ? '' : 'none';};
@@ -3497,6 +3507,8 @@ function setSport(sport){
   if(btnNbaQtr){btnNbaQtr.classList.toggle('active', sport==='nbaqtr'); btnNbaQtr.setAttribute('aria-pressed', sport==='nbaqtr');}
   var btnNbaTm=document.getElementById('sportBtnNbaTm');
   if(btnNbaTm){btnNbaTm.classList.toggle('active', sport==='nbatm'); btnNbaTm.setAttribute('aria-pressed', sport==='nbatm');}
+  var btnNbaDunk=document.getElementById('sportBtnNbaDunk');
+  if(btnNbaDunk){btnNbaDunk.classList.toggle('active', sport==='nbadunk'); btnNbaDunk.setAttribute('aria-pressed', sport==='nbadunk');}
   var btnNbaScan=document.getElementById('sportBtnNbaScan');
   if(btnNbaScan){btnNbaScan.classList.toggle('active', sport==='nbascan'); btnNbaScan.setAttribute('aria-pressed', sport==='nbascan');}
   var btnKalshiScan=document.getElementById('sportBtnKalshiScan');
@@ -3545,6 +3557,10 @@ function setSport(sport){
     var al = document.getElementById('appLoading'); if(al) al.style.display = 'none';
     var nt=document.getElementById('page-nbatm'); if(nt) nt.classList.add('active');
     var ft=document.getElementById('nbaTmFrame'); if(ft && !ft.getAttribute('src') && ft.dataset.src) ft.setAttribute('src', ft.dataset.src);
+  } else if(sport === 'nbadunk'){
+    var al = document.getElementById('appLoading'); if(al) al.style.display = 'none';
+    var nd=document.getElementById('page-nbadunk'); if(nd) nd.classList.add('active');
+    var fd=document.getElementById('nbaDunkFrame'); if(fd && !fd.getAttribute('src') && fd.dataset.src) fd.setAttribute('src', fd.dataset.src);
   } else if(sport === 'nbascan'){
     var al = document.getElementById('appLoading'); if(al) al.style.display = 'none';
     var ns=document.getElementById('page-nbascan'); if(ns) ns.classList.add('active');
@@ -3580,6 +3596,7 @@ function setSport(sport){
     else if(sport === 'nbacorr') u.searchParams.set('sport','nbacorr');
     else if(sport === 'nbaqtr') u.searchParams.set('sport','nbaqtr');
     else if(sport === 'nbatm') u.searchParams.set('sport','nbatm');
+    else if(sport === 'nbadunk') u.searchParams.set('sport','nbadunk');
     else if(sport === 'nbascan') u.searchParams.set('sport','nbascan');
     else if(sport === 'kalshiscan') u.searchParams.set('sport','kalshiscan');
     else if(sport === 'nfl') u.searchParams.set('sport','nfl');

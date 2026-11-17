@@ -991,6 +991,46 @@ def get_games_nba():
     return {"events": out}
 
 
+def nba_named_markets(pattern="dunk"):
+    """Every NBA market whose name matches `pattern`, with each selection's
+    price, for the games that have not started. One request a game (the
+    event's full market list; these markets are not in the SGP feed).
+
+    The first-dunk page asks for "dunk". DK has listed its first-scorer
+    market as one market a game with a selection a player ("1st Points
+    Scorer"); a first-dunk market is read the same way."""
+    import re as _re
+    rx = _re.compile(pattern, _re.I)
+    base = DK_LEAGUES.rsplit("/leagues", 1)[0]
+    out = []
+    for g in get_games_nba()["events"]:
+        if g.get("isLive") or (g.get("status") or "NOT_STARTED") != "NOT_STARTED":
+            continue
+        row = dict(g, markets=[])
+        try:
+            j = _get_with_retry(f"{base}/events/{g['id']}/categories", attempts=3).json()
+        except Exception as e:  # noqa: BLE001  one game failing must not lose the rest
+            row["error"] = str(e)
+            out.append(row)
+            continue
+        sels = {}
+        for s in j.get("selections", []) or []:
+            sels.setdefault(str(s.get("marketId")), []).append(s)
+        for m in j.get("markets", []) or []:
+            if not rx.search(m.get("name") or ""):
+                continue
+            row["markets"].append({
+                "id": str(m.get("id")), "name": m.get("name") or "",
+                "selections": [{
+                    "label": s.get("label") or "",
+                    "decimal": s.get("trueOdds"),
+                    "american": ((s.get("displayOdds") or {}).get("american") or "").replace("\u2212", "-"),
+                } for s in sels.get(str(m.get("id")), [])],
+            })
+        out.append(row)
+    return {"pattern": pattern, "events": out}
+
+
 def resolve_tennis_league_by_slug(slug="french-open-men"):
     """Resolve a DK public-URL slug (e.g. 'french-open-men') to the
     numeric league ID by scraping the public league page.
@@ -4979,6 +5019,8 @@ if __name__ == "__main__":
             result = pinnacle_wc_specials(sys.argv[2])
         elif cmd == "pinnacle-nba-props":
             result = pinnacle_nba_props()
+        elif cmd == "nba-named-markets":
+            result = nba_named_markets(sys.argv[2] if len(sys.argv) >= 3 else "dunk")
         elif cmd == "resolve-worldcup-league":
             slug = sys.argv[2] if len(sys.argv) >= 3 else None
             result = resolve_soccer_league_by_slug(slug)

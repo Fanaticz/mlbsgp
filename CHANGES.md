@@ -2,6 +2,20 @@
 
 ## 2026-11-17 session
 
+### First Dunk: a model for who makes each NBA game's first dunk (new FIRST DUNK tab)
+Max, 11-17: could we make a first dunk model? Might be fun. DK has lines.
+
+- **The model** (`scripts/nba_first_dunk.py`): a race. While he is on the floor a player dunks at his own rate: his dunks per minute this season and last (last season counts three quarters), with 100 minutes of his position's average mixed in. That rate is scaled by the dunks the other team allows and by the league's rate in that minute of the game. The first dunk is his in a given minute with the chance of no dunk before it, times the chance of one in it, times his share of that minute's rates (leaned a little toward the biggest dunkers, power 1.15). When he is on the floor comes from his own games as a starter or off the bench, minute by minute for the first half.
+- **The data** (`public/data/nba_dunk_games.json`, 2,674 games, 2024-25 through 11-16): ESPN's play-by-play for every final: each made dunk with its time, the starters, and who was on the floor in each of the first 24 minutes (followed through the substitutions). The league makes about 9.5 dunks a game; half of first dunks come within 3.3 minutes and 90% in the first quarter, so who starts matters most.
+- **Backtest** (`--backtest`): 1,439 games since the start of last season, each priced only from the games before it, with that night's starters known. The man who made the first dunk was priced at 11.1% (geometric average; log loss 2.197), against 9.1% pricing the starters by their dunks a game and 6.1% pricing the ten starters evenly. The top pick made it 30.2% of the time. Players priced 20 to 30% made it 24.3% (priced 24.4%); 30% and up made it 38.8% (priced 36.6%); 2 to 5% made it 2.9% (priced 3.3%). The bench is priced a little high as a group (14.2% against 12.9%).
+- **The settings were fitted on those same games** (`--tune`): the prior's 100 minutes, last season's weight and the 1.15 were picked by this backtest, so its numbers flatter the model a little. Before the fit the log loss was 2.215.
+- **The page** (`public/nba_dunk.html`, `?sport=nbadunk`): each game of the day with every player's fair chance and fair odds, and each team's share. Start / Bench / Out is set from the team's last game and ESPN's injury list and can be changed on the row; the odds reprice at once and the change is kept for the day. Late at night it opens on the next day's games.
+- **DraftKings**: `nba_named_markets` in `dk_api.py` (`/api/dk/nba-first-dunk`) reads every NBA market with "dunk" in its name, one request a game, and the page puts each price beside the fair odds with the EV. A price can also be typed in (+650, or 7.5).
+- **Daily refresh**: a step in the data workflow pulls new finals and rebuilds the rates.
+- **Checked**: the page's pricing against the Python model on a real game (`node scripts/nba_first_dunk_check.js`, equal to 1e-16); the page in a desktop and a phone-sized browser against the local server, for tonight's five games: role changes, typed prices, a reload, the tab inside the main page. The DK reader on DK's live "1st Points Scorer" market, and the page's matching on a made-up dunk market.
+- **Not checked**: no dunk market was on DraftKings (New Jersey) for tonight's games when this was built, so a real one has not been read; if its name has no "dunk" in it, it won't be found. How DK settles it (a listed player who sits, a game with no dunk) was not looked up.
+- **Not in the model**: the spread and total, matchups, and a new starter's actual minutes.
+
 ### Novig Scan: Auto-scan moves on to each board's next day of games
 Max, 11-17: no games are left; NFL pick up Thursday, NBA do tomorrow, soccer until its next games.
 

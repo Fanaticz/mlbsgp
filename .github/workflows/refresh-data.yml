@@ -66,6 +66,13 @@ jobs:
         continue-on-error: true
         run: python scripts/nba_line_correlations.py --fetch
 
+      # New NBA finals' play-by-play (every made dunk, who was on the floor),
+      # then the first-dunk rates behind the FIRST DUNK tab rebuilt. Only games
+      # not already in public/data/nba_dunk_games.json are asked for.
+      - name: Refresh NBA first-dunk model
+        continue-on-error: true
+        run: python scripts/nba_first_dunk.py --fetch
+
       # The script exits non-zero rather than overwrite the data file when ESPN
       # returns nothing; that shouldn't block the MLB/NBA commit below.
       - name: Refresh NFL receiving correlations

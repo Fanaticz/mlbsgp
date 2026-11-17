@@ -2443,6 +2443,56 @@ app.get('/api/nba/scoreboard', async (req, res) => {
   }
 });
 
+// ---- NBA: first dunk (public/nba_dunk.html) --------------------------------
+// GET /api/nba/injuries — ESPN's league injury list, slimmed to
+// { players: { <ESPN athlete id>: { status, note } } }. Cached five minutes.
+let NBA_INJ_CACHE = null;
+app.get('/api/nba/injuries', async (_req, res) => {
+  if (NBA_INJ_CACHE && Date.now() - NBA_INJ_CACHE.ts < 5 * 60 * 1000) return res.json(NBA_INJ_CACHE.body);
+  try {
+    const r = await fetch('https://site.api.espn.com/apis/site/v2/sports/basketball/nba/injuries');
+    if (!r.ok) return res.status(502).json({ error: `ESPN answered ${r.status}` });
+    const j = await r.json();
+    const players = {};
+    for (const t of j.injuries || []) {
+      for (const i of t.injuries || []) {
+        const a = i.athlete || {};
+        const href = ((a.links || [])[0] || {}).href || '';
+        const id = String(a.id || (href.match(/\/id\/(\d+)/) || [])[1] || '');
+        if (!id) continue;
+        const fs = ((i.details || {}).fantasyStatus || {}).abbreviation || '';
+        players[id] = {
+          name: a.displayName || '',
+          status: (fs === 'OUT' || fs === 'OFS' || /^out/i.test(i.status || '')) && fs !== 'GTD' ? 'out' : 'gtd',
+          note: i.shortComment || '',
+        };
+      }
+    }
+    const body = { players };
+    NBA_INJ_CACHE = { ts: Date.now(), body };
+    return res.json(body);
+  } catch (e) {
+    return res.status(502).json({ error: 'ESPN injuries failed: ' + e.message });
+  }
+});
+
+// GET /api/dk/nba-first-dunk — DraftKings' markets with "dunk" in the name for
+// tonight's NBA games, each selection with its price (dk_api.py
+// nba_named_markets; one request a game). Cached two minutes.
+let DK_DUNK_CACHE = null;
+app.get('/api/dk/nba-first-dunk', async (req, res) => {
+  try {
+    if (!req.query.fresh && DK_DUNK_CACHE && Date.now() - DK_DUNK_CACHE.ts < 2 * 60 * 1000) {
+      return res.json(Object.assign({}, DK_DUNK_CACHE.body, { cached: true }));
+    }
+    const result = await dkCall(['nba-named-markets', 'dunk']);
+    if (!result.error) DK_DUNK_CACHE = { ts: Date.now(), body: result };
+    return res.json(result);
+  } catch (e) {
+    return res.status(500).json({ error: 'DK first dunk failed: ' + e.message });
+  }
+});
+
 // ---- NBA: Novig SGP scanner (public/nba_scan.html) -------------------------
 // .claude/skills/nba-sgp-fv/scan.py quotes every same-player combo worth
 // asking Novig about and streams one JSON event per line. Novig's quote limit

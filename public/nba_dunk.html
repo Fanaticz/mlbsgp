@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>NBA First Dunk</title>
+<style>
+  :root {
+    --bg:#0f1419; --panel:#1a2129; --line:#2a333d; --txt:#e6edf3;
+    --muted:#8b98a5; --accent:#f5a623; --pos:#3fb950; --neg:#f85149;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+    font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  header { padding:18px 22px 10px; border-bottom:1px solid var(--line); }
+  h1 { margin:0 0 4px; font-size:19px; }
+  .sub { color:var(--muted); font-size:12.5px; }
+  .controls { display:flex; flex-wrap:wrap; gap:10px 14px; align-items:center;
+    padding:12px 22px; border-bottom:1px solid var(--line); position:sticky;
+    top:0; background:var(--bg); z-index:5; }
+  .grp { display:flex; align-items:center; gap:6px; }
+  .grp > span { color:var(--muted); font-size:11.5px; text-transform:uppercase; letter-spacing:.03em; }
+  button.b { background:var(--panel); color:var(--txt); border:1px solid var(--line);
+    border-radius:8px; padding:6px 11px; font-size:13px; cursor:pointer; }
+  button.b:hover { border-color:var(--muted); }
+  button.b:disabled { opacity:.5; cursor:default; }
+  .status { color:var(--muted); font-size:12.5px; margin-left:auto; text-align:right; }
+  .explain { padding:10px 22px 0; color:var(--muted); font-size:12.5px; max-width:980px; }
+  .explain b { color:var(--txt); }
+  .game { margin:16px 12px 0; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .ghd { display:flex; flex-wrap:wrap; gap:4px 14px; align-items:baseline; padding:10px 12px;
+    background:var(--panel); border-bottom:1px solid var(--line); }
+  .ghd .nm { font-weight:600; font-size:15px; }
+  .ghd .muted { font-size:12.5px; }
+  .ghd .split { margin-left:auto; font-size:12.5px; color:var(--muted); }
+  .ghd .split b { color:var(--txt); }
+  .note { padding:7px 12px; font-size:12.5px; color:var(--muted); border-bottom:1px solid var(--line); }
+  .note.warn { color:var(--accent); }
+  .wrap { overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; min-width:640px; }
+  th,td { padding:6px 9px; text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  th { background:var(--bg); color:var(--muted); font-weight:600; font-size:11.5px;
+    text-transform:uppercase; letter-spacing:.03em; border-bottom:1px solid var(--line); }
+  td.l, th.l { text-align:left; }
+  tbody tr { border-bottom:1px solid #20272f; }
+  tbody tr:last-child { border-bottom:0; }
+  tr.out td { color:var(--muted); }
+  tr.out .nm { text-decoration:line-through; }
+  .tm { color:var(--muted); font-size:12px; margin-left:6px; }
+  .tag { color:var(--accent); font-size:11px; margin-left:6px; }
+  .role { display:inline-flex; border:1px solid var(--line); border-radius:7px; overflow:hidden; }
+  .role button { background:transparent; color:var(--muted); border:0; padding:3px 8px; font-size:12px; cursor:pointer; }
+  .role button.on { background:var(--accent); color:#1a1a1a; font-weight:600; }
+  .role button.on.o { background:#3a444f; color:var(--txt); }
+  input.px { width:74px; background:var(--bg); color:var(--txt); border:1px solid var(--line);
+    border-radius:6px; padding:4px 6px; font-size:13px; text-align:right; }
+  input.px.dk { border-color:#3a5a7a; }
+  .pos { color:var(--pos); font-weight:600; }
+  .neg { color:var(--neg); }
+  .muted { color:var(--muted); }
+  .bar { display:inline-block; height:6px; border-radius:3px; background:var(--accent); vertical-align:middle; margin-right:6px; opacity:.8; }
+  .err { color:var(--neg); padding:20px 22px; }
+  .foot { padding:16px 22px 30px; color:var(--muted); font-size:12.5px; max-width:980px; }
+  .foot b { color:var(--txt); }
+  .foot table { min-width:0; width:auto; margin-top:6px; }
+  .foot td, .foot th { padding:3px 10px; font-size:12px; }
+  @media (max-width:640px) {
+    header, .controls, .explain, .foot { padding-left:14px; padding-right:14px; }
+    .game { margin-left:6px; margin-right:6px; }
+    .status { margin-left:0; width:100%; text-align:left; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>NBA First Dunk</h1>
+  <div class="sub" id="meta">Loading…</div>
+</header>
+
+<div class="controls">
+  <div class="grp"><span>Date</span>
+    <button class="b" id="prev" type="button" aria-label="Previous day">‹</button>
+    <b id="dateLbl"></b>
+    <button class="b" id="next" type="button" aria-label="Next day">›</button>
+  </div>
+  <button class="b" id="dkBtn" type="button">Refresh DK prices</button>
+  <button class="b" id="resetBtn" type="button">Reset lineups</button>
+  <div class="status" id="status"></div>
+</div>
+
+<div class="explain">
+  Fair odds on who makes the game's <b>first dunk</b>. Each player's rate is his dunks per minute (last season counts
+  three quarters, and a thin sample leans on his position's average), scaled by how many dunks the other team allows and
+  by when he is usually on the floor as a starter or off the bench. <b>Set each game's starters</b> before trusting a
+  number: a man who starts is worth several times the same man off the bench. EV is fair chance × the price − 1.
+</div>
+
+<div id="games"></div>
+<div class="foot" id="foot"></div>
+
+<script src="utils/firstDunk.js"></script>
+<script>
+(function () {
+  'use strict';
+  var FD = window.FirstDunk;
+  var D = null, INJ = {}, DK = null, DKERR = '', GAMES = [], SBERR = '', LOADING = true, FIRST = true;
+  var day = todayET();
+
+  function $(id) { return document.getElementById(id); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+  function todayET() {
+    var p = new Intl.DateTimeFormat('en-CA', { timeZone:'America/New_York', year:'numeric', month:'2-digit', day:'2-digit' }).format(new Date());
+    return p.replace(/-/g, '');
+  }
+  function shift(d, n) {
+    var t = new Date(Date.UTC(+d.slice(0,4), +d.slice(4,6) - 1, +d.slice(6,8) + n));
+    return t.toISOString().slice(0,10).replace(/-/g, '');
+  }
+  function nice(d) {
+    return new Date(Date.UTC(+d.slice(0,4), +d.slice(4,6) - 1, +d.slice(6,8), 12))
+      .toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric', timeZone:'UTC' });
+  }
+  function store(key, val) {
+    try {
+      if (val === undefined) return JSON.parse(localStorage.getItem(key) || '{}');
+      localStorage.setItem(key, JSON.stringify(val));
+    } catch (e) { /* private window: the page works without it */ }
+    return val === undefined ? {} : val;
+  }
+  var ROLES = {}, PRICES = {};
+  function loadSaved() { ROLES = store('fd:roles:' + day) || {}; PRICES = store('fd:px:' + day) || {}; }
+
+  // ---- lineups ----------------------------------------------------------
+  function teamPlayers(abbr) {
+    var out = [];
+    for (var id in D.players) if (D.players[id].t === abbr) out.push(id);
+    return out;
+  }
+  // start / bench / out for every player on a team, before any change made here
+  function defaults(abbr) {
+    var t = D.teams[abbr], ids = teamPlayers(abbr), role = {}, why = {};
+    ids.forEach(function (id) {
+      var p = D.players[id], inj = INJ[id];
+      if (inj && inj.status === 'out') { role[id] = 'o'; why[id] = 'out (ESPN)'; }
+      else if (!p.last || p.last < t.since) { role[id] = 'o'; why[id] = 'not in the last 3 games'; }
+      else { role[id] = 'b'; if (inj) why[id] = 'game-time decision'; }
+    });
+    var st = (t.starters || []).filter(function (id) { return role[id] === 'b'; });
+    // a starter who is out is replaced by the available man with the most minutes a game
+    var rest = ids.filter(function (id) { return role[id] === 'b' && st.indexOf(id) < 0; })
+      .sort(function (a, b) { return mpg(b) - mpg(a); });
+    while (st.length < 5 && rest.length) { var id = rest.shift(); st.push(id); why[id] = (why[id] ? why[id] + '; ' : '') + 'starting for a man who is out'; }
+    st.forEach(function (id) { role[id] = 's'; });
+    return { role: role, why: why };
+  }
+  function mpg(id) { var p = D.players[id]; return p.g ? p.min / p.g : (p.pg ? p.pmin / p.pg * 0.5 : 0); }
+
+  function priceGame(g) {
+    var rows = [];
+    [g.away, g.home].forEach(function (abbr, ti) {
+      var opp = ti === 0 ? g.home : g.away;
+      if (!D.teams[abbr] || !D.teams[opp]) return;
+      var def = defaults(abbr);
+      teamPlayers(abbr).forEach(function (id) {
+        var p = D.players[id];
+        var role = ROLES[id] || def.role[id];
+        rows.push({ id: id, p: p, team: abbr, role: role, changed: !!ROLES[id] && ROLES[id] !== def.role[id],
+                    why: def.why[id] || '', lam: p.lam, d: D.teams[opp].d,
+                    curve: role === 's' ? p.cs : p.cb, after: role === 's' ? p.as : p.ab });
+      });
+    });
+    var live = rows.filter(function (r) { return r.role !== 'o'; });
+    var out = live.length ? FD.price(live, D.m, D.params.gamma) : { probs: {}, noDunk: 1 };
+    rows.forEach(function (r) { r.prob = r.role === 'o' ? 0 : (out.probs[r.id] || 0); });
+    rows.sort(function (a, b) { return (b.prob - a.prob) || ((a.role === 'o') - (b.role === 'o')) || (b.lam - a.lam); });
+    return rows;
+  }
+
+  // ---- DraftKings -------------------------------------------------------
+  // The DK game whose dunk market names this game's players; { name, prices: {id: {dec, am}}, others: [names] }
+  function dkFor(rows) {
+    if (!DK || !DK.events) return null;
+    var byName = {};
+    rows.forEach(function (r) { byName[FD.normName(r.p.n)] = r.id; });
+    var best = null;
+    DK.events.forEach(function (ev) {
+      (ev.markets || []).forEach(function (m) {
+        var px = {}, n = 0, extra = [];
+        (m.selections || []).forEach(function (s) {
+          var id = byName[FD.normName(s.label)];
+          var dec = Number(s.decimal) || FD.parsePrice(s.american);
+          if (id && dec > 1) { px[id] = { dec: dec, am: s.american || '' }; n++; }
+          else if (dec > 1) extra.push(s.label + ' ' + (s.american || dec));
+        });
+        if (n < 3) return;
+        var first = /(1st|first)/i.test(m.name);
+        var hold = 0;
+        (m.selections || []).forEach(function (s) { var d = Number(s.decimal) || FD.parsePrice(s.american); if (d > 1) hold += 1 / d; });
+        var cand = { name: m.name, prices: px, n: n, first: first, extra: extra, hold: hold, others: [] };
+        if (!best || (first && !best.first) || (first === best.first && n > best.n)) {
+          if (best) cand.others = best.others.concat([best.name]);
+          best = cand;
+        } else best.others.push(m.name);
+      });
+    });
+    return best;
+  }
+
+  // ---- render -----------------------------------------------------------
+  function evCell(prob, dec) {
+    if (!(dec > 1) || !(prob > 0)) return '<span class="muted">–</span>';
+    var ev = prob * dec - 1;
+    return '<span class="' + (ev > 0 ? 'pos' : 'neg') + '">' + (ev > 0 ? '+' : '') + (100 * ev).toFixed(1) + '%</span>';
+  }
+  function render() {
+    $('dateLbl').textContent = nice(day);
+    var el = $('games');
+    if (!D) return;
+    if (SBERR) { el.innerHTML = '<div class="err">' + esc(SBERR) + '</div>'; return; }
+    if (LOADING) { el.innerHTML = '<div class="explain" style="padding-top:18px">Loading the schedule…</div>'; return; }
+    if (!GAMES.length) { el.innerHTML = '<div class="explain" style="padding-top:18px">No NBA games on ' + esc(nice(day)) + '.</div>'; return; }
+    var html = '';
+    GAMES.forEach(function (g, gi) {
+      var rows = priceGame(g);
+      var dk = dkFor(rows);
+      var share = {};
+      rows.forEach(function (r) { share[r.team] = (share[r.team] || 0) + r.prob; });
+      var nst = {};
+      rows.forEach(function (r) { if (r.role === 's') nst[r.team] = (nst[r.team] || 0) + 1; });
+      var top = rows.length ? rows[0].prob : 0;
+      html += '<div class="game"><div class="ghd"><span class="nm">' + esc(g.away) + ' at ' + esc(g.home) + '</span>' +
+        '<span class="muted">' + esc(g.when) + (g.state !== 'pre' ? ' · ' + esc(g.detail) : '') + '</span>' +
+        '<span class="split">first dunk: <b>' + esc(g.away) + ' ' + (100 * (share[g.away] || 0)).toFixed(0) + '%</b> · <b>' +
+        esc(g.home) + ' ' + (100 * (share[g.home] || 0)).toFixed(0) + '%</b></span></div>';
+      if (!rows.length) { html += '<div class="note warn">No data for one of these teams.</div></div>'; return; }
+      var notes = [];
+      [g.away, g.home].forEach(function (t) { if ((nst[t] || 0) !== 5) notes.push(t + ' has ' + (nst[t] || 0) + ' starters set, not 5'); });
+      if (g.state !== 'pre') notes.push('this game has started; these are the odds as of the tip');
+      if (notes.length) html += '<div class="note warn">' + esc(notes.join(' · ')) + '</div>';
+      if (dk) {
+        html += '<div class="note">DraftKings: <b style="color:var(--txt)">' + esc(dk.name) + '</b>, ' + dk.n + ' players matched, prices add to ' +
+          (100 * dk.hold).toFixed(0) + '%' + (dk.first ? '' : ' · <span style="color:var(--accent)">the market\'s name does not say "first"; check it is the first-dunk market</span>') +
+          (dk.extra.length ? ' · not matched to a player here: ' + esc(dk.extra.join(', ')) : '') +
+          (dk.others.length ? ' · also listed: ' + esc(dk.others.join(', ')) : '') + '</div>';
+      } else {
+        html += '<div class="note">' + (DKERR ? 'DraftKings did not answer (' + esc(DKERR) + '). ' : (DK ? 'No dunk market on DraftKings for this game yet. ' : 'DraftKings prices loading… ')) +
+          'Type a price in the Price column (+650, or 7.5 for decimal).</div>';
+      }
+      html += '<div class="wrap"><table><thead><tr><th class="l">Player</th><th class="l">Tonight</th><th>Dunks</th><th>Per 36</th>' +
+        '<th>Fair</th><th>Fair odds</th><th>Price</th><th>EV</th></tr></thead><tbody>';
+      rows.forEach(function (r) {
+        var p = r.p, typed = PRICES[r.id], auto = dk && dk.prices[r.id];
+        var dec = typed ? FD.parsePrice(typed) : (auto ? auto.dec : null);
+        var val = typed != null && typed !== '' ? typed : (auto ? (auto.am || auto.dec) : '');
+        var dunks = p.g ? p.dk + ' in ' + p.g : (p.pg ? '<span class="muted">' + p.pdk + ' in ' + p.pg + ' last yr</span>' : '–');
+        html += '<tr class="' + (r.role === 'o' ? 'out' : '') + '" data-id="' + r.id + '" data-prob="' + r.prob + '">' +
+          '<td class="l"><span class="nm">' + esc(p.n) + '</span><span class="tm">' + esc(r.team) + ' ' + esc(p.pos) + '</span>' +
+          (r.why ? '<span class="tag" title="' + esc((INJ[r.id] || {}).note || '') + '">' + esc(r.why) + '</span>' : '') +
+          (r.changed ? '<span class="tag">changed</span>' : '') + '</td>' +
+          '<td class="l"><span class="role" data-id="' + r.id + '">' +
+          ['s', 'b', 'o'].map(function (k) {
+            return '<button type="button" data-r="' + k + '" class="' + (r.role === k ? 'on ' + k : '') + '">' + { s:'Start', b:'Bench', o:'Out' }[k] + '</button>';
+          }).join('') + '</span></td>' +
+          '<td>' + dunks + '</td><td>' + (36 * p.lam).toFixed(2) + '</td>' +
+          '<td>' + (r.role === 'o' ? '–' : '<span class="bar" style="width:' + Math.round(46 * r.prob / (top || 1)) + 'px"></span>' + (100 * r.prob).toFixed(1) + '%') + '</td>' +
+          '<td>' + (r.role === 'o' ? '–' : FD.probToAmerican(r.prob)) + '</td>' +
+          '<td><input class="px' + (auto && !typed ? ' dk' : '') + '" inputmode="text" data-id="' + r.id + '" value="' + esc(val) + '" placeholder="' + (auto ? esc(auto.am) : '') + '" aria-label="Price for ' + esc(p.n) + '"></td>' +
+          '<td class="ev">' + evCell(r.prob, dec) + '</td></tr>';
+      });
+      html += '</tbody></table></div></div>';
+    });
+    el.innerHTML = html;
+  }
+
+  $('games').addEventListener('click', function (e) {
+    var b = e.target.closest('.role button');
+    if (!b) return;
+    var id = b.parentNode.getAttribute('data-id');
+    ROLES[id] = b.getAttribute('data-r');
+    store('fd:roles:' + day, ROLES);
+    render();
+  });
+  $('games').addEventListener('input', function (e) {
+    var inp = e.target;
+    if (!inp.classList || !inp.classList.contains('px')) return;
+    var id = inp.getAttribute('data-id'), tr = inp.closest('tr');
+    if (inp.value.trim()) PRICES[id] = inp.value.trim(); else delete PRICES[id];
+    store('fd:px:' + day, PRICES);
+    inp.classList.remove('dk');
+    var dec = FD.parsePrice(inp.value) || (inp.value.trim() ? null : FD.parsePrice(inp.placeholder));
+    tr.querySelector('.ev').innerHTML = evCell(Number(tr.getAttribute('data-prob')), dec);
+  });
+  $('resetBtn').addEventListener('click', function () { ROLES = {}; store('fd:roles:' + day, ROLES); render(); });
+  $('prev').addEventListener('click', function () { day = shift(day, -1); loadDay(); });
+  $('next').addEventListener('click', function () { day = shift(day, 1); loadDay(); });
+  $('dkBtn').addEventListener('click', function () { loadDK(true); });
+
+  // ---- data -------------------------------------------------------------
+  function getJSON(url) {
+    return fetch(url).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
+        return j;
+      });
+    });
+  }
+  function loadDay() {
+    loadSaved();
+    GAMES = []; SBERR = ''; LOADING = true;
+    render();
+    var want = day;
+    var espn = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=' + day;
+    getJSON('api/nba/scoreboard?dates=' + day).catch(function () { return getJSON(espn); }).then(function (j) {
+      if (want !== day) return;
+      GAMES = (j.events || []).map(function (ev) {
+        var c = ev.competitions[0], t = {};
+        c.competitors.forEach(function (x) { t[x.homeAway] = x.team.abbreviation; });
+        var st = (ev.status || {}).type || {};
+        return { id: ev.id, home: t.home, away: t.away, state: st.state || 'pre', detail: st.shortDetail || st.description || '',
+                 when: new Date(ev.date).toLocaleTimeString(undefined, { hour:'numeric', minute:'2-digit' }), ts: ev.date };
+      }).sort(function (a, b) { return a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0; });
+      // Late at night every game of the day is over: open on tomorrow's instead.
+      var over = GAMES.length && GAMES.every(function (g) { return g.state === 'post'; });
+      if (FIRST && over) { FIRST = false; day = shift(day, 1); return loadDay(); }
+      FIRST = false; LOADING = false;
+      render();
+    }).catch(function (e) { if (want === day) { FIRST = false; LOADING = false; SBERR = 'Could not load the schedule: ' + e.message; render(); } });
+  }
+  function loadDK(fresh) {
+    var b = $('dkBtn');
+    b.disabled = true; $('status').textContent = 'Asking DraftKings…';
+    getJSON('api/dk/nba-first-dunk' + (fresh ? '?fresh=1' : '')).then(function (j) {
+      DK = j; DKERR = '';
+      var n = 0;
+      (j.events || []).forEach(function (ev) { n += (ev.markets || []).length; });
+      $('status').textContent = 'DraftKings: ' + n + ' dunk market' + (n === 1 ? '' : 's') + ' across ' + (j.events || []).length +
+        ' games not yet started · ' + new Date().toLocaleTimeString(undefined, { hour:'numeric', minute:'2-digit' });
+    }).catch(function (e) { DK = DK || { events: [] }; DKERR = e.message; $('status').textContent = 'DraftKings did not answer: ' + e.message; })
+      .then(function () { b.disabled = false; render(); });
+  }
+  function foot() {
+    var bt = D.backtest, f = function (x) { return (100 * x).toFixed(1) + '%'; };
+    var h = '<b>How it has done.</b> ' + bt.n.toLocaleString() + ' games since the start of last season, each priced only from games before it and with the starters known: ' +
+      'the top pick made the first dunk ' + f(bt.top) + ' of the time. The first dunk came in the first quarter ' + f(1 - bt.after_q1) + ' of the time' +
+      (D.league.first_median_sec ? ' (half of them within ' + (D.league.first_median_sec / 60).toFixed(1) + ' minutes)' : '') + '.' +
+      '<table><thead><tr><th class="l">Priced at</th><th>Players</th><th>Avg priced</th><th>Made it</th></tr></thead><tbody>';
+    bt.cal.forEach(function (c) {
+      if (c.n) h += '<tr><td class="l">' + (100 * c.lo).toFixed(0) + '–' + (100 * c.hi).toFixed(0) + '%</td><td>' + c.n.toLocaleString() +
+        '</td><td>' + f(c.pred) + '</td><td>' + f(c.hit) + '</td></tr>';
+    });
+    h += '</tbody></table><p>Per 36 is the rate the model uses, not his raw count. Not in the model: tonight\'s spread and total, who guards whom, ' +
+      'and a new starter\'s actual minutes (he gets the usual pattern for a starter of his minutes).</p>';
+    $('foot').innerHTML = h;
+  }
+
+  getJSON('data/nba_first_dunk.json').then(function (d) {
+    D = d;
+    $('meta').textContent = d.games.toLocaleString() + ' games through ' + d.through + ' · ' + Object.keys(d.players).length +
+      ' players · the league makes ' + d.league.dunks_pg + ' dunks a game this season';
+    foot();
+    loadDay();
+    getJSON('api/nba/injuries').then(function (j) { INJ = j.players || {}; render(); }).catch(function () {});
+    loadDK(false);
+  }).catch(function (e) {
+    $('meta').textContent = '';
+    $('games').innerHTML = '<div class="err">Could not load the first-dunk data: ' + esc(e.message) + '</div>';
+  });
+})();
+</script>
+</body>
+</html>
