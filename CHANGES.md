@@ -2,6 +2,13 @@
 
 ## 2026-11-16 session
 
+### Kalshi Scan: the Bet button's first real bet landed on the right side
+Max, 11-16: "Placed" (Lendeborg 25+ points with Podziemski 20+ points, the $2 test).
+
+- **What Kalshi shows**: $1.88 in, pays $13.86, on the Yes side. With the fee that is $2 for $13.86, 6.93x, against the 6.69x the row showed. So the side the button accepts is right, the Trade-only key may accept a quote, and the price came in a little better than quoted.
+- **The $2 test is gone** (`NV_KBET.ok` starts true in `server.js`): a redeploy forgot that the test had passed and would have asked for it again. The position is still read back after every bet, and a bet on the No side still turns the button off.
+- **Not checked**: a full $100 press on the real exchange.
+
 ### Kalshi Scan: the Bet button is on the row
 Max, 11-16: "I don't see it" (the button was inside the opened row; his rows were closed).
 

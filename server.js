@@ -2912,7 +2912,9 @@ function nvRequote(league, wide, key, cb) {
 // the No side turns the button off until the server is told otherwise.
 const NV_KBET_MAX = Math.max(1, parseFloat(process.env.KALSHI_BET_MAX) || 250);
 const NV_KBET_FILE = NV_SCAN_FILE ? path.join(path.dirname(NV_SCAN_FILE), 'kalshi_bet_state.json') : null;
-let NV_KBET = { ok: false, off: '' }, NV_KBET_BUSY = false;
+// ok: the button's side was seen right on the real exchange 11-16 (a $2 bet, $1.88 in, on the Yes side),
+// so no $2 test is asked for any more. The position is still read after every bet.
+let NV_KBET = { ok: true, off: '' }, NV_KBET_BUSY = false;
 try { if (NV_KBET_FILE) NV_KBET = Object.assign(NV_KBET, JSON.parse(require('fs').readFileSync(NV_KBET_FILE, 'utf8'))); } catch (_) { /* no bet placed yet */ }
 const nvKbetSave = () => { if (NV_KBET_FILE) require('fs').writeFile(NV_KBET_FILE, JSON.stringify(NV_KBET), () => {}); };
 app.post('/api/nba/kalshi-bet', (req, res) => {
