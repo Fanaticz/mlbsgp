@@ -2,6 +2,14 @@
 
 ## 2026-11-17 session
 
+### Novig Scan: Auto-scan moves on to each board's next day of games
+Max, 11-17: no games are left; NFL pick up Thursday, NBA do tomorrow, soccer until its next games.
+
+- **Change** (`nvCycleTick` in `server.js`): Auto-scan priced games starting before tonight's midnight, so a board whose games had all started had nothing to price until the next day. Each board now takes the games starting before the midnight that follows its soonest open game: today's while there are any, then the next day that has some (the NBA's tomorrow, the NFL's Thursday, soccer's next match day). Days after that are still Fetch only.
+- **A board with no open game at all** rests ten minutes and is asked again, like one just priced. If Novig's game list can't be read, the pass is today's games, as before.
+- **The page** says "each board's next day of games" where it said "today's games", and names the day the last pass ran through.
+- **Checked**: both files load; Novig's live game lists read for NBA, NFL and soccer (soonest: tonight, Thursday, Friday). **Not checked**: no auto-scan pass was run here (no passcode or cycle on this machine), and the page was not opened.
+
 ### Novig Scan: a Bet button on Novig rows (opens Novig with the slip and stake filled in)
 Max, 11-17: can we make something where Novig will bet itself? (Asked which he meant: a Bet button on Novig rows.)
 

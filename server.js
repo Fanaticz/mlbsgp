@@ -2512,16 +2512,20 @@ const NV_GAMES = new Map();   // python league -> { at, games }
 app.get('/api/nba/novig-games', (req, res) => {
   if (!nvBetsAuth(req, res)) return;
   const lg = NV_PY_LEAGUE(NV_LEAGUES.includes(req.query.league) ? req.query.league : 'nba');
+  nvGames(lg, games => (games ? res.json({ games }) : res.status(502).json({ error: 'could not read Novig\'s games' })));
+});
+// The league's open pregame games, soonest first (null if Novig couldn't be read).
+function nvGames(lg, cb) {
   const hit = NV_GAMES.get(lg);
-  if (hit && Date.now() - hit.at < 120000) return res.json({ games: hit.games });
+  if (hit && Date.now() - hit.at < 120000) return cb(hit.games);
   require('child_process').execFile(PYTHON, [NV_SCAN_PY, '--games', '--league', lg], { timeout: 60000, maxBuffer: 4e6 }, (e, out) => {
     let games = null;
     try { games = JSON.parse(String(out).trim().split('\n').pop()); } catch (_) { /* not JSON */ }
-    if (e || !Array.isArray(games)) return res.status(502).json({ error: 'could not read Novig\'s games' });
+    if (e || !Array.isArray(games)) return cb(null);
     NV_GAMES.set(lg, { at: Date.now(), games });
-    res.json({ games });
+    cb(games);
   });
-});
+}
 
 // events: Novig event ids picked on the page (the game picker); empty = the whole board.
 // before: only games starting before this time (ms); Auto-scan's end of today.
@@ -2682,13 +2686,16 @@ function nvFlag(league, row) {
 // whole-board passes of NBA, NBA Team, NFL, CBB, CFB and soccer one after another, with or
 // without the page open. Still one pass at a time: a pass asked for with
 // Fetch runs first and the cycle carries on after it.
-// It prices today's games only (Max, 11-16): the games starting before the
-// next midnight in the time zone of the page that switched it on (Eastern if
-// the page sent none). Later days' games are priced with Fetch.
+// It prices each board's next day of games only (Max, 11-16: today's games;
+// 11-17: once today's are gone, the next ones, e.g. the NBA's tomorrow and
+// the NFL's Thursday): the games starting before the midnight that follows
+// the board's soonest open game, in the time zone of the page that switched
+// it on (Eastern if the page sent none). Later games are priced with Fetch.
 const NV_CYCLE_BOARDS = ['nba', 'nbateam', 'nfl', 'cbb', 'cfb', 'soccer'];   // every board on the page but the two Ladders
 const NV_CYCLE_GAP_MS = 60 * 1000;             // pause between two passes
 const NV_CYCLE_REST_MS = 10 * 60 * 1000;       // a board is not asked again sooner than this after its last pass began or ended
 // It runs until it is switched off: no time limit and no hours it rests (Max, 11-14).
+let NV_CYCLE_ASK = false;   // true while the tick is reading a board's games
 let NV_CYCLE = null;   // { since, wide, tz, i } while on; i = the next board in NV_CYCLE_BOARDS
 const NV_TZ = 'America/New_York';
 const nvTz = tz => { try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); return String(tz); } catch (_) { return NV_TZ; } };
@@ -2716,13 +2723,22 @@ function nvCycleTick(first) {
   if (!NV_CYCLE) return;
   nvOutRefresh();   // the injury report, kept current while auto-scan runs
   const now = Date.now();
-  if (NV_RUN || (!first && now - NV_LAST_END < NV_CYCLE_GAP_MS)) return;
+  if (NV_RUN || NV_CYCLE_ASK || (!first && now - NV_LAST_END < NV_CYCLE_GAP_MS)) return;
   for (let n = 0; n < NV_CYCLE_BOARDS.length; n++) {
     const at = (NV_CYCLE.i + n) % NV_CYCLE_BOARDS.length, league = NV_CYCLE_BOARDS[at];
     const B = nvBoard(`${league}:${NV_CYCLE.wide ? 1 : 0}`);
-    if (now - Math.max(B.started, B.finished, B.stopped || 0) < NV_CYCLE_REST_MS) continue;
+    if (now - Math.max(B.started, B.finished, B.stopped || 0, B.idle || 0) < NV_CYCLE_REST_MS) continue;
     NV_CYCLE.i = (at + 1) % NV_CYCLE_BOARDS.length;
-    startNovigScan(league, NV_CYCLE.wide, [], true, nvDayEnd(NV_CYCLE.tz, now));
+    NV_CYCLE_ASK = true;
+    nvGames(NV_PY_LEAGUE(league), games => {
+      NV_CYCLE_ASK = false;
+      if (!NV_CYCLE || NV_RUN) return;
+      // No open game at all: the board rests like one just priced. Novig not
+      // read: today's games, as before.
+      if (games && !games.length) { B.idle = Date.now(); return; }
+      const first = games ? games.find(g => g.starts > Date.now()) || games[0] : null;
+      startNovigScan(league, NV_CYCLE.wide, [], true, nvDayEnd(NV_CYCLE.tz, Math.max(Date.now(), first ? first.starts : 0)));
+    });
     return;
   }
 }
@@ -2737,7 +2753,7 @@ function nvCycleState() {
   for (let n = 0; n < NV_CYCLE_BOARDS.length; n++) {
     const league = NV_CYCLE_BOARDS[(NV_CYCLE.i + n) % NV_CYCLE_BOARDS.length];
     const B = NV_BOARDS.get(`${league}:${NV_CYCLE.wide ? 1 : 0}`) || {};
-    const due = Math.max(Math.max(B.started || 0, B.finished || 0, B.stopped || 0) + NV_CYCLE_REST_MS, NV_LAST_END + NV_CYCLE_GAP_MS) - now;
+    const due = Math.max(Math.max(B.started || 0, B.finished || 0, B.stopped || 0, B.idle || 0) + NV_CYCLE_REST_MS, NV_LAST_END + NV_CYCLE_GAP_MS) - now;
     if (due < wait - 1000) { wait = due; next = league; }
     if (due <= 0) break;   // the tick takes the first board that is due, in order
   }
