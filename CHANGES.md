@@ -2,6 +2,13 @@
 
 ## 2026-11-17 session
 
+### Novig Scan: a long bet chip no longer pushes the page sideways
+Max, 11-17: the page is getting off-centre (screenshot: the board scrolled left, a My bets chip running past the right edge).
+
+- **Cause**: a My bets chip is one unbroken line, and one with two long team-total legs ("SMU team total Under 92.5 · Oral Roberts team total Under 65.5 · 3.35x") is wider than a phone, so the whole page could be dragged sideways.
+- **Change** (`.chip` in `public/nba_scan.html`): a chip is at most the width of the screen; the slip's text is cut short with "…" and the name, stake and × stay. The full text is still in the chip's title.
+- **Checked** in a 390px browser with stand-in chips of that length: the page is exactly as wide as the screen. Not looked at on the live board.
+
 ### Novig Scan: the All tab folds a slip's other lines under it
 Max, 11-17: do the "+3 more" when the lines are like that (XAV Under 96.5 + CLEV Under 62.5, then Under 97.5 + Under 62.5 as its own row); it clogs the feed.
 
