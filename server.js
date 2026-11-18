@@ -2733,10 +2733,9 @@ async function nvOutRefresh() {
 }
 // Is this row's player (either one of a two-player slip, or a quarterback a
 // leg names) out?
-// Kalshi Pts + 3s and Kalshi NBA show no one-player slip with a fair value longer than +300
-// (Max, 11-18; scan_kalshi.py --max-fair stops asking them, this hides rows from older passes
-// and rows a refresh moved past it). Teammates slips are exempt.
-const nvLong = (league, row) => (league === 'kalshinba' || league === 'kalshinba3') && row.kind !== 'mates' && row.fair > 300;
+// Kalshi Pts + 3s and Kalshi NBA show no slip with a leg under 30% (Max, 11-18; scan_kalshi.py
+// --leg-min stops asking them, this hides rows from older passes and rows a refresh moved under it).
+const nvLong = (league, row) => (league === 'kalshinba' || league === 'kalshinba3') && (row.legs || []).some(L => L.p < 0.30 - 1e-9);
 function nvOut(league, row) {
   const O = NV_OUT[NV_PY_LEAGUE(league)];
   if (!O || !O.names.size) return false;

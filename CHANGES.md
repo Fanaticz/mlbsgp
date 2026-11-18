@@ -2,6 +2,15 @@
 
 ## 2026-11-18 session
 
+### Kalshi Pts + 3s and Kalshi NBA: every leg at 30% or better, in place of the +300 limit
+Max, 11-18: do the leg floor instead.
+
+- **Why**: the +300 limit on a slip's fair value was a stand-in for the real worry, a leg stranded on a far milestone. It also cut slips of two legs beside the player's own lines (Zubac 15+ points with 10+ rebounds, fair +392, legs about 36% and 42%) and needed teammates exempt.
+- **Change** (`--leg-min` in `scan_kalshi.py`, default 0.30, read in `candidates`; `nvLong` in `server.js`): a slip is asked and shown only where every leg's fair value is 30% or better, teammates slips included. `--max-fair` stays as an option, off by default. A row already on the board with a leg under 30% is hidden, as is one a refresh moves under it.
+- **Tonight**, no quote asked of Kalshi: Pts + 3s 243 slips (30 of them longer than +300, the longest +455); Kalshi NBA 337 (71 teammates; 103 longer than +300), so its 300 cap cuts 37 slips on other milestones.
+- **Not changed**: Kalshi NBA Lines, NFL and CBB.
+- **Not checked** on a live pass or in a browser.
+
 ### Kalshi +300 limit: teammates slips exempt, and long rows already on the board are hidden
 Max, 11-18 (screenshot: Zubac 15+ points · 10+ rebounds, fair +392, still on Kalshi NBA): teammate ones are fine, but not ones like this.
 
