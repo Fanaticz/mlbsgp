@@ -1928,7 +1928,13 @@ def candidates(markets, d, by, a):
     return (out[:a.max] if a.max else out), ctx
 
 
-NBA_MATE_R = 0.0       # two teammates' points Overs: unrelated (see nba_mate_candidates)
+# Two teammates' points Overs. Measured unrelated across the league (+0.02, see
+# nba_mate_candidates), but priced at -0.10 since 11-18: one pair can sit well
+# off the league's number and its own history is too short to say (Maxey +
+# Embiid: points r -0.14 on 47 games together, both 25+ in 34% of them against
+# 39% as unrelated legs), and the slip's whole edge is this one number. -0.10
+# is a margin for that, not a measurement.
+NBA_MATE_R = -0.10
 NBA_MATE_MIN = 14.5    # the second scorer's points line is at least this
 
 
@@ -1940,8 +1946,8 @@ def nba_mate_candidates(markets, ctx):
     (two-sigma range -0.03 to +0.06), the same at 20+ and 24+ points a game.
     Pairs don't differ from one another by more than chance (204 pairs with
     40+ games together: their r's spread 0.17, what 78 games each gives by
-    itself), so every pair is priced at NBA_MATE_R, the measured r less one
-    standard error. Novig prices many of them as if one scorer's night cost
+    itself), so every pair is priced at one number, NBA_MATE_R (the measured r
+    less one standard error until 11-18; -0.10 since, see above). Novig prices many of them as if one scorer's night cost
     the other's: 11-16, 16 teams, its quotes implied r -0.05 at the median
     and -0.12 to -0.15 on Jokic + Murray, Davis + Young and Maxey + Brown,
     +6% to +10% against unrelated legs and the same on a second ask.

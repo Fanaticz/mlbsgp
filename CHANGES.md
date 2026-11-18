@@ -2,6 +2,14 @@
 
 ## 2026-11-18 session
 
+### Teammates' points slips are priced at r -0.10, not 0
+Max, 11-18: less confident in the teammate plays than in a player's own Points + Threes; which fix?
+
+- **Why**: the league-wide measurement stands (+0.02 on 6,578 team-games), but a slip is one pair, and one pair's history is too short to place it. Maxey + Embiid, 47 games together at 20+ minutes over two seasons: points r -0.14 (two-sigma ± 0.29), both at 25+ in 16 of 47 (34%) against 39% as unrelated legs. Their slip at 4.73x is +16% at r 0, +8.5% at -0.10, break-even at -0.21.
+- **Change** (`NBA_MATE_R` in `scan.py`, read by the Novig NBA, Kalshi NBA and DK boards): 0.0 to -0.10. A margin, not a measurement. A teammates slip's fair price is about 7% longer, so its EV is about 7 points lower and its stake smaller; fewer show as plays.
+- **Not done**: a pair's own r from its games together, shrunk toward the league's. Rows on the boards keep their old fair values until their next pass.
+- **Checked**: syntax only.
+
 ### Kalshi boards ask more: 300 slips a pass on NBA (200 on the others), and both milestones beside the main line
 Max, 11-18: up the Kalshi scans, missing a lot.
 
