@@ -2733,6 +2733,10 @@ async function nvOutRefresh() {
 }
 // Is this row's player (either one of a two-player slip, or a quarterback a
 // leg names) out?
+// Kalshi Pts + 3s and Kalshi NBA show no one-player slip with a fair value longer than +300
+// (Max, 11-18; scan_kalshi.py --max-fair stops asking them, this hides rows from older passes
+// and rows a refresh moved past it). Teammates slips are exempt.
+const nvLong = (league, row) => (league === 'kalshinba' || league === 'kalshinba3') && row.kind !== 'mates' && row.fair > 300;
 function nvOut(league, row) {
   const O = NV_OUT[NV_PY_LEAGUE(league)];
   if (!O || !O.names.size) return false;
@@ -2874,6 +2878,7 @@ app.get('/api/nba/novig-scan', (req, res) => {
       let priced = 0;
       for (const r of (B.rows ? B.rows.values() : [])) {
         if (r.starts && r.starts <= now) continue;
+        if (nvLong(league, r)) continue;
         if (nvOut(league, r)) { out++; continue; }
         priced++;
         if (r.ev >= floor) rows.push(Object.assign({}, nvFlag(league, r), { board: league }));
@@ -2891,7 +2896,7 @@ app.get('/api/nba/novig-scan', (req, res) => {
   const other = events.join() !== (B.events || []).join();   // other games than the last pass: no minute's wait
   if (req.query.now === '1' && !RUN && (B.stopped || other || now - Math.max(B.finished, B.started) > NV_SCAN_NOW_MS)) startNovigScan(league, wide, events);
   const mine = !!RUN && RUN.key === key;
-  const shown = [...B.rows.values()].filter(r => !nvOut(league, r)).map(r => nvFlag(league, r));
+  const shown = [...B.rows.values()].filter(r => !nvLong(league, r) && !nvOut(league, r)).map(r => nvFlag(league, r));
   res.json({
     now, league, wide, scanning: mine, busy: RUN && !mine ? busyName() : null,
     started: B.started, finished: B.finished, stopped: B.stopped || 0, total: B.total, done: B.done, players: B.players, data: B.data,

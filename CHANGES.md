@@ -2,6 +2,14 @@
 
 ## 2026-11-18 session
 
+### Kalshi +300 limit: teammates slips exempt, and long rows already on the board are hidden
+Max, 11-18 (screenshot: Zubac 15+ points · 10+ rebounds, fair +392, still on Kalshi NBA): teammate ones are fine, but not ones like this.
+
+- **Teammates** (`candidates` in `scan_kalshi.py`): the +300 limit no longer applies to a teammates slip.
+- **Rows already there** (`nvLong` in `server.js`): the limit only stopped new asks, so a row from a pass before it stayed. The server now leaves a one-player row with a fair value over +300 off Kalshi Pts + 3s, Kalshi NBA and the All tab, including a row a refresh moves past +300.
+- **Tonight**, no quote asked of Kalshi: Kalshi NBA lists 290 slips (92 teammates), inside its 300 cap; Pts + 3s is unchanged at 226.
+- **Not checked** on a live pass or in a browser.
+
 ### Kalshi Pts + 3s and Kalshi NBA: no slip with a fair value longer than +300
 Max, 11-18: keep FV under 300 on both; more comfortable with smaller lines since Kalshi does the 20 / 25 / 30 milestones.
 
