@@ -758,6 +758,12 @@ def reprice(c, a):
             bid, offer = float(book[L["id"]]["yes_bid_dollars"]), float(book[L["id"]]["yes_ask_dollars"])
         except (KeyError, TypeError, ValueError):
             return "Kalshi's book on a leg could not be read"
+        if L.get("from") is not None and 0 < bid < offer < 1:
+            # A leg shifted from Novig's main line (shift_leg) has no tight book of its own: its
+            # fair value stands, held inside Kalshi's bid and ask as they are now.
+            p = min(max(L["p"], bid), offer)
+            L.update(p=p, fair=sgp.american(p))
+            continue
         if not (0 < bid < offer < 1 and offer - bid <= a.kalshi_spread + 1e-9):
             # No book to price the leg from now: an old fair value under a new price is worse than no row.
             return f"{L.get('text') or 'a leg'} has no tight book on Kalshi right now: press Fetch"
