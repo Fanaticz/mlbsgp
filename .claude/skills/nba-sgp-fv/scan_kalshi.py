@@ -6,7 +6,9 @@
   python3 scan_kalshi.py            # ask them and print the best
   python3 scan_kalshi.py --json     # one JSON event per line (server.js: the Kalshi NBA board)
   python3 scan_kalshi.py --league nbaline   # a player's prop with a game line (nbaline_candidates)
+  python3 scan_kalshi.py --league nba3      # Points + Threes alone (the Kalshi Pts + 3s board)
 
+Two boards share these slips (Max, 11-18): --league nba3 asks 1 alone, --league nba asks 2 and T.
 What it asks, per player with open Kalshi props on a game that has not started:
   1  Points Yes + Threes Yes (the player's shrunk correlation, as on the Novig board).
   2  His other Yes + Yes pairs where r is at least --min-r: points + rebounds,
@@ -38,7 +40,7 @@ Every call that asks is signed with an account's API key:
   KALSHI_PRIVATE_KEY   the private key (PEM text; "\\n" for line breaks is fine)
 Asking costs something: Kalshi charges more rate-limit tokens for accounts
 that ask often and rarely accept, an account may have 100 requests open and
-create 5,000 new combos a week. So a pass asks at most --max slips (300 on the NBA board, 200 on the others; 60 until 11-18).
+create 5,000 new combos a week. So a pass asks at most --max slips (400 on the Points + Threes board, 300 on the NBA board, 200 on the others; 60 until 11-18).
 """
 import argparse
 import base64
@@ -351,7 +353,9 @@ def candidates(a):
             if la.get("from") is not None or lb.get("from") is not None:
                 c["model"] = True   # a leg shifted from Novig's main line: the page marks the slip *
             return c
-        if "pts" in legs and "tpm" in legs:
+        # Points + Threes has its own board (--league nba3, Max 11-18); the NBA board asks the rest.
+        only3 = a.league == "nba3"
+        if only3 and "pts" in legs and "tpm" in legs:
             r = price.shrunk_r(d, by, p, "pts", "tpm")[0]
             # k threes are 3k points: a threes leg that forces the points leg is one leg, not two
             for la in opts["pts"] if r > 0 else ():
@@ -359,7 +363,7 @@ def candidates(a):
                     if 3 * (math.floor(lb["line"]) + 1) <= la["line"]:
                         first = la is legs["pts"] and lb is legs["tpm"]
                         out.append(dict(row_of(1, r, la, lb), main=first, alt=0 if first else 1))
-        for x, y in PAIRS:
+        for x, y in () if only3 else PAIRS:
             if x in legs and y in legs:
                 r = price.shrunk_r(d, by, p, x, y)[0]
                 if r is not None and r >= a.min_r:
@@ -369,7 +373,7 @@ def candidates(a):
         # tight book on a Kalshi milestone handed his place to the third
         # (11-18: Adebayo, main 17.5, had none, so Thompson was asked with
         # Antetokounmpo).
-        if "pts" in info["stats"]:
+        if not only3 and "pts" in info["stats"]:
             nvp = [r for r in rows.get("pts", []) if r.get("fo") is not None]
             mids = [(abs((k["bid"] + k["ask"]) / 2 - 0.5), k["line"]) for k in info["stats"]["pts"] if 0 < k["bid"] < k["ask"] < 1]
             rank = scan.main_line(nvp)["line"] if nvp else min(mids)[1] if mids else None
@@ -935,7 +939,7 @@ def positions():
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--league", default="nba", choices=("nba", "nbaline", "nfl", "cbb"))
+    ap.add_argument("--league", default="nba", choices=("nba", "nba3", "nbaline", "nfl", "cbb"))
     ap.add_argument("--json", action="store_true", help="stream events as JSON lines (server.js)")
     ap.add_argument("--dry", action="store_true", help="list the slips, ask Kalshi for no price (no key needed)")
     ap.add_argument("--requote", action="store_true", help="re-ask the one slip given as JSON on stdin; print it as JSON")
@@ -943,7 +947,7 @@ def main():
                     help='BUYS the slip given on stdin as {"row", "stake", "min_x", "min_ev"}; prints the bet as JSON (the page\'s Bet button)')
     ap.add_argument("--positions", action="store_true", help="print the account's open combo positions as JSON (read only)")
     ap.add_argument("--check", action="store_true", help="make one signed read to see that the key is accepted")
-    ap.add_argument("--max", type=int, default=None, help="ask at most this many slips a pass (0: all; default 300 on the NBA board, 200 on the others)")
+    ap.add_argument("--max", type=int, default=None, help="ask at most this many slips a pass (0: all; default 400 on the Points + Threes board, 300 on the NBA board, 200 on the others)")
     ap.add_argument("--min-r", type=float, default=0.25, help="smallest r for a pair other than Points + Threes")
     ap.add_argument("--max-spread", type=float, default=novig.MAX_SPREAD, help="widest Novig book a leg's fair value is read from")
     ap.add_argument("--kalshi-spread", type=float, default=0.05, help="widest Kalshi book a leg's fair value is read from when Novig has none")
@@ -964,7 +968,7 @@ def main():
     ap.add_argument("--events", nargs="+", default=None, help="accepted for server.js; not used")
     a = ap.parse_args()
     if a.max is None:
-        a.max = 300 if a.league == "nba" else 200
+        a.max = {"nba": 300, "nba3": 400}.get(a.league, 200)
     t0 = time.time()
 
     def emit(e):
@@ -999,7 +1003,7 @@ def main():
         _signer()   # no key, or one that can't be read: say so before anything is fetched
     cands, d = nfl_candidates(a) if a.league == "nfl" else cbb_candidates(a) if a.league == "cbb" else nbaline_candidates(a) if a.league == "nbaline" else candidates(a)
     # Each row links to its game's page on Kalshi, where the combo is built (no link fills the slip in).
-    game = {"nba": "kxnbagame", "nbaline": "kxnbagame", "nfl": "kxnflgame", "cbb": "kxncaambgame"}[a.league]
+    game = {"nba": "kxnbagame", "nba3": "kxnbagame", "nbaline": "kxnbagame", "nfl": "kxnflgame", "cbb": "kxncaambgame"}[a.league]
     for c in cands:
         c["url"] = f"https://kalshi.com/markets/{game}/game/{game}-{c['event'].lower()}"
     emit({"type": "start", "total": len(cands), "players": len({c["id"] for c in cands}), "league": "kalshi" + a.league,

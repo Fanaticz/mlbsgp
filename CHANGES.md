@@ -2,6 +2,16 @@
 
 ## 2026-11-18 session
 
+### Kalshi NBA is two tabs: Kalshi Pts + 3s, and Kalshi NBA for the rest
+Max, 11-18: a Kalshi 3s and points and then another one; the 3s look good, they keep popping up.
+
+- **New tab, Kalshi Pts + 3s** (`kalshinba3` in `server.js` and `public/nba_scan.html`; `--league nba3` in `scan_kalshi.py`): one player's Points + Threes alone, every player with open Kalshi props, up to four slips a player (the milestone each side of his main line on both stats). At most 400 slips a pass. It is the first tab and the one a new device opens on.
+- **Kalshi NBA** keeps the other pairs (r 0.25 or better) and the teammates slips, at most 300 a pass, and no longer asks Points + Threes. A device last left on Kalshi NBA still opens there.
+- **Same rules on both**: pricing, the ↻ and Bet buttons, the second passcode, Fetch only. Both share the one Kalshi slot, so one runs at a time. Both show on the All tab.
+- **Tonight**, no quote asked of Kalshi: Pts + 3s has 390 slips (108 first slips, 113 players), all inside the 400; Kalshi NBA has 503 (136 first slips), of which a pass asks 300. Before the split one 300-slip pass asked 33 of the extra Points + Threes slips.
+- **Cost**: a 390-slip pass is about 20 minutes. Fetching both tabs every night is up to 4,900 new combos a week against Kalshi's 5,000; the script still does not count them.
+- **Not checked** on a live pass or in a browser: both boards were listed with `--dry`, and `server.js` and the page's script were parsed for syntax.
+
 ### Teammates' points slips are priced at r -0.05, not 0
 Max, 11-18: less confident in the teammate plays than in a player's own Points + Threes; which fix?
 
