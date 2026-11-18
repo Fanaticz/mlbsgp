@@ -188,7 +188,7 @@ def kalshi_props(before=None, series=SERIES):
     return out
 
 
-def pick_leg(stat, kal, nv_rows, a):
+def pick_leg(stat, kal, nv_rows, a, p=None):
     """The leg for this stat. Each Kalshi milestone is priced off the tighter
     of two books on that same line: Novig's (inside --max-spread) or Kalshi's
     own Yes bid / ask (inside --kalshi-spread); where the two are within a
@@ -224,7 +224,7 @@ def pick_leg(stat, kal, nv_rows, a):
         near = {max((x for x in lines if x <= main), default=None), min((x for x in lines if x > main), default=None)}
         priced = [x for x in priced if x[0]["line"] in near]
         if not priced:
-            return None
+            return shift_leg(stat, kal, nv_rows, a, p, scan.main_line(quoted), near) if p else None
     k, fo, width, src = min(priced, key=lambda x: (abs(x[0]["line"] - main) if main is not None else 0, abs(x[1] - 0.5)))
     L = {"stat": stat, "side": "over", "line": k["line"], "p": fo, "fair": sgp.american(fo), "width": width,
          "id": k["ticker"], "event": k["event"], "src": src}
@@ -232,6 +232,38 @@ def pick_leg(stat, kal, nv_rows, a):
     if same:   # Novig's Over on this same line, for its price on the same slip (novig_price)
         L["nv"] = same["ids"]["over"]
     return L
+
+
+def shift_leg(stat, kal, nv_rows, a, p, main, near):
+    """NBA: neither milestone beside the main line has a tight book, but
+    Novig's main line does (Max, 11-18: use Novig for help on the main line).
+    The nearer milestone's fair value is shifted from that main line with the
+    Ladder's model (price.leg_prob), then held inside both exchanges' own
+    bid and ask on the milestone itself, however wide those are. The leg
+    carries `from`, and its slip is marked modelled (*)."""
+    if not scan.usable(main, a.max_spread):
+        return None
+    nv = {r["line"]: r for r in nv_rows}
+    for k in sorted((k for k in kal if k["line"] in near), key=lambda k: abs(k["line"] - main["line"])):
+        if k["line"] == main["line"]:
+            continue
+        po = price.leg_prob(p, {"stat": stat, "side": 1, "line": k["line"], "from": main["line"], "p_over": main["fo"],
+                                "over": None, "under": None})[0]
+        books = [(k["bid"], k["ask"])] + ([(nv[k["line"]].get("bid"), nv[k["line"]].get("ask"))] if k["line"] in nv else [])
+        asks = [x for _, x in books if x is not None and 0 < x < 1]
+        bids = [x for x, _ in books if x is not None and 0 < x < 1]
+        if asks:
+            po = min(po, min(asks))   # someone sells the Yes there: a ceiling
+        if bids:
+            po = max(po, max(bids))   # and a buyer is a floor
+        if not a.lo <= po <= a.hi:
+            continue
+        L = {"stat": stat, "side": "over", "line": k["line"], "p": po, "fair": sgp.american(po), "width": main["spread"],
+             "id": k["ticker"], "event": k["event"], "src": f"Novig {main['line']:g}", "from": main["line"]}
+        if k["line"] in nv and nv[k["line"]]["ids"].get("over"):
+            L["nv"] = nv[k["line"]]["ids"]["over"]
+        return L
+    return None
 
 
 WORD = {"pts": "points", "reb": "rebounds", "ast": "assists", "tpm": "threes", "rec": "receptions", "yds": "receiving yards",
@@ -290,7 +322,7 @@ def candidates(a):
         info["starts"] = next((r["starts"] for v in rows.values() for r in v), info["starts"])
         legs = {}
         for stat, kal in info["stats"].items():
-            L = pick_leg(stat, kal, rows.get(stat, []), a)
+            L = pick_leg(stat, kal, rows.get(stat, []), a, p)
             if L:
                 L["text"] = f"{int(L['line'] + 0.5)}+ {WORD[stat]}"
                 legs[stat] = L
@@ -304,6 +336,8 @@ def candidates(a):
                  "rough": any(L["width"] > a.max_spread + 1e-9 for L in (la, lb)), "legs_x": 1 / (la["p"] * lb["p"])}
             if kind:
                 c["kind"] = kind
+            if la.get("from") is not None or lb.get("from") is not None:
+                c["model"] = True   # a leg shifted from Novig's main line: the page marks the slip *
             return c
         if "pts" in legs and "tpm" in legs:
             r = price.shrunk_r(d, by, p, "pts", "tpm")[0]

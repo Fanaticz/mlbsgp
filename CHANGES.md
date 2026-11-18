@@ -2,6 +2,14 @@
 
 ## 2026-11-18 session
 
+### Kalshi NBA: a milestone with no tight book is priced from Novig's main line
+Max, 11-18: can we use Novig for help on the main line?
+
+- **Change** (`shift_leg` in `scan_kalshi.py`, called from `pick_leg` on the Kalshi NBA board): where neither milestone beside a player's main line has a tight book but Novig's main line does (4 cents or tighter), the nearer milestone gets a fair value shifted from that main line with the Ladder's model (`price.leg_prob`: normal and count model), held under the lowest ask and over the highest bid that Kalshi and Novig show on the milestone itself. The leg carries the line it came from ("from Novig 22.5" in the opened row) and the slip is marked * (modelled). A milestone with its own tight book is still read off that book.
+- **Tonight**, no quote asked of Kalshi: 56 slips become 72, 11 of them with a shifted leg; teammate slips 1 to 4. Murray 25+ comes out at 36.5% from Novig's 22.5 (45%), inside Kalshi's 33 / 42. Jokic 25+ with Murray 25+ is fair 5.54x; Kalshi's app showed 5.28x for it at 4:15, so under fair.
+- **Not shifted**: the Kalshi NBA Lines and NFL boards (a leg there still needs a tight book on one of the two milestones beside the main line). FanDuel's one-way price, a ceiling on the Ladder boards, is not read here: the shift is one milestone at most and both exchanges' asks cap it.
+- **Not checked** on a live pass or in a browser.
+
 ### Kalshi boards: a leg sits beside the player's main line, or there is no leg
 Max, 11-18: Jokic 25+ with Murray 30+; why jump to 30?
 
