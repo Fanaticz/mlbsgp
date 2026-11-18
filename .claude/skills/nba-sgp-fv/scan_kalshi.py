@@ -193,8 +193,8 @@ def pick_leg(stat, kal, nv_rows, a):
     of two books on that same line: Novig's (inside --max-spread) or Kalshi's
     own Yes bid / ask (inside --kalshi-spread); where the two are within a
     cent of each other in width, off the average of their two fair values. The milestone taken is the one
-    nearest Novig's main line, or nearest even money where Novig lists nothing
-    usable. None when no milestone has a book to price it from."""
+    just under or just over Novig's main line (the nearer, if both have a
+    book), or nearest even money where Novig lists nothing. None when no milestone has a book to price it from."""
     nv = {r["line"]: r for r in nv_rows if scan.usable(r, a.max_spread)}
     priced = []
     for k in kal:
@@ -212,7 +212,19 @@ def pick_leg(stat, kal, nv_rows, a):
                 priced.append((k, fo, width, src))
     if not priced:
         return None
-    main = scan.main_line(list(nv.values()))["line"] if nv else None
+    # His main line is read off every Novig line with a price, tight or not.
+    # A leg sits on the Kalshi milestone just under or just over it, or there
+    # is no leg: taking the nearest milestone that happened to have a tight
+    # book put a leg as far out as it liked (11-18: Murray, main 22.5, 20+ and
+    # 25+ both on wide books, was asked at 30+).
+    quoted = [r for r in nv_rows if r.get("fo") is not None]
+    main = scan.main_line(quoted)["line"] if quoted else None
+    if main is not None:
+        lines = [k["line"] for k in kal]
+        near = {max((x for x in lines if x <= main), default=None), min((x for x in lines if x > main), default=None)}
+        priced = [x for x in priced if x[0]["line"] in near]
+        if not priced:
+            return None
     k, fo, width, src = min(priced, key=lambda x: (abs(x[0]["line"] - main) if main is not None else 0, abs(x[1] - 0.5)))
     L = {"stat": stat, "side": "over", "line": k["line"], "p": fo, "fair": sgp.american(fo), "width": width,
          "id": k["ticker"], "event": k["event"], "src": src}

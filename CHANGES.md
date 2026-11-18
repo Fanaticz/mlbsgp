@@ -2,6 +2,14 @@
 
 ## 2026-11-18 session
 
+### Kalshi boards: a leg sits beside the player's main line, or there is no leg
+Max, 11-18: Jokic 25+ with Murray 30+; why jump to 30?
+
+- **Cause** (`pick_leg` in `scan_kalshi.py`): a leg went on the nearest milestone that had a tight book. Murray's main line is 22.5; Kalshi's 20+ was 60 / 67 and its 25+ 33 / 42 (7 and 9 cents wide, over the 5 allowed), Novig's books on those lines were 10 and 13 cents wide, and only 30+ (19 / 21) was tight. 16 of tonight's 48 points legs were more than 3 points from the main line.
+- **Change**: the main line is read off every Novig line with a price (tight or not), and a leg may only sit on the Kalshi milestone just under or just over it. Neither has a book: no leg, and no slip that needs it. Where Novig lists nothing for the stat, the milestone nearest even money, as before. Applies to every stat on the Kalshi NBA, NBA Lines and NFL boards.
+- **Cost**: fewer slips. Tonight, with no quote asked of Kalshi: 82 slips to 56, teammate slips 7 to 1 (Acuff 25+ with LaVine 20+).
+- **The Murray 30+ leg itself** was priced off a real 2-cent book, so its own fair value stands. What is unmeasured is the teammates' r of 0.0 that far from a main line: it was measured at each scorer's median line.
+
 ### Kalshi NBA: the teammates slip is the team's real top two, or not asked
 Max, 11-18: why is Kalshi showing Klay + Giannis to score together? He's not the #2.
 
