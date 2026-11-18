@@ -11,8 +11,8 @@ What it asks, per player with open Kalshi props on a game that has not started:
   1  Points Yes + Threes Yes (the player's shrunk correlation, as on the Novig board).
   2  His other Yes + Yes pairs where r is at least --min-r: points + rebounds,
      points + assists, rebounds + assists, rebounds + threes, assists + threes.
-  T  Teammates: each team's two highest points lines, Yes + Yes, as unrelated
-     legs (scan.nba_mate_candidates has the measurement).
+  T  Teammates: each team's two highest main points lines, Yes + Yes, as unrelated
+     legs; no slip for a team where either has no priced leg (scan.nba_mate_candidates has the measurement).
 Kalshi's props are milestones ("25+ points" is Over 24.5). Each leg sits on the
 milestone nearest Novig's main line where Novig has a tight book on that same
 line; where it has none, on Kalshi's own milestone nearest even money.
@@ -303,13 +303,23 @@ def candidates(a):
                 r = price.shrunk_r(d, by, p, x, y)[0]
                 if r is not None and r >= a.min_r:
                     out.append(row_of(2, r, legs[x], legs[y]))
-        if "pts" in legs:
-            teams.setdefault((info["game"], info["team"]), []).append((p, legs["pts"], row_of))
+        # Teammates are ranked by each player's own main points line, priced
+        # leg or not: ranked by priced legs alone, a second scorer with no
+        # tight book on a Kalshi milestone handed his place to the third
+        # (11-18: Adebayo, main 17.5, had none, so Thompson was asked with
+        # Antetokounmpo).
+        if "pts" in info["stats"]:
+            nvp = [r for r in rows.get("pts", []) if r.get("fo") is not None]
+            mids = [(abs((k["bid"] + k["ask"]) / 2 - 0.5), k["line"]) for k in info["stats"]["pts"] if 0 < k["bid"] < k["ask"] < 1]
+            rank = scan.main_line(nvp)["line"] if nvp else min(mids)[1] if mids else None
+            if rank is not None:
+                teams.setdefault((info["game"], info["team"]), []).append((p, rank, legs.get("pts"), row_of))
     last = lambda p: p["name"].split(" ", 1)[-1]   # noqa: E731
     for ps in teams.values():
-        ps.sort(key=lambda x: -x[1]["line"])
-        if len(ps) >= 2 and ps[1][1]["line"] >= scan.NBA_MATE_MIN:
-            (pa, la, mk), (pb, lb, _) = ps[0], ps[1]
+        ps.sort(key=lambda x: -x[1])
+        # the team's top two, or no slip: a top-two scorer with no priced leg is not replaced by the next man
+        if len(ps) >= 2 and ps[1][1] >= scan.NBA_MATE_MIN and ps[0][2] and ps[1][2]:
+            (pa, _, la, mk), (pb, _, lb, _) = ps[0], ps[1]
             out.append(mk(0, scan.NBA_MATE_R, la, lb, who=f"{pa['name']} + {pb['name']}", pid=f"{pa['athlete_id']}+{pb['athlete_id']}",
                           label=f"{last(pa)} {la['text']} · {last(pb)} {lb['text']}", kind="mates"))
     # teammates first (one a team, and the shape Novig misprices), then Points + Threes, then the rest

@@ -2,6 +2,14 @@
 
 ## 2026-11-18 session
 
+### Kalshi NBA: the teammates slip is the team's real top two, or not asked
+Max, 11-18: why is Kalshi showing Klay + Giannis to score together? He's not the #2.
+
+- **Cause** (`candidates` in `scan_kalshi.py`): teammates were ranked among the players who had a priced points leg. Adebayo (Novig main line 17.5) had none: Kalshi's milestones for him are 10+, 15+, 20+ and 25+, Novig's books on those lines were 13 to 18 cents wide and Kalshi's own were over 5, so he was dropped and Thompson (15+) moved up beside Antetokounmpo. The "unrelated legs" measurement is for a team's top two scorers only.
+- **Change**: each team is ranked by every listed player's main points line (Novig's, tight book or not; else Kalshi's milestone nearest even money), and the slip is asked only when both of the top two have a priced leg. The next man no longer steps in. The second scorer's main line must still be 14.5 or more.
+- **Checked** on tonight's board without asking Kalshi for a quote: 82 slips, 7 teammate slips, none for Miami. Rows already on the board stay until its next pass.
+- **Not changed**: the Novig NBA board ranks teammates by tight main lines, so the same thing can happen there when a second scorer has no tight points book at all (rarer: Novig's main line is usually tight). A leg can also sit well off the player's main line where only that milestone has a tight book (tonight: Murray 30+, Coward 10+).
+
 ### Novig Scan: Ladders in Auto-scan, DK NBA tab removed, no My bets strip, a saved bet folds its row
 Max, 11-18: add ladder for NFL and NBA to auto; remove the DK NBA tab; hide the bets shown above the board; when a bet is entered and the phone's check is hit, collapse the row.
 
