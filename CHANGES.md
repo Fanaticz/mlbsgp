@@ -1,5 +1,14 @@
 # Changes
 
+## 2026-11-18 session
+
+### Kalshi Scan: the Bet button stakes the row's QK $
+Max, 11-18: change $25 to QK for Kalshi.
+
+- **Change** (`kbetStake` in `public/nba_scan.html`; `NV_KBET_MAX` in `server.js`): one press of the Bet button stakes the row's QK $ (quarter Kelly at $100 a unit, the number in the QK $ column, rounded to the dollar) where it staked a flat $25. The button's label shows the amount. A typed stake still replaces it.
+- **Cap**: the server's limit on one bet goes from $25 back to $250, and a row whose QK $ is over $250 is bet at $250. `KALSHI_BET_MAX` on the server overrides the server's limit; if it is set on Railway, presses over it are refused until it is changed.
+- **Not checked**: no bet was placed. The page's scripts and `server.js` were parsed for syntax only.
+
 ## 2026-11-17 session
 
 ### CBB correlations follow a curve by size of spread; more bands tested worse

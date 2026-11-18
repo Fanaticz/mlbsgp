@@ -2993,11 +2993,11 @@ function nvRequote(league, wide, key, cb) {
 // `stake` dollars and accepts the best answer if the slip still pays within
 // 1% of x (the price on the row) and is not under today's fair value. Needs
 // both passcodes. One bet at a time. Stakes are capped at KALSHI_BET_MAX
-// ($25), and at $2 until one bet has been seen to land on the Yes side of
+// ($250), and at $2 until one bet has been seen to land on the Yes side of
 // the combo (the account's position is read after every bet); a bet seen on
 // the No side turns the button off until the server is told otherwise.
-// $25 a bet for the night of 11-16 (Max); it was $250. KALSHI_BET_MAX on the server overrides it.
-const NV_KBET_MAX = Math.max(1, parseFloat(process.env.KALSHI_BET_MAX) || 25);
+// $250 a bet: the page stakes a row's QK $ (Max, 11-18); it was $25 for the night of 11-16. KALSHI_BET_MAX on the server overrides it.
+const NV_KBET_MAX = Math.max(1, parseFloat(process.env.KALSHI_BET_MAX) || 250);
 const NV_KBET_FILE = NV_SCAN_FILE ? path.join(path.dirname(NV_SCAN_FILE), 'kalshi_bet_state.json') : null;
 // ok: the button's side was seen right on the real exchange 11-16 (a $2 bet, $1.88 in, on the Yes side),
 // so no $2 test is asked for any more. The position is still read after every bet.

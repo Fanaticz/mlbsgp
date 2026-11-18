@@ -369,13 +369,16 @@ async function kposLoad() {
 setTimeout(kposLoad, 1500);
 setInterval(kposLoad, 60 * 1000);
 // The Bet button on a Kalshi row: the server places it (POST /api/nba/kalshi-bet) and says what was bought.
-const KMSG = new Map(), KBET_STAKE = 25;   // one press stakes this unless a stake is typed (Max, 11-16)
+// One press stakes the row's QK $ (quarter Kelly at $100 a unit) unless a stake is typed (Max, 11-18; it was a flat $25).
+// KBET_MAX is the server's cap on one bet (NV_KBET_MAX in server.js): a larger QK $ is bet at the cap.
+const KMSG = new Map(), KBET_MAX = 250;
+const kbetStake = c => Math.min(KBET_MAX, Math.max(1, Math.round(c.qk * UNIT) || 1));
 let KBETTING = false;
 async function kalshiBet(b) {
   const id = b.dataset.kbet, c = S && S.rows.find(r => rk(r) === id), f = b.closest(".row") && b.closest(".row").querySelector(".det");
   if (!c || KBETTING) return;
   const typed = f ? parseFloat(f.querySelector(".stake").value) : NaN;
-  const stake = typed > 0 ? typed : KBET_STAKE;
+  const stake = typed > 0 ? typed : kbetStake(c);
   // The typed stake is this bet's: empty the box so the "I bet this" form doesn't save it a second time.
   if (f) { f.querySelector(".stake").value = ""; f.querySelector(".stake").closest(".betform").dataset.saved = "1"; }
   KBETTING = true; b.disabled = true; KMSG.set(id, `placing $${stake}…`); render();
@@ -480,8 +483,8 @@ function kbetLine(c) {
   const msg = KMSG.get(rk(c)) || "";
   if (c.book !== "kalshi" || !(c.ev > 0 || msg)) return "";
   return `<div class="betform kbetrow" style="grid-column:1 / -1">` + (c.ev > 0 ? `<button type="button" class="kbet" data-kbet="${esc(rk(c))}"` +
-    ` title="Buys this combo on Kalshi now: $25, or a smaller stake typed in the opened row. Not placed if the price is more than 1% worse than shown or the slip is no longer above fair.">` +
-    `Bet $${KBET_STAKE} at ${c.slip_x.toFixed(2)}x</button>` : "") + `<span class="kmsg">${esc(msg)}</span></div>`;
+    ` title="Buys this combo on Kalshi now: the row's QK $ ($${KBET_MAX} at most), or the stake typed in the opened row. Not placed if the price is more than 1% worse than shown or the slip is no longer above fair.">` +
+    `Bet $${kbetStake(c)} at ${c.slip_x.toFixed(2)}x</button>` : "") + `<span class="kmsg">${esc(msg)}</span></div>`;
 }
 function betLine(c, sub) {
   const onK = heldLine(c);
