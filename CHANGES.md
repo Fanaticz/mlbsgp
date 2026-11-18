@@ -2,6 +2,12 @@
 
 ## 2026-11-18 session
 
+### Auto-scan leaves NBA Ladder out again
+Max, 11-18: turn off NBA ladders on auto.
+
+- **Change** (`NV_CYCLE_BOARDS` in `server.js`): NBA Ladder is out of the Auto-scan cycle, which is now NBA, NBA Team, NFL, NFL Ladder, CBB, CFB, soccer. NFL Ladder stays in. The NBA Ladder tab and its Fetch button are unchanged; its rows stay on the board and the All tab until they start.
+- **Checked**: syntax only.
+
 ### Kalshi Pts + 3s and Kalshi NBA: every leg at 30% or better, in place of the +300 limit
 Max, 11-18: do the leg floor instead.
 

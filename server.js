@@ -2765,7 +2765,7 @@ function nvFlag(league, row) {
 // the NFL's Thursday): the games starting before the midnight that follows
 // the board's soonest open game, in the time zone of the page that switched
 // it on (Eastern if the page sent none). Later games are priced with Fetch.
-const NV_CYCLE_BOARDS = ['nba', 'ladder', 'nbateam', 'nfl', 'nflladder', 'cbb', 'cfb', 'soccer'];   // every board on the page (the two Ladders since 11-18)
+const NV_CYCLE_BOARDS = ['nba', 'nbateam', 'nfl', 'nflladder', 'cbb', 'cfb', 'soccer'];   // NFL Ladder since 11-18; NBA Ladder was added and taken out again the same day (Max): Fetch only
 const NV_CYCLE_GAP_MS = 60 * 1000;             // pause between two passes
 const NV_CYCLE_REST_MS = 10 * 60 * 1000;       // a board is not asked again sooner than this after its last pass began or ended
 // It runs until it is switched off: no time limit and no hours it rests (Max, 11-14).
