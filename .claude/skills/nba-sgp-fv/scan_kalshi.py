@@ -38,7 +38,7 @@ Every call that asks is signed with an account's API key:
   KALSHI_PRIVATE_KEY   the private key (PEM text; "\\n" for line breaks is fine)
 Asking costs something: Kalshi charges more rate-limit tokens for accounts
 that ask often and rarely accept, an account may have 100 requests open and
-create 5,000 new combos a week. So a pass asks at most --max slips (60).
+create 5,000 new combos a week. So a pass asks at most --max slips (300 on the NBA board, 200 on the others; 60 until 11-18).
 """
 import argparse
 import base64
@@ -188,13 +188,15 @@ def kalshi_props(before=None, series=SERIES):
     return out
 
 
-def pick_leg(stat, kal, nv_rows, a, p=None):
+def pick_leg(stat, kal, nv_rows, a, p=None, skip=()):
     """The leg for this stat. Each Kalshi milestone is priced off the tighter
     of two books on that same line: Novig's (inside --max-spread) or Kalshi's
     own Yes bid / ask (inside --kalshi-spread); where the two are within a
     cent of each other in width, off the average of their two fair values. The milestone taken is the one
     just under or just over Novig's main line (the nearer, if both have a
-    book), or nearest even money where Novig lists nothing. None when no milestone has a book to price it from."""
+    book), or nearest even money where Novig lists nothing. None when no milestone has a book to price it from.
+    skip: lines not to take, for the player's second leg on the stat (the
+    milestone on the other side of his main line)."""
     nv = {r["line"]: r for r in nv_rows if scan.usable(r, a.max_spread)}
     priced = []
     for k in kal:
@@ -210,7 +212,7 @@ def pick_leg(stat, kal, nv_rows, a, p=None):
                 width, fo, src = max(books)[0], (books[0][1] + books[1][1]) / 2, "both"
             if a.lo <= fo <= a.hi:
                 priced.append((k, fo, width, src))
-    if not priced:
+    if not priced and not p:
         return None
     # His main line is read off every Novig line with a price, tight or not.
     # A leg sits on the Kalshi milestone just under or just over it, or there
@@ -222,9 +224,12 @@ def pick_leg(stat, kal, nv_rows, a, p=None):
     if main is not None:
         lines = [k["line"] for k in kal]
         near = {max((x for x in lines if x <= main), default=None), min((x for x in lines if x > main), default=None)}
+        near -= set(skip)
         priced = [x for x in priced if x[0]["line"] in near]
         if not priced:
             return shift_leg(stat, kal, nv_rows, a, p, scan.main_line(quoted), near) if p else None
+    if not priced or (skip and main is None):
+        return None
     k, fo, width, src = min(priced, key=lambda x: (abs(x[0]["line"] - main) if main is not None else 0, abs(x[1] - 0.5)))
     L = {"stat": stat, "side": "over", "line": k["line"], "p": fo, "fair": sgp.american(fo), "width": width,
          "id": k["ticker"], "event": k["event"], "src": src}
@@ -320,11 +325,18 @@ def candidates(a):
             continue
         _, rows = novig.ladder(markets, p["name"])
         info["starts"] = next((r["starts"] for v in rows.values() for r in v), info["starts"])
-        legs = {}
+        # legs: his leg on each stat, the milestone beside his main line. opts:
+        # that one first, then the milestone on the other side of the main
+        # line (Max, 11-18: the board was missing a lot), so a pair is asked on
+        # up to four slips.
+        legs, opts = {}, {}
         for stat, kal in info["stats"].items():
             L = pick_leg(stat, kal, rows.get(stat, []), a, p)
             if L:
-                L["text"] = f"{int(L['line'] + 0.5)}+ {WORD[stat]}"
+                L2 = pick_leg(stat, kal, rows.get(stat, []), a, p, skip=(L["line"],))
+                opts[stat] = [L] + ([L2] if L2 else [])
+                for o in opts[stat]:
+                    o["text"] = f"{int(o['line'] + 0.5)}+ {WORD[stat]}"
                 legs[stat] = L
 
         def row_of(tier, r, la, lb, who=None, pid=None, label=None, kind=None, info=info, p=p):
@@ -342,13 +354,16 @@ def candidates(a):
         if "pts" in legs and "tpm" in legs:
             r = price.shrunk_r(d, by, p, "pts", "tpm")[0]
             # k threes are 3k points: a threes leg that forces the points leg is one leg, not two
-            if r > 0 and 3 * (math.floor(legs["tpm"]["line"]) + 1) <= legs["pts"]["line"]:
-                out.append(dict(row_of(1, r, legs["pts"], legs["tpm"]), main=True))
+            for la in opts["pts"] if r > 0 else ():
+                for lb in opts["tpm"]:
+                    if 3 * (math.floor(lb["line"]) + 1) <= la["line"]:
+                        first = la is legs["pts"] and lb is legs["tpm"]
+                        out.append(dict(row_of(1, r, la, lb), main=first, alt=0 if first else 1))
         for x, y in PAIRS:
             if x in legs and y in legs:
                 r = price.shrunk_r(d, by, p, x, y)[0]
                 if r is not None and r >= a.min_r:
-                    out.append(row_of(2, r, legs[x], legs[y]))
+                    out += [dict(row_of(2, r, la, lb), alt=0 if la is legs[x] and lb is legs[y] else 1) for la in opts[x] for lb in opts[y]]
         # Teammates are ranked by each player's own main points line, priced
         # leg or not: ranked by priced legs alone, a second scorer with no
         # tight book on a Kalshi milestone handed his place to the third
@@ -359,17 +374,19 @@ def candidates(a):
             mids = [(abs((k["bid"] + k["ask"]) / 2 - 0.5), k["line"]) for k in info["stats"]["pts"] if 0 < k["bid"] < k["ask"] < 1]
             rank = scan.main_line(nvp)["line"] if nvp else min(mids)[1] if mids else None
             if rank is not None:
-                teams.setdefault((info["game"], info["team"]), []).append((p, rank, legs.get("pts"), row_of))
+                teams.setdefault((info["game"], info["team"]), []).append((p, rank, opts.get("pts"), row_of))
     last = lambda p: p["name"].split(" ", 1)[-1]   # noqa: E731
     for ps in teams.values():
         ps.sort(key=lambda x: -x[1])
         # the team's top two, or no slip: a top-two scorer with no priced leg is not replaced by the next man
         if len(ps) >= 2 and ps[1][1] >= scan.NBA_MATE_MIN and ps[0][2] and ps[1][2]:
-            (pa, _, la, mk), (pb, _, lb, _) = ps[0], ps[1]
-            out.append(mk(0, scan.NBA_MATE_R, la, lb, who=f"{pa['name']} + {pb['name']}", pid=f"{pa['athlete_id']}+{pb['athlete_id']}",
-                          label=f"{last(pa)} {la['text']} · {last(pb)} {lb['text']}", kind="mates"))
-    # teammates first (one a team, and the shape Novig misprices), then Points + Threes, then the rest
-    out.sort(key=lambda c: (c["tier"], c["starts"], -c["r"]))
+            (pa, _, oa, mk), (pb, _, ob, _) = ps[0], ps[1]
+            out += [dict(mk(0, scan.NBA_MATE_R, la, lb, who=f"{pa['name']} + {pb['name']}", pid=f"{pa['athlete_id']}+{pb['athlete_id']}",
+                            label=f"{last(pa)} {la['text']} · {last(pb)} {lb['text']}", kind="mates"),
+                         alt=0 if la is oa[0] and lb is ob[0] else 1) for la in oa for lb in ob]
+    # Each pair's slip beside the main lines first (teammates, the shape Novig misprices; then Points + Threes;
+    # then the rest), and after all of those the slips on the other milestones, so a cut at --max drops those.
+    out.sort(key=lambda c: (c.get("alt", 0), c["tier"], c["starts"], -c["r"]))
     return (out[:a.max] if a.max else out), d
 
 
@@ -926,7 +943,7 @@ def main():
                     help='BUYS the slip given on stdin as {"row", "stake", "min_x", "min_ev"}; prints the bet as JSON (the page\'s Bet button)')
     ap.add_argument("--positions", action="store_true", help="print the account's open combo positions as JSON (read only)")
     ap.add_argument("--check", action="store_true", help="make one signed read to see that the key is accepted")
-    ap.add_argument("--max", type=int, default=60, help="ask at most this many slips a pass (0: all)")
+    ap.add_argument("--max", type=int, default=None, help="ask at most this many slips a pass (0: all; default 300 on the NBA board, 200 on the others)")
     ap.add_argument("--min-r", type=float, default=0.25, help="smallest r for a pair other than Points + Threes")
     ap.add_argument("--max-spread", type=float, default=novig.MAX_SPREAD, help="widest Novig book a leg's fair value is read from")
     ap.add_argument("--kalshi-spread", type=float, default=0.05, help="widest Kalshi book a leg's fair value is read from when Novig has none")
@@ -946,6 +963,8 @@ def main():
     ap.add_argument("--first", default=None, help="accepted for server.js; not used")
     ap.add_argument("--events", nargs="+", default=None, help="accepted for server.js; not used")
     a = ap.parse_args()
+    if a.max is None:
+        a.max = 300 if a.league == "nba" else 200
     t0 = time.time()
 
     def emit(e):

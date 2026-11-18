@@ -2,6 +2,16 @@
 
 ## 2026-11-18 session
 
+### Kalshi boards ask more: 300 slips a pass on NBA (200 on the others), and both milestones beside the main line
+Max, 11-18: up the Kalshi scans, missing a lot.
+
+- **Cap** (`--max` in `scan_kalshi.py`): a pass asked at most 60 slips. Now 300 on Kalshi NBA and 200 on Kalshi NBA Lines, NFL and CBB.
+- **Second milestone** (Kalshi NBA; `pick_leg(skip=)`, `candidates`): each stat now has two legs where both can be priced, the milestones just under and just over the main line, each off its own tight book or shifted from Novig's main line. A pair is asked on up to four slips (Jokic: 25+ and 20+ points with 2+ and 3+ threes), teammates too. A player's stat with no tight book on any milestone now gets a shifted leg as well (it had none).
+- **Order**: every pair's first slip (teammates, Points + Threes, the rest), then the other milestones' slips in the same order, so the cap cuts the extra teammates' slips last and the other pairs' extras first.
+- **Tonight**, no quote asked of Kalshi, read about two hours before the first tip: 743 slips could be asked (209 first slips, 534 on other milestones; 125 with a shifted leg). A pass asks the 209, the 58 extra teammate slips and 33 of the extra Points + Threes.
+- **Cost**: a pass at 300 is about 15 minutes where 60 took three or four. Kalshi allows an account 5,000 new combos a week and charges more rate-limit tokens to accounts that ask often and rarely accept: the NBA board every night at 300 is 2,100 of the 5,000 by itself. The script does not count the week's combos.
+- **Not checked** on a live pass.
+
 ### Kalshi NBA: a milestone with no tight book is priced from Novig's main line
 Max, 11-18: can we use Novig for help on the main line?
 
