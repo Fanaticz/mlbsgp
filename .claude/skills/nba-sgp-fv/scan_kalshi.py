@@ -390,6 +390,10 @@ def candidates(a):
                          alt=0 if la is oa[0] and lb is ob[0] else 1) for la in oa for lb in ob]
     # Each pair's slip beside the main lines first (teammates, the shape Novig misprices; then Points + Threes;
     # then the rest), and after all of those the slips on the other milestones, so a cut at --max drops those.
+    # No long slips (Max, 11-18: fair value under +300; Kalshi's milestones are 5 points apart, so a
+    # long slip sits far from a player's line). +300 is a 25% slip.
+    if a.max_fair:
+        out = [c for c in out if c["j"] >= 100 / (a.max_fair + 100) - 1e-9]
     out.sort(key=lambda c: (c.get("alt", 0), c["tier"], c["starts"], -c["r"]))
     return (out[:a.max] if a.max else out), d
 
@@ -948,6 +952,8 @@ def main():
     ap.add_argument("--positions", action="store_true", help="print the account's open combo positions as JSON (read only)")
     ap.add_argument("--check", action="store_true", help="make one signed read to see that the key is accepted")
     ap.add_argument("--max", type=int, default=None, help="ask at most this many slips a pass (0: all; default 400 on the Points + Threes board, 300 on the NBA board, 200 on the others)")
+    ap.add_argument("--max-fair", type=float, default=300.0,
+                    help="nba, nba3: the longest fair value a slip is asked at, American (300: no slip longer than +300; 0: no limit)")
     ap.add_argument("--min-r", type=float, default=0.25, help="smallest r for a pair other than Points + Threes")
     ap.add_argument("--max-spread", type=float, default=novig.MAX_SPREAD, help="widest Novig book a leg's fair value is read from")
     ap.add_argument("--kalshi-spread", type=float, default=0.05, help="widest Kalshi book a leg's fair value is read from when Novig has none")

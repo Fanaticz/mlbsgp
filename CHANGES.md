@@ -2,6 +2,14 @@
 
 ## 2026-11-18 session
 
+### Kalshi Pts + 3s and Kalshi NBA: no slip with a fair value longer than +300
+Max, 11-18: keep FV under 300 on both; more comfortable with smaller lines since Kalshi does the 20 / 25 / 30 milestones.
+
+- **Change** (`--max-fair` in `scan_kalshi.py`, default 300, read in `candidates`): a slip whose fair value is longer than +300 (under a 25% chance) is not asked, on Kalshi Pts + 3s and Kalshi NBA, teammates slips included. `--max-fair 0` lifts it. Kalshi NBA Lines, NFL and CBB are unchanged.
+- **Tonight**, no quote asked of Kalshi: Pts + 3s 390 slips to 226, Kalshi NBA 503 to 226 (33 of them teammates), so both now fit under their caps and a pass is about 12 minutes.
+- **Not limited**: ↻ and Bet on a row already on the board. A row whose fair value drifts past +300 on a refresh stays until the next pass.
+- **Not checked** on a live pass or in a browser: both boards listed with `--dry`, the page's script parsed for syntax.
+
 ### Kalshi NBA is two tabs: Kalshi Pts + 3s, and Kalshi NBA for the rest
 Max, 11-18: a Kalshi 3s and points and then another one; the 3s look good, they keep popping up.
 
