@@ -2753,7 +2753,7 @@ function nvFlag(league, row) {
 }
 
 // Auto-scan: while switched on (the page's Auto-scan button), the server runs
-// whole-board passes of NBA, NBA Team, NFL, CBB, CFB and soccer one after another, with or
+// whole-board passes of NBA, NBA Ladder, NBA Team, NFL, NFL Ladder, CBB, CFB and soccer one after another, with or
 // without the page open. Still one pass at a time: a pass asked for with
 // Fetch runs first and the cycle carries on after it.
 // It prices each board's next day of games only (Max, 11-16: today's games;
@@ -2761,7 +2761,7 @@ function nvFlag(league, row) {
 // the NFL's Thursday): the games starting before the midnight that follows
 // the board's soonest open game, in the time zone of the page that switched
 // it on (Eastern if the page sent none). Later games are priced with Fetch.
-const NV_CYCLE_BOARDS = ['nba', 'nbateam', 'nfl', 'cbb', 'cfb', 'soccer'];   // every board on the page but the two Ladders
+const NV_CYCLE_BOARDS = ['nba', 'ladder', 'nbateam', 'nfl', 'nflladder', 'cbb', 'cfb', 'soccer'];   // every board on the page (the two Ladders since 11-18)
 const NV_CYCLE_GAP_MS = 60 * 1000;             // pause between two passes
 const NV_CYCLE_REST_MS = 10 * 60 * 1000;       // a board is not asked again sooner than this after its last pass began or ended
 // It runs until it is switched off: no time limit and no hours it rests (Max, 11-14).
@@ -2899,7 +2899,7 @@ app.get('/api/nba/novig-scan', (req, res) => {
   });
 });
 // The boards the All tab gathers (the hidden NHL boards are left out).
-const NV_ALL_BOARDS = ['nba', 'ladder', 'nbateam', 'nfl', 'nflladder', 'soccer', 'cfb', 'cbb', 'dknba', 'kalshinba', 'kalshinbaline', 'kalshinfl', 'kalshicbb'];
+const NV_ALL_BOARDS = ['nba', 'ladder', 'nbateam', 'nfl', 'nflladder', 'soccer', 'cfb', 'cbb', 'kalshinba', 'kalshinbaline', 'kalshinfl', 'kalshicbb'];   // DK NBA's tab was removed 11-18
 
 // GET /n/<outcome id,outcome id,...> — a slip's link into Novig, for the
 // scanner's rows (and for alerts sent off the page). Novig's own app routes

@@ -2,6 +2,15 @@
 
 ## 2026-11-18 session
 
+### Novig Scan: Ladders in Auto-scan, DK NBA tab removed, no My bets strip, a saved bet folds its row
+Max, 11-18: add ladder for NFL and NBA to auto; remove the DK NBA tab; hide the bets shown above the board; when a bet is entered and the phone's check is hit, collapse the row.
+
+- **Auto-scan** (`NV_CYCLE_BOARDS` in `server.js`): NBA Ladder and NFL Ladder are in the cycle, each after its own main board (NBA, NBA Ladder, NBA Team, NFL, NFL Ladder, CBB, CFB, soccer). Same rules as the others: the board's next day of games only, no board more often than every ten minutes. A full turn of the cycle is longer by the two Ladder passes.
+- **DK NBA** (`public/nba_scan.html`; `NV_ALL_BOARDS` in `server.js`): the tab is gone and its rows no longer show on the All tab. A page that was last left on DK NBA opens on NBA. The board's code on the server and `scan_dk.py` are left in place.
+- **My bets strip** (`betStrip`): the list of bets above the board is gone. A bet still shows on its own row (the green line and edge), and the opened row still has the stake box and each bet's × to remove it. Hide my bets works as before. A bet whose row is no longer on the board can't be removed by hand any more; it leaves by itself as before. The Kalshi positions strip is unchanged.
+- **Saving a bet folds the row**: on Save, Enter, or leaving the stake box (the iPhone keyboard's check mark), the opened row closes.
+- **Not checked** in a browser or on a live pass: `server.js` and the page's script were parsed for syntax only.
+
 ### Kalshi Scan: the Bet button stakes the row's QK $
 Max, 11-18: change $25 to QK for Kalshi.
 
