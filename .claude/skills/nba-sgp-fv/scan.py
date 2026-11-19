@@ -1904,12 +1904,29 @@ def candidates(markets, d, by, a):
                                 "label": " · ".join(leg_text(L) for L in legs), "r": min(rpr, rpa, rra), "j": j,
                                 "forced": False, "devig_r": None, "model": True, "td": True, "fix": 1.0,
                                 "rough": max(L["width"] for L in legs) > novig.MAX_SPREAD + 1e-9})
-        if a.tier == 1:
+        if a.tier == 1 and not a.pr:
             continue
         for x, y in PAIRS:
             if x not in main or y not in main:
                 continue
             r = price.shrunk_r(d, by, p, x, y)[0]
+            if a.pr and (x, y) == ("pts", "reb"):
+                # Max, 11-19: Points + Rebounds is back on the NBA board, for
+                # every player and not big men alone (Burries, a guard, 10+
+                # points with 6+ rebounds on Kalshi: Novig paid the same for
+                # that slip and this board never asked). Main lines, r at
+                # --pr-r or better as on Kalshi NBA, and not held back by his
+                # Points + Threes price (`pr`: the quoting loop's gate).
+                # Each leg at --pr-leg or better, Kalshi NBA's floor: a "main
+                # line" is the tight book nearest even money, and where only a
+                # far line is tight that is a long shot (Burries the same
+                # evening: 20+ points at 8%, the one tight book on his ladder).
+                c = combo(2, r, leg(x, main[x], 1), leg(y, main[y], 1))
+                if r >= a.pr_r and a.tier in (0, 1, 2) and min(L["p"] for L in c["legs"]) >= a.pr_leg - 1e-9:
+                    rest.append(dict(c, pr=True))
+                continue
+            if a.tier == 1:
+                continue
             # Max's cuts (11-10): no Points + Assists or Rebounds + Assists,
             # and Points + Rebounds only for big men. None has paid in any test.
             if (x, y) in (("pts", "ast"), ("reb", "ast")) or ((x, y) == ("pts", "reb") and not big(p)):
@@ -2324,7 +2341,7 @@ def scan(a, emit):
             best[c["id"]] = max(best.get(c["id"], -9.0), c["ev"])
 
         def go(c):
-            return c["id"] not in asked or best.get(c["id"], -9.0) * 100 > a.gate
+            return c.get("pr") or c["id"] not in asked or best.get(c["id"], -9.0) * 100 > a.gate
         rest = [c for c in cands if c["tier"] != 1]
         if first:   # leagues with no Points + Threes tier are not gated
             up, kept = [c for c in ladder if go(c)], [c for c in rest if go(c)]
@@ -2429,6 +2446,10 @@ def main():
     ap.add_argument("--no-ladder", dest="ladder", action="store_false", help="skip the higher-line combos")
     ap.add_argument("--min-r", type=float, default=None,
                     help="smallest r for an Over + Over on the other pairs (0.15; NHL 0.10)")
+    ap.add_argument("--no-pr", dest="pr", action="store_false",
+                    help="NBA main scope: skip each player's main-line Points + Rebounds slip")
+    ap.add_argument("--pr-r", type=float, default=0.25, help="NBA main scope: smallest r for that Points + Rebounds slip")
+    ap.add_argument("--pr-leg", type=float, default=0.30, help="NBA main scope: each leg of that slip has a fair value of at least this")
     ap.add_argument("--line-stats", nargs="+", default=["pts"], choices=("pts", "g", "ast", "sog"),
                     help="NHL game lines: the skater legs asked with a game line (default: points)")
     ap.add_argument("--mate-r", type=float, default=0.20, help="NHL teammates: smallest r for a slip across two skaters")
@@ -2509,6 +2530,8 @@ def main():
         a.tri, a.ladder, a.dd = 0, False, False
         if a.league == "nba":
             a.tier = 1
+    # Points + Rebounds for every player is the NBA board's slip (main scope); --scope all keeps its own rule (big men).
+    a.pr = a.pr and a.league == "nba" and a.scope == "main"
 
     if a.json:
         out = threading.Lock()

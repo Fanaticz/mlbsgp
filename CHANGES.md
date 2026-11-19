@@ -2,6 +2,19 @@
 
 ## 2026-11-19 session
 
+### Novig NBA: Points + Rebounds is back, for every player
+Max, 11-19 (a Kalshi NBA row, Burries 10+ points with 6+ rebounds at +5.8%, Novig paying the same 3.75x for it: plays like this don't come up on NV, just Kalshi): let's add points and rebounds back.
+
+- **Why it was missing**: the NBA board asked one slip a player, Points + Threes (11-10), and before that Points + Rebounds for big men only.
+- **Change** (`candidates` in `scan.py`; the NBA tab's note in `public/nba_scan.html`): the NBA board also asks each player's main-line Points + Rebounds, Over + Over, where his shrunk r is 0.25 or better (`--pr-r`, Kalshi NBA's bar) and each leg's fair value is 30% or better (`--pr-leg`, Kalshi NBA's floor). `--no-pr` drops it. NBA Ladder, NBA Team and `--scope all` are unchanged.
+- **Not gated**: the slip is asked whatever his Points + Threes priced at. The gate would have dropped most of them, and one pair's price says little about the other's.
+- **Lines**: Novig's main lines, which are not Kalshi's milestones (Burries: 12+ and 5+ on Novig against Kalshi's 10+ and 6+), so the same player can be a play on one board and not the other.
+- **The 30% floor**: a main line is the tight book nearest even money. The first dry run had Burries at 20+ points (8%), the only tight book left on his ladder.
+- **Cost**: 17 more slips on tonight's five games (28 before, 45 now), each an auction Novig's pricers see.
+- **The page**: in Plays, a card whose Points + Threes row is under Min EV is now headed by its best row that clears it; it was headed, and sorted, by the Points + Threes row.
+- **Alerts**: a Points + Rebounds slip alerts at the general bar (`ALERT_MIN_EV`), not Points + Threes' lower one.
+- **Checked**: candidates built from tonight's live books with the slip on and off (no quote asked): the other 28 slips are the same. A pass with quotes was not run.
+
 ### Discord alerts, CBB: one message a game for each type of slip
 Max, 11-19: actually for CBB, one bet per type. I don't need 3 notifications for unders. I like double unders more than +4.5 and same team under 55.
 
