@@ -2,6 +2,13 @@
 
 ## 2026-11-19 session
 
+### Novig tabs and alerts: $100 a unit, as on the Kalshi page
+Max, 11-19: switch my units to the same units as Kalshi.
+
+- **Change**: the QK $ column on the Novig tabs (`UNIT` in `nba_scan.html`) and the stake in a Discord alert (`ALERT_UNIT` in `novigAlerts.js`) are at $100 a unit; both were $500. The QK column in units is unchanged: 0.60u is now $60, was $300. `ALERT_UNIT` on the server sets the alerts' unit to something else.
+- **Not changed**: `scan.py`'s own `wager` field ($250 a unit, $500 for the NHL), which only its command-line table prints.
+- **Checked**: the alert checks, with the stake line at the new unit. The page was not opened.
+
 ### Novig's parlay fee is the new one
 Max, 11-19: yes, update the fee.
 

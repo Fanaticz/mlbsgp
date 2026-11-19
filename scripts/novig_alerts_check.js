@@ -36,7 +36,7 @@ const row = (o) => Object.assign({ key: 'a,b', player: 'Cam Spencer', id: 77, te
   const e = posts[0].embeds[0];
   assert.ok(e.title.includes('Cam Spencer') && e.title.includes('+7.1%'));
   assert.ok(e.url.startsWith('https://novig.com/events/11111111-'));
-  assert.strictEqual(e.fields.find(f => f.name.startsWith('Stake')).value, '$300 · 0.60u');   // 0.6u x $500
+  assert.strictEqual(e.fields.find(f => f.name.startsWith('Stake')).value, '$60 · 0.60u');   // 0.6u x $100
   assert.strictEqual(a.consider('nba', row({ ev: 0.085 })), 'already sent');   // under 2 points: nothing
   // moved 2+ points: the message is edited where it stands, no new message
   calls = [];

@@ -25,7 +25,7 @@
 //                         said, or has fallen under its bar: 2 (0: never edited)
 //   ALERT_MAX_PER_GAME    alerts for one game: 2
 //   ALERT_MIN_TTL_S       a quote with less than this left is not sent: 10
-//   ALERT_UNIT            dollars a unit for the stake: 500 (the page's QK $)
+//   ALERT_UNIT            dollars a unit for the stake: 100 (the page's QK $)
 //   ALERT_ROUGH           1 to alert on rows whose fair value is rough (a wide book)
 //   PUBLIC_URL            this app's address, for the slip link (else Railway's domain)
 //
@@ -54,7 +54,7 @@ function settings(env) {
     update: Math.max(0, num(env.ALERT_UPDATE_STEP, 2)),
     perGame: Math.max(1, Math.round(num(env.ALERT_MAX_PER_GAME, 2))),
     minTtl: num(env.ALERT_MIN_TTL_S, 10),
-    unit: num(env.ALERT_UNIT, 500),
+    unit: num(env.ALERT_UNIT, 100),
     rough: on(env.ALERT_ROUGH),
     base: String(env.PUBLIC_URL || (env.RAILWAY_PUBLIC_DOMAIN ? 'https://' + env.RAILWAY_PUBLIC_DOMAIN : '')).trim().replace(/\/+$/, ''),
   };
