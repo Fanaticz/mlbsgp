@@ -1819,6 +1819,14 @@ def candidates(markets, d, by, a):
         _, rows = novig.ladder(markets, nm)
         tight = {s: [r for r in rows.get(s, []) if usable(r, a.max_spread)] for s in STATS}
         main = {s: main_line(v) for s, v in tight.items() if v}
+        # A stat whose real main line has a wide book has no main line here:
+        # the nearest tight line can be a far milestone (Grant, 11-19: 10.5
+        # points 5.5c wide, so 20+ points at +856 was taken as his main line
+        # and asked with his threes, a ladder slip on the NBA board).
+        for s in list(main):
+            two = [r for r in rows.get(s, []) if r.get("mid") is not None]
+            if abs(main[s]["line"] - min(two, key=lambda r: abs(r["mid"] - 0.5))["line"]) > 1:
+                del main[s]
         starts = min((r["starts"] for v in rows.values() for r in v), default=None)
         ctx[p["athlete_id"]] = (p, main, starts)
 
