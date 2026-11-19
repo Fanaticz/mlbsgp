@@ -2,6 +2,15 @@
 
 ## 2026-11-19 session
 
+### Discord alerts: the heading says who and what
+Max, 11-19 (a message headed "Emari Demercado (HOU) · +11.9%"): make the heading "Demercado: 25+ Rush, 1+ TD". Not just the name.
+
+- **Change** (`heading` in `novigAlerts.js`): a message's heading is the player's last name and the legs, then the EV: "Demercado: 22+ Rush, 1+ TD · +11.9%". It is the line a phone's notification shows. The team is no longer in it (the game is on the next line).
+- **Stat words** are shortened in the heading only: RUSH YDS is Rush, YDS is Rec Yds, PASS YDS is Pass Yds, CAR is Carries, PTS+REB+AST is PRA. The legs list underneath is as it was.
+- **Two players**: the first one's last name, then the legs ("Stroud: 230+ Pass Yds, Collins 70+ Rec Yds"); NBA teammates' legs already name both.
+- **A game's own lines** (CBB, CFB, soccer, NBA Team's game slips): the legs alone, which name the teams.
+- **Checked**: the alert checks, with these headings added.
+
 ### Novig NBA: Points + Rebounds is back, for every player
 Max, 11-19 (a Kalshi NBA row, Burries 10+ points with 6+ rebounds at +5.8%, Novig paying the same 3.75x for it: plays like this don't come up on NV, just Kalshi): let's add points and rebounds back.
 
