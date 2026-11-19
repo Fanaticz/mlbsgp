@@ -23,7 +23,7 @@ const row = (o) => Object.assign({ key: 'a,b', player: 'Cam Spencer', id: 77, te
   assert.strictEqual(a.consider('ladder', row({ ev: 0.071, model: true })), 'under the EV bar');   // modelled: the 10% bar
   assert.strictEqual(a.consider('nhl', row({ ev: 0.3 })), 'board not in ALERT_SPORTS');
   assert.deepStrictEqual(a.S.sports, ['nba', 'ladder', 'nbateam', 'nfl', 'nflladder', 'soccer', 'cfb', 'cbb']);
-  assert.deepStrictEqual(a.S.scan, ['nba', 'nbateam', 'nfl', 'nflladder', 'soccer', 'cfb', 'cbb']);
+  assert.deepStrictEqual(a.S.scan, ['nba', 'nbateam', 'nfl', 'soccer', 'cfb', 'cbb']);
   // expiry, start, out, rough
   assert.strictEqual(a.consider('nba', row({ expires: T + 5000 })), 'quote expired or about to');
   assert.strictEqual(a.consider('nba', row({ expires: null })), 'no expiry on the quote');

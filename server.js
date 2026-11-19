@@ -2792,7 +2792,7 @@ app.post('/api/nba/novig-alert-test', async (req, res) => {
 });
 
 // Auto-scan: while switched on (the page's Auto-scan button), the server runs
-// whole-board passes of NBA, NBA Ladder, NBA Team, NFL, NFL Ladder, CBB, CFB and soccer one after another, with or
+// whole-board passes of NBA, NBA Team, NFL, CBB, CFB and soccer one after another, with or
 // without the page open. Still one pass at a time: a pass asked for with
 // Fetch runs first and the cycle carries on after it.
 // It prices each board's next day of games only (Max, 11-16: today's games;
@@ -2800,7 +2800,13 @@ app.post('/api/nba/novig-alert-test', async (req, res) => {
 // the NFL's Thursday): the games starting before the midnight that follows
 // the board's soonest open game, in the time zone of the page that switched
 // it on (Eastern if the page sent none). Later games are priced with Fetch.
-const NV_CYCLE_BOARDS = ['nba', 'nbateam', 'nfl', 'nflladder', 'cbb', 'cfb', 'soccer'];   // NFL Ladder since 11-18; NBA Ladder was added and taken out again the same day (Max): Fetch only
+// Football runs through its main day (Max, 11-19: the NFL's full Sunday, not
+// just the Thursday game, and CFB's Saturday): from the soonest open game to
+// the end of that Sunday (NFL) or Saturday (CFB), when it is at most
+// NV_CYCLE_REACH_DAYS on. A Monday night game is still priced alone.
+const NV_CYCLE_BOARDS = ['nba', 'nbateam', 'nfl', 'cbb', 'cfb', 'soccer'];   // NFL Ladder 11-18, out again 11-19 (Max: Fetch only, like NBA Ladder), to leave the time to the NFL's Sunday
+const NV_CYCLE_THROUGH = { nfl: 0, cfb: 6 };   // board -> the weekday its window runs through (0 = Sunday)
+const NV_CYCLE_REACH_DAYS = 4;
 const NV_CYCLE_GAP_MS = 60 * 1000;             // pause between two passes
 const NV_CYCLE_REST_MS = 10 * 60 * 1000;       // a board is not asked again sooner than this after its last pass began or ended
 // It runs until it is switched off: no time limit and no hours it rests (Max, 11-14).
@@ -2813,6 +2819,15 @@ function nvDayEnd(tz, now) {
   const p = {};
   for (const x of new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', hour: 'numeric', minute: 'numeric', second: 'numeric' }).formatToParts(now)) p[x.type] = Number(x.value);
   return Math.floor(now / 1000) * 1000 + (86400 - (p.hour * 3600 + p.minute * 60 + p.second)) * 1000;
+}
+// Where a board's auto-scan pass ends: the midnight after its soonest game's
+// day, or after its main day (NV_CYCLE_THROUGH) when that is near enough.
+function nvCycleEnd(league, tz, t) {
+  const end = nvDayEnd(tz, t), through = NV_CYCLE_THROUGH[league];
+  if (through === undefined) return end;
+  const day = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' }).format(t));
+  const on = (through - day + 7) % 7;
+  return on <= NV_CYCLE_REACH_DAYS ? end + on * 86400000 : end;
 }
 // Kept on disk beside the boards, so a redeploy or restart doesn't switch
 // auto-scan off (where that directory is a volume; elsewhere it is lost with
@@ -2854,7 +2869,7 @@ function nvCycleTick(first) {
       // read: today's games, as before.
       if (games && !games.length) { B.idle = Date.now(); return; }
       const first = games ? games.find(g => g.starts > Date.now()) || games[0] : null;
-      startNovigScan(league, C.wide, [], true, nvDayEnd(C.tz, Math.max(Date.now(), first ? first.starts : 0)));
+      startNovigScan(league, C.wide, [], true, nvCycleEnd(league, C.tz, Math.max(Date.now(), first ? first.starts : 0)));
     });
     return;
   }

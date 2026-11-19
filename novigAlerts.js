@@ -13,7 +13,7 @@
 //   ALERT_SPORTS          boards that may alert: every Novig tab on the page
 //                         (nba,ladder,nbateam,nfl,nflladder,soccer,cfb,cbb)
 //   ALERT_SCAN_SPORTS     boards the job prices on its own: ALERT_SPORTS without
-//                         ladder (NBA Ladder is Fetch only; its rows alert when fetched).
+//                         ladder and nflladder (the ladders are Fetch only; their rows alert when fetched).
 //   ALERT_MIN_EV          EV% a slip needs: 10
 //   ALERT_MIN_EV_PTS3     EV% for NBA main-line Points + Threes: 5
 //   ALERT_ONE_PER_TYPE    boards that get one message a game for each type of slip
@@ -50,7 +50,7 @@ function settings(env) {
     enabled: on(env.ALERTS_ENABLED),
     dry: on(env.ALERTS_DRY_RUN),
     sports,
-    scan: list(env.ALERT_SCAN_SPORTS, sports.filter(b => b !== 'ladder')).filter(b => BOARD_NAME[b]),
+    scan: list(env.ALERT_SCAN_SPORTS, sports.filter(b => b !== 'ladder' && b !== 'nflladder')).filter(b => BOARD_NAME[b]),
     minEv: num(env.ALERT_MIN_EV, 10),
     minEvPts3: num(env.ALERT_MIN_EV_PTS3, 5),
     oneType: list(env.ALERT_ONE_PER_TYPE, ['cbb']),
