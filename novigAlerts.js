@@ -15,8 +15,10 @@
 //                         ladder (NBA Ladder is Fetch only; its rows alert when fetched).
 //   ALERT_MIN_EV          EV% a slip needs: 10
 //   ALERT_MIN_EV_PTS3     EV% for NBA main-line Points + Threes: 5
-//   ALERT_REALERT_STEP    EV points a slip (or another slip on the same player) must
-//                         gain on the last alert to be sent again: 2
+//   ALERT_REALERT_STEP    A slip is sent once, ever (Max, 11-19: a second message
+//                         is a second bet on it). So is a player in a game. Set this
+//                         to let a DIFFERENT slip on the same player through when it
+//                         beats the one sent by this many EV points: 0 (never)
 //   ALERT_MAX_PER_GAME    alerts for one game: 2
 //   ALERT_MIN_TTL_S       a quote with less than this left is not sent: 10
 //   ALERT_UNIT            dollars a unit for the stake: 500 (the page's QK $)
@@ -44,7 +46,7 @@ function settings(env) {
     scan: list(env.ALERT_SCAN_SPORTS, sports.filter(b => b !== 'ladder')).filter(b => BOARD_NAME[b]),
     minEv: num(env.ALERT_MIN_EV, 10),
     minEvPts3: num(env.ALERT_MIN_EV_PTS3, 5),
-    step: num(env.ALERT_REALERT_STEP, 2),
+    step: Math.max(0, num(env.ALERT_REALERT_STEP, 0)),
     perGame: Math.max(1, Math.round(num(env.ALERT_MAX_PER_GAME, 2))),
     minTtl: num(env.ALERT_MIN_TTL_S, 10),
     unit: num(env.ALERT_UNIT, 500),
@@ -148,8 +150,8 @@ function create(opts) {
     }
     const step = S.step / 100, key = String(row.key), sub = subjectOf(board, row), game = gameOf(row);
     const a = M.slips[key], b = M.subjects[sub];
-    if (a && row.ev < a.ev + step - 1e-9) return 'already sent';
-    if (!a && b && row.ev < b.ev + step - 1e-9) return 'another slip on this one already sent';
+    if (a) return 'already sent';
+    if (b && (!(step > 0) || row.ev < b.ev + step - 1e-9)) return 'another slip on this one already sent';
     if (!a && !b && M.games[game] && M.games[game].n >= S.perGame) return 'game has its alerts';
     return null;
   }

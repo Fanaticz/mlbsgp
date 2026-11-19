@@ -27,7 +27,7 @@ const row = (o) => Object.assign({ key: 'a,b', player: 'Cam Spencer', id: 77, te
   assert.strictEqual(a.consider('nba', row({}), { out: true }), 'player out');
   assert.strictEqual(a.consider('nba', row({ rough: true })), 'rough fair value');
   assert.strictEqual(posts.length, 0);
-  // sent once; again only 2 points better
+  // sent once, and never again whatever its price does
   assert.strictEqual(a.consider('nba', row({}), { game: 'MEM @ DAL' }), null);
   await a.flush();
   assert.strictEqual(posts.length, 1);
@@ -36,10 +36,16 @@ const row = (o) => Object.assign({ key: 'a,b', player: 'Cam Spencer', id: 77, te
   assert.ok(e.url.startsWith('https://novig.com/events/11111111-'));
   assert.strictEqual(e.fields.find(f => f.name.startsWith('Stake')).value, '$300 · 0.60u');   // 0.6u x $500
   assert.strictEqual(a.consider('nba', row({ ev: 0.085 })), 'already sent');
-  assert.strictEqual(a.consider('nba', row({ ev: 0.092 })), null);
-  // same player, another slip: needs to beat the last alert by the step
-  assert.strictEqual(a.consider('nba', row({ key: 'a,c', ev: 0.10 })), 'another slip on this one already sent');
-  assert.strictEqual(a.consider('nba', row({ key: 'a,c', ev: 0.115 })), null);
+  assert.strictEqual(a.consider('nba', row({ ev: 0.50 })), 'already sent');
+  // same player, another slip: not sent either
+  assert.strictEqual(a.consider('nba', row({ key: 'a,c', ev: 0.50 })), 'another slip on this one already sent');
+  // with ALERT_REALERT_STEP set, another slip on him goes at that many points better; the same slip still never
+  const s2 = mk({ ALERT_REALERT_STEP: '2' });
+  assert.strictEqual(s2.consider('nba', row({})), null);
+  assert.strictEqual(s2.consider('nba', row({ ev: 0.50 })), 'already sent');
+  assert.strictEqual(s2.consider('nba', row({ key: 'a,c', ev: 0.08 })), 'another slip on this one already sent');
+  assert.strictEqual(s2.consider('nba', row({ key: 'a,c', ev: 0.095 })), null);
+  await s2.flush();
   // two alerts a game: a second player goes, a third does not
   assert.strictEqual(a.consider('nba', row({ key: 'd,e', id: 78, player: 'B' })), null);
   assert.strictEqual(a.consider('nba', row({ key: 'f,g', id: 79, player: 'C', ev: 0.3 })), 'game has its alerts');
