@@ -2,6 +2,13 @@
 
 ## 2026-11-19 session
 
+### Novig Scan: nothing about Discord on the page
+Max, 11-19 (screenshot of the status line): hide discord stuff.
+
+- **Change**: the green line "Discord alerts are on and keep ... priced" is gone. Other people use this page. With the test button already off, the page says nothing of the alerts; they run as before.
+- **Left**: while the alert job is pricing a board, the page still says a pass is running on it, as it does for any pass.
+- **Checked**: no mention of Discord is left in the page; not opened in a browser.
+
 ### Send test alert button removed; Check Novig bets is on the Kalshi page only
 Max, 11-19: remove the test button. Is everyone going to see my bets now?
 

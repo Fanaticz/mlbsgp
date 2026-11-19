@@ -538,7 +538,6 @@ const nvLink = (c, text) => {
 // What auto-scan is doing, for the status line.
 function autoLine() {
   const c = S.cycle;
-  if (c && !c.on && c.alerts) return `Discord alerts are on and keep ${c.alerts.map(b => BOARD[b]).join(", ")} priced, each board’s next day of games only`;
   if (!c || !c.on) return "";
   const run = S.scanning ? LEAGUE : S.busy;
   return `Auto-scan is on, each board’s next day of games only (${c.boards.map(b => BOARD[b]).join(" → ")})` +
