@@ -115,7 +115,13 @@ function embed(S, board, row, extra) {
     url,
     color: extra.test || extra.gone ? 0x8a8f98 : row.ev >= 0.10 ? 0x2ecc71 : 0xf1c40f,
     // The title is the link too; this line is the one that looks like a link.
-    description: [[extra.game, when].filter(Boolean).join(' · '), `**[Open in Novig ↗](${url})**${okIds ? ' · legs on the slip' : ''}`, ...notes].filter(Boolean).join('\n').slice(0, 1000) || undefined,
+    // "App, no prompt": the same slip through Novig's own universal-link
+    // address (novig.onelink.me/JHQQ, which iOS hands straight to the app
+    // with no "Open this page in Novig?" question; the /n/ page has to ask,
+    // because it opens the app by its novigapp:// name). On trial 11-19: not
+    // yet seen to put the legs on the slip, and it is a dead page on a computer.
+    description: [[extra.game, when].filter(Boolean).join(' · '),
+      `**[Open in Novig ↗](${url})**${okIds ? ` · [App, no prompt (trial) ↗](https://novig.onelink.me/JHQQ/events/${ids.join(',')})` : ''}`, ...notes].filter(Boolean).join('\n').slice(0, 1000) || undefined,
     fields: [
       { name: legs.length > 1 ? `${legs.length} legs` : 'Leg', value: legs.join('\n').slice(0, 1000) || String(row.label || '-') },
       { name: 'Novig', value: `${row.slip_x.toFixed(2)}x (${american(row.slip_x)})`, inline: true },

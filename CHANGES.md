@@ -2,6 +2,14 @@
 
 ## 2026-11-19 session
 
+### Discord alerts: a second link on trial, to open the app without iOS asking
+Max, 11-19 (iPhone screenshot: "Open this page in Novig?"): any way to not make links do this?
+
+- **Why it asks**: the `/n/` page opens the app by its `novigapp://` name, and Safari asks before it follows any such address. A page can't switch that off.
+- **What doesn't ask**: a universal link, an ordinary https address the app has claimed. Apple's list has none for novig.com; Novig's one is `novig.onelink.me/JHQQ/*` (its association file, read 11-19), which the app's own router also lists as a link prefix (11-16).
+- **Change**: each alert has a second link, **App, no prompt (trial)**, to `https://novig.onelink.me/JHQQ/events/<outcome ids>`. The first link is unchanged.
+- **Not known**: whether the app puts the legs on the slip from that address, or only opens. It can't be tried from here: in a browser it is a 404, so it is no use on a computer or without the app. If it fills the slip on the phone it becomes the phone's link; if not it comes out.
+
 ### Discord alerts: an "Open in Novig" link in the message
 Max, 11-19: add a link to Novig to the Discord message.
 
