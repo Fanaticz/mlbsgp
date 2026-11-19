@@ -86,7 +86,8 @@ function embed(S, board, row, extra) {
   const okIds = ids.length && ids.every(i => /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(String(i)));
   // /n/<ids> on this app sends a phone to the Novig app and a computer to
   // novig.com, legs on the slip. Without this app's address, novig.com itself.
-  const url = !okIds ? undefined : S.base ? `${S.base}/n/${ids.join(',')}` : `https://novig.com/events/${ids.join(',')}`;
+  // A row with no real outcome ids (the test button's stand-in) links to novig.com.
+  const url = !okIds ? 'https://novig.com' : S.base ? `${S.base}/n/${ids.join(',')}` : `https://novig.com/events/${ids.join(',')}`;
   const texts = String(row.label || '').split(' · ');
   const legs = (row.legs || []).map((L, i) => {
     const t = L.text || (texts.length === row.legs.length ? texts[i] : `${L.side || ''} ${L.line != null ? L.line : ''} ${L.stat || ''}`.trim());
@@ -113,7 +114,8 @@ function embed(S, board, row, extra) {
     title: `${head}${row.player}${row.team && !/ v | \+ /.test(row.player) ? ' (' + row.team + ')' : ''} · ${pct(row.ev)}`.slice(0, 250),
     url,
     color: extra.test || extra.gone ? 0x8a8f98 : row.ev >= 0.10 ? 0x2ecc71 : 0xf1c40f,
-    description: [[extra.game, when].filter(Boolean).join(' · '), ...notes].filter(Boolean).join('\n').slice(0, 1000) || undefined,
+    // The title is the link too; this line is the one that looks like a link.
+    description: [[extra.game, when].filter(Boolean).join(' · '), `**[Open in Novig ↗](${url})**${okIds ? ' · legs on the slip' : ''}`, ...notes].filter(Boolean).join('\n').slice(0, 1000) || undefined,
     fields: [
       { name: legs.length > 1 ? `${legs.length} legs` : 'Leg', value: legs.join('\n').slice(0, 1000) || String(row.label || '-') },
       { name: 'Novig', value: `${row.slip_x.toFixed(2)}x (${american(row.slip_x)})`, inline: true },

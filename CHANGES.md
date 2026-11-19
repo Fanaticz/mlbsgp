@@ -2,6 +2,12 @@
 
 ## 2026-11-19 session
 
+### Discord alerts: an "Open in Novig" link in the message
+Max, 11-19: add a link to Novig to the Discord message.
+
+- **Change** (`embed` in `novigAlerts.js`): the message's second line is **Open in Novig ↗**, the same address the title already linked to (`/n/<outcome ids>` on this app: the Novig app on a phone, novig.com on a computer, legs on the slip). The title's link was easy to miss. A test alert sent while no board has a row links to novig.com; it had no link at all.
+- **Checked**: the alert checks. Not seen in Discord.
+
 ### Novig tabs and alerts: $100 a unit, as on the Kalshi page
 Max, 11-19: switch my units to the same units as Kalshi.
 
