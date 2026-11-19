@@ -184,8 +184,11 @@ count, then commit and push `public/data/nba_correlations.json` to `main`.
 
 ## Slate scan
 
-**Default scope is main lines only** (Max, 11-10): NBA asks one slip a
-player, his main-line Points + Threes, and NFL asks no three-leg slips. Every
+**Default scope is main lines only** (Max, 11-10): NBA asks two slips a
+player at his main lines, Points + Threes and (Max, 11-19) Points + Rebounds
+where r is 0.25 or better and each leg's fair value is 30% or better
+(`--pr-r`, `--pr-leg`; `--no-pr` drops it; it is not held back by the
+Points + Threes gate), and NFL asks no three-leg slips. Every
 quote is an auction every Novig pricer sees, and plays were being repriced
 while the wider scans ran. Everything below about higher lines, other pairs,
 double- and triple-doubles and three legs needs `--scope all`, which Max has

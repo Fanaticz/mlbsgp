@@ -9,6 +9,43 @@ Max, 11-19 (Novig's developer team, by email): "No. The v3 API has no route that
 - **Their note on the "Key Not Created" error**, for the record: an account must finish identity verification before it can create a key, and a VPN, iCloud Private Relay, WARP or a proxy gets the request refused.
 - **What is left for not alerting a bet already held**: Max marking it. Not built yet.
 - **Checked**: the server file loads, the alert checks pass, no mention of the button is left in the page.
+### Novig's parlay fee: back to the old one, which the app still charges
+Max, 11-19 (an alert at 6.77x beside the app's slip for the same legs at 6.92x, $100 paying $691.89): prices aren't matching exactly.
+
+- **What it was**: last night's change moved the scanner to Novig's new parlay fee (0.055 x -ln(price) x stake) on the date its fee page gives, 11-19, without a slip to check it against. At 9:48 AM CT the app was still charging the old one (0.10 x (1 - price) x stake): $691.89 on $100 is the old fee at a 0.133 quote to the cent, and the new fee at that quote is 6.77x, the alert's number.
+- **Change** (`FEE_RULE`, `FEE_RULES`, `slip_multiplier` in `novig.py`): the old fee again. Both are kept; `FEE_RULE = "new"` is the switch for when the app moves.
+- **What moves**: slips longer than about +270 pay more than the boards said (this one 6.92x, not 6.77x: +12.8% where the alert said +10.4%), and shorter ones a little less (a 0.50 quote: 1.905x, not 1.927x, 1.2% of EV; a +178 Points + Threes slip about 0.6%).
+- **Since last night** the boards and alerts under-read long slips and over-read short ones by those amounts.
+- **Not known**: when Novig switches. The fee page still says 11-19; the quote's answer carries no fee to read. A slip in the app that pays less than its row on a long slip is the sign.
+- **Checked**: the old rule gives 4.25x at 0.218 and 6.919x at 0.133; the new rule still gives the docs' three examples. One slip is the evidence for the app's fee.
+
+### Discord alerts: Novig's price is in the heading
+Max, 11-19 (a message headed "Strus: 10+ PTS, 2+ 3PM · +5.2%"): add the multiplier in the title; it gets lost in the message.
+
+- **Change** (`embed` in `novigAlerts.js`): the heading carries Novig's slip price between the legs and the EV: "Strus: 10+ PTS, 2+ 3PM · 2.78x · +5.2%". An edited message (MOVED UP) shows the new price.
+- **Checked**: the alert checks.
+
+### Discord alerts: the heading says who and what
+Max, 11-19 (a message headed "Emari Demercado (HOU) · +11.9%"): make the heading "Demercado: 25+ Rush, 1+ TD". Not just the name.
+
+- **Change** (`heading` in `novigAlerts.js`): a message's heading is the player's last name and the legs, then the EV: "Demercado: 22+ Rush, 1+ TD · +11.9%". It is the line a phone's notification shows. The team is no longer in it (the game is on the next line).
+- **Stat words** are shortened in the heading only: RUSH YDS is Rush, YDS is Rec Yds, PASS YDS is Pass Yds, CAR is Carries, PTS+REB+AST is PRA. The legs list underneath is as it was.
+- **Two players**: the first one's last name, then the legs ("Stroud: 230+ Pass Yds, Collins 70+ Rec Yds"); NBA teammates' legs already name both.
+- **A game's own lines** (CBB, CFB, soccer, NBA Team's game slips): the legs alone, which name the teams.
+- **Checked**: the alert checks, with these headings added.
+
+### Novig NBA: Points + Rebounds is back, for every player
+Max, 11-19 (a Kalshi NBA row, Burries 10+ points with 6+ rebounds at +5.8%, Novig paying the same 3.75x for it: plays like this don't come up on NV, just Kalshi): let's add points and rebounds back.
+
+- **Why it was missing**: the NBA board asked one slip a player, Points + Threes (11-10), and before that Points + Rebounds for big men only.
+- **Change** (`candidates` in `scan.py`; the NBA tab's note in `public/nba_scan.html`): the NBA board also asks each player's main-line Points + Rebounds, Over + Over, where his shrunk r is 0.25 or better (`--pr-r`, Kalshi NBA's bar) and each leg's fair value is 30% or better (`--pr-leg`, Kalshi NBA's floor). `--no-pr` drops it. NBA Ladder, NBA Team and `--scope all` are unchanged.
+- **Not gated**: the slip is asked whatever his Points + Threes priced at. The gate would have dropped most of them, and one pair's price says little about the other's.
+- **Lines**: Novig's main lines, which are not Kalshi's milestones (Burries: 12+ and 5+ on Novig against Kalshi's 10+ and 6+), so the same player can be a play on one board and not the other.
+- **The 30% floor**: a main line is the tight book nearest even money. The first dry run had Burries at 20+ points (8%), the only tight book left on his ladder.
+- **Cost**: 17 more slips on tonight's five games (28 before, 45 now), each an auction Novig's pricers see.
+- **The page**: in Plays, a card whose Points + Threes row is under Min EV is now headed by its best row that clears it; it was headed, and sorted, by the Points + Threes row.
+- **Alerts**: a Points + Rebounds slip alerts at the general bar (`ALERT_MIN_EV`), not Points + Threes' lower one.
+- **Checked**: candidates built from tonight's live books with the slip on and off (no quote asked): the other 28 slips are the same. A pass with quotes was not run.
 
 ### Discord alerts, CBB: one message a game for each type of slip
 Max, 11-19: actually for CBB, one bet per type. I don't need 3 notifications for unders. I like double unders more than +4.5 and same team under 55.

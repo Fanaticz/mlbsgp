@@ -86,6 +86,22 @@ function typeOf(S, board, row) {
   return { key: `${gameOf(row)}|${board}|${group}`, rank };
 }
 
+// The message's heading: who and what, "Demercado: 22+ Rush, 1+ TD" (Max,
+// 11-19: not just the name; it is the line a phone's notification shows).
+// One player: his last name, then the legs. Two players: the first one's last
+// name, unless the legs already name them (NBA teammates). A slip across a
+// game's own lines: the legs alone, which name the teams.
+const STAT_WORD = [['RUSH+REC YDS', 'Rush+Rec'], ['RUSH YDS', 'Rush'], ['PASS YDS', 'Pass Yds'], ['PASS ATT', 'Pass Att'],
+                   ['PASS TD', 'Pass TD'], ['PTS+REB+AST', 'PRA'], ['YDS', 'Rec Yds'], ['REC', 'Rec'], ['CMP', 'Cmp'], ['CAR', 'Carries']];
+function heading(row) {
+  let legs = String(row.label || '').split(' · ').join(', ');
+  for (const [a, b] of STAT_WORD) legs = legs.split(a).join(b);
+  const who = String(row.player || '');
+  if (/ v | @ /.test(who) || !who) return legs || who;
+  const last = who.split(' + ')[0].trim().split(' ').slice(1).join(' ') || who;
+  return !legs ? who : legs.startsWith(last + ' ') ? legs : `${last}: ${legs}`;
+}
+
 const american = x => (x >= 2 ? '+' + Math.round((x - 1) * 100) : String(Math.round(-100 / (x - 1))));
 const pct = v => (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%';
 
@@ -126,7 +142,7 @@ function embed(S, board, row, extra) {
     row.gtd ? `Game-time decision: ${row.gtd}` : '',
   ].filter(Boolean);
   return {
-    title: `${head}${row.player}${row.team && !/ v | \+ /.test(row.player) ? ' (' + row.team + ')' : ''} · ${pct(row.ev)}`.slice(0, 250),
+    title: `${head}${heading(row)} · ${row.slip_x.toFixed(2)}x · ${pct(row.ev)}`.slice(0, 250),
     url,
     color: extra.test || extra.gone ? 0x8a8f98 : row.ev >= 0.10 ? 0x2ecc71 : 0xf1c40f,
     // The title is the phone's link too; this line is the one that looks like a link.
@@ -295,7 +311,7 @@ function create(opts) {
 
   const status = () => ({ enabled: S.enabled, dry: S.dry, webhook: !!S.webhook, sports: S.sports, scan: S.scan, minEv: S.minEv,
                           minEvPts3: S.minEvPts3, oneType: S.oneType, update: S.update, perGame: S.perGame, sent, lastError });
-  return { S, consider, verdict, test, status, embed: (b, r, x) => embed(S, b, r, x), flush: () => chain };
+  return { S, consider, verdict, test, status, heading, embed: (b, r, x) => embed(S, b, r, x), flush: () => chain };
 }
 
 module.exports = { create, settings, isPts3, gameOf, embed, BOARD_NAME };

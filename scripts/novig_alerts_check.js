@@ -36,7 +36,12 @@ const row = (o) => Object.assign({ key: 'a,b', player: 'Cam Spencer', id: 77, te
   await a.flush();
   assert.strictEqual(posts.length, 1);
   const e = posts[0].embeds[0];
-  assert.ok(e.title.includes('Cam Spencer') && e.title.includes('+7.1%'));
+  assert.strictEqual(e.title, 'Spencer: 13+ PTS, 3+ 3PM · 3.75x · +7.1%');   // the heading: who and what, not just the name
+  assert.strictEqual(a.heading({ player: 'Emari Demercado', label: '22+ RUSH YDS · 1+ TD' }), 'Demercado: 22+ Rush, 1+ TD');
+  assert.strictEqual(a.heading({ player: 'Terrence Shannon Jr.', label: '60+ YDS · 5+ REC' }), 'Shannon Jr.: 60+ Rec Yds, 5+ Rec');
+  assert.strictEqual(a.heading({ player: 'Nikola Jokic + Jamal Murray', label: 'Jokic 27+ PTS · Murray 22+ PTS' }), 'Jokic 27+ PTS, Murray 22+ PTS');
+  assert.strictEqual(a.heading({ player: 'C.J. Stroud + Nico Collins', label: '230+ PASS YDS · Collins 70+ YDS' }), 'Stroud: 230+ Pass Yds, Collins 70+ Rec Yds');
+  assert.strictEqual(a.heading({ player: 'TA&M @ TCU (NCAAB)', label: 'TA&M team total Under 80.5 · TCU team total Under 81.5' }), 'TA&M team total Under 80.5, TCU team total Under 81.5');
   const two = '11111111-1111-1111-1111-111111111111,22222222-2222-2222-2222-222222222222';
   assert.strictEqual(e.url, 'https://novig.onelink.me/JHQQ/events/' + two);   // the title: the phone's link
   assert.ok(e.description.includes(`[Open in the Novig app ↗](https://novig.onelink.me/JHQQ/events/${two})** · [on a computer ↗](https://novig.com/events/${two})`));

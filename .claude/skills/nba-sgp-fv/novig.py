@@ -120,20 +120,27 @@ def quote(m):
     return row
 
 
-RFQ_FEE = 0.055  # Novig's taker fee on a parlay, charged on top of the stake: RFQ_FEE x -ln(price) x stake
+# Novig's taker fee on a parlay, as a share of the stake at quote `price`.
+# "old": 0.10 x (1 - price). "new": 0.055 x -ln(price), which docs.novig.com/fees
+# says takes effect 11-19. FEE_RULE is the one the app charges: change it here
+# when a slip in the app stops matching.
+FEE_RULES = {"old": lambda p: 0.10 * (1 - p), "new": lambda p: 0.055 * -math.log(p)}
+FEE_RULE = "old"
 
 
 def slip_multiplier(price):
     """What Novig's order slip pays for a parlay quoted at `price`: the quote
-    after the parlay taker fee, fee = RFQ_FEE x stake x -ln(price)
-    (docs.novig.com/fees, "RFQ trades": $100 at 0.50 is $3.81, at 0.25 $7.62,
-    at 0.10 $12.66). In force from 11-19 (Max, 11-19: update it). Until then
-    it was 0.10 x stake x (1 - price), under which +359 (0.218) was 4.25x on
-    the slip (checked on Tatum U26.5 points + O7.5 assists, 11-09). The new
-    one pays more than the old on slips shorter than about +270 and less on
-    longer ones (at 0.10: 8.88x, was 9.17x). Not yet checked against a slip
-    in the app."""
-    return 1 / (price * (1 + RFQ_FEE * -math.log(price)))
+    after the parlay taker fee, 1 / (price x (1 + fee share)).
+    The app was still on the old fee on the morning of 11-19 (Max's slip,
+    Hutchinson 70+ receiving yards + 4+ receptions, 9:48 AM CT: $100 paid
+    $691.89, which is the old fee at a 0.133 quote to the cent, 6.9189x; the
+    new fee at that quote is 6.77x, what the alert said, and no quote in
+    tenths of a cent gives $691.89 under it). The scanner had moved to the new
+    fee the night before on the docs' date, unchecked against a slip. Under
+    the old fee +359 (0.218) is 4.25x (checked on Tatum U26.5 points + O7.5
+    assists, 11-09). The new one pays more than the old on slips shorter than
+    about +270 and less on longer ones (at 0.10: 8.88x against 9.17x)."""
+    return 1 / (price * (1 + FEE_RULES[FEE_RULE](price)))
 
 
 EXPIRES = {}  # "id,id,..." -> when the last quote for those legs expires (ms, this clock)
