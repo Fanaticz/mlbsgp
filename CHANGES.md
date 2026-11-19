@@ -2,6 +2,15 @@
 
 ## 2026-11-19 session
 
+### Novig account: a read-only look at what bets the API shows
+Max, 11-19: how do we not send bets I already have; can we build it from my open bets API? Try the key.
+
+- **Why a look first**: Novig's docs let a key read the account's positions, fills and ledger, the app's own wallet included (under a management key), but describe a position as one market and one outcome. Nothing says a parlay bought in the app appears there, or with its legs. One read answers it.
+- **`novigAccount.js`**: signs GET requests the way Novig asks (NOVIG-V3; Ed25519 or P-256) with `NOVIG_KEY_ID` and `NOVIG_PRIVATE_KEY` (the downloaded .pem's contents). GETs only: it cannot place, cancel or move anything. Neither value is logged or sent to the page.
+- **`GET /api/nba/novig-account-probe`** and a **Check Novig bets** button on the page: each account read's status, how many rows per wallet, the field names, and the first rows with their markets named from the public catalog. It needs the second passcode (the Kalshi page's) as well, since other people have the scanner's.
+- **Nothing uses it yet**: the alerts don't read the account. That waits on what the look shows.
+- **Checked**: the string signed matches all 30 of Novig's published vectors (in `scripts/novig_alerts_check.js`), and the signatures matched its two test keys. One live call with the published test key: Novig answered 401 "api key not found" on every route, as its docs say an unknown key gets. Not run with a real key; the button was not pressed in a browser.
+
 ### Discord alerts: the phone's link opens the app without asking
 Max, 11-19: the 2nd link works.
 

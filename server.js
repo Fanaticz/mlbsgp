@@ -2791,6 +2791,19 @@ app.post('/api/nba/novig-alert-test', async (req, res) => {
   } catch (e) { res.status(502).json({ error: e.message }); }
 });
 
+// GET /api/nba/novig-account-probe — what the owner's Novig account reads
+// look like (novigAccount.js: GETs only, signed with NOVIG_KEY_ID /
+// NOVIG_PRIVATE_KEY), to find out whether his open parlay bets can be read so
+// alerts can leave them out. His positions are his own business: it needs the
+// owner's second passcode too (the Kalshi page's), like the Kalshi boards.
+const NV_ACCOUNT = require('./novigAccount.js').create();
+app.get('/api/nba/novig-account-probe', async (req, res) => {
+  if (!nvBetsAuth(req, res)) return;
+  if ((req.get('X-Kalshi-Key') || '') !== NV_KALSHI_KEY) return setTimeout(() => res.status(423).json({ error: 'locked' }), 800);
+  if (!NV_ACCOUNT.ready) return res.status(503).json({ error: 'NOVIG_KEY_ID and NOVIG_PRIVATE_KEY are not both set on the server (or the private key is not a key file)' });
+  try { res.json(await NV_ACCOUNT.probe()); } catch (e) { res.status(502).json({ error: e.message }); }
+});
+
 // Auto-scan: while switched on (the page's Auto-scan button), the server runs
 // whole-board passes of NBA, NBA Ladder, NBA Team, NFL, NFL Ladder, CBB, CFB and soccer one after another, with or
 // without the page open. Still one pass at a time: a pass asked for with
