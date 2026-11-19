@@ -8,7 +8,7 @@
 
 --payout is the slip's price (3.80, 3.80x or +280), or "novig" to ask Novig
 for its parlay price at the legs' lines (player-stat legs only): its quote
-after the 10% parlay fee, which is what the slip shows. --before-fee takes
+after the parlay fee, which is what the slip shows. --before-fee takes
 that fee off a payout given by hand (Pikkit's Novig price is the raw quote:
 +359 there is 4.25x on the slip). The payout adds EV% and a
 quarter-Kelly stake at the FV as shown: units = f/4 x 100 (1u = 1% of
@@ -418,7 +418,7 @@ def main():
         p, dec = sgp.prob(fv), decimal_odds(args.payout)
         if args.before_fee:
             raw, dec = dec, novig.slip_multiplier(round(1 / dec, 3))  # Novig quotes to 0.001
-            print(f"Novig pays {dec:.2f}x ({sgp.american(1 / dec):+d}): its {raw:.2f}x quote after the 10% parlay fee")
+            print(f"Novig pays {dec:.2f}x ({sgp.american(1 / dec):+d}): its {raw:.2f}x quote after the parlay fee")
         b = dec - 1
         units = max(0.0, (p * b - (1 - p)) / b) * args.kelly * 100
         print(f"EV% = {(p * dec - 1) * 100:.1f}%")

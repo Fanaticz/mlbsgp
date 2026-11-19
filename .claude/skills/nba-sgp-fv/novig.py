@@ -18,6 +18,7 @@ ladder). A line wider than MAX_SPREAD is shown but never priced from:
 price.py shifts from the nearest tight line instead.
 """
 import json
+import math
 import os
 import sys
 import time
@@ -119,16 +120,20 @@ def quote(m):
     return row
 
 
-RFQ_FEE = 0.10  # Novig's taker fee on a parlay, charged on top of the stake
+RFQ_FEE = 0.055  # Novig's taker fee on a parlay, charged on top of the stake: RFQ_FEE x -ln(price) x stake
 
 
 def slip_multiplier(price):
     """What Novig's order slip pays for a parlay quoted at `price`: the quote
-    after the parlay taker fee, fee = RFQ_FEE x stake x (1 - price)
-    (docs.novig.com/fees, "RFQ trades"). The raw quote is what Pikkit shows as
-    Novig's odds: +359 (0.218) is 4.25x on the slip. Checked on Tatum U26.5
-    points + O7.5 assists, 11-09: quote 0.218, Pikkit +359, slip 4.25x."""
-    return 1 / (price * (1 + RFQ_FEE * (1 - price)))
+    after the parlay taker fee, fee = RFQ_FEE x stake x -ln(price)
+    (docs.novig.com/fees, "RFQ trades": $100 at 0.50 is $3.81, at 0.25 $7.62,
+    at 0.10 $12.66). In force from 11-19 (Max, 11-19: update it). Until then
+    it was 0.10 x stake x (1 - price), under which +359 (0.218) was 4.25x on
+    the slip (checked on Tatum U26.5 points + O7.5 assists, 11-09). The new
+    one pays more than the old on slips shorter than about +270 and less on
+    longer ones (at 0.10: 8.88x, was 9.17x). Not yet checked against a slip
+    in the app."""
+    return 1 / (price * (1 + RFQ_FEE * -math.log(price)))
 
 
 EXPIRES = {}  # "id,id,..." -> when the last quote for those legs expires (ms, this clock)

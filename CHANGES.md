@@ -2,6 +2,15 @@
 
 ## 2026-11-19 session
 
+### Novig's parlay fee is the new one
+Max, 11-19: yes, update the fee.
+
+- **Change** (`novig.slip_multiplier`): the fee on a parlay is 0.055 x -ln(price) x stake, Novig's from 11-19 (docs.novig.com/fees, "RFQ trades"; its changelog of 11-16). It was 0.10 x (1 - price) x stake. Every Novig board's slip price, EV and stake come through this one function, and so do the alerts and the Kalshi boards' Novig comparison.
+- **What moves**: slips shorter than about +270 pay a little more than the page said (a 0.50 quote: 1.927x, was 1.905x) and longer ones less (0.20: 4.59x, was 4.63x; 0.10: 8.88x, was 9.17x, 3.2% of EV). The Ladder tabs are the longest slips.
+- **Rows already on the boards** keep the old fee's numbers until their next pass or refresh.
+- **Checked**: the docs' three examples ($100 at 0.50 is $3.81, at 0.25 $7.62, at 0.10 $12.66). The page's and the skill's text no longer says 10%.
+- **Not checked**: a slip in the app. Put one on and compare its multiplier with the row's.
+
 ### Novig Scan: Discord alerts
 Max, 11-19: a background job that finds +EV parlays and posts them to my Discord channel. 5% for Points + Threes, 10% for the rest; not the same kind of bet over and over.
 
@@ -16,7 +25,6 @@ Max, 11-19: a background job that finds +EV parlays and posts them to my Discord
 - **Settings**: `DISCORD_WEBHOOK_URL`, `ALERTS_ENABLED`, `ALERTS_DRY_RUN` (prints would-be alerts to the log, posts nothing), `ALERT_SPORTS`, `ALERT_SCAN_SPORTS`, `ALERT_MIN_EV` (10), `ALERT_MIN_EV_PTS3` (5), `ALERT_REALERT_STEP` (0), `ALERT_UPDATE_STEP` (2), `ALERT_MAX_PER_GAME` (2), `ALERT_MIN_TTL_S` (10), `ALERT_UNIT` (500), `ALERT_ROUGH`, `PUBLIC_URL`. `node novigAlerts.js --dry` prints what the saved boards would alert on.
 - **Checked**: `node scripts/novig_alerts_check.js` (the two EV bars, expiry, the repeat rules, a 429, a failed post, dry run, the webhook in no log). Run here against a stand-in webhook with the bar dropped to -3%: the job started an NFL pass by itself, IND @ HOU sent two alerts and then (with the step then at 2) one better slip for each of those two players, the first post was answered 429 and re-sent, and the message for Daniel Jones U32.5 pass attempts + U19.5 completions carried the board row's numbers (quote 0.422, 2.24x, fair +121, EV +1.4%, 0.28u, $138). The button was pressed in a browser. On the NBA board nothing was asked: no tight books at 11pm ET.
 - **Not checked**: a real Discord channel, and the deployed app.
-- **Not changed, and wrong from today**: the parlay fee. Novig's fee from 11-19 is 0.055 x -ln(price) x stake (docs.novig.com/fees); `novig.slip_multiplier` still has 0.10 x (1 - price) x stake. The old one overstates what a slip longer than about +270 pays (at 0.10: 9.17x shown, 8.88x real) and understates shorter ones (the Jones slip above is +2.4% on the new fee). Waiting on Max's word.
 
 ## 2026-11-18 session
 

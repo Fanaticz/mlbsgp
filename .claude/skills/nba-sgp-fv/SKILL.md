@@ -10,7 +10,7 @@ description: Fair value of an NBA same-player SGP (2+ legs of points, rebounds, 
 - **Slip:** player, legs and payout (no slip, legs only → `--payout novig`,
   see Related).
 - **Pikkit's Novig price is not what Novig pays.** Pikkit shows Novig's raw
-  parlay quote; the slip pays that after Novig's 10% parlay fee (+359 on
+  parlay quote; the slip pays that after Novig's parlay fee (under the fee before 11-19, +359 on
   Pikkit is 4.25x on the slip). For a Novig price read off Pikkit, add
   `--before-fee`. A Novig slip's own multiplier, and other books' prices on
   Pikkit, are used as shown. Novig milestones: "26+ Points · Yes" =
@@ -363,7 +363,7 @@ can ever make back.
   docs.novig.com/affiliates/parlay-pricing) for the legs' own lines, takes
   Novig's parlay fee off it (fee = 0.10 × stake × (1 − quote), so slip x =
   1 / (quote × (1 + 0.10 × (1 − quote))); `novig.slip_multiplier`) and prints
-  `Novig pays 2.56x (+156): its 2.75x quote after the 10% parlay fee` above
+  `Novig pays 2.56x (+156): its 2.75x quote after the parlay fee` above
   the block. Checked 11-09 on Tatum U26.5 points + O7.5 assists: quote
   0.218, slip 4.25x. Player-stat legs posted
   on Novig only; a score leg, an unposted line or a 404 ("no price right
