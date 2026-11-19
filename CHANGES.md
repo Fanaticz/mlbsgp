@@ -2,6 +2,14 @@
 
 ## 2026-11-19 session
 
+### Novig account read taken out: the API does not list parlays
+Max, 11-19 (Novig's developer team, by email): "No. The v3 API has no route that lists the parlays you placed in the app or their legs. The v3 RFQ routes serve makers only."
+
+- **So**: open parlay bets can't be read from Novig, with any key. The look built for it this morning is removed: `novigAccount.js`, `GET /api/nba/novig-account-probe`, the **Check Novig bets** button on the Kalshi page, and its signing vectors. `NOVIG_KEY_ID` and `NOVIG_PRIVATE_KEY` are read by nothing; no key needs making.
+- **Their note on the "Key Not Created" error**, for the record: an account must finish identity verification before it can create a key, and a VPN, iCloud Private Relay, WARP or a proxy gets the request refused.
+- **What is left for not alerting a bet already held**: Max marking it. Not built yet.
+- **Checked**: the server file loads, the alert checks pass, no mention of the button is left in the page.
+
 ### Discord alerts, CBB: one message a game for each type of slip
 Max, 11-19: actually for CBB, one bet per type. I don't need 3 notifications for unders. I like double unders more than +4.5 and same team under 55.
 

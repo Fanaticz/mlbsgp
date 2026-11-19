@@ -115,12 +115,3 @@ const row = (o) => Object.assign({ key: 'a,b', player: 'Cam Spencer', id: 77, te
   assert.ok(!JSON.stringify([logs, a.status()]).includes('SECRET'));
   console.log('novig alerts: all checks passed');
 })().catch(e => { console.error(e); process.exit(1); });
-
-// novigAccount.js: the string a Novig request is signed over, on Novig's own 30 vectors.
-{
-  const N = require('../novigAccount.js'), V = require('./fixtures/novig_signing_vectors.json').vectors;
-  for (const v of V) assert.strictEqual(N.stringToSign(v.input.timestamp, v.input.method, v.input.path, v.input.query, v.input.body), v.string_to_sign, v.id);
-  assert.strictEqual(V.length, 30);
-  assert.strictEqual(N.create({}).ready, false);
-  console.log('novig account: the string to sign matches all 30 vectors');
-}
