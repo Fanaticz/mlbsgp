@@ -2,6 +2,14 @@
 
 ## 2026-11-19 session
 
+### Send test alert button removed; Check Novig bets is on the Kalshi page only
+Max, 11-19: remove the test button. Is everyone going to see my bets now?
+
+- **Send test alert** is off the page. Its route is still on the server.
+- **Check Novig bets** was on the Novig page, where everyone with the scanner's passcode saw the button (not the bets: those needed the second passcode). It is now on the Kalshi page only (`?kalshi`), and uses that page's passcode.
+- **The built-in second passcode** (`yyy`, when `KALSHI_TAB_KEY` is not set) is written in the code, so it is no lock. The account read is off unless `KALSHI_TAB_KEY` is set on the server.
+- **Checked**: the page loads in a browser without errors on both pages; the button is absent on the Novig page and present on the Kalshi one; the route's three refusals.
+
 ### Novig account: a read-only look at what bets the API shows
 Max, 11-19: how do we not send bets I already have; can we build it from my open bets API? Try the key.
 

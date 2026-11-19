@@ -109,7 +109,7 @@
   .tag.q { margin:0 0 0 7px; border-color:#b8860b; color:#e0a82e; font-weight:700; }   /* questionable on the injury report */
   .tag { flex:none; margin-right:7px; border:1px solid var(--line); border-radius:5px; padding:0 5px; font-size:10.5px;
     font-weight:600; color:var(--accent); white-space:nowrap; letter-spacing:.02em; }
-  #auto, #alerttest, #acct { background:none; border:1px solid var(--line); color:var(--muted); border-radius:8px; padding:7px 11px; font-size:13px; cursor:pointer; white-space:nowrap; }
+  #auto, #acct { background:none; border:1px solid var(--line); color:var(--muted); border-radius:8px; padding:7px 11px; font-size:13px; cursor:pointer; white-space:nowrap; }
   #auto.on { border-color:var(--pos); color:var(--pos); font-weight:600; }
   /* The All tab gathers every board: no pass of its own, no pair or game filter. */
   body.all #mode, body.all #game, body.all #now, body.all #pair { display:none !important; }
@@ -186,8 +186,7 @@
   </select>
   <button type="button" id="now" title="Run one pass. Nothing is asked of Novig until you press this: each pass sends every combo to its pricers as a live auction. While a pass runs, this button stops it." style="background:var(--accent);border:0;color:#1a1a1a;font-weight:600;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;white-space:nowrap">Fetch</button>
   <button type="button" id="auto" title="Auto-scan: the server prices every board (NBA, NBA Team, NFL, NFL Ladder, CBB, CFB, soccer; NBA Ladder is Fetch only) one after another, over and over, with this page open or closed. Each board's next day of games only. It runs until you press this again. Each pass sends every combo to Novig's pricers.">Auto-scan</button>
-  <button type="button" id="alerttest" title="Sends one message marked TEST to the Discord channel the alerts go to, with the numbers of the best slip on the alert boards right now. It asks Novig nothing.">Send test alert</button>
-  <button type="button" id="acct" title="Reads your Novig account with your API key (read only) and shows what its positions and fills look like, to see whether open parlay bets can be read. Asks for your second passcode (the Kalshi page's).">Check Novig bets</button>
+  <button type="button" id="acct" hidden title="Reads your Novig account with your API key (read only) and shows what its positions and fills look like, to see whether open parlay bets can be read. Asks for your second passcode (the Kalshi page's).">Check Novig bets</button>
   <button type="button" id="unhide" style="display:none" title="Bring back the rows you swiped away."></button>
   <button type="button" id="hidebets" title="Hide or show your own bets on this page, for a screenshot.">Hide my bets</button>
   <a class="back" id="corr" href="nba.html">Correlations →</a>
@@ -831,26 +830,11 @@ document.getElementById("auto").onclick = async () => {
   } catch (_) { /* the next poll shows where it stands */ }
   poll();
 };
-// Send test alert: POST /api/nba/novig-alert-test; the button says how it went.
-document.getElementById("alerttest").onclick = async e => {
-  const b = e.currentTarget, was = "Send test alert";
-  b.disabled = true; b.textContent = "Sending…";
-  let msg;
-  try {
-    const r = await fetch("/api/nba/novig-alert-test", { method: "POST", headers: { "X-Scan-Key": KEY } }), j = await r.json();
-    msg = r.ok ? (j.dry ? "Dry run: printed to the log" : "Sent: check Discord") : "Not sent: " + (j.error || r.status);
-  } catch (_) { msg = "Not sent: no answer from the server"; }
-  b.textContent = msg;
-  setTimeout(() => { b.textContent = was; b.disabled = false; }, 6000);
-};
 // Check Novig bets: GET /api/nba/novig-account-probe, shown as it came, with a Copy button.
 document.getElementById("acct").onclick = async e => {
   const b = e.currentTarget;
-  let k2 = "";
-  try { k2 = localStorage.getItem(KKEYLS) || ""; } catch (_) {}
-  if (typeof KKEY === "string" && KKEY) k2 = KKEY;
-  if (!k2) k2 = prompt("Your second passcode (the Kalshi page's)") || "";
-  if (!k2) return;
+  const k2 = KKEY;
+  if (!k2) return kalshiAsk();
   b.disabled = true; b.textContent = "Reading…";
   let text;
   try {
@@ -880,8 +864,7 @@ if (KPAGE) {
   document.title = "Kalshi SGP Scanner";
   document.querySelector("h1").textContent = "Kalshi SGP scanner";
   document.getElementById("auto").hidden = true;
-  document.getElementById("alerttest").hidden = true;
-  document.getElementById("acct").hidden = true;
+  document.getElementById("acct").hidden = false;   // the owner's page only: the Novig page, which other people use, never shows it
   if (!KKEY) kalshiAsk();
   document.querySelector("h1").addEventListener("click", e => { if (e.detail === 3 && !KKEY) { getSelection().removeAllRanges(); kalshiAsk(); } });
 }

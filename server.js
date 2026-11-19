@@ -2773,8 +2773,8 @@ function nvAlert(league, wide, row) {
   const a = NV_ALERTS.status();
   if (a.enabled) console.log(`Novig alerts: on${a.dry ? ' (dry run: nothing is posted)' : a.webhook ? '' : ' but DISCORD_WEBHOOK_URL is not set'}; boards ${a.sports.join(', ')}; priced by the job: ${a.scan.join(', ')}`);
 }
-// POST /api/nba/novig-alert-test — the page's "Send test alert" button: one
-// message marked TEST, with the numbers of the best row on the alert boards
+// POST /api/nba/novig-alert-test — one message marked TEST (the page's button
+// for it was taken off 11-19; the route is kept for a check by hand), with the numbers of the best row on the alert boards
 // when there is one. GET /api/nba/novig-alerts — the settings in force (never the webhook).
 app.get('/api/nba/novig-alerts', (req, res) => { if (nvBetsAuth(req, res)) res.json(NV_ALERTS.status()); });
 app.post('/api/nba/novig-alert-test', async (req, res) => {
@@ -2799,6 +2799,8 @@ app.post('/api/nba/novig-alert-test', async (req, res) => {
 const NV_ACCOUNT = require('./novigAccount.js').create();
 app.get('/api/nba/novig-account-probe', async (req, res) => {
   if (!nvBetsAuth(req, res)) return;
+  // Off unless the owner has set his own second passcode: the built-in one is in the code.
+  if (!(process.env.KALSHI_TAB_KEY || '').trim()) return res.status(503).json({ error: 'set KALSHI_TAB_KEY on the server first: this is not shown behind the built-in passcode' });
   if ((req.get('X-Kalshi-Key') || '') !== NV_KALSHI_KEY) return setTimeout(() => res.status(423).json({ error: 'locked' }), 800);
   if (!NV_ACCOUNT.ready) return res.status(503).json({ error: 'NOVIG_KEY_ID and NOVIG_PRIVATE_KEY are not both set on the server (or the private key is not a key file)' });
   try { res.json(await NV_ACCOUNT.probe()); } catch (e) { res.status(502).json({ error: e.message }); }
