@@ -49,14 +49,20 @@ const row = (o) => Object.assign({ key: 'a,b', player: 'Cam Spencer', id: 77, te
   assert.strictEqual(calls[0], 'PATCH /messages/m1');
   assert.ok(calls[1].title.startsWith('MOVED UP · ') && calls[1].description.includes('Novig 3.75x → 3.92x') && calls[1].description.includes('EV +7.1% → +12.0%'));
   assert.strictEqual(a.consider('nba', row({ ev: 0.125, slip_x: 3.93 })), 'already sent');   // under 2 points from what it now says
-  // the fair value moved against it and it is under the bar: marked, once
+  // the fair value moved against it and it is under the bar: moved down, nothing more
   calls = [];
   assert.strictEqual(a.consider('nba', row({ ev: 0.01, fair: 270, fair_x: 3.7, expires: null })), 'message edited');
   await a.flush();
-  assert.ok(calls[1].title.startsWith('NO LONGER A PLAY · ') && calls[1].description.includes('Fair +250 → +270 (longer'));
+  assert.ok(calls[1].title.startsWith('MOVED DOWN · ') && calls[1].description.includes('Fair +250 → +270 (longer'));
   assert.strictEqual(a.consider('nba', row({ ev: 0.012, fair: 270 })), 'already sent');
   assert.strictEqual(a.consider('nba', row({ ev: 0.50 })), 'message edited');   // back, and far better: edited, still no new message
   await a.flush();
+  // his player is now out: said once, at any EV
+  calls = [];
+  assert.strictEqual(a.consider('nba', row({ ev: 0.50 }), { out: true }), 'message edited');
+  await a.flush();
+  assert.ok(calls[1].title.startsWith('PLAYER OUT · '));
+  assert.strictEqual(a.consider('nba', row({ ev: 0.50 }), { out: true }), 'already sent');
   assert.strictEqual(posts.length, 1);
   // same player, another slip: not sent either
   assert.strictEqual(a.consider('nba', row({ key: 'a,c', ev: 0.50 })), 'another slip on this one already sent');

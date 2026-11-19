@@ -22,7 +22,8 @@
 //   ALERT_UPDATE_STEP     A slip already sent is not sent again, but its message is
 //                         edited in place (no new message, no ping) when its EV has
 //                         moved this many points either way since the message last
-//                         said, or has fallen under its bar: 2 (0: never edited)
+//                         said (MOVED UP / MOVED DOWN), or his player is now out: 2
+//                         (0: never edited)
 //   ALERT_MAX_PER_GAME    alerts for one game: 2
 //   ALERT_MIN_TTL_S       a quote with less than this left is not sent: 10
 //   ALERT_UNIT            dollars a unit for the stake: 100 (the page's QK $)
@@ -108,7 +109,7 @@ function embed(S, board, row, extra) {
     if (row.fair !== was.fair) moved.push(`Fair ${was.fair > 0 ? '+' : ''}${was.fair} → ${row.fair > 0 ? '+' : ''}${row.fair} (${row.fair > was.fair ? 'longer: less likely to hit' : 'shorter: more likely to hit'})`);
     moved.push(`EV ${pct(was.ev)} → ${pct(row.ev)}`);
   }
-  const head = extra.test ? 'TEST · ' : !was ? '' : extra.gone ? 'NO LONGER A PLAY · ' : row.ev > was.ev ? 'MOVED UP · ' : 'MOVED DOWN · ';
+  const head = extra.test ? 'TEST · ' : !was ? '' : extra.gone ? 'PLAYER OUT · ' : row.ev > was.ev ? 'MOVED UP · ' : 'MOVED DOWN · ';
   const notes = [
     was ? `Same slip as sent <t:${Math.floor(was.at / 1000)}:R>, not a new one. ` + moved.join(' · ') : '',
     extra.better ? 'Better than the last alert on this one.' : '',
@@ -217,20 +218,21 @@ function create(opts) {
   }
 
   // A slip already sent, priced again: its message is edited where it stands
-  // when the EV has moved S.update points since the message last said, or the
-  // slip is no longer a play (under its bar, or his player now out). Never a
-  // new message. Returns what it did, or null for a slip not sent before.
+  // when the EV has moved S.update points since the message last said, or his
+  // player is now out. Never a new message. Returns what it did, or null for a slip not sent before.
   function update(board, row, o) {
     const a = M.slips[String(row.key)];
     if (!a || !row || !(row.slip_x > 1) || !Number.isFinite(row.ev)) return null;
     if (!a.first || !(S.update > 0) || (row.starts && row.starts <= now())) return 'already sent';
-    const gone = !!o.out || row.ev * 100 < minEv(S, board, row) - 1e-9;
+    // A slip that has slipped under its bar is only a slip that moved down (Max, 11-19: +7.2% was
+    // being titled NO LONGER A PLAY). The grey title is for a player ESPN now lists as out.
+    const gone = !!o.out;
     if (Math.abs(row.ev - a.shown) < S.update / 100 - 1e-9 && gone === !!a.gone) return 'already sent';
     if (!S.dry && !a.id) return 'already sent';   // its message is still on the way (or was sent before ids were kept)
     const prev = { shown: a.shown, gone: a.gone };
     a.shown = row.ev; a.gone = gone;
     save();
-    const text = `${gone ? 'no longer a play' : row.ev > a.first.ev ? 'moved up' : 'moved down'}: ` + line(board, row, o.game) + ` | was ${pct(a.first.ev)} at ${a.first.slip_x.toFixed(2)}x, fair ${a.first.fair}`;
+    const text = `${gone ? 'player out' : row.ev > a.first.ev ? 'moved up' : 'moved down'}: ` + line(board, row, o.game) + ` | was ${pct(a.first.ev)} at ${a.first.slip_x.toFixed(2)}x, fair ${a.first.fair}`;
     if (S.dry) { log('[novig-alert dry] ' + text); return 'message edited'; }
     const body = { embeds: [embed(S, board, row, { game: o.game, was: a.first, gone })] };
     chain = chain.then(() => post(body, null, a.id)).then(() => log('[novig-alert] ' + text))

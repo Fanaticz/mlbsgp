@@ -2,6 +2,15 @@
 
 ## 2026-11-19 session
 
+### Discord alerts: no more NO LONGER A PLAY
+Max, 11-19 (screenshot: "NO LONGER A PLAY · Xavier Hutchinson · +7.2%"): don't send this.
+
+- **What it was**: a sent slip whose EV fell under its bar (10% here) had its message greyed and titled NO LONGER A PLAY, at any EV, +7.2% included.
+- **Change** (`update` in `novigAlerts.js`): falling under the bar is no longer an event. A sent slip's message is edited only when its EV is 2 points off what the message last said, titled MOVED UP or MOVED DOWN; that one would have read MOVED DOWN, +10.0% → +7.2%. The grey title is kept for one case, a player ESPN now lists as out, and reads PLAYER OUT.
+- **Messages already titled NO LONGER A PLAY** stay as they are unless their slip moves 2 points again.
+- **No edits at all**: `ALERT_UPDATE_STEP=0`.
+- **Checked**: the alert checks.
+
 ### Novig Scan and Kalshi Scan are the first two tabs
 Max, 11-19: make the scanner tab and Kalshi all the way to the left.
 
