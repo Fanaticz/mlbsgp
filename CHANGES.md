@@ -2,6 +2,16 @@
 
 ## 2026-11-19 session
 
+### Novig's parlay fee: back to the old one, which the app still charges
+Max, 11-19 (an alert at 6.77x beside the app's slip for the same legs at 6.92x, $100 paying $691.89): prices aren't matching exactly.
+
+- **What it was**: last night's change moved the scanner to Novig's new parlay fee (0.055 x -ln(price) x stake) on the date its fee page gives, 11-19, without a slip to check it against. At 9:48 AM CT the app was still charging the old one (0.10 x (1 - price) x stake): $691.89 on $100 is the old fee at a 0.133 quote to the cent, and the new fee at that quote is 6.77x, the alert's number.
+- **Change** (`FEE_RULE`, `FEE_RULES`, `slip_multiplier` in `novig.py`): the old fee again. Both are kept; `FEE_RULE = "new"` is the switch for when the app moves.
+- **What moves**: slips longer than about +270 pay more than the boards said (this one 6.92x, not 6.77x: +12.8% where the alert said +10.4%), and shorter ones a little less (a 0.50 quote: 1.905x, not 1.927x, 1.2% of EV; a +178 Points + Threes slip about 0.6%).
+- **Since last night** the boards and alerts under-read long slips and over-read short ones by those amounts.
+- **Not known**: when Novig switches. The fee page still says 11-19; the quote's answer carries no fee to read. A slip in the app that pays less than its row on a long slip is the sign.
+- **Checked**: the old rule gives 4.25x at 0.218 and 6.919x at 0.133; the new rule still gives the docs' three examples. One slip is the evidence for the app's fee.
+
 ### Discord alerts: Novig's price is in the heading
 Max, 11-19 (a message headed "Strus: 10+ PTS, 2+ 3PM · +5.2%"): add the multiplier in the title; it gets lost in the message.
 
