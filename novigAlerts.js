@@ -23,8 +23,8 @@
 //   ALERT_UPDATE_STEP     A slip already sent is not sent again, but its message is
 //                         edited in place (no new message, no ping) when its EV has
 //                         moved this many points either way since the message last
-//                         said (MOVED UP / MOVED DOWN), or his player is now out: 2
-//                         (0: never edited)
+//                         showed, upward only (MOVED UP); a slip that moved down or
+//                         whose player is out is left alone: 2 (0: never edited)
 //   ALERT_MAX_PER_GAME    most alerts for one game: 0, no limit (Max, 11-19: a limit of 2
 //                         kept +22% plays back behind the first two the pass reached)
 //   ALERT_MIN_TTL_S       a quote with less than this left is not sent: 10
@@ -220,16 +220,16 @@ function create(opts) {
   }
 
   // A slip already sent, priced again: its message is edited where it stands
-  // when the EV has moved S.update points since the message last said, or his
-  // player is now out. Never a new message. Returns what it did, or null for a slip not sent before.
+  // when the EV is S.update points above the best the message has shown.
+  // Never a new message, and nothing for a move down. Returns what it did, or null for a slip not sent before.
   function update(board, row, o) {
     const a = M.slips[String(row.key)];
     if (!a || !row || !(row.slip_x > 1) || !Number.isFinite(row.ev)) return null;
     if (!a.first || !(S.update > 0) || (row.starts && row.starts <= now())) return 'already sent';
-    // A slip that has slipped under its bar is only a slip that moved down (Max, 11-19: +7.2% was
-    // being titled NO LONGER A PLAY). The grey title is for a player ESPN now lists as out.
-    const gone = !!o.out;
-    if (Math.abs(row.ev - a.shown) < S.update / 100 - 1e-9 && gone === !!a.gone) return 'already sent';
+    // Only a move up is said (Max, 11-19: a slip that moved down, or is no longer a play, is no use
+    // to hear about: he has probably taken it already). a.shown is the best EV the message has shown.
+    const gone = false;
+    if (o.out || row.ev - a.shown < S.update / 100 - 1e-9) return 'already sent';
     if (!S.dry && !a.id) return 'already sent';   // its message is still on the way (or was sent before ids were kept)
     const prev = { shown: a.shown, gone: a.gone };
     a.shown = row.ev; a.gone = gone;

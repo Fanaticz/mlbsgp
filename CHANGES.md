@@ -2,6 +2,13 @@
 
 ## 2026-11-19 session
 
+### Discord alerts: a sent message is edited only for a move up
+Max, 11-19: no. I don't want a push notification if no longer a play or moved down. I'd have probably already taken the play.
+
+- **Change** (`update` in `novigAlerts.js`): a sent slip's message is edited only when its EV is 2 points above the best the message has shown (MOVED UP). A slip that moved down, fell under its bar, or whose player is now out leaves its message as it was. MOVED DOWN and PLAYER OUT are gone.
+- **About the notification**: I had said Discord doesn't notify for an edit. Max got one, or something like it; not looked into. `ALERT_UPDATE_STEP=0` stops every edit, the move up included.
+- **Checked**: the alert checks.
+
 ### Discord alerts: no limit a game, and every Novig tab alerts
 Max, 11-19 (the All tab beside the channel: seven plays at 10% or better, two in Discord): also not sending every play.
 

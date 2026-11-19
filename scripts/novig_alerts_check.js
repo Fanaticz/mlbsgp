@@ -51,20 +51,16 @@ const row = (o) => Object.assign({ key: 'a,b', player: 'Cam Spencer', id: 77, te
   assert.strictEqual(calls[0], 'PATCH /messages/m1');
   assert.ok(calls[1].title.startsWith('MOVED UP · ') && calls[1].description.includes('Novig 3.75x → 3.92x') && calls[1].description.includes('EV +7.1% → +12.0%'));
   assert.strictEqual(a.consider('nba', row({ ev: 0.125, slip_x: 3.93 })), 'already sent');   // under 2 points from what it now says
-  // the fair value moved against it and it is under the bar: moved down, nothing more
+  // moved down, under its bar, or his player out: the message is left alone
   calls = [];
-  assert.strictEqual(a.consider('nba', row({ ev: 0.01, fair: 270, fair_x: 3.7, expires: null })), 'message edited');
-  await a.flush();
-  assert.ok(calls[1].title.startsWith('MOVED DOWN · ') && calls[1].description.includes('Fair +250 → +270 (longer'));
-  assert.strictEqual(a.consider('nba', row({ ev: 0.012, fair: 270 })), 'already sent');
-  assert.strictEqual(a.consider('nba', row({ ev: 0.50 })), 'message edited');   // back, and far better: edited, still no new message
-  await a.flush();
-  // his player is now out: said once, at any EV
-  calls = [];
-  assert.strictEqual(a.consider('nba', row({ ev: 0.50 }), { out: true }), 'message edited');
-  await a.flush();
-  assert.ok(calls[1].title.startsWith('PLAYER OUT · '));
+  assert.strictEqual(a.consider('nba', row({ ev: 0.01, fair: 270, fair_x: 3.7, expires: null })), 'already sent');
   assert.strictEqual(a.consider('nba', row({ ev: 0.50 }), { out: true }), 'already sent');
+  assert.strictEqual(a.consider('nba', row({ ev: 0.13 })), 'already sent');   // back up, but under 2 points over the best it has shown (12%)
+  await a.flush();
+  assert.strictEqual(calls.length, 0);
+  assert.strictEqual(a.consider('nba', row({ ev: 0.50 })), 'message edited');   // far better: edited, still no new message
+  await a.flush();
+  assert.ok(calls[1].title.startsWith('MOVED UP · '));
   assert.strictEqual(posts.length, 1);
   // same player, another slip: not sent either
   assert.strictEqual(a.consider('nba', row({ key: 'a,c', ev: 0.50 })), 'another slip on this one already sent');
