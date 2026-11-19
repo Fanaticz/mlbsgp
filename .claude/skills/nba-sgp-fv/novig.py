@@ -131,6 +131,9 @@ def slip_multiplier(price):
     return 1 / (price * (1 + RFQ_FEE * (1 - price)))
 
 
+EXPIRES = {}  # "id,id,..." -> when the last quote for those legs expires (ms, this clock)
+
+
 def parlay(outcome_ids):
     """Novig's quote for a parlay of these outcomes, as (probability, None), or
     (None, why). POST /rfq/v2/quote/unauthenticated: the documented keyless
@@ -143,7 +146,13 @@ def parlay(outcome_ids):
     for _ in range(3):
         try:
             with urllib.request.urlopen(req, timeout=60) as r:
-                return float(json.load(r)["price"]), None
+                q = json.load(r)
+                # When this price expires, on this machine's clock (ms): the
+                # time left is expiresAt - serverNow, as the docs say to
+                # measure it. Kept beside the price for the alerts (scan.finish).
+                if q.get("expiresAt") and q.get("serverNow"):
+                    EXPIRES[",".join(outcome_ids)] = time.time() * 1000 + (q["expiresAt"] - q["serverNow"])
+                return float(q["price"]), None
         except urllib.error.HTTPError as e:
             if e.code == 429:
                 time.sleep(float(e.headers.get("Retry-After") or 2))

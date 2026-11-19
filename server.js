@@ -2638,7 +2638,7 @@ function startNovigScan(league, wide, events, auto, before) {
     if (!live) return;
     if (e.type === 'start') { B.total = e.total; B.players = e.players; B.data = e.data; B.books = e.books || null; }
     else if (e.type === 'more') { B.total += e.add; if (e.players) B.players = e.players; }
-    else if (e.type === 'row') { B.done++; B.seen.add(e.key); B.rows.set(e.key, e); }
+    else if (e.type === 'row') { B.done++; B.seen.add(e.key); B.rows.set(e.key, e); nvAlert(league, wide, e); }
     else if (e.type === 'miss') { B.done++; B.rows.delete(e.key); }
     else if (e.type === 'done') { ok = true; B.seconds = e.seconds; }
   };
@@ -2756,6 +2756,41 @@ function nvFlag(league, row) {
   return note ? Object.assign({}, row, { gtd: note }) : row;
 }
 
+// Discord alerts (novigAlerts.js): every row a pass or a refresh prices is
+// offered to it, and it sends the ones worth a message. Nothing is priced
+// there and nothing is ever bet: a row carries its own fair value, EV and stake.
+// Wide-book passes and the Kalshi and DK boards don't alert.
+const NV_ALERTS = require('./novigAlerts.js').create({ dir: NV_SCAN_FILE ? path.dirname(NV_SCAN_FILE) : null });
+function nvAlert(league, wide, row) {
+  if (wide || NV_OWN_SCRIPT[league]) return;
+  try {
+    const g = (NV_GAMES.get(NV_PY_LEAGUE(league)) || {}).games || [];
+    const game = (g.find(x => x.id === (row.event || row.id)) || {}).name || '';
+    NV_ALERTS.consider(league, nvFlag(league, row), { out: nvLong(league, row) || nvOut(league, row), game });
+  } catch (e) { console.warn('Novig alert: ' + e.message); }
+}
+{
+  const a = NV_ALERTS.status();
+  if (a.enabled) console.log(`Novig alerts: on${a.dry ? ' (dry run: nothing is posted)' : a.webhook ? '' : ' but DISCORD_WEBHOOK_URL is not set'}; boards ${a.sports.join(', ')}; priced by the job: ${a.scan.join(', ')}`);
+}
+// POST /api/nba/novig-alert-test — the page's "Send test alert" button: one
+// message marked TEST, with the numbers of the best row on the alert boards
+// when there is one. GET /api/nba/novig-alerts — the settings in force (never the webhook).
+app.get('/api/nba/novig-alerts', (req, res) => { if (nvBetsAuth(req, res)) res.json(NV_ALERTS.status()); });
+app.post('/api/nba/novig-alert-test', async (req, res) => {
+  if (!nvBetsAuth(req, res)) return;
+  let best = null, board = null;
+  for (const lg of NV_ALERTS.S.sports) {
+    for (const r of ((NV_BOARDS.get(lg + ':0') || {}).rows || new Map()).values()) {
+      if ((!r.starts || r.starts > Date.now()) && (!best || r.ev > best.ev)) { best = r; board = lg; }
+    }
+  }
+  try {
+    const g = best ? ((NV_GAMES.get(NV_PY_LEAGUE(board)) || {}).games || []).find(x => x.id === (best.event || best.id)) : null;
+    res.json(await NV_ALERTS.test(board, best, g ? g.name : ''));
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+
 // Auto-scan: while switched on (the page's Auto-scan button), the server runs
 // whole-board passes of NBA, NBA Ladder, NBA Team, NFL, NFL Ladder, CBB, CFB and soccer one after another, with or
 // without the page open. Still one pass at a time: a pass asked for with
@@ -2793,25 +2828,33 @@ try {
     console.log('Novig auto-scan: still on from before the restart');
   }
 } catch (_) { /* it was off */ }
+// With alerts on (ALERTS_ENABLED) and Auto-scan off, the same cycle keeps the
+// alert job's boards priced (ALERT_SCAN_SPORTS; tight books, Eastern days).
+// With Auto-scan on, its own passes are what the alerts read.
+const NV_ALERT_CYCLE = { since: Date.now(), wide: false, tz: NV_TZ, i: 0, boards: NV_ALERTS.S.scan.filter(b => !NV_OWN_SCRIPT[b]) };
+const nvAlertCycleOn = () => NV_ALERTS.S.enabled && (NV_ALERTS.S.dry || !!NV_ALERTS.S.webhook) && NV_ALERT_CYCLE.boards.length > 0;
+const nvCyc = () => NV_CYCLE || (nvAlertCycleOn() ? NV_ALERT_CYCLE : null);
 function nvCycleTick(first) {
-  if (!NV_CYCLE) return;
+  const C = nvCyc();
+  if (!C) return;
+  const boards = C.boards || NV_CYCLE_BOARDS;
   nvOutRefresh();   // the injury report, kept current while auto-scan runs
   const now = Date.now();
   if (NV_RUN || NV_CYCLE_ASK || (!first && now - NV_LAST_END < NV_CYCLE_GAP_MS)) return;
-  for (let n = 0; n < NV_CYCLE_BOARDS.length; n++) {
-    const at = (NV_CYCLE.i + n) % NV_CYCLE_BOARDS.length, league = NV_CYCLE_BOARDS[at];
-    const B = nvBoard(`${league}:${NV_CYCLE.wide ? 1 : 0}`);
+  for (let n = 0; n < boards.length; n++) {
+    const at = (C.i + n) % boards.length, league = boards[at];
+    const B = nvBoard(`${league}:${C.wide ? 1 : 0}`);
     if (now - Math.max(B.started, B.finished, B.stopped || 0, B.idle || 0) < NV_CYCLE_REST_MS) continue;
-    NV_CYCLE.i = (at + 1) % NV_CYCLE_BOARDS.length;
+    C.i = (at + 1) % boards.length;
     NV_CYCLE_ASK = true;
     nvGames(NV_PY_LEAGUE(league), games => {
       NV_CYCLE_ASK = false;
-      if (!NV_CYCLE || NV_RUN) return;
+      if (nvCyc() !== C || NV_RUN) return;
       // No open game at all: the board rests like one just priced. Novig not
       // read: today's games, as before.
       if (games && !games.length) { B.idle = Date.now(); return; }
       const first = games ? games.find(g => g.starts > Date.now()) || games[0] : null;
-      startNovigScan(league, NV_CYCLE.wide, [], true, nvDayEnd(NV_CYCLE.tz, Math.max(Date.now(), first ? first.starts : 0)));
+      startNovigScan(league, C.wide, [], true, nvDayEnd(C.tz, Math.max(Date.now(), first ? first.starts : 0)));
     });
     return;
   }
@@ -2821,7 +2864,7 @@ setInterval(nvCycleTick, 15000).unref();
 // while a pass runs). Between rounds every board can be inside its ten
 // minutes' rest, and the page said "next: NBA" with nothing to show it was waiting.
 function nvCycleState() {
-  if (!NV_CYCLE) return { on: false, boards: NV_CYCLE_BOARDS };
+  if (!NV_CYCLE) return { on: false, boards: NV_CYCLE_BOARDS, alerts: nvAlertCycleOn() ? NV_ALERT_CYCLE.boards : null };
   const now = Date.now();
   let next = NV_CYCLE_BOARDS[NV_CYCLE.i], wait = Infinity;
   for (let n = 0; n < NV_CYCLE_BOARDS.length; n++) {
@@ -2988,6 +3031,7 @@ function nvRequote(league, wide, key, cb) {
     if (!r || r.error || !r.key) return finish((r && r.error) || err.trim().split('\n').pop() || 'no answer', null, 502);
     r.type = 'row';
     if (B.rows.has(r.key)) { B.rows.set(r.key, r); B.seen.add(r.key); nvSaveBoards(); }
+    nvAlert(league, wide, r);
     finish(null, r);
   });
   proc.stdin.on('error', () => {});

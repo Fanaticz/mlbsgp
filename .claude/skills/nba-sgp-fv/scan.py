@@ -2075,6 +2075,9 @@ def finish(c, quote, unit, kelly):
     qk = max(0.0, (p * b - (1 - p)) / b) * kelly * 100
     c.update(fair=fair, fair_x=1 / p, quote=quote, raw_x=1 / quote, slip_x=slip, slip=sgp.american(1 / slip),
              ev=p * slip - 1, qk=qk, wager=qk * unit, at=time.time())
+    # When Novig's quote for these legs expires (ms), for the alerts: a price
+    # is good for about 30 seconds.
+    c["expires"] = novig.EXPIRES.get(",".join(L["id"] for L in c["legs"]))
     return c
 
 
