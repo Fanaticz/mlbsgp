@@ -10,7 +10,8 @@
 //   DISCORD_WEBHOOK_URL   the channel's webhook. Never logged or sent to the page.
 //   ALERTS_ENABLED        1 to send alerts (and keep the alert boards priced). Default off.
 //   ALERTS_DRY_RUN        1 to print would-be alerts to the log and post nothing.
-//   ALERT_SPORTS          boards that may alert: nba,ladder,nfl,nflladder,soccer
+//   ALERT_SPORTS          boards that may alert: every Novig tab on the page
+//                         (nba,ladder,nbateam,nfl,nflladder,soccer,cfb,cbb)
 //   ALERT_SCAN_SPORTS     boards the job prices on its own: ALERT_SPORTS without
 //                         ladder (NBA Ladder is Fetch only; its rows alert when fetched).
 //   ALERT_MIN_EV          EV% a slip needs: 10
@@ -24,7 +25,8 @@
 //                         moved this many points either way since the message last
 //                         said (MOVED UP / MOVED DOWN), or his player is now out: 2
 //                         (0: never edited)
-//   ALERT_MAX_PER_GAME    alerts for one game: 2
+//   ALERT_MAX_PER_GAME    most alerts for one game: 0, no limit (Max, 11-19: a limit of 2
+//                         kept +22% plays back behind the first two the pass reached)
 //   ALERT_MIN_TTL_S       a quote with less than this left is not sent: 10
 //   ALERT_UNIT            dollars a unit for the stake: 100 (the page's QK $)
 //   ALERT_ROUGH           1 to alert on rows whose fair value is rough (a wide book)
@@ -42,7 +44,7 @@ const BOARD_NAME = { nba: 'NBA', ladder: 'NBA Ladder', nbateam: 'NBA Team', nfl:
                      nhl: 'NHL', nhllines: 'NHL Lines', soccer: 'Soccer', cfb: 'CFB', cbb: 'CBB' };
 
 function settings(env) {
-  const sports = list(env.ALERT_SPORTS, ['nba', 'ladder', 'nfl', 'nflladder', 'soccer']).filter(b => BOARD_NAME[b]);
+  const sports = list(env.ALERT_SPORTS, ['nba', 'ladder', 'nbateam', 'nfl', 'nflladder', 'soccer', 'cfb', 'cbb']).filter(b => BOARD_NAME[b]);
   return {
     webhook: String(env.DISCORD_WEBHOOK_URL || '').trim(),
     enabled: on(env.ALERTS_ENABLED),
@@ -53,7 +55,7 @@ function settings(env) {
     minEvPts3: num(env.ALERT_MIN_EV_PTS3, 5),
     step: Math.max(0, num(env.ALERT_REALERT_STEP, 0)),
     update: Math.max(0, num(env.ALERT_UPDATE_STEP, 2)),
-    perGame: Math.max(1, Math.round(num(env.ALERT_MAX_PER_GAME, 2))),
+    perGame: Math.max(0, Math.round(num(env.ALERT_MAX_PER_GAME, 0))),
     minTtl: num(env.ALERT_MIN_TTL_S, 10),
     unit: num(env.ALERT_UNIT, 100),
     rough: on(env.ALERT_ROUGH),
@@ -177,7 +179,7 @@ function create(opts) {
     const a = M.slips[key], b = M.subjects[sub];
     if (a) return 'already sent';
     if (b && (!(step > 0) || row.ev < b.ev + step - 1e-9)) return 'another slip on this one already sent';
-    if (!a && !b && M.games[game] && M.games[game].n >= S.perGame) return 'game has its alerts';
+    if (!a && !b && S.perGame > 0 && M.games[game] && M.games[game].n >= S.perGame) return 'game has its alerts';
     return null;
   }
 

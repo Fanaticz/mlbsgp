@@ -2,6 +2,15 @@
 
 ## 2026-11-19 session
 
+### Discord alerts: no limit a game, and every Novig tab alerts
+Max, 11-19 (the All tab beside the channel: seven plays at 10% or better, two in Discord): also not sending every play.
+
+- **What held them back**: two rules of mine. Two alerts a game at most: IND @ HOU was the only NFL game, so its first two slips over the bar (Hutchinson, Collins) went and Jonathan Taylor at +22.9% and Tyler Warren at +22.2% did not. And only five tabs alerted: NBA Team (LAC @ SAS, +32.0%) and CBB (COFC @ DRKE, +10.7%) were not among them.
+- **Change** (`novigAlerts.js`): no limit a game (`ALERT_MAX_PER_GAME`, 0; a number brings it back). `ALERT_SPORTS` is every Novig tab on the page: NBA, NBA Ladder, NBA Team, NFL, NFL Ladder, soccer, CFB, CBB. With Auto-scan off the alert job prices all of those but NBA Ladder, which is Auto-scan's own list.
+- **Still one message a player a game**: Hutchinson's three-leg slip (+15.7%) and Collins's passing yards + receiving yards (+10.7%) are second slips on players already sent, and stay unsent. Still one message per game-line slip shape, none for a rough fair value, a started game or a player listed out.
+- **The plays held back** go out the next time a pass prices them, if they are still over the bar.
+- **Checked**: the alert checks (six players of one game all sent; the limit when set).
+
 ### Discord alerts: no more NO LONGER A PLAY
 Max, 11-19 (screenshot: "NO LONGER A PLAY · Xavier Hutchinson · +7.2%"): don't send this.
 

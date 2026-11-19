@@ -21,7 +21,9 @@ const row = (o) => Object.assign({ key: 'a,b', player: 'Cam Spencer', id: 77, te
   assert.strictEqual(a.consider('nba', row({ ev: 0.049 })), 'under the EV bar');
   assert.strictEqual(a.consider('nfl', row({ ev: 0.071, legs: [{ id: 'x', stat: 'rec' }, { id: 'y', stat: 'yds' }] })), 'under the EV bar');
   assert.strictEqual(a.consider('ladder', row({ ev: 0.071, model: true })), 'under the EV bar');   // modelled: the 10% bar
-  assert.strictEqual(a.consider('cbb', row({ ev: 0.3 })), 'board not in ALERT_SPORTS');
+  assert.strictEqual(a.consider('nhl', row({ ev: 0.3 })), 'board not in ALERT_SPORTS');
+  assert.deepStrictEqual(a.S.sports, ['nba', 'ladder', 'nbateam', 'nfl', 'nflladder', 'soccer', 'cfb', 'cbb']);
+  assert.deepStrictEqual(a.S.scan, ['nba', 'nbateam', 'nfl', 'nflladder', 'soccer', 'cfb', 'cbb']);
   // expiry, start, out, rough
   assert.strictEqual(a.consider('nba', row({ expires: T + 5000 })), 'quote expired or about to');
   assert.strictEqual(a.consider('nba', row({ expires: null })), 'no expiry on the quote');
@@ -74,11 +76,16 @@ const row = (o) => Object.assign({ key: 'a,b', player: 'Cam Spencer', id: 77, te
   assert.strictEqual(s2.consider('nba', row({ key: 'a,c', ev: 0.08 })), 'another slip on this one already sent');
   assert.strictEqual(s2.consider('nba', row({ key: 'a,c', ev: 0.095 })), null);
   await s2.flush();
-  // two alerts a game: a second player goes, a third does not
-  assert.strictEqual(a.consider('nba', row({ key: 'd,e', id: 78, player: 'B' })), null);
-  assert.strictEqual(a.consider('nba', row({ key: 'f,g', id: 79, player: 'C', ev: 0.3 })), 'game has its alerts');
-  assert.strictEqual(a.consider('nba', row({ key: 'f,g', id: 79, player: 'C', ev: 0.3, event: 'g2' })), null);
+  // every other player in the game goes: no limit a game
+  for (let i = 0; i < 6; i++) assert.strictEqual(a.consider('nba', row({ key: 'p' + i, id: 100 + i, player: 'P' + i })), null);
   await a.flush();
+  // with ALERT_MAX_PER_GAME=2: a second player goes, a third does not
+  const cap = mk({ ALERT_MAX_PER_GAME: '2' });
+  assert.strictEqual(cap.consider('nba', row({})), null);
+  assert.strictEqual(cap.consider('nba', row({ key: 'd,e', id: 78, player: 'B' })), null);
+  assert.strictEqual(cap.consider('nba', row({ key: 'f,g', id: 79, player: 'C', ev: 0.3 })), 'game has its alerts');
+  assert.strictEqual(cap.consider('nba', row({ key: 'f,g', id: 79, player: 'C', ev: 0.3, event: 'g2' })), null);
+  await cap.flush();
   // a game's own lines: the same shape one line over is the same subject
   a = mk({ ALERT_SPORTS: 'soccer' });
   const soc = o => row(Object.assign({ id: 'm1', event: undefined, player: 'Arsenal v Chelsea', ev: 0.2, label: 'Arsenal to win · Arsenal U5.5 corners · Chelsea O3.5 corners' }, o));
