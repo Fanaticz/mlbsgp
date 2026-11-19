@@ -2,6 +2,12 @@
 
 ## 2026-11-19 session
 
+### Discord alerts: Novig's price is in the heading
+Max, 11-19 (a message headed "Strus: 10+ PTS, 2+ 3PM · +5.2%"): add the multiplier in the title; it gets lost in the message.
+
+- **Change** (`embed` in `novigAlerts.js`): the heading carries Novig's slip price between the legs and the EV: "Strus: 10+ PTS, 2+ 3PM · 2.78x · +5.2%". An edited message (MOVED UP) shows the new price.
+- **Checked**: the alert checks.
+
 ### Discord alerts: the heading says who and what
 Max, 11-19 (a message headed "Emari Demercado (HOU) · +11.9%"): make the heading "Demercado: 25+ Rush, 1+ TD". Not just the name.
 

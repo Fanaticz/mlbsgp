@@ -36,7 +36,7 @@ const row = (o) => Object.assign({ key: 'a,b', player: 'Cam Spencer', id: 77, te
   await a.flush();
   assert.strictEqual(posts.length, 1);
   const e = posts[0].embeds[0];
-  assert.strictEqual(e.title, 'Spencer: 13+ PTS, 3+ 3PM · +7.1%');   // the heading: who and what, not just the name
+  assert.strictEqual(e.title, 'Spencer: 13+ PTS, 3+ 3PM · 3.75x · +7.1%');   // the heading: who and what, not just the name
   assert.strictEqual(a.heading({ player: 'Emari Demercado', label: '22+ RUSH YDS · 1+ TD' }), 'Demercado: 22+ Rush, 1+ TD');
   assert.strictEqual(a.heading({ player: 'Terrence Shannon Jr.', label: '60+ YDS · 5+ REC' }), 'Shannon Jr.: 60+ Rec Yds, 5+ Rec');
   assert.strictEqual(a.heading({ player: 'Nikola Jokic + Jamal Murray', label: 'Jokic 27+ PTS · Murray 22+ PTS' }), 'Jokic 27+ PTS, Murray 22+ PTS');

@@ -142,7 +142,7 @@ function embed(S, board, row, extra) {
     row.gtd ? `Game-time decision: ${row.gtd}` : '',
   ].filter(Boolean);
   return {
-    title: `${head}${heading(row)} · ${pct(row.ev)}`.slice(0, 250),
+    title: `${head}${heading(row)} · ${row.slip_x.toFixed(2)}x · ${pct(row.ev)}`.slice(0, 250),
     url,
     color: extra.test || extra.gone ? 0x8a8f98 : row.ev >= 0.10 ? 0x2ecc71 : 0xf1c40f,
     // The title is the phone's link too; this line is the one that looks like a link.
