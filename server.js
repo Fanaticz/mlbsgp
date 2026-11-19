@@ -2803,10 +2803,12 @@ app.post('/api/nba/novig-alert-test', async (req, res) => {
 // Football runs through its main day (Max, 11-19: the NFL's full Sunday, not
 // just the Thursday game, and CFB's Saturday): from the soonest open game to
 // the end of that Sunday (NFL) or Saturday (CFB), when it is at most
-// NV_CYCLE_REACH_DAYS on. A Monday night game is still priced alone.
+// NV_CYCLE_REACH days on. A Monday night game is still priced alone.
+// Soccer runs through the weekend the same way (Max, 11-19): to the end of
+// Sunday, from Thursday on.
 const NV_CYCLE_BOARDS = ['nba', 'nbateam', 'nfl', 'cbb', 'cfb', 'soccer'];   // NFL Ladder 11-18, out again 11-19 (Max: Fetch only, like NBA Ladder), to leave the time to the NFL's Sunday
-const NV_CYCLE_THROUGH = { nfl: 0, cfb: 6 };   // board -> the weekday its window runs through (0 = Sunday)
-const NV_CYCLE_REACH_DAYS = 4;
+const NV_CYCLE_THROUGH = { nfl: 0, cfb: 6, soccer: 0 };   // board -> the weekday its window runs through (0 = Sunday)
+const NV_CYCLE_REACH_DAYS = { soccer: 3 }, NV_CYCLE_REACH = 4;   // soccer: a midweek match day is priced alone
 const NV_CYCLE_GAP_MS = 60 * 1000;             // pause between two passes
 const NV_CYCLE_REST_MS = 10 * 60 * 1000;       // a board is not asked again sooner than this after its last pass began or ended
 // It runs until it is switched off: no time limit and no hours it rests (Max, 11-14).
@@ -2827,7 +2829,7 @@ function nvCycleEnd(league, tz, t) {
   if (through === undefined) return end;
   const day = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' }).format(t));
   const on = (through - day + 7) % 7;
-  return on <= NV_CYCLE_REACH_DAYS ? end + on * 86400000 : end;
+  return on <= (NV_CYCLE_REACH_DAYS[league] || NV_CYCLE_REACH) ? end + on * 86400000 : end;
 }
 // Kept on disk beside the boards, so a redeploy or restart doesn't switch
 // auto-scan off (where that directory is a volume; elsewhere it is lost with
