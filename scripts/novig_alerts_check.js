@@ -2,11 +2,13 @@
 // webhook (no network): node scripts/novig_alerts_check.js
 const assert = require('assert');
 const A = require('../novigAlerts.js');
-let T = 1e12, posts = [], answers = [];
+let T = 1e12, posts = [], answers = [], calls = [];
 const fetchStub = async (url, o) => {
+  calls.push(o.method + ' ' + url.replace(/^.*SECRET/, ''));
+  if (o.method === 'PATCH') { calls.push(JSON.parse(o.body).embeds[0]); return { status: 200, ok: true, headers: { get: () => null }, json: async () => ({ id: 'm1' }) }; }
   posts.push(JSON.parse(o.body));
   const a = answers.shift() || { status: 200 };
-  return { status: a.status, ok: a.status < 300, headers: { get: k => (a.headers || {})[k] || null }, json: async () => a.body || {} };
+  return { status: a.status, ok: a.status < 300, headers: { get: k => (a.headers || {})[k] || null }, json: async () => a.body || { id: 'm1' } };
 };
 const logs = [];
 const mk = env => A.create({ env: Object.assign({ ALERTS_ENABLED: '1', DISCORD_WEBHOOK_URL: 'https://discord.invalid/api/webhooks/1/SECRET' }, env), fetch: fetchStub, now: () => T, log: m => logs.push(m) });
@@ -35,14 +37,31 @@ const row = (o) => Object.assign({ key: 'a,b', player: 'Cam Spencer', id: 77, te
   assert.ok(e.title.includes('Cam Spencer') && e.title.includes('+7.1%'));
   assert.ok(e.url.startsWith('https://novig.com/events/11111111-'));
   assert.strictEqual(e.fields.find(f => f.name.startsWith('Stake')).value, '$300 · 0.60u');   // 0.6u x $500
-  assert.strictEqual(a.consider('nba', row({ ev: 0.085 })), 'already sent');
-  assert.strictEqual(a.consider('nba', row({ ev: 0.50 })), 'already sent');
+  assert.strictEqual(a.consider('nba', row({ ev: 0.085 })), 'already sent');   // under 2 points: nothing
+  // moved 2+ points: the message is edited where it stands, no new message
+  calls = [];
+  assert.strictEqual(a.consider('nba', row({ ev: 0.12, slip_x: 3.92 })), 'message edited');
+  await a.flush();
+  assert.strictEqual(posts.length, 1);
+  assert.strictEqual(calls[0], 'PATCH /messages/m1');
+  assert.ok(calls[1].title.startsWith('MOVED UP · ') && calls[1].description.includes('Novig 3.75x → 3.92x') && calls[1].description.includes('EV +7.1% → +12.0%'));
+  assert.strictEqual(a.consider('nba', row({ ev: 0.125, slip_x: 3.93 })), 'already sent');   // under 2 points from what it now says
+  // the fair value moved against it and it is under the bar: marked, once
+  calls = [];
+  assert.strictEqual(a.consider('nba', row({ ev: 0.01, fair: 270, fair_x: 3.7, expires: null })), 'message edited');
+  await a.flush();
+  assert.ok(calls[1].title.startsWith('NO LONGER A PLAY · ') && calls[1].description.includes('Fair +250 → +270 (longer'));
+  assert.strictEqual(a.consider('nba', row({ ev: 0.012, fair: 270 })), 'already sent');
+  assert.strictEqual(a.consider('nba', row({ ev: 0.50 })), 'message edited');   // back, and far better: edited, still no new message
+  await a.flush();
+  assert.strictEqual(posts.length, 1);
   // same player, another slip: not sent either
   assert.strictEqual(a.consider('nba', row({ key: 'a,c', ev: 0.50 })), 'another slip on this one already sent');
   // with ALERT_REALERT_STEP set, another slip on him goes at that many points better; the same slip still never
   const s2 = mk({ ALERT_REALERT_STEP: '2' });
   assert.strictEqual(s2.consider('nba', row({})), null);
-  assert.strictEqual(s2.consider('nba', row({ ev: 0.50 })), 'already sent');
+  await s2.flush();
+  assert.strictEqual(s2.consider('nba', row({ ev: 0.50 })), 'message edited');
   assert.strictEqual(s2.consider('nba', row({ key: 'a,c', ev: 0.08 })), 'another slip on this one already sent');
   assert.strictEqual(s2.consider('nba', row({ key: 'a,c', ev: 0.095 })), null);
   await s2.flush();
