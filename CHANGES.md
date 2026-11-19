@@ -2,6 +2,13 @@
 
 ## 2026-11-19 session
 
+### Discord alerts: every slip is sent; one message a game is CBB's rule only
+Max, 11-19: I don't care about 1 message per game for anything but probably CBB.
+
+- **Change** (`novigAlerts.js`): the rule that held a player's second slip back (and a game-line slip one line over) is gone. Every slip over its bar is sent, once each: Hutchinson's three-leg slip and Collins's passing yards + receiving yards, held back this morning, now go. On CBB a game gets one message, the first slip of it to clear the bar (`ALERT_ONE_PER_GAME`, cbb; other boards can be added).
+- **Unchanged**: a slip is never sent twice. `ALERT_REALERT_STEP` is gone with the rule it tuned.
+- **Checked**: the alert checks (a player's second slip sent; CBB's second slip of a game not, another game's sent; two soccer slips a line apart both sent).
+
 ### Discord alerts: a sent message is edited only for a move up
 Max, 11-19: no. I don't want a push notification if no longer a play or moved down. I'd have probably already taken the play.
 

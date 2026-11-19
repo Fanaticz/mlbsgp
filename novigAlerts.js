@@ -16,10 +16,9 @@
 //                         ladder (NBA Ladder is Fetch only; its rows alert when fetched).
 //   ALERT_MIN_EV          EV% a slip needs: 10
 //   ALERT_MIN_EV_PTS3     EV% for NBA main-line Points + Threes: 5
-//   ALERT_REALERT_STEP    A slip is sent once, ever (Max, 11-19: a second message
-//                         is a second bet on it). So is a player in a game. Set this
-//                         to let a DIFFERENT slip on the same player through when it
-//                         beats the one sent by this many EV points: 0 (never)
+//   ALERT_ONE_PER_GAME    boards that get one message a game, whatever the slip: cbb
+//                         (Max, 11-19). Everywhere else every slip over its bar is
+//                         sent, once each: a second slip on the same player included.
 //   ALERT_UPDATE_STEP     A slip already sent is not sent again, but its message is
 //                         edited in place (no new message, no ping) when its EV has
 //                         moved this many points either way since the message last
@@ -53,7 +52,7 @@ function settings(env) {
     scan: list(env.ALERT_SCAN_SPORTS, sports.filter(b => b !== 'ladder')).filter(b => BOARD_NAME[b]),
     minEv: num(env.ALERT_MIN_EV, 10),
     minEvPts3: num(env.ALERT_MIN_EV_PTS3, 5),
-    step: Math.max(0, num(env.ALERT_REALERT_STEP, 0)),
+    oneGame: list(env.ALERT_ONE_PER_GAME, ['cbb']),
     update: Math.max(0, num(env.ALERT_UPDATE_STEP, 2)),
     perGame: Math.max(0, Math.round(num(env.ALERT_MAX_PER_GAME, 0))),
     minTtl: num(env.ALERT_MIN_TTL_S, 10),
@@ -68,21 +67,13 @@ const isPts3 = (board, row) => board === 'nba' && (row.legs || []).length === 2 
   (row.legs || []).map(L => L.stat).sort().join() === 'pts,tpm' && String(row.player || '').indexOf(' + ') < 0;
 const minEv = (S, board, row) => (isPts3(board, row) ? S.minEvPts3 : S.minEv);
 
-// Which game a slip is on, and what it repeats. A player's slips are one
-// subject whatever the legs (25+ and 26+ points with 3+ threes are the same
-// bet twice); a slip across a game's own lines is its shape, the label with
-// the numbers out, so the same slip one line over is the same subject.
+// Which game a slip is on (Novig's event id; the row's own id on a board that has none).
 const gameOf = row => String(row.event || row.id || row.player || '');
-function subjectOf(board, row) {
-  const game = gameOf(row);
-  if (String(row.id) === game || !row.id) return `${game}|${board}|${String(row.label || '').replace(/[0-9.+-]+/g, '#')}`;
-  return `${game}|${row.id}`;
-}
 
 const american = x => (x >= 2 ? '+' + Math.round((x - 1) * 100) : String(Math.round(-100 / (x - 1))));
 const pct = v => (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%';
 
-// The Discord message for a row. extra: { game, test, better }.
+// The Discord message for a row. extra: { game, test, was }.
 function embed(S, board, row, extra) {
   extra = extra || {};
   const ids = (row.legs || []).map(L => L.id);
@@ -114,7 +105,6 @@ function embed(S, board, row, extra) {
   const head = extra.test ? 'TEST · ' : !was ? '' : extra.gone ? 'PLAYER OUT · ' : row.ev > was.ev ? 'MOVED UP · ' : 'MOVED DOWN · ';
   const notes = [
     was ? `Same slip as sent <t:${Math.floor(was.at / 1000)}:R>, not a new one. ` + moved.join(' · ') : '',
-    extra.better ? 'Better than the last alert on this one.' : '',
     row.model ? 'Fair value modelled from the main line, not read off a book.' : '',
     row.rough ? 'A leg sits on a wide book: rough fair value.' : '',
     row.gtd ? `Game-time decision: ${row.gtd}` : '',
@@ -175,11 +165,11 @@ function create(opts) {
       if (!row.expires) return 'no expiry on the quote';
       if (row.expires - t < S.minTtl * 1000) return 'quote expired or about to';
     }
-    const step = S.step / 100, key = String(row.key), sub = subjectOf(board, row), game = gameOf(row);
-    const a = M.slips[key], b = M.subjects[sub];
+    const key = String(row.key), game = gameOf(row), sub = S.oneGame.includes(board) ? `${game}|${board}` : null;
+    const a = M.slips[key], b = sub ? M.subjects[sub] : null;
     if (a) return 'already sent';
-    if (b && (!(step > 0) || row.ev < b.ev + step - 1e-9)) return 'another slip on this one already sent';
-    if (!a && !b && S.perGame > 0 && M.games[game] && M.games[game].n >= S.perGame) return 'game has its alerts';
+    if (b) return 'this game already has its message';
+    if (S.perGame > 0 && M.games[game] && M.games[game].n >= S.perGame) return 'game has its alerts';
     return null;
   }
 
@@ -254,23 +244,22 @@ function create(opts) {
     if (moved) return moved;
     const why = verdict(board, row, o);
     if (why) return why;
-    const key = String(row.key), sub = subjectOf(board, row), game = gameOf(row);
-    const before = { slip: M.slips[key], sub: M.subjects[sub], game: M.games[game] && Object.assign({}, M.games[game]) };
-    const better = !!(before.slip || before.sub);
+    const key = String(row.key), game = gameOf(row), sub = S.oneGame.includes(board) ? `${game}|${board}` : null;
+    const before = { game: M.games[game] && Object.assign({}, M.games[game]) };
     const mark = { ev: row.ev, at: now(), starts: row.starts || 0, shown: row.ev, first: { ev: row.ev, slip_x: row.slip_x, fair: row.fair, at: now() } };
     M.slips[key] = mark;
-    M.subjects[sub] = Object.assign({ key }, mark);
-    if (!better) M.games[game] = { n: ((M.games[game] || {}).n || 0) + 1, at: now(), starts: row.starts || 0 };
+    if (sub) M.subjects[sub] = Object.assign({ key }, mark);
+    M.games[game] = { n: ((M.games[game] || {}).n || 0) + 1, at: now(), starts: row.starts || 0 };
     save();
-    if (S.dry) { sent++; log('[novig-alert dry] ' + line(board, row, o.game) + (better ? ' | better than the last' : '')); return null; }
-    const body = { username: 'Novig Scan', embeds: [embed(S, board, row, { game: o.game, better })], allowed_mentions: { parse: [] } };
+    if (S.dry) { sent++; log('[novig-alert dry] ' + line(board, row, o.game)); return null; }
+    const body = { username: 'Novig Scan', embeds: [embed(S, board, row, { game: o.game })], allowed_mentions: { parse: [] } };
     chain = chain.then(() => post(body, row.expires)).then(id => { if (M.slips[key] === mark) { mark.id = id; save(); } sent++; lastError = null; log('[novig-alert] sent ' + line(board, row, o.game)); })
       .catch(e => {
         lastError = e.message;
         log('[novig-alert] not sent: ' + e.message);
-        if (before.slip) M.slips[key] = before.slip; else delete M.slips[key];
-        if (before.sub) M.subjects[sub] = before.sub; else delete M.subjects[sub];
-        if (before.game) M.games[game] = before.game; else if (!better) delete M.games[game];
+        delete M.slips[key];
+        if (sub) delete M.subjects[sub];
+        if (before.game) M.games[game] = before.game; else delete M.games[game];
         save();
       });
     return null;
@@ -289,11 +278,11 @@ function create(opts) {
   }
 
   const status = () => ({ enabled: S.enabled, dry: S.dry, webhook: !!S.webhook, sports: S.sports, scan: S.scan, minEv: S.minEv,
-                          minEvPts3: S.minEvPts3, step: S.step, update: S.update, perGame: S.perGame, sent, lastError });
+                          minEvPts3: S.minEvPts3, oneGame: S.oneGame, update: S.update, perGame: S.perGame, sent, lastError });
   return { S, consider, verdict, test, status, embed: (b, r, x) => embed(S, b, r, x), flush: () => chain };
 }
 
-module.exports = { create, settings, isPts3, subjectOf, gameOf, embed, BOARD_NAME };
+module.exports = { create, settings, isPts3, gameOf, embed, BOARD_NAME };
 
 // node novigAlerts.js --dry [boards.json]: the saved boards' rows that would
 // alert now, whatever their age (a saved quote has long expired). Posts nothing.

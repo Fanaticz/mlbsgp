@@ -62,16 +62,10 @@ const row = (o) => Object.assign({ key: 'a,b', player: 'Cam Spencer', id: 77, te
   await a.flush();
   assert.ok(calls[1].title.startsWith('MOVED UP · '));
   assert.strictEqual(posts.length, 1);
-  // same player, another slip: not sent either
-  assert.strictEqual(a.consider('nba', row({ key: 'a,c', ev: 0.50 })), 'another slip on this one already sent');
-  // with ALERT_REALERT_STEP set, another slip on him goes at that many points better; the same slip still never
-  const s2 = mk({ ALERT_REALERT_STEP: '2' });
-  assert.strictEqual(s2.consider('nba', row({})), null);
-  await s2.flush();
-  assert.strictEqual(s2.consider('nba', row({ ev: 0.50 })), 'message edited');
-  assert.strictEqual(s2.consider('nba', row({ key: 'a,c', ev: 0.08 })), 'another slip on this one already sent');
-  assert.strictEqual(s2.consider('nba', row({ key: 'a,c', ev: 0.095 })), null);
-  await s2.flush();
+  // same player, another slip: sent, once
+  assert.strictEqual(a.consider('nba', row({ key: 'a,c', ev: 0.08 })), null);
+  await a.flush();
+  assert.strictEqual(a.consider('nba', row({ key: 'a,c', ev: 0.08 })), 'already sent');
   // every other player in the game goes: no limit a game
   for (let i = 0; i < 6; i++) assert.strictEqual(a.consider('nba', row({ key: 'p' + i, id: 100 + i, player: 'P' + i })), null);
   await a.flush();
@@ -81,13 +75,17 @@ const row = (o) => Object.assign({ key: 'a,b', player: 'Cam Spencer', id: 77, te
   assert.strictEqual(cap.consider('nba', row({ key: 'd,e', id: 78, player: 'B' })), null);
   assert.strictEqual(cap.consider('nba', row({ key: 'f,g', id: 79, player: 'C', ev: 0.3 })), 'game has its alerts');
   assert.strictEqual(cap.consider('nba', row({ key: 'f,g', id: 79, player: 'C', ev: 0.3, event: 'g2' })), null);
+  assert.strictEqual(cap.verdict('cbb', row({ key: 'zz', event: 'g1', ev: 0.3 })), 'game has its alerts');
   await cap.flush();
-  // a game's own lines: the same shape one line over is the same subject
-  a = mk({ ALERT_SPORTS: 'soccer' });
+  // CBB: one message a game, whatever the slip; soccer and the rest: every slip
+  a = mk({});
+  const cbb = o => row(Object.assign({ id: 'g7', event: 'g7', player: 'COFC @ DRKE', ev: 0.2, label: 'DRKE team total Under 79.5 · COFC team total Under 79.5' }, o));
+  assert.strictEqual(a.consider('cbb', cbb({ key: 'c1' })), null);
+  assert.strictEqual(a.consider('cbb', cbb({ key: 'c2', label: 'COFC +6.5 · Under 150.5', ev: 0.4 })), 'this game already has its message');
+  assert.strictEqual(a.consider('cbb', cbb({ key: 'c3', id: 'g8', event: 'g8' })), null);
   const soc = o => row(Object.assign({ id: 'm1', event: undefined, player: 'Arsenal v Chelsea', ev: 0.2, label: 'Arsenal to win · Arsenal U5.5 corners · Chelsea O3.5 corners' }, o));
   assert.strictEqual(a.consider('soccer', soc({ key: 's1' })), null);
-  assert.strictEqual(a.consider('soccer', soc({ key: 's2', label: 'Arsenal to win · Arsenal U6.5 corners · Chelsea O3.5 corners' })), 'another slip on this one already sent');
-  assert.strictEqual(a.consider('soccer', soc({ key: 's3', label: 'Arsenal to win · Arsenal U5.5 corners · Chelsea O3.5 corners · O2.5 goals' })), null);
+  assert.strictEqual(a.consider('soccer', soc({ key: 's2', label: 'Arsenal to win · Arsenal U6.5 corners · Chelsea O3.5 corners' })), null);
   await a.flush();
   // Discord 429: waits retry_after, sends again
   a = mk({}); posts = []; answers = [{ status: 429, body: { retry_after: 0.6 }, headers: { 'retry-after': '1' } }];
