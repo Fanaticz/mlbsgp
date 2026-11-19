@@ -2,6 +2,13 @@
 
 ## 2026-11-19 session
 
+### Discord alerts: the phone's link opens the app without asking
+Max, 11-19: the 2nd link works.
+
+- **Change** (`embed` in `novigAlerts.js`): an alert's title and its first link, **Open in the Novig app**, are `https://novig.onelink.me/JHQQ/events/<outcome ids>`, the link that was on trial below. The second link, **on a computer**, is the old one (`/n/<outcome ids>`, which goes to novig.com); the app link is a dead page in a computer's browser.
+- **`/n/` on a phone** (`server.js`): its "Open in the Novig app" button is that same address, and the page no longer opens `novigapp://` by itself, which is what made Safari ask. The scanner page's own rows on a phone are unchanged (`novigapp://`).
+- **Checked**: the alert checks; `/n/` answers. Not seen on a phone.
+
 ### Discord alerts: a second link on trial, to open the app without iOS asking
 Max, 11-19 (iPhone screenshot: "Open this page in Novig?"): any way to not make links do this?
 

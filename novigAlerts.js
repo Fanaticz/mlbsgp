@@ -84,10 +84,16 @@ function embed(S, board, row, extra) {
   extra = extra || {};
   const ids = (row.legs || []).map(L => L.id);
   const okIds = ids.length && ids.every(i => /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(String(i)));
-  // /n/<ids> on this app sends a phone to the Novig app and a computer to
-  // novig.com, legs on the slip. Without this app's address, novig.com itself.
-  // A row with no real outcome ids (the test button's stand-in) links to novig.com.
-  const url = !okIds ? 'https://novig.com' : S.base ? `${S.base}/n/${ids.join(',')}` : `https://novig.com/events/${ids.join(',')}`;
+  // Two links. The phone's (the title, and the first link): Novig's own
+  // universal-link address, which iOS hands straight to the app with the legs
+  // on the slip and no "Open this page in Novig?" question (Max, 11-19: works).
+  // It is a dead page in a computer's browser, so the second link is for a
+  // computer: /n/<ids> on this app, which goes to novig.com (novig.com itself
+  // without this app's address). A row with no real outcome ids (the test
+  // button's stand-in) links to novig.com.
+  const tail = ids.join(',');
+  const url = okIds ? `https://novig.onelink.me/JHQQ/events/${tail}` : 'https://novig.com';
+  const web = S.base ? `${S.base}/n/${tail}` : `https://novig.com/events/${tail}`;
   const texts = String(row.label || '').split(' · ');
   const legs = (row.legs || []).map((L, i) => {
     const t = L.text || (texts.length === row.legs.length ? texts[i] : `${L.side || ''} ${L.line != null ? L.line : ''} ${L.stat || ''}`.trim());
@@ -114,14 +120,10 @@ function embed(S, board, row, extra) {
     title: `${head}${row.player}${row.team && !/ v | \+ /.test(row.player) ? ' (' + row.team + ')' : ''} · ${pct(row.ev)}`.slice(0, 250),
     url,
     color: extra.test || extra.gone ? 0x8a8f98 : row.ev >= 0.10 ? 0x2ecc71 : 0xf1c40f,
-    // The title is the link too; this line is the one that looks like a link.
-    // "App, no prompt": the same slip through Novig's own universal-link
-    // address (novig.onelink.me/JHQQ, which iOS hands straight to the app
-    // with no "Open this page in Novig?" question; the /n/ page has to ask,
-    // because it opens the app by its novigapp:// name). On trial 11-19: not
-    // yet seen to put the legs on the slip, and it is a dead page on a computer.
+    // The title is the phone's link too; this line is the one that looks like a link.
     description: [[extra.game, when].filter(Boolean).join(' · '),
-      `**[Open in Novig ↗](${url})**${okIds ? ` · [App, no prompt (trial) ↗](https://novig.onelink.me/JHQQ/events/${ids.join(',')})` : ''}`, ...notes].filter(Boolean).join('\n').slice(0, 1000) || undefined,
+      okIds ? `**[Open in the Novig app ↗](${url})** · [on a computer ↗](${web})` : `**[Open Novig ↗](${url})**`, ...notes]
+      .filter(Boolean).join('\n').slice(0, 1000) || undefined,
     fields: [
       { name: legs.length > 1 ? `${legs.length} legs` : 'Leg', value: legs.join('\n').slice(0, 1000) || String(row.label || '-') },
       { name: 'Novig', value: `${row.slip_x.toFixed(2)}x (${american(row.slip_x)})`, inline: true },
