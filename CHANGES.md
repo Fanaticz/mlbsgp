@@ -2,6 +2,12 @@
 
 ## 2026-11-19 session
 
+### Novig Scan and Kalshi Scan are the first two tabs
+Max, 11-19: make the scanner tab and Kalshi all the way to the left.
+
+- **Change** (`index.html`): the NOVIG SCAN and KALSHI SCAN buttons come first in the tab bar, before NBA. They still show only on a device that has opened them; the tab the app opens on is unchanged.
+- **Checked**: in a phone-sized browser with both tabs switched on, the bar reads NOVIG SCAN, KALSHI SCAN, NBA, NBA TEAMMATES, ...
+
 ### Novig Scan: nothing about Discord on the page
 Max, 11-19 (screenshot of the status line): hide discord stuff.
 
