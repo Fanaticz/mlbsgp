@@ -2,6 +2,15 @@
 
 ## 2026-11-19 session
 
+### Discord alerts, CBB: one message a game for each type of slip
+Max, 11-19: actually for CBB, one bet per type. I don't need 3 notifications for unders. I like double unders more than +4.5 and same team under 55.
+
+- **Change** (`typeOf` in `novigAlerts.js`): on CBB a game gets one message per type of slip, where this morning's rule was one per game. A type is the slip's shape (spread + total, a team total Under + the game Under, both team totals Under, ...), so the same slip with a leg moved a line, which is where the three Unders messages came from, is not sent again. `ALERT_ONE_PER_TYPE` (cbb) names the boards.
+- **The double Under first**: both team totals Under and the underdog covering with his own total Under share a leg and count as one type, with the double Under ahead. Once it has gone the other is not sent; if the other went first, the double Under still goes.
+- **`scan.py`**: a college row carries its shape's name (`shape`), which the rule reads (a row priced before this is typed by its label with the numbers out). The double Under is now asked before the underdog-covers slip in each game. No fair value or price changes.
+- **Which line of a type**: the first to clear the bar, the main line before the moved ones.
+- **Checked**: the alert checks. `scan.py` loads; a CBB pass was not run.
+
 ### Discord alerts: every slip is sent; one message a game is CBB's rule only
 Max, 11-19: I don't care about 1 message per game for anything but probably CBB.
 

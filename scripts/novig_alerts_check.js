@@ -77,12 +77,21 @@ const row = (o) => Object.assign({ key: 'a,b', player: 'Cam Spencer', id: 77, te
   assert.strictEqual(cap.consider('nba', row({ key: 'f,g', id: 79, player: 'C', ev: 0.3, event: 'g2' })), null);
   assert.strictEqual(cap.verdict('cbb', row({ key: 'zz', event: 'g1', ev: 0.3 })), 'game has its alerts');
   await cap.flush();
-  // CBB: one message a game, whatever the slip; soccer and the rest: every slip
+  // CBB: one message a game for each type of slip; soccer and the rest: every slip
   a = mk({});
-  const cbb = o => row(Object.assign({ id: 'g7', event: 'g7', player: 'COFC @ DRKE', ev: 0.2, label: 'DRKE team total Under 79.5 · COFC team total Under 79.5' }, o));
+  const cbb = o => row(Object.assign({ id: 'g7', event: 'g7', player: 'COFC @ DRKE', ev: 0.2, shape: 'fav_tt_under+under', label: 'DRKE team total Under 79.5 · Under 150.5' }, o));
   assert.strictEqual(a.consider('cbb', cbb({ key: 'c1' })), null);
-  assert.strictEqual(a.consider('cbb', cbb({ key: 'c2', label: 'COFC +6.5 · Under 150.5', ev: 0.4 })), 'this game already has its message');
-  assert.strictEqual(a.consider('cbb', cbb({ key: 'c3', id: 'g8', event: 'g8' })), null);
+  assert.strictEqual(a.consider('cbb', cbb({ key: 'c2', label: 'DRKE team total Under 78.5 · Under 150.5', ev: 0.4 })), 'this type already sent for the game');   // a line over
+  assert.strictEqual(a.consider('cbb', cbb({ key: 'c3', shape: 'fav_cover+over', label: 'DRKE -6.5 · Over 150.5' })), null);   // another type
+  assert.strictEqual(a.consider('cbb', cbb({ key: 'c4', id: 'g8', event: 'g8' })), null);   // another game
+  // the underdog covering + his total Under, then the double Under: the double Under still goes; not the other way round
+  assert.strictEqual(a.consider('cbb', cbb({ key: 'c5', shape: 'dog_cover+dog_tt_under', label: 'COFC +4.5 · COFC team total Under 55.5' })), null);
+  assert.strictEqual(a.consider('cbb', cbb({ key: 'c6', shape: 'fav_tt_under+dog_tt_under', label: 'DRKE team total Under 79.5 · COFC team total Under 55.5' })), null);
+  assert.strictEqual(a.consider('cbb', cbb({ key: 'c7', shape: 'dog_cover+dog_tt_under', label: 'COFC +5.5 · COFC team total Under 55.5', ev: 0.5 })), 'this type already sent for the game');
+  assert.strictEqual(a.consider('cbb', cbb({ key: 'c8', shape: 'fav_tt_under+dog_tt_under', label: 'DRKE team total Under 78.5 · COFC team total Under 55.5', ev: 0.5 })), 'this type already sent for the game');
+  // a row from before rows carried a shape: its label with the numbers out
+  assert.strictEqual(a.consider('cbb', cbb({ key: 'c9', id: 'g9', event: 'g9', shape: undefined })), null);
+  assert.strictEqual(a.consider('cbb', cbb({ key: 'c10', id: 'g9', event: 'g9', shape: undefined, label: 'DRKE team total Under 77.5 · Under 151.5' })), 'this type already sent for the game');
   const soc = o => row(Object.assign({ id: 'm1', event: undefined, player: 'Arsenal v Chelsea', ev: 0.2, label: 'Arsenal to win · Arsenal U5.5 corners · Chelsea O3.5 corners' }, o));
   assert.strictEqual(a.consider('soccer', soc({ key: 's1' })), null);
   assert.strictEqual(a.consider('soccer', soc({ key: 's2', label: 'Arsenal to win · Arsenal U6.5 corners · Chelsea O3.5 corners' })), null);

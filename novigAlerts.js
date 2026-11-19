@@ -16,7 +16,8 @@
 //                         ladder (NBA Ladder is Fetch only; its rows alert when fetched).
 //   ALERT_MIN_EV          EV% a slip needs: 10
 //   ALERT_MIN_EV_PTS3     EV% for NBA main-line Points + Threes: 5
-//   ALERT_ONE_PER_GAME    boards that get one message a game, whatever the slip: cbb
+//   ALERT_ONE_PER_TYPE    boards that get one message a game for each type of slip
+//                         (the same slip a line over is the same type): cbb
 //                         (Max, 11-19). Everywhere else every slip over its bar is
 //                         sent, once each: a second slip on the same player included.
 //   ALERT_UPDATE_STEP     A slip already sent is not sent again, but its message is
@@ -52,7 +53,7 @@ function settings(env) {
     scan: list(env.ALERT_SCAN_SPORTS, sports.filter(b => b !== 'ladder')).filter(b => BOARD_NAME[b]),
     minEv: num(env.ALERT_MIN_EV, 10),
     minEvPts3: num(env.ALERT_MIN_EV_PTS3, 5),
-    oneGame: list(env.ALERT_ONE_PER_GAME, ['cbb']),
+    oneType: list(env.ALERT_ONE_PER_TYPE, ['cbb']),
     update: Math.max(0, num(env.ALERT_UPDATE_STEP, 2)),
     perGame: Math.max(0, Math.round(num(env.ALERT_MAX_PER_GAME, 0))),
     minTtl: num(env.ALERT_MIN_TTL_S, 10),
@@ -69,6 +70,21 @@ const minEv = (S, board, row) => (isPts3(board, row) ? S.minEvPts3 : S.minEv);
 
 // Which game a slip is on (Novig's event id; the row's own id on a board that has none).
 const gameOf = row => String(row.event || row.id || row.player || '');
+
+// A slip's type on a one-per-type board: scan.py's name for its shape (the
+// label with the numbers out for a row priced before rows carried one), so
+// the same slip with a leg moved a line is the same type. Two shapes that
+// share the underdog's team total Under are one type, and the double Under
+// outranks the underdog covering with it (Max, 11-19: "I like double unders
+// more than +4.5 and same team under 55"): once the double Under has gone the
+// other is not sent, and the double Under still goes after the other.
+const TYPE_GROUP = { 'fav_tt_under+dog_tt_under': ['dog_tt_under', 1], 'dog_cover+dog_tt_under': ['dog_tt_under', 0] };
+function typeOf(S, board, row) {
+  if (!S.oneType.includes(board)) return null;
+  const shape = row.shape || String(row.label || '').replace(/[0-9.+-]+/g, '#');
+  const [group, rank] = TYPE_GROUP[shape] || [shape, 0];
+  return { key: `${gameOf(row)}|${board}|${group}`, rank };
+}
 
 const american = x => (x >= 2 ? '+' + Math.round((x - 1) * 100) : String(Math.round(-100 / (x - 1))));
 const pct = v => (v >= 0 ? '+' : '') + (v * 100).toFixed(1) + '%';
@@ -165,10 +181,10 @@ function create(opts) {
       if (!row.expires) return 'no expiry on the quote';
       if (row.expires - t < S.minTtl * 1000) return 'quote expired or about to';
     }
-    const key = String(row.key), game = gameOf(row), sub = S.oneGame.includes(board) ? `${game}|${board}` : null;
-    const a = M.slips[key], b = sub ? M.subjects[sub] : null;
+    const key = String(row.key), game = gameOf(row), type = typeOf(S, board, row);
+    const a = M.slips[key], b = type ? M.subjects[type.key] : null;
     if (a) return 'already sent';
-    if (b) return 'this game already has its message';
+    if (b && type.rank <= (b.rank || 0)) return 'this type already sent for the game';
     if (S.perGame > 0 && M.games[game] && M.games[game].n >= S.perGame) return 'game has its alerts';
     return null;
   }
@@ -244,11 +260,11 @@ function create(opts) {
     if (moved) return moved;
     const why = verdict(board, row, o);
     if (why) return why;
-    const key = String(row.key), game = gameOf(row), sub = S.oneGame.includes(board) ? `${game}|${board}` : null;
-    const before = { game: M.games[game] && Object.assign({}, M.games[game]) };
+    const key = String(row.key), game = gameOf(row), type = typeOf(S, board, row), sub = type && type.key;
+    const before = { sub: sub && M.subjects[sub], game: M.games[game] && Object.assign({}, M.games[game]) };
     const mark = { ev: row.ev, at: now(), starts: row.starts || 0, shown: row.ev, first: { ev: row.ev, slip_x: row.slip_x, fair: row.fair, at: now() } };
     M.slips[key] = mark;
-    if (sub) M.subjects[sub] = Object.assign({ key }, mark);
+    if (sub) M.subjects[sub] = Object.assign({ key, rank: type.rank }, mark);
     M.games[game] = { n: ((M.games[game] || {}).n || 0) + 1, at: now(), starts: row.starts || 0 };
     save();
     if (S.dry) { sent++; log('[novig-alert dry] ' + line(board, row, o.game)); return null; }
@@ -258,7 +274,7 @@ function create(opts) {
         lastError = e.message;
         log('[novig-alert] not sent: ' + e.message);
         delete M.slips[key];
-        if (sub) delete M.subjects[sub];
+        if (sub) { if (before.sub) M.subjects[sub] = before.sub; else delete M.subjects[sub]; }
         if (before.game) M.games[game] = before.game; else delete M.games[game];
         save();
       });
@@ -278,7 +294,7 @@ function create(opts) {
   }
 
   const status = () => ({ enabled: S.enabled, dry: S.dry, webhook: !!S.webhook, sports: S.sports, scan: S.scan, minEv: S.minEv,
-                          minEvPts3: S.minEvPts3, oneGame: S.oneGame, update: S.update, perGame: S.perGame, sent, lastError });
+                          minEvPts3: S.minEvPts3, oneType: S.oneType, update: S.update, perGame: S.perGame, sent, lastError });
   return { S, consider, verdict, test, status, embed: (b, r, x) => embed(S, b, r, x), flush: () => chain };
 }
 

@@ -1529,8 +1529,10 @@ def cfb_candidates(a):
             fav_ttu, dog_ttu = pick("tt", fav, "under"), pick("tt", dog, "under")
             # The underdog covering with his own total Under: no game Under leg,
             # since those two all but force it (63.5 + 63.5 + 27.5 is under a 157.5 total).
-            shapes += [("tt", "dog_cover+dog_tt_under", [pick("cover", dog), dog_ttu]), ("tt", "fav_tt_under+under", [fav_ttu, under]),
-                       ("tt", "fav_tt_under+dog_tt_under", [fav_ttu, dog_ttu]),
+            # Both team totals Under is asked before the underdog covering with his own total Under
+            # (Max, 11-19: he likes the double Under more), so it is the one priced and alerted first.
+            shapes += [("tt", "fav_tt_under+dog_tt_under", [fav_ttu, dog_ttu]), ("tt", "fav_tt_under+under", [fav_ttu, under]),
+                       ("tt", "dog_cover+dog_tt_under", [pick("cover", dog), dog_ttu]),
                        ("half", "fav_1h_cover+fav_cover", [pick("cover", fav, half=True), pick("cover", fav)])]
         if board["own"]:
             shapes += [("half", "1h_under+under", [pick("tot", side="under", half=True), under])]
@@ -1541,7 +1543,7 @@ def cfb_candidates(a):
                 R[0][1] = R[1][0] = seen["r"]
             j = sgp.joint(R[0][1], ls[0]["p"], ls[1]["p"]) if len(ls) == 2 else both_scores(ls)
             return {"key": ",".join(L["id"] for L in ls), "tier": 9, "player": name, "id": eid, "team": board["league"],
-                    "starts": ms[0]["startsTs"], "legs": [dict(L) for L in ls], "kind": kind,
+                    "starts": ms[0]["startsTs"], "legs": [dict(L) for L in ls], "kind": kind, "shape": shape,
                     "label": " · ".join(L["text"] for L in ls), "forced": False,
                     "r": min(R[i][k] for i in range(len(ls)) for k in range(i)), "j": j,
                     "devig_r": sgp.devig_r(j, ls[0]["p"], ls[1]["p"]) if len(ls) == 2 else None,
