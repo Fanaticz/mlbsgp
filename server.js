@@ -2773,7 +2773,7 @@ function nvAlert(league, wide, row) {
 }
 {
   const a = NV_ALERTS.status();
-  if (a.enabled) console.log(`Novig alerts: on${a.dry ? ' (dry run: nothing is posted)' : a.webhook ? '' : ' but DISCORD_WEBHOOK_URL is not set'}; boards ${a.sports.join(', ')}; priced by the job: ${a.scan.join(', ')}`);
+  if (a.enabled) console.log(`Novig alerts: on${a.dry ? ' (dry run: nothing is posted)' : a.webhook ? '' : ' but DISCORD_WEBHOOK_URL is not set'}; boards ${a.sports.join(', ')}; passes are Auto-scan's or a Fetch`);
 }
 // POST /api/nba/novig-alert-test — one message marked TEST (the page's button
 // for it was taken off 11-19; the route is kept for a check by hand), with the numbers of the best row on the alert boards
@@ -2852,16 +2852,16 @@ try {
     console.log('Novig auto-scan: still on from before the restart');
   }
 } catch (_) { /* it was off */ }
-// With alerts on (ALERTS_ENABLED) and Auto-scan off, the same cycle keeps the
-// alert job's boards priced (ALERT_SCAN_SPORTS; tight books, Eastern days).
-// With Auto-scan on, its own passes are what the alerts read.
-const NV_ALERT_CYCLE = { since: Date.now(), wide: false, tz: NV_TZ, i: 0, boards: NV_ALERTS.S.scan.filter(b => !NV_OWN_SCRIPT[b]) };
-const nvAlertCycleOn = () => NV_ALERTS.S.enabled && (NV_ALERTS.S.dry || !!NV_ALERTS.S.webhook) && NV_ALERT_CYCLE.boards.length > 0;
-const nvCyc = () => NV_CYCLE || (nvAlertCycleOn() ? NV_ALERT_CYCLE : null);
+// The Auto-scan button is the only thing that starts passes by itself (Max,
+// 11-20). The alert job used to keep its boards priced with Auto-scan off
+// (11-19): the page showed boards scanning with the button off, and those
+// passes asked Novig for the slips Max was about to build in the app. The
+// alerts read whatever passes run: Auto-scan's, or a Fetch.
+const nvCyc = () => NV_CYCLE;
 function nvCycleTick(first) {
   const C = nvCyc();
   if (!C) return;
-  const boards = C.boards || NV_CYCLE_BOARDS;
+  const boards = NV_CYCLE_BOARDS;
   nvOutRefresh();   // the injury report, kept current while auto-scan runs
   const now = Date.now();
   if (NV_RUN || NV_CYCLE_ASK || (!first && now - NV_LAST_END < NV_CYCLE_GAP_MS)) return;
@@ -2889,7 +2889,7 @@ setInterval(nvCycleTick, 15000).unref();
 // while a pass runs). Between rounds every board can be inside its ten
 // minutes' rest, and the page said "next: NBA" with nothing to show it was waiting.
 function nvCycleState() {
-  if (!NV_CYCLE) return { on: false, boards: NV_CYCLE_BOARDS, alerts: nvAlertCycleOn() ? NV_ALERT_CYCLE.boards : null };
+  if (!NV_CYCLE) return { on: false, boards: NV_CYCLE_BOARDS };
   const now = Date.now();
   let next = NV_CYCLE_BOARDS[NV_CYCLE.i], wait = Infinity;
   for (let n = 0; n < NV_CYCLE_BOARDS.length; n++) {

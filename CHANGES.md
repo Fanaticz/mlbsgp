@@ -2,6 +2,16 @@
 
 ## 2026-11-20 session
 
+### Auto-scan is the only thing that starts passes
+Max, 11-20 (the page at 2:00 AM, Auto-scan off, "soccer scanning 25 / 111"): auto scanner isn't on but it keeps pulling lines. Then: make the Auto-scan button the only thing that starts passes.
+
+- **What it was**: the Discord alert job. Since 11-19, with alerts on and Auto-scan off, the server priced the alert boards in turn by itself so there was something to alert on. Nothing on the page said so (Discord is kept off the page).
+- **Change** (`nvCyc` in `server.js`; `novigAlerts.js`): that cycle is removed. A pass starts from Auto-scan or a Fetch and from nothing else. The alerts read whatever passes run, so with Auto-scan off there are alerts only for boards someone fetches. `ALERT_SCAN_SPORTS` is gone (read by nothing); `ALERTS_ENABLED` now only sends.
+- **Why it matters beyond the page**: a background pass asks Novig for the slips about to be built in the app, which can cost the better quote (see the re-ask entry below).
+- **Auto-scan's state is saved**, as before: on stays on across a restart, off stays off.
+- **Checked** on a local server with alerts on (dry run): the old code started a pass within 50 seconds with Auto-scan off; the new code started none in 60 seconds, started one within 50 seconds of Auto-scan being switched on, and none in 45 seconds after it was switched off. The alert checks pass. The first run of this test caught a start-up crash (a log line still read the removed list), fixed before the commit.
+- **Not checked**: on the live server, or with a real webhook.
+
 ### Novig Scan: each slip is asked once a pass; the re-ask is gone
 Max, 11-20 (the board's WYO ML + Under 37.5 at 7.54x, 31 seconds old, beside the app's slip for it at 6.27x: not matching; then: we don't double ask, right? drop the re-ask, let's test it).
 

@@ -8,12 +8,11 @@
 //
 // Settings (all from the environment):
 //   DISCORD_WEBHOOK_URL   the channel's webhook. Never logged or sent to the page.
-//   ALERTS_ENABLED        1 to send alerts (and keep the alert boards priced). Default off.
+//   ALERTS_ENABLED        1 to send alerts. Default off. The job starts no passes: it reads the
+//                         ones Auto-scan or a Fetch runs.
 //   ALERTS_DRY_RUN        1 to print would-be alerts to the log and post nothing.
 //   ALERT_SPORTS          boards that may alert: every Novig tab on the page
 //                         (nba,ladder,nbateam,nfl,nflladder,soccer,cfb,cbb)
-//   ALERT_SCAN_SPORTS     boards the job prices on its own: ALERT_SPORTS without
-//                         ladder and nflladder (the ladders are Fetch only; their rows alert when fetched).
 //   ALERT_MIN_EV          EV% a slip needs: 10
 //   ALERT_MIN_EV_PTS3     EV% for NBA main-line Points + Threes: 5
 //   ALERT_ONE_PER_TYPE    boards that get one message a game for each type of slip
@@ -50,7 +49,6 @@ function settings(env) {
     enabled: on(env.ALERTS_ENABLED),
     dry: on(env.ALERTS_DRY_RUN),
     sports,
-    scan: list(env.ALERT_SCAN_SPORTS, sports.filter(b => b !== 'ladder' && b !== 'nflladder')).filter(b => BOARD_NAME[b]),
     minEv: num(env.ALERT_MIN_EV, 10),
     minEvPts3: num(env.ALERT_MIN_EV_PTS3, 5),
     oneType: list(env.ALERT_ONE_PER_TYPE, ['cbb']),
@@ -309,7 +307,7 @@ function create(opts) {
     return { ok: true, dry: false };
   }
 
-  const status = () => ({ enabled: S.enabled, dry: S.dry, webhook: !!S.webhook, sports: S.sports, scan: S.scan, minEv: S.minEv,
+  const status = () => ({ enabled: S.enabled, dry: S.dry, webhook: !!S.webhook, sports: S.sports, minEv: S.minEv,
                           minEvPts3: S.minEvPts3, oneType: S.oneType, update: S.update, perGame: S.perGame, sent, lastError });
   return { S, consider, verdict, test, status, heading, embed: (b, r, x) => embed(S, b, r, x), flush: () => chain };
 }
