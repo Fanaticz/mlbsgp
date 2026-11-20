@@ -2763,8 +2763,11 @@ function nvFlag(league, row) {
 // there and nothing is ever bet: a row carries its own fair value, EV and stake.
 // Wide-book passes and the Kalshi and DK boards don't alert.
 const NV_ALERTS = require('./novigAlerts.js').create({ dir: NV_SCAN_FILE ? path.dirname(NV_SCAN_FILE) : null });
+// One button for the page and for Discord (Max, 11-20): alerts go out only
+// while Auto-scan is on. With it off nothing is sent, a Fetch's or a
+// refresh's rows included.
 function nvAlert(league, wide, row) {
-  if (wide || NV_OWN_SCRIPT[league]) return;
+  if (!NV_CYCLE || wide || NV_OWN_SCRIPT[league]) return;
   try {
     const g = (NV_GAMES.get(NV_PY_LEAGUE(league)) || {}).games || [];
     const game = (g.find(x => x.id === (row.event || row.id)) || {}).name || '';
@@ -2773,7 +2776,7 @@ function nvAlert(league, wide, row) {
 }
 {
   const a = NV_ALERTS.status();
-  if (a.enabled) console.log(`Novig alerts: on${a.dry ? ' (dry run: nothing is posted)' : a.webhook ? '' : ' but DISCORD_WEBHOOK_URL is not set'}; boards ${a.sports.join(', ')}; passes are Auto-scan's or a Fetch`);
+  if (a.enabled) console.log(`Novig alerts: on${a.dry ? ' (dry run: nothing is posted)' : a.webhook ? '' : ' but DISCORD_WEBHOOK_URL is not set'}; boards ${a.sports.join(', ')}; sent only while Auto-scan is on`);
 }
 // POST /api/nba/novig-alert-test — one message marked TEST (the page's button
 // for it was taken off 11-19; the route is kept for a check by hand), with the numbers of the best row on the alert boards

@@ -2,6 +2,16 @@
 
 ## 2026-11-20 session
 
+### One button for the page and for Discord
+Max, 11-20: yes. One button for dashboard and Discord. Should be the same.
+
+- **Change** (`nvAlert` in `server.js`): Discord alerts are sent only while Auto-scan is on. With it off nothing is sent, the rows of a Fetch or of a row's refresh included (after the entry below, those still alerted).
+- **So**: Auto-scan on, the server prices the boards and Discord gets the plays; off, neither happens. A Fetch with it off fills the page only.
+- **Unchanged**: wide-book passes and the Kalshi and DK boards never alert; NBA Ladder and NFL Ladder are Fetch only, so their rows alert when fetched with Auto-scan on.
+- **The page**: the button's hover text says the server prices nothing by itself with it off. It still says nothing of Discord.
+- **Checked** on a local server, alerts in dry run with the bar at 0%: a CFB Fetch with Auto-scan off priced 133 rows, 32 above fair, and logged no alert; rows priced after Auto-scan was switched on were logged within 10 seconds. The alert checks pass.
+- **Not checked**: on the live server, or with a real webhook.
+
 ### Auto-scan is the only thing that starts passes
 Max, 11-20 (the page at 2:00 AM, Auto-scan off, "soccer scanning 25 / 111"): auto scanner isn't on but it keeps pulling lines. Then: make the Auto-scan button the only thing that starts passes.
 
