@@ -564,7 +564,6 @@ function detail(c) {
     `books ${c.legs.map(L => (100 * L.width).toFixed(1)).join(" / ")}¢`,
     c.book === "dk" ? `DraftKings’ parlay price; its two legs multiplied would pay ${c.legs_x.toFixed(2)}x` :
     c.book === "kalshi" ? `Kalshi’s best answer: Yes at ${(c.quote * 100).toFixed(1)}¢ a contract (${c.raw_x.toFixed(2)}x) before its fee` + (c.novig_x ? ` · Novig pays ${c.novig_x.toFixed(2)}x for the same slip (${c.novig_ev >= 0 ? "+" : ""}${(100 * c.novig_ev).toFixed(1)}%)` : ` · Novig has no price for this slip`) : `quote ${c.raw_x.toFixed(2)}x before fee`,
-    c.first_x && c.asks > 1 ? (Math.abs(c.first_x - c.slip_x) > 0.005 ? `first quote ${c.first_x.toFixed(2)}x, settled over ${c.asks} asks` : `same price on ${c.asks} asks`) : null,
     c.qk > 0 ? `${c.qk.toFixed(2)}u` : null,
     c.forced ? "threes alone clear the points line" : null,
   ].filter(Boolean).join(" · ");

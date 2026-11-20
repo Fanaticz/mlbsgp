@@ -2,6 +2,17 @@
 
 ## 2026-11-20 session
 
+### A check of tonight's changes for bugs
+Max, 11-20: can you check for any bugs.
+
+- **No bug found in what runs.** Fixed: three notes that still described the old behaviour (the skill's soccer paragraph, two comments on when alerts are sent) and one dead line on the page (a row's "settled over N asks").
+- **Checked**: `scan.py` and the correlations script lint clean. A real soccer pass, stopped at 48 of 119 slips: every leg on Pinnacle's price, none marked rough, no underdog-to-win slip under 26%, rows from six leagues. Pinnacle made to fail: the pass stops with the message, which the server shows as the board's error. `--fetch-americas`, not run before, run for 2026: 510 MLS and 311 Liga MX matches, every row identical to the committed files. The page opened in a browser against a local server on the Soccer, CFB and All tabs: no script errors, the new notes show, nothing about Discord.
+- **Not bugs, but they follow from tonight's rules**:
+  - Auto-scan switched on with **Wide books** ticked sends no Discord alerts at all: wide passes never alert, and Auto-scan is now the only way alerts go out.
+  - Anyone with the scanner's passcode can switch Auto-scan, and so the Discord alerts, on or off.
+  - A soccer leg needs a two-sided Novig book as well as Pinnacle's price; a line Pinnacle prices where Novig's book is one-sided is still skipped.
+- **Not checked**: the live server; a real webhook; a phone.
+
 ### One button for the page and for Discord
 Max, 11-20: yes. One button for dashboard and Discord. Should be the same.
 

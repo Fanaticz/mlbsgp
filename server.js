@@ -2758,8 +2758,8 @@ function nvFlag(league, row) {
   return note ? Object.assign({}, row, { gtd: note }) : row;
 }
 
-// Discord alerts (novigAlerts.js): every row a pass or a refresh prices is
-// offered to it, and it sends the ones worth a message. Nothing is priced
+// Discord alerts (novigAlerts.js): while Auto-scan is on, every row a pass or
+// a refresh prices is offered to it, and it sends the ones worth a message. Nothing is priced
 // there and nothing is ever bet: a row carries its own fair value, EV and stake.
 // Wide-book passes and the Kalshi and DK boards don't alert.
 const NV_ALERTS = require('./novigAlerts.js').create({ dir: NV_SCAN_FILE ? path.dirname(NV_SCAN_FILE) : null });
@@ -2858,8 +2858,8 @@ try {
 // The Auto-scan button is the only thing that starts passes by itself (Max,
 // 11-20). The alert job used to keep its boards priced with Auto-scan off
 // (11-19): the page showed boards scanning with the button off, and those
-// passes asked Novig for the slips Max was about to build in the app. The
-// alerts read whatever passes run: Auto-scan's, or a Fetch.
+// passes asked Novig for the slips Max was about to build in the app. Alerts
+// go out only while Auto-scan is on (nvAlert).
 const nvCyc = () => NV_CYCLE;
 function nvCycleTick(first) {
   const C = nvCyc();

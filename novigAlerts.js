@@ -8,8 +8,8 @@
 //
 // Settings (all from the environment):
 //   DISCORD_WEBHOOK_URL   the channel's webhook. Never logged or sent to the page.
-//   ALERTS_ENABLED        1 to send alerts. Default off. The job starts no passes: it reads the
-//                         ones Auto-scan or a Fetch runs.
+//   ALERTS_ENABLED        1 to send alerts. Default off. The job starts no passes, and the server
+//                         offers it rows only while Auto-scan is on.
 //   ALERTS_DRY_RUN        1 to print would-be alerts to the log and post nothing.
 //   ALERT_SPORTS          boards that may alert: every Novig tab on the page
 //                         (nba,ladder,nbateam,nfl,nflladder,soccer,cfb,cbb)
