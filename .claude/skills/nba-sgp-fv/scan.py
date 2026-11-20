@@ -188,7 +188,8 @@ his --per (4) highest. A top forward's point runs 0.5 with his team's total,
 0.38 with a win, 0.32 with the game over. --line-stats adds goal, assists
 or shots legs.
 
-Soccer (--league soccer): for every open match with team-corners books it
+Soccer (--league soccer): for every open match with team-corners books
+whose favourite is at least 50% to win (SOCCER_FAV_MIN) it
 asks Max's shape, favourite to win (3-way) + favourite's corners Under +
 underdog's corners Over, alone and with goals Over 1.5 or Over 2.5. A
 leading favourite sits back and the underdog chases, so the legs hit
@@ -1154,6 +1155,7 @@ try:
 except (OSError, ValueError):
     SOCCER_R = {}
 SOCCER_DOG_MAX = 0.70      # the mirror slip is asked where the favourite is under this to win
+SOCCER_FAV_MIN = 0.50      # favourites against big underdogs only (Max, 11-20): no match whose favourite is under this to win
 
 
 def soccer_candidates(a):
@@ -1224,6 +1226,8 @@ def soccer_candidates(a):
             base = [L(wins[0], 0, "ml", f"{fav} win", game and game["ml"][fside]),
                     L(fc, 1, "crn", f"{fav} U{fc['strike']} corners", crn(fc, fside, "under")),
                     L(dc, 0, "crn", f"{dog} O{dc['strike']} corners", crn(dc, dside, "over"))]
+            if base[0]["p"] < SOCCER_FAV_MIN:
+                continue
             band = next((b for b in SOCCER_R.get("by_fav", []) if b["fav"][0] <= base[0]["p"] < b["fav"][1] + 1e-9), None)
 
             def slip(shape, legs, goals=None, alt=None):

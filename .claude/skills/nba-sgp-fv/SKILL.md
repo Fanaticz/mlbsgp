@@ -324,7 +324,7 @@ Fair values are modelled per game; see scan.py's docstring.
 `--league cbb` is the same for college basketball: spread + total only.
 `--league soccer` prices Max's corners shape (favourite 3-way win +
 favourite corners Under + underdog corners Over, with and without goals Over
-1.5 / 2.5) on every open match with team-corners books. Each leg's fair
+1.5 / 2.5) on every open match with team-corners books whose favourite is at least 50% to win (`SOCCER_FAV_MIN`). Each leg's fair
 value is Pinnacle's no-vig price on that line (`pinnacle.py`, two calls for
 the whole board; `python3 pinnacle.py Albania` prints one match), or the
 middle of Novig's own book where Pinnacle has no such line (row marked ~ if
