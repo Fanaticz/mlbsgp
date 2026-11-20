@@ -2252,8 +2252,16 @@ def scan(a, emit):
             c["event"] = where.get(c["legs"][0]["id"])
         # --before: games starting later than that are left out (Auto-scan
         # prices today's games only).
+        # --full-before: a game starting later than that keeps one slip
+        # only, its QB's 2+ passing TDs with a teammate's TD (Max, 11-20:
+        # Novig's NFL limits are too small until the day before).
+        def early(c):
+            ls = c["legs"]
+            return (len(ls) == 2 and {x["stat"] for x in ls} == {"ptd", "td"} and all(x["side"] == "over" for x in ls)
+                    and next(x for x in ls if x["stat"] == "ptd")["line"] == 1.5)
         return [c for c in cs if (not a.events or c["event"] in a.events)
                 and (not a.before or not c.get("starts") or c["starts"] < a.before)
+                and (not a.full_before or not c.get("starts") or c["starts"] < a.full_before or early(c))
                 and (not a.max_fair or sgp.american(c["j"]) <= a.max_fair)]
     cands = mine(cands)
     moved = [c for c in cands if c.get("alt")]   # CBB: a slip with one leg moved a line, asked after its own slip
@@ -2479,6 +2487,9 @@ def main():
                     help="only these games (Novig event ids, from --games): the page's game picker")
     ap.add_argument("--before", type=float, default=None, metavar="MS",
                     help="only games starting before this time (epoch ms): Auto-scan's end of today")
+    ap.add_argument("--full-before", type=float, default=None, metavar="MS",
+                    help="games starting at or after this time (epoch ms) keep only the QB 2+ passing TDs + teammate TD slip "
+                         "(Auto-scan's NFL: everything else waits for the day before the game)")
     ap.add_argument("--first", default=None, metavar="FILE",
                     help="a JSON list of slip keys to ask before the rest, in that order (server.js: the last pass's best rows)")
     ap.add_argument("--games", action="store_true", help="list the league's open pregame games as JSON and stop")

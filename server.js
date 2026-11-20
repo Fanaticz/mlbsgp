@@ -2598,7 +2598,8 @@ function nvGames(lg, cb) {
 
 // events: Novig event ids picked on the page (the game picker); empty = the whole board.
 // before: only games starting before this time (ms); Auto-scan's end of today.
-function startNovigScan(league, wide, events, auto, before) {
+// full: games starting at or after this time (ms) get one slip only (scan.py --full-before).
+function startNovigScan(league, wide, events, auto, before, full) {
   const onKalshi = String(league).startsWith('kalshi');
   if (onKalshi ? NV_KRUN : NV_RUN) return;
   events = events || [];
@@ -2611,7 +2612,8 @@ function startNovigScan(league, wide, events, auto, before) {
     league === 'nflladder' ? ['--league', 'nfl', '--scope', 'ladder'] :
     league === 'nhllines' ? ['--league', 'nhl', '--kind', 'lines'] :
     league === 'nbateam' ? ['--league', 'nba', '--kind', 'team'] : ['--league', league]).concat(wide ? ['--max-spread', '0.08', '--alt-spread', '0.10'] : [])
-    .concat(events.length ? ['--events', ...events] : []).concat(before ? ['--before', String(before)] : []);
+    .concat(events.length ? ['--events', ...events] : []).concat(before ? ['--before', String(before)] : [])
+    .concat(full ? ['--full-before', String(full)] : []);
   // The last pass's best rows are asked first (scan.py --first), so the top
   // of the board is fresh minutes into a pass instead of whenever the pass
   // reaches each row (an NFL pass is about 50 minutes).
@@ -2809,6 +2811,11 @@ app.post('/api/nba/novig-alert-test', async (req, res) => {
 const NV_CYCLE_BOARDS = ['nba', 'nbateam', 'nfl', 'cbb', 'cfb', 'soccer'];   // NFL Ladder 11-18, out again 11-19 (Max: Fetch only, like NBA Ladder), to leave the time to the NFL's Sunday
 const NV_CYCLE_THROUGH = { nfl: 0, cfb: 6, soccer: 0 };   // board -> the weekday its window runs through (0 = Sunday)
 const NV_CYCLE_REACH_DAYS = { soccer: 3 }, NV_CYCLE_REACH = 4;   // soccer: a midweek match day is priced alone
+// Boards priced in full only from the day before a game (Max, 11-20: Novig's
+// NFL limits are too small earlier): a game starting after tomorrow's
+// midnight gets its QB 2+ passing TDs + teammate TD slip and nothing else.
+// Fetch still prices everything.
+const NV_CYCLE_DAY_BEFORE = ['nfl'];
 const NV_CYCLE_GAP_MS = 60 * 1000;             // pause between two passes
 const NV_CYCLE_REST_MS = 10 * 60 * 1000;       // a board is not asked again sooner than this after its last pass began or ended
 // It runs until it is switched off: no time limit and no hours it rests (Max, 11-14).
@@ -2871,7 +2878,8 @@ function nvCycleTick(first) {
       // read: today's games, as before.
       if (games && !games.length) { B.idle = Date.now(); return; }
       const first = games ? games.find(g => g.starts > Date.now()) || games[0] : null;
-      startNovigScan(league, C.wide, [], true, nvCycleEnd(league, C.tz, Math.max(Date.now(), first ? first.starts : 0)));
+      startNovigScan(league, C.wide, [], true, nvCycleEnd(league, C.tz, Math.max(Date.now(), first ? first.starts : 0)),
+        NV_CYCLE_DAY_BEFORE.includes(league) ? nvDayEnd(C.tz, Date.now()) + 86400000 : 0);
     });
     return;
   }

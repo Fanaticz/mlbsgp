@@ -2,6 +2,15 @@
 
 ## 2026-11-20 session
 
+### Auto-scan: the NFL waits for the day before, but for one slip
+Max, 11-20: remove NFL until day before, limits too small; maybe except the QB 2+ TD with a player TD.
+
+- **Change** (`NV_CYCLE_DAY_BEFORE` in `server.js`; `--full-before` in `scan.py`): Auto-scan prices an NFL game in full only from the day before it (a game starting before tomorrow's midnight, by the time zone Auto-scan was switched on with). A game further off gets one slip a receiver: his QB's 2+ passing TDs with his TD. The alert job's own passes follow the same rule.
+- **Fetch** on the NFL tab still prices everything, any day. NFL Ladder was Fetch only already.
+- **Today** (Friday, Sunday's games): 1,552 slips become 22, read from the start of a pass each way.
+- **On the page**: the other NFL rows go at the end of the next Auto-scan NFL pass, and come back on Saturday for Sunday's games (Sunday for Monday night's).
+- **Not checked**: no whole Auto-scan pass was run, and the page was not opened.
+
 ### Novig Scan: soccer has no slips on a big underdog to win
 Max, 11-20 (the soccer board, underdog-to-win slips on top: Leeds, Sunderland, Udinese, Ipswich): I only want the favorites or close games priced. Don't want big dogs.
 
