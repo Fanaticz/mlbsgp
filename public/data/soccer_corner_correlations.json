@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-11-16",
+ "generated_at": "2026-11-20",
  "matches": 19761,
  "source": "football-data.co.uk, top five leagues",
  "by_fav": [
@@ -203,5 +203,493 @@
     }
    }
   }
- ]
+ ],
+ "by_league": {
+  "MLS": {
+   "matches": 4871,
+   "source": "football-data.co.uk (results, closing odds), ESPN (corners)",
+   "seasons": [
+    2016,
+    2026
+   ],
+   "by_fav": [
+    {
+     "fav": [
+      0.0,
+      0.5
+     ],
+     "n": 2546,
+     "lines": {
+      "fav": 5.5,
+      "dog": 4.5
+     },
+     "r": {
+      "fw_fu": 0.199,
+      "fw_do": 0.156,
+      "fu_do": 0.19,
+      "dw_fo": 0.168,
+      "dw_du": 0.163,
+      "fw_o15": 0.034,
+      "fu_o15": 0.027,
+      "do_o15": 0.016,
+      "fw_o25": 0.177,
+      "fu_o25": 0.019,
+      "do_o25": 0.025
+     },
+     "check": {
+      "fav": {
+       "scale": 1.059,
+       "worst": 0.027,
+       "mean": 0.016,
+       "lines": 9
+      },
+      "dog": {
+       "scale": 1.033,
+       "worst": -0.049,
+       "mean": 0.022,
+       "lines": 9
+      },
+      "fav_o15": {
+       "scale": 1.061,
+       "worst": -0.03,
+       "mean": 0.018,
+       "lines": 9
+      },
+      "fav_o25": {
+       "scale": 1.074,
+       "worst": 0.038,
+       "mean": 0.021,
+       "lines": 9
+      }
+     }
+    },
+    {
+     "fav": [
+      0.5,
+      0.6
+     ],
+     "n": 1503,
+     "lines": {
+      "fav": 5.5,
+      "dog": 3.5
+     },
+     "r": {
+      "fw_fu": 0.204,
+      "fw_do": 0.108,
+      "fu_do": 0.195,
+      "dw_fo": 0.24,
+      "dw_du": 0.122,
+      "fw_o15": 0.195,
+      "fu_o15": 0.031,
+      "do_o15": 0.056,
+      "fw_o25": 0.259,
+      "fu_o25": 0.039,
+      "do_o25": 0.027
+     },
+     "check": {
+      "fav": {
+       "scale": 1.055,
+       "worst": -0.068,
+       "mean": 0.027,
+       "lines": 9
+      },
+      "dog": {
+       "scale": 1.0,
+       "worst": -0.029,
+       "mean": 0.012,
+       "lines": 9
+      },
+      "fav_o15": {
+       "scale": 1.048,
+       "worst": -0.059,
+       "mean": 0.025,
+       "lines": 9
+      },
+      "fav_o25": {
+       "scale": 1.111,
+       "worst": -0.065,
+       "mean": 0.025,
+       "lines": 9
+      }
+     }
+    },
+    {
+     "fav": [
+      0.6,
+      0.7
+     ],
+     "n": 678,
+     "lines": {
+      "fav": 5.5,
+      "dog": 3.5
+     },
+     "r": {
+      "fw_fu": 0.234,
+      "fw_do": 0.165,
+      "fu_do": 0.139,
+      "dw_fo": 0.25,
+      "dw_du": 0.127,
+      "fw_o15": 0.219,
+      "fu_o15": 0.126,
+      "do_o15": 0.024,
+      "fw_o25": 0.21,
+      "fu_o25": 0.069,
+      "do_o25": 0.031
+     },
+     "check": {
+      "fav": {
+       "scale": 1.014,
+       "worst": 0.053,
+       "mean": 0.019,
+       "lines": 9
+      },
+      "dog": {
+       "scale": 0.983,
+       "worst": -0.046,
+       "mean": 0.023,
+       "lines": 6
+      },
+      "fav_o15": {
+       "scale": 1.002,
+       "worst": 0.072,
+       "mean": 0.024,
+       "lines": 9
+      },
+      "fav_o25": {
+       "scale": 1.049,
+       "worst": -0.051,
+       "mean": 0.022,
+       "lines": 9
+      }
+     }
+    }
+   ],
+   "holds": [
+    {
+     "fav": {
+      "off": -0.07,
+      "se": 0.049,
+      "lines": 9
+     },
+     "n": 2546,
+     "lines": {
+      "fav": 5.5,
+      "dog": 4.5
+     },
+     "dog": {
+      "off": -0.067,
+      "se": 0.061,
+      "lines": 9
+     },
+     "fav_o15": {
+      "off": -0.042,
+      "se": 0.054,
+      "lines": 9
+     },
+     "fav_o25": {
+      "off": 0.005,
+      "se": 0.061,
+      "lines": 9
+     }
+    },
+    {
+     "fav": {
+      "off": -0.033,
+      "se": 0.055,
+      "lines": 9
+     },
+     "n": 1503,
+     "lines": {
+      "fav": 5.5,
+      "dog": 3.5
+     },
+     "dog": {
+      "off": -0.012,
+      "se": 0.099,
+      "lines": 9
+     },
+     "fav_o15": {
+      "off": -0.048,
+      "se": 0.061,
+      "lines": 9
+     },
+     "fav_o25": {
+      "off": -0.036,
+      "se": 0.066,
+      "lines": 9
+     }
+    },
+    {
+     "fav": {
+      "off": -0.031,
+      "se": 0.089,
+      "lines": 9
+     },
+     "n": 678,
+     "lines": {
+      "fav": 5.5,
+      "dog": 3.5
+     },
+     "dog": {
+      "off": -0.049,
+      "se": 0.156,
+      "lines": 8
+     },
+     "fav_o15": {
+      "off": -0.052,
+      "se": 0.095,
+      "lines": 9
+     },
+     "fav_o25": {
+      "off": -0.059,
+      "se": 0.105,
+      "lines": 9
+     }
+    }
+   ]
+  },
+  "Liga MX": {
+   "matches": 3365,
+   "source": "football-data.co.uk (results, closing odds), ESPN (corners)",
+   "seasons": [
+    2016,
+    2026
+   ],
+   "by_fav": [
+    {
+     "fav": [
+      0.0,
+      0.5
+     ],
+     "n": 2078,
+     "lines": {
+      "fav": 5.5,
+      "dog": 4.5
+     },
+     "r": {
+      "fw_fu": 0.185,
+      "fw_do": 0.12,
+      "fu_do": 0.195,
+      "dw_fo": 0.194,
+      "dw_du": 0.212,
+      "fw_o15": 0.021,
+      "fu_o15": 0.035,
+      "do_o15": 0.02,
+      "fw_o25": 0.201,
+      "fu_o25": 0.027,
+      "do_o25": -0.006
+     },
+     "check": {
+      "fav": {
+       "scale": 1.025,
+       "worst": 0.036,
+       "mean": 0.017,
+       "lines": 9
+      },
+      "dog": {
+       "scale": 1.043,
+       "worst": 0.051,
+       "mean": 0.029,
+       "lines": 9
+      },
+      "fav_o15": {
+       "scale": 1.04,
+       "worst": -0.053,
+       "mean": 0.027,
+       "lines": 9
+      },
+      "fav_o25": {
+       "scale": 1.1,
+       "worst": -0.062,
+       "mean": 0.026,
+       "lines": 9
+      }
+     }
+    },
+    {
+     "fav": [
+      0.5,
+      0.6
+     ],
+     "n": 759,
+     "lines": {
+      "fav": 5.5,
+      "dog": 3.5
+     },
+     "r": {
+      "fw_fu": 0.163,
+      "fw_do": 0.018,
+      "fu_do": 0.214,
+      "dw_fo": 0.263,
+      "dw_du": 0.099,
+      "fw_o15": 0.2,
+      "fu_o15": 0.095,
+      "do_o15": 0.07,
+      "fw_o25": 0.268,
+      "fu_o25": 0.054,
+      "do_o25": 0.079
+     },
+     "check": {
+      "fav": {
+       "scale": 1.021,
+       "worst": -0.041,
+       "mean": 0.019,
+       "lines": 9
+      },
+      "dog": {
+       "scale": 1.034,
+       "worst": 0.069,
+       "mean": 0.028,
+       "lines": 8
+      },
+      "fav_o15": {
+       "scale": 1.04,
+       "worst": -0.057,
+       "mean": 0.028,
+       "lines": 9
+      },
+      "fav_o25": {
+       "scale": 1.111,
+       "worst": -0.058,
+       "mean": 0.025,
+       "lines": 9
+      }
+     }
+    },
+    {
+     "fav": [
+      0.6,
+      0.7
+     ],
+     "n": 419,
+     "lines": {
+      "fav": 5.5,
+      "dog": 3.5
+     },
+     "r": {
+      "fw_fu": 0.397,
+      "fw_do": 0.175,
+      "fu_do": 0.093,
+      "dw_fo": 0.355,
+      "dw_du": 0.0,
+      "fw_o15": 0.156,
+      "fu_o15": 0.285,
+      "do_o15": 0.008,
+      "fw_o25": 0.306,
+      "fu_o25": 0.219,
+      "do_o25": 0.083
+     },
+     "check": {
+      "fav": {
+       "scale": 0.97,
+       "worst": 0.053,
+       "mean": 0.025,
+       "lines": 9
+      },
+      "dog": {
+       "scale": 0.956,
+       "worst": 0.02,
+       "mean": 0.019,
+       "lines": 2
+      },
+      "fav_o15": {
+       "scale": 0.957,
+       "worst": -0.073,
+       "mean": 0.046,
+       "lines": 8
+      },
+      "fav_o25": {
+       "scale": 1.014,
+       "worst": 0.089,
+       "mean": 0.043,
+       "lines": 8
+      }
+     }
+    }
+   ],
+   "holds": [
+    {
+     "fav": {
+      "off": -0.015,
+      "se": 0.058,
+      "lines": 9
+     },
+     "n": 2078,
+     "lines": {
+      "fav": 5.5,
+      "dog": 4.5
+     },
+     "dog": {
+      "off": -0.121,
+      "se": 0.066,
+      "lines": 9
+     },
+     "fav_o15": {
+      "off": 0.01,
+      "se": 0.067,
+      "lines": 9
+     },
+     "fav_o25": {
+      "off": 0.009,
+      "se": 0.076,
+      "lines": 9
+     }
+    },
+    {
+     "fav": {
+      "off": 0.043,
+      "se": 0.083,
+      "lines": 9
+     },
+     "n": 759,
+     "lines": {
+      "fav": 5.5,
+      "dog": 3.5
+     },
+     "dog": {
+      "off": -0.036,
+      "se": 0.131,
+      "lines": 9
+     },
+     "fav_o15": {
+      "off": -0.02,
+      "se": 0.089,
+      "lines": 9
+     },
+     "fav_o25": {
+      "off": -0.029,
+      "se": 0.099,
+      "lines": 9
+     }
+    },
+    {
+     "fav": {
+      "off": -0.013,
+      "se": 0.117,
+      "lines": 9
+     },
+     "n": 419,
+     "lines": {
+      "fav": 5.5,
+      "dog": 3.5
+     },
+     "dog": {
+      "off": -0.039,
+      "se": 0.209,
+      "lines": 6
+     },
+     "fav_o15": {
+      "off": -0.042,
+      "se": 0.129,
+      "lines": 9
+     },
+     "fav_o25": {
+      "off": -0.134,
+      "se": 0.139,
+      "lines": 9
+     }
+    }
+   ]
+  }
+ }
 }

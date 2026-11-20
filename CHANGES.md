@@ -2,6 +2,24 @@
 
 ## 2026-11-20 session
 
+### Novig Scan: soccer adds MLS and Liga MX, every leg's fair value is Pinnacle's, and teams are matched by Novig's id
+Max, 11-20: let's add those 2 soccer leagues. And always use pinny=sharp to calc FV. Calc a separate MLS correlation to make sure it still holds.
+
+- **Leagues** (`SOCCER_LEAGUES` in `scan.py`): MLS and Liga MX join the top five and the Champions League.
+- **Pinnacle only** (`soccer_candidates`): every leg's fair value is Pinnacle's no-vig price on that line. The middle of Novig's own book is no longer a fallback: a match Pinnacle doesn't list, a corner or goals line it doesn't price, and a moved line it doesn't price are not asked, and if Pinnacle doesn't answer the pass stops with that message. Soccer only; the other boards are as they were. Pinnacle posts one corner line a team, about a day before kickoff, so that is when a match appears.
+- **The correlation check** (`scripts/soccer_corner_correlations.py`, new `--fetch-americas`, `measure`, `holds`; `by_league` in `soccer_corner_correlations.json`): 4,871 MLS and 3,365 Liga MX matches, 2016 to 2026 (results and closing odds from football-data.co.uk, Pinnacle's where it has them; corners from ESPN, paired by date, score and names). Each league measured alone, then the top five's fair value set against each league's counted hit rate:
+  - MLS, favourite under 50% (2,546 matches): favourite slip -7.0%, mirror -6.7%, with Over 1.5 -4.2%, with Over 2.5 +0.5%. 50-60% (1,503): -3.3%, -1.2%, -4.8%, -3.6%. 60-70% (678): -3.1%, -4.9%, -5.2%, -5.9%. Minus means the board's fair value is under what happened, so it understates a slip. All inside one and a half standard errors (5 to 16 points).
+  - Liga MX, under 50% (2,078): -1.5%, -12.1%, +1.0%, +0.9%. 50-60% (759): +4.3%, -3.6%, -2.0%, -2.9%. 60-70% (419): -1.3%, -3.9%, -4.2%, -13.4%. All inside one standard error (6 to 21 points) but the mirror under 50%, which the board understates by 12% (1.8 standard errors).
+  - The pair r's are close to the top five's (MLS 50-60%: favourite win with his corners Under 0.20 against 0.19, underdog win with the favourite's corners Over 0.24 against 0.28, the two corner legs 0.20 against 0.17).
+- **So** both leagues are priced on the top five's correlations (19,761 matches), not their own: the league samples are too small to beat them and show no sign they differ. The top five's numbers in the file are unchanged.
+- **Not measured**: favourites of 70% or more. MLS has 144 such matches and Liga MX 109, too few; a favourite that strong in either league is priced on the top five's 70%+ numbers untested.
+- **Found on the way: matches were being dropped.** A team's corner market was found by its name starting with the win market's name. Novig's names differ (Man Utd / Manchester United FC, Man City / Manchester City FC, Inter Miami / Club Internacional de Futbol Miami, nearly every Liga MX team), and such a match was left out without a message. Now matched by Novig's id for the team (`subjectId`, which both markets carry). Today's board, built without quoting: 54 matches and 139 slips, 6 of the matches from the new leagues (Inter Miami v Columbus, Dallas v Portland, Philadelphia v New England; Tijuana v Atlante, Puebla v San Luis, Atlas v Juarez).
+- **Cost**: more quotes a soccer pass, from the new leagues and the matches no longer dropped; not counted against the old matching.
+- **The page**: the soccer note names the leagues and says Pinnacle only.
+- **Checked**: candidates built from the live books, every leg on Pinnacle's price; a quoted pass on the two new matches (7 slips priced; Atlante win + Tijuana O5.5 corners + Atlante U4.5 at 15.76x against a fair +1366, +7.5%; Inter Miami's three -19% to -68%); the alert checks.
+- **Merged with** this morning's change (no underdog-to-win slip under 26%, the 50% match filter taken back), which landed while this was being built: its rules are kept.
+- **Not checked**: `--fetch-americas` as committed was not run end to end; the two match files were built by the same steps in separate scripts. A full quoted pass of all 139 slips was not run and the page was not opened.
+
 ### Auto-scan: the NFL waits for the day before, but for one slip
 Max, 11-20: remove NFL until day before, limits too small; maybe except the QB 2+ TD with a player TD.
 

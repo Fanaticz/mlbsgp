@@ -192,20 +192,22 @@ Soccer (--league soccer): for every open match with team-corners books it
 asks Max's shape, favourite to win (3-way) + favourite's corners Under +
 underdog's corners Over, alone and with goals Over 1.5 or Over 2.5. A
 leading favourite sits back and the underdog chases, so the legs hit
-together more often than unrelated legs would. Each leg's fair value is
-Pinnacle's no-vig price on that line (pinnacle.py), or the middle of
-Novig's own book where Pinnacle has no such line (marked ~ when that book
-is wide: corner books often are). In a close game (the underdog
+together more often than unrelated legs would. Every leg's fair value is
+Pinnacle's no-vig price on that line (pinnacle.py), never Novig's own book:
+a match Pinnacle doesn't list, or a leg on a line it doesn't price, is not
+asked, and if Pinnacle doesn't answer nothing is. Leagues: the top five,
+the Champions League, MLS and Liga MX. In a close game (the underdog
 at least 26% to win, SOCCER_DOG_MIN) it also asks the mirror: underdog to win + favourite's corners Over +
 underdog's corners Under (a favourite who is behind piles up corners). Each
 three-leg slip is asked again with a corner leg moved one line either way,
-where that line has Pinnacle's price or a Novig book inside 10c. Fair value
+where Pinnacle prices that line. Fair value
 is a Gaussian copula's joint at the legs' own prices, with each pair of
 legs' r measured on 19,761 top-five-league matches (2015-16 on,
 football-data.co.uk: results, corners, closing odds) by strength of
 favourite, times the shape's scale so it matches the counted hit rate on
 average (scripts/soccer_corner_correlations.py; within 5% at every corner
-line tested). The fixed lifts it replaced (SOCCER_LIFT, x1.25 to x1.61,
+line tested; the same r's on MLS and Liga MX, where they were checked
+against each league's own matches). The fixed lifts it replaced (SOCCER_LIFT, x1.25 to x1.61,
 right only at the 50/50 corner lines) are kept for when that file is
 missing. League averages, not match-specific: rows are leads.
 
@@ -1142,10 +1144,15 @@ def nfl_tri_candidates(a):
 SOCCER_LIFT = {None: [(0.50, 1.33), (0.60, 1.29), (0.70, 1.26), (1.0, 1.25)],
                "1.5": [(0.50, 1.38), (0.60, 1.32), (0.70, 1.31), (1.0, 1.31)],
                "2.5": [(0.50, 1.61), (0.60, 1.51), (0.70, 1.40), (1.0, 1.42)]}
-# The major leagues only (Max, 11-16): the top five, which SOCCER_LIFT was
-# measured on, and the Champions League. Left out since: Europa League, MLS,
-# Liga MX, UEFA Nations League, FIFA World Cup, FIFA Club World Cup.
-SOCCER_LEAGUES = ("EPL", "Serie A", "La Liga", "Bundesliga", "Ligue 1", "Champions League")
+# The major leagues only (Max, 11-16): the top five, which the correlations
+# were measured on, and the Champions League. MLS and Liga MX added 11-20
+# (Max), priced on the top five's correlations: measured alone on 4,871 and
+# 3,365 matches, the top five's fair value is within one standard error of
+# each league's counted hit rate for every shape at 50-60% and 60-70%
+# favourites, and under it more often than over ("by_league" in
+# soccer_corner_correlations.json). Left out: Europa League, UEFA Nations
+# League, FIFA World Cup, FIFA Club World Cup.
+SOCCER_LEAGUES = ("EPL", "Serie A", "La Liga", "Bundesliga", "Ligue 1", "Champions League", "MLS", "Liga MX")
 
 
 SOCCER_CORNERS = os.path.join(HERE, "..", "..", "..", "public", "data", "soccer_corner_correlations.json")
@@ -1158,16 +1165,16 @@ SOCCER_DOG_MIN = 0.26      # the mirror slip is asked in close games only (Max, 
 
 def soccer_candidates(a):
     """Favourite ML + goals Over + favourite corners Under + underdog corners
-    Over, per match, against the unrelated-legs price. Each leg's fair value
-    is Pinnacle's no-vig price on that line where it has one (pinnacle.py),
-    else the middle of Novig's own book."""
+    Over, per match, against the unrelated-legs price. Every leg's fair value
+    is Pinnacle's no-vig price on that line (pinnacle.py), never Novig's own
+    book (Max, 11-20): a match Pinnacle doesn't list, or a leg on a line it
+    doesn't price, is not asked."""
     out, failed, alts, seen_alt = [], [], [], set()
     try:
         import pinnacle
         pin = pinnacle.board()
     except Exception as e:
-        pin = []
-        print(f"Pinnacle didn't answer ({type(e).__name__}): leg fair values from Novig's own books", file=sys.stderr)
+        raise SystemExit(f"Pinnacle didn't answer ({type(e).__name__}): soccer fair values are Pinnacle's only, so nothing was priced")
     for lg in SOCCER_LEAGUES:
         try:
             items = novig.catalog({"league": lg, "eventStatus": "OPEN_PREGAME",
@@ -1187,28 +1194,37 @@ def soccer_candidates(a):
             f0, f1 = sgp.devig_worst(1 - b1, 1 - b0)
             ev.setdefault(m["eventId"], []).append(
                 {"type": m["marketType"], "desc": m["description"], "strike": m.get("strike"), "starts": m["startsTs"],
-                 "p": (f0, f1), "width": 1 - b1 - b0, "ids": (o[0]["outcomeId"], o[1]["outcomeId"])})
+                 "subj": o[0].get("subjectId"), "p": (f0, f1), "width": 1 - b1 - b0, "ids": (o[0]["outcomeId"], o[1]["outcomeId"])})
         for eid, ms in ev.items():
             wins = sorted((m for m in ms if m["type"] == "MONEYLINE_3_WAY_WIN" and m["width"] <= 0.08),
                           key=lambda m: -m["p"][0])
             if len(wins) < 2:
                 continue
             fav, dog = (m["desc"].replace(" MONEYLINE_3_WAY_WIN", "") for m in wins[:2])
+            subj = {fav: wins[0]["subj"], dog: wins[1]["subj"]}
 
-            game, fside = pinnacle.match(pin, fav, dog, wins[0]["starts"] / 1000, wins[0]["p"][0]) if pin else (None, None)
+            def his(m, team):
+                """Is this corners market the team's? By Novig's id for the
+                team, which the win market shares: the names differ too often
+                (Man Utd / Manchester United FC, Inter Miami / Club
+                Internacional de Futbol Miami, nearly all of Liga MX), and a
+                match whose names differ was dropped without a word."""
+                if m["type"] != "TEAM_TOTAL_CORNERS":
+                    return False
+                return m["subj"] == subj[team] if m["subj"] and subj[team] else m["desc"].startswith(team + " ")
+
+            game, fside = pinnacle.match(pin, fav, dog, wins[0]["starts"] / 1000, wins[0]["p"][0])
+            if not game:
+                continue
             dside = "away" if fside == "home" else "home"
 
             def crn(m, side, way):
-                return game and game["corners"].get((side, float(m["strike"])), {}).get(way)
+                return game["corners"].get((side, float(m["strike"])), {}).get(way)
 
             def corners(team, side):
-                """The team's line nearest 50/50: among the lines Pinnacle prices
-                if it has any (by its price), else by Novig's book."""
-                v = [m for m in ms if m["type"] == "TEAM_TOTAL_CORNERS" and m["desc"].startswith(team + " ") and m["width"] <= 0.30]
-                sharp = [m for m in v if crn(m, side, "over")]
-                if sharp:
-                    return min(sharp, key=lambda m: abs(crn(m, side, "over")[0] - 0.5))
-                return min(v, key=lambda m: abs(m["p"][0] - 0.5) + m["width"]) if v else None
+                """The team's line nearest 50/50 among the lines Pinnacle prices (by its price)."""
+                sharp = [m for m in ms if his(m, team) and crn(m, side, "over")]
+                return min(sharp, key=lambda m: abs(crn(m, side, "over")[0] - 0.5)) if sharp else None
             fc, dc = corners(fav, fside), corners(dog, dside)
             if not fc or not dc:
                 continue
@@ -1221,7 +1237,7 @@ def soccer_candidates(a):
                     leg.update(p=sharp[0], fair=sgp.american(sharp[0]), sharp=True, novig_p=m["p"][i],
                                books=f"Pinnacle {sharp[1]:+d}, Novig's book says {sgp.american(m['p'][i]):+d}")
                 return leg
-            base = [L(wins[0], 0, "ml", f"{fav} win", game and game["ml"][fside]),
+            base = [L(wins[0], 0, "ml", f"{fav} win", game["ml"][fside]),
                     L(fc, 1, "crn", f"{fav} U{fc['strike']} corners", crn(fc, fside, "under")),
                     L(dc, 0, "crn", f"{dog} O{dc['strike']} corners", crn(dc, dside, "over"))]
             band = next((b for b in SOCCER_R.get("by_fav", []) if b["fav"][0] <= base[0]["p"] < b["fav"][1] + 1e-9), None)
@@ -1263,14 +1279,13 @@ def soccer_candidates(a):
 
             def beside(team, side, m0, i, way):
                 """The team's corner legs on the next line each way from m0
-                (one easier, one harder), where that line has a price worth
-                using: Pinnacle's, or a Novig book no wider than 10c."""
+                (one easier, one harder), where Pinnacle prices that line."""
                 v = []
                 for m in ms:
-                    if m["type"] != "TEAM_TOTAL_CORNERS" or not m["desc"].startswith(team + " ") or m["strike"] == m0["strike"]:
+                    if not his(m, team) or m["strike"] == m0["strike"]:
                         continue
                     sharp = crn(m, side, way)
-                    if not sharp and m["width"] > 0.10 + 1e-9:
+                    if not sharp:
                         continue
                     leg = L(m, i, "crn", f"{team} {'O' if i == 0 else 'U'}{m['strike']} corners", sharp)
                     if ALT_P[0] <= leg["p"] <= ALT_P[1]:
@@ -1292,14 +1307,14 @@ def soccer_candidates(a):
             if a.alts and band:
                 moved("fav", base, c, [(1, fav, fside, fc, 1, "under"), (2, dog, dside, dc, 0, "over")])
             for line in ("1.5", "2.5"):
-                t = next((m for m in ms if m["type"] == "TOTAL" and m["strike"] == line and m["width"] <= 0.30), None)
-                if t:
-                    out.append(slip("fav", [base[0], L(t, 0, "tot", f"Over {line}",
-                                                       game and game["goals"].get(float(line), {}).get("over"))] + base[1:], goals=line))
+                t = next((m for m in ms if m["type"] == "TOTAL" and m["strike"] == line), None)
+                sharp = game["goals"].get(float(line), {}).get("over")
+                if t and sharp:
+                    out.append(slip("fav", [base[0], L(t, 0, "tot", f"Over {line}", sharp)] + base[1:], goals=line))
             # The mirror (Max, 11-16): a favourite who is behind piles up
             # corners. Close games only (Max, 11-20): no slip on a big
             # underdog to win.
-            dw = L(wins[1], 0, "ml", f"{dog} win", game and game["ml"][dside])
+            dw = L(wins[1], 0, "ml", f"{dog} win", game["ml"][dside])
             if band and dw["p"] >= SOCCER_DOG_MIN and wins[1]["width"] <= 0.08:
                 mirror = [dw,
                           L(fc, 0, "crn", f"{fav} O{fc['strike']} corners", crn(fc, fside, "over")),
