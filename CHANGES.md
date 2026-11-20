@@ -2,6 +2,14 @@
 
 ## 2026-11-20 session
 
+### Kalshi Scan: a board clears when Fetch is pressed
+Max, 11-20: for Kalshi, I want the board to clear when I hit Fetch.
+
+- **Change** (`startNovigScan` in `server.js`): a pass on a Kalshi board empties that board as it starts, and the rows come back as Kalshi answers. Before, the last pass's rows stayed at their old prices until the new pass reached each one, and one it no longer asked went only when the pass finished.
+- **A stopped pass**: the rows it reached are on the board; the rest are gone, where they used to stay at their earlier prices. A pass that fails to start clears nothing.
+- **Unchanged**: the Novig boards, and the other Kalshi boards while one is fetched.
+- **Checked**: `node --check server.js`. Not run against Kalshi (no key here).
+
 ### Novig soccer: a corners or goals leg needs no Novig book
 Max, 11-20 (from the check below: a line Pinnacle prices was skipped where Novig's book was one-sided): fix soccer. No need for both sides.
 

@@ -2634,6 +2634,9 @@ function startNovigScan(league, wide, events, auto, before, full) {
   }
   let live = true;   // false once the pass has ended or been stopped
   Object.assign(B, { started: Date.now(), total: 0, done: 0, error: null, stopped: 0, seen: new Set(), events, before: before || 0 });
+  // A Kalshi board starts each pass empty (Max, 11-20): only what this
+  // Fetch priced is on it. A pass stopped part-way keeps the rows it reached.
+  if (onKalshi) B.rows.clear();
   const timer = setTimeout(() => { const R = onKalshi ? NV_KRUN : NV_RUN; if (R && R.proc === proc) proc.kill(); }, NV_SCAN_MAX_MS);
   let buf = '', err = '', ok = false;
   const onEvent = e => {

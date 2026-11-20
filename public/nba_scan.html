@@ -680,7 +680,7 @@ function render() {
     rowsEl.innerHTML = `<div class="empty">${
       q ? "No combo for that name." :
       ALL() ? `No play at ${MINEV > 0 ? "+" : ""}${MINEV}% or better on any board right now.${S.cycle && S.cycle.on ? "" : " Fetch a board, or switch <b>Auto-scan</b> on to keep every board priced."}` :
-      !all.length ? (S.scanning ? "Pricing the slate. Rows appear as Novig answers (about one a second)." :
+      !all.length ? (S.scanning ? (KALSHI(LEAGUE) ? "Pricing the slate. Rows appear as Kalshi answers." : "Pricing the slate. Rows appear as Novig answers (about one a second).") :
         !S.finished ? "Nothing fetched yet. Press <b>Fetch</b> to price the slate." :
         started ? "Every game on this board has started. Press <b>Fetch</b> to price the next slate." :
         LEAGUE === "cfb" ? "No open game has tight two-sided books on its lines right now. Saturday’s slate fills in through the week." :
