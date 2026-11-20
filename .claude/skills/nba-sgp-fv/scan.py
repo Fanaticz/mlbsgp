@@ -188,16 +188,15 @@ his --per (4) highest. A top forward's point runs 0.5 with his team's total,
 0.38 with a win, 0.32 with the game over. --line-stats adds goal, assists
 or shots legs.
 
-Soccer (--league soccer): for every open match with team-corners books
-whose favourite is at least 50% to win (SOCCER_FAV_MIN) it
+Soccer (--league soccer): for every open match with team-corners books it
 asks Max's shape, favourite to win (3-way) + favourite's corners Under +
 underdog's corners Over, alone and with goals Over 1.5 or Over 2.5. A
 leading favourite sits back and the underdog chases, so the legs hit
 together more often than unrelated legs would. Each leg's fair value is
 Pinnacle's no-vig price on that line (pinnacle.py), or the middle of
 Novig's own book where Pinnacle has no such line (marked ~ when that book
-is wide: corner books often are). Where the favourite is under 70% to win
-it also asks the mirror: underdog to win + favourite's corners Over +
+is wide: corner books often are). In a close game (the underdog
+at least 26% to win, SOCCER_DOG_MIN) it also asks the mirror: underdog to win + favourite's corners Over +
 underdog's corners Under (a favourite who is behind piles up corners). Each
 three-leg slip is asked again with a corner leg moved one line either way,
 where that line has Pinnacle's price or a Novig book inside 10c. Fair value
@@ -1154,8 +1153,7 @@ try:
     SOCCER_R = json.load(open(SOCCER_CORNERS))
 except (OSError, ValueError):
     SOCCER_R = {}
-SOCCER_DOG_MAX = 0.70      # the mirror slip is asked where the favourite is under this to win
-SOCCER_FAV_MIN = 0.50      # favourites against big underdogs only (Max, 11-20): no match whose favourite is under this to win
+SOCCER_DOG_MIN = 0.26      # the mirror slip is asked in close games only (Max, 11-20: no big underdogs): the underdog is at least this to win, about +285
 
 
 def soccer_candidates(a):
@@ -1226,8 +1224,6 @@ def soccer_candidates(a):
             base = [L(wins[0], 0, "ml", f"{fav} win", game and game["ml"][fside]),
                     L(fc, 1, "crn", f"{fav} U{fc['strike']} corners", crn(fc, fside, "under")),
                     L(dc, 0, "crn", f"{dog} O{dc['strike']} corners", crn(dc, dside, "over"))]
-            if base[0]["p"] < SOCCER_FAV_MIN:
-                continue
             band = next((b for b in SOCCER_R.get("by_fav", []) if b["fav"][0] <= base[0]["p"] < b["fav"][1] + 1e-9), None)
 
             def slip(shape, legs, goals=None, alt=None):
@@ -1301,10 +1297,11 @@ def soccer_candidates(a):
                     out.append(slip("fav", [base[0], L(t, 0, "tot", f"Over {line}",
                                                        game and game["goals"].get(float(line), {}).get("over"))] + base[1:], goals=line))
             # The mirror (Max, 11-16): a favourite who is behind piles up
-            # corners. Only where he is under SOCCER_DOG_MAX to win: above
-            # that the joint is off by more than 5% on too few matches.
-            if band and base[0]["p"] < SOCCER_DOG_MAX and wins[1]["width"] <= 0.08:
-                mirror = [L(wins[1], 0, "ml", f"{dog} win", game and game["ml"][dside]),
+            # corners. Close games only (Max, 11-20): no slip on a big
+            # underdog to win.
+            dw = L(wins[1], 0, "ml", f"{dog} win", game and game["ml"][dside])
+            if band and dw["p"] >= SOCCER_DOG_MIN and wins[1]["width"] <= 0.08:
+                mirror = [dw,
                           L(fc, 0, "crn", f"{fav} O{fc['strike']} corners", crn(fc, fside, "over")),
                           L(dc, 1, "crn", f"{dog} U{dc['strike']} corners", crn(dc, dside, "under"))]
                 c = slip("dog", mirror)

@@ -2,14 +2,14 @@
 
 ## 2026-11-20 session
 
-### Novig Scan: soccer is favourites against big underdogs only
-Max, 11-20 (the soccer board, underdog-to-win slips on top): let's stick to favorites vs big dogs.
+### Novig Scan: soccer has no slips on a big underdog to win
+Max, 11-20 (the soccer board, underdog-to-win slips on top: Leeds, Sunderland, Udinese, Ipswich): I only want the favorites or close games priced. Don't want big dogs.
 
-- **Change** (`SOCCER_FAV_MIN`, `soccer_candidates` in `scan.py`): a match is on the soccer board only where its favourite is at least 50% to win (Pinnacle's no-vig price, Novig's book where Pinnacle has none). Both shapes follow the rule, the favourite's slips and the mirror. 50% is where the measured correlations step up (underdog win with the favourite's corners Over: 0.18 under 50%, 0.28 at 50-60%).
-- **Today's board**, listed without quoting: 13 matches and 57 slips become 7 and 31. Kept: Juventus v Venezia (71%), Brighton v Hull (64%), Tottenham v Ipswich (62%), Arsenal v Newcastle (61%), Bologna v Udinese (55%), Aston Villa v Sunderland (55%), Chelsea v Leeds (51%). Dropped: Rayo Vallecano v Valencia (49.9%), Brentford v Everton, Levante v Elche, Lille v Lyon, Real Betis v Sevilla, Coventry v Crystal Palace.
-- **At the edge**: Chelsea v Leeds is 0.8 points above the line and Rayo v Valencia 0.1 below, with the same size of underdog (Leeds 24%, Valencia 23%). A match near 50% comes and goes as its price moves.
-- **Unchanged**: the mirror is still not asked where the favourite is 70% or more (Juventus today), so the biggest underdogs have the favourite's slips only.
-- **On the page**: a dropped match's rows go at the end of the next soccer pass.
+- **Change** (`SOCCER_DOG_MIN`, `soccer_candidates` in `scan.py`): the mirror slip (underdog to win + favourite's corners Over + underdog's corners Under) is asked only in a close game, where the underdog is at least 26% to win (about +285 or shorter; Pinnacle's no-vig price, Novig's book where Pinnacle has none). The favourite-to-win slips are asked on every match, as before. It replaces the rule that asked the mirror wherever the favourite was under 70%.
+- **Why 26%**: today's underdogs fall in two groups, 15% to 24% (Leeds 24%, Valencia 23%) and 28% to 35% (Everton, Elche, Lyon, Sevilla, Crystal Palace); the line is between them. It is one number.
+- **First try, taken back the same morning**: the request was first read as matches with a clear favourite only, and matches whose favourite was under 50% were dropped (`SOCCER_FAV_MIN`, 221bad6). That removed the close games and kept the big underdogs. It is gone; every match is back.
+- **Today's board**, listed without quoting: 13 matches; the mirror on 5 (Brentford v Everton, Levante v Elche, Lille v Lyon, Real Betis v Sevilla, Coventry v Crystal Palace), no longer on Chelsea v Leeds, Aston Villa v Sunderland, Bologna v Udinese, Tottenham v Ipswich, Arsenal v Newcastle, Brighton v Hull, Rayo Vallecano v Valencia.
+- **On the page**: the big underdogs' rows go at the end of the next soccer pass.
 - **Not checked**: no pass was quoted and the page was not opened.
 
 ## 2026-11-19 session
