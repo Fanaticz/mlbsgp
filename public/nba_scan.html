@@ -624,7 +624,9 @@ function render() {
     if (!shown.length) continue;
     // Plays: a Points + Threes row under Min EV does not head the card (it
     // would sort his Points + Rebounds play by a price that is not a play).
-    const m = !ALL() && !pair && mainOf(g);
+    // Kalshi NBA Lines and Kalshi CBB have no such row (every row is tier 1),
+    // so the card is headed by its best row, not the one nearest 50%.
+    const m = !ALL() && !pair && LEAGUE !== "kalshinbaline" && LEAGUE !== "kalshicbb" && mainOf(g);
     const head = (m && shown.includes(m) && m) || shown.slice().sort((a, b) => b.ev - a.ev)[0];
     cards.push({ head, others: shown.filter(c => c !== head) });
   }

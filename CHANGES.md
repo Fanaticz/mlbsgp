@@ -2,6 +2,11 @@
 
 ## 2026-11-20 session
 
+### Kalshi NBA Lines, Kalshi CBB: a card is headed by its best row
+Max, 11-20: why is this one hidden under the bad one (Naz Reid 30+ PRA · CHA +7.5 at +3.5%, folded under his -3.0% row).
+
+- The card's head was picked as on the Points + Threes boards: the tier-1 row whose second leg is nearest 50%. On these two boards every row is tier 1, so that was an arbitrary row, and the card sorted by its EV. Now the head is the player's (or game's) best row, so the card sorts by its best price (`public/nba_scan.html`).
+
 ### Tennis model checked against 36,435 real matches; the data is saved
 Max, 11-20: check vs real results. Save data.
 
