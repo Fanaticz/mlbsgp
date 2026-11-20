@@ -2,6 +2,14 @@
 
 ## 2026-11-20 session
 
+### Tennis scan saved as a skill; no tennis plays this evening
+Max, 11-20: can you see if there are any more tennis plays? Save skill.
+
+- **New skill** (`.claude/skills/novig-tennis-scan/`: `tennis.py`, `SKILL.md`): the tennis look from this morning as one script. It fits a score model (points won on serve, with a match-to-match swing in the gap between the players) to each best-of-three singles match's moneyline, main total and main game spread on Novig, and asks game spread + total and moneyline + total slips against it, once each.
+- **This evening** (3:01 PM CT, 11 Challenger and WTA matches with tight books, 68 slips): none above fair, best -2.3% (Gorzny -1.5 games + Under 23.5), median -15%.
+- **Not on the dashboard**: it is a script and a skill, not a board.
+- **Checked**: the lint; the fit on this morning's Alcaraz v Cobolli prices (3 sets 28% to 31% across the kept fits, the table sums to 1); the pass above. The model is still not checked against results.
+
 ### Kalshi Scan: a board clears when Fetch is pressed
 Max, 11-20: for Kalshi, I want the board to clear when I hit Fetch.
 
