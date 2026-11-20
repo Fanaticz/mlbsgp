@@ -25,8 +25,16 @@ gave Novig's other lines and its set markets within a point or two (11-20).
 Fair value is the lowest joint over the sigmas that fit about as well as the
 best, so it is the careful end; "to" shows the other end.
 
-Not checked against results: no source of scores with closing lines could be
-downloaded (tennis-data.co.uk refused). Treat a row as a lead.
+Checked against results (scripts/tennis_model_check.py, 36,435 best-of-three
+ATP tour matches from 2005 on, grouped by the favourite's chance and fitted
+the same way): the game spread + total slips' joint is within 3% of the
+counted share on average in every group (-5% to +3%), and the underdog's
+moneyline + Over runs 5% to 8% too high where the favourite is 70% or more.
+Where the model ran high the fair value is cut by that much (TRIM below, read
+from public/data/tennis_model_check.json); where it ran low it is left alone.
+Those groups mix many players and take the favourite from an Elo rating, not
+a market price, and they are tour matches: Challengers and the WTA are not
+in the data. Treat a row as a lead.
 
 Asking: one ask a slip (see SKILL.md: a second ask inside a minute can come
 back lower). The main lines' four slips first; a match's other lines only
@@ -161,6 +169,23 @@ def fit(p_win, tot_line, p_over, sp_line, p_cover):
     return sorted(out, key=lambda x: x[0])
 
 
+CHECK = os.path.join(HERE, "..", "..", "..", "public", "data", "tennis_model_check.json")
+try:
+    TRIM = json.load(open(CHECK))["all"]
+except (OSError, ValueError, KeyError):
+    TRIM = []
+
+
+def trim(shape, p_fav):
+    """How far the model's joint ran above the counted share for this kind of
+    slip at this strength of favourite (mean over the lines checked), never
+    under 0: the fair value is divided by 1 + this."""
+    for b in TRIM:
+        if b["fav"][0] <= p_fav < b["fav"][1] + (0.01 if b["fav"][1] >= 1 else 0):
+            return max(0.0, (b["slips"].get(shape) or {}).get("mean_off") or 0.0)
+    return 0.0
+
+
 def events():
     out, after = {}, None
     for _ in range(20):
@@ -252,19 +277,20 @@ def slips(g, sls, tls, ml=True):
         for sl in sls:
             if sl not in g["spreads"]:
                 continue
-            out.append((f"{g['dog']} {sl:+g} games + Over {tl}", [g["spreads"][sl]["dog"], over],
+            out.append(("dog_games_over", f"{g['dog']} {sl:+g} games + Over {tl}", [g["spreads"][sl]["dog"], over],
                         lambda w, n, a, b, sl=sl, tl=tl: a - b < sl and a + b > tl))
-            out.append((f"{g['fav']} {-sl:+g} games + Under {tl}", [g["spreads"][sl]["fav"], under],
+            out.append(("fav_games_under", f"{g['fav']} {-sl:+g} games + Under {tl}", [g["spreads"][sl]["fav"], under],
                         lambda w, n, a, b, sl=sl, tl=tl: a - b > sl and a + b < tl))
         if ml:
-            out.append((f"{g['fav']} ML + Under {tl}", [g["ml"][g["fav"]], under], lambda w, n, a, b, tl=tl: w and a + b < tl))
-            out.append((f"{g['dog']} ML + Over {tl}", [g["ml"][g["dog"]], over], lambda w, n, a, b, tl=tl: (not w) and a + b > tl))
+            out.append(("fav_ml_under", f"{g['fav']} ML + Under {tl}", [g["ml"][g["fav"]], under], lambda w, n, a, b, tl=tl: w and a + b < tl))
+            out.append(("dog_ml_over", f"{g['dog']} ML + Over {tl}", [g["ml"][g["dog"]], over], lambda w, n, a, b, tl=tl: (not w) and a + b > tl))
     rows = []
-    for label, legs, f in out:
-        fs = [P(d, f) for d in g["tables"]]
+    for shape, label, legs, f in out:
+        cut = trim(shape, g["ml"][g["fav"]][1])
+        fs = [P(d, f) / (1 + cut) for d in g["tables"]]
         rows.append({"match": f"{g['fav']} v {g['dog']}", "league": g["league"], "starts": g["starts"], "event": g["id"],
                      "label": label, "ids": [x[0] for x in legs], "leg_fair": [round(x[1], 4) for x in legs],
-                     "fair": min(fs), "fair_hi": max(fs)})
+                     "shape": shape, "trim": cut, "fair": min(fs), "fair_hi": max(fs)})
     return rows
 
 

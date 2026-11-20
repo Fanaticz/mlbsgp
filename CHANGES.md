@@ -2,6 +2,19 @@
 
 ## 2026-11-20 session
 
+### Tennis model checked against 36,435 real matches; the data is saved
+Max, 11-20: check vs real results. Save data.
+
+- **Data** (`public/data/tennis_matches.json`, 0.9 MB): every completed best-of-three ATP tour match from 2005 to this week, 36,435 of them, each with its set scores, surface, year and the favourite's chance to win. Source: TennisMyLife's TML-Database on GitHub (ATP results; its terms allow non-commercial use only). It has no odds, so the favourite and his chance come from an Elo rating run forward from 1990 that never sees the match it rates. Left out: retirements, walkovers, Davis Cup, matches with a deciding match tiebreak, players' first 20 matches.
+- **The check** (`scripts/tennis_model_check.py`; results in `public/data/tennis_model_check.json`): matches grouped by the favourite's chance (eight groups, 3,000 to 6,200 matches each). In each group the model is fitted as the scan fits a match, to how often the favourite won, went over the middle total and covered the middle game spread; then its joint for each of the scan's slips, on those lines and the ones either side, is set against the share of matches where both legs hit.
+- **Game spread + total slips** (the ones that were plays): the model's fair value is within 3% of the count on average in every group. Underdog + games with the Over: -5.0% to +3.0% by group, the worst single line +6.0%. Favourite - games with the Under: -4.1% to +2.4%, worst -7.6% (a minus is the model under the count). Standard error about 2 points a line.
+- **Moneyline + total**: favourite + Under -4.1% to +3.1%. Underdog + Over runs too high against strong favourites: +5.8%, +4.7%, +7.8%, +7.7% in the four groups from 70% up.
+- **Three-setters**: the model is within 2.4 points of the count in six groups of eight (the 50-55% group 43% against 39%, 55-60% 34% against 37.5%).
+- **Change** (`trim` in `tennis.py`): where the model ran high for a kind of slip at that strength of favourite, the scan divides its fair value by that much; where it ran low nothing is added. At an 81% favourite: 3.0% off underdog + games with the Over, 2.1% off favourite - games with the Under, 7.8% off underdog moneyline with the Over. Under 70% the cut is nothing or close to it.
+- **This morning's Alcaraz v Cobolli slips with the cut**, at the prices Novig paid then: Cobolli +4.5 + Over 21.5 fair +166, +13.3% (was +159, +16.7%); Alcaraz -4.5 + Under 21.5 +6.2%; Cobolli +4.5 + Over 20.5 +6.0%; Alcaraz -4.5 + Under 20.5 +4.0%. All four still above fair.
+- **What the check is not**: a group mixes many players of different serve strength, which one match's fit never has, and its favourite is an Elo rating, not a market price. Hard and clay apart give the same picture with wider errors (in the file); grass has too few matches for a group. Tour matches only: no Challengers and no WTA, which are most of what Novig lists.
+- **Not downloaded**: tennis-data.co.uk (odds with scores) refuses the request, and Jeff Sackmann's repositories could not be reached from here.
+
 ### Tennis scan saved as a skill; no tennis plays this evening
 Max, 11-20: can you see if there are any more tennis plays? Save skill.
 

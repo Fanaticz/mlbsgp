@@ -50,8 +50,13 @@ Before calling a row a play:
    of 30+ as best of five; it can't see a deciding match tiebreak).
 2. Both legs' lines are still where the row has them.
 3. Two slips of one match that share a leg are one bet: give the best.
-4. The model is not checked against results (no scores with closing lines
-   could be downloaded). Say so with any play.
+4. The model was checked on 36,435 ATP tour matches (11-20,
+   `scripts/tennis_model_check.py`, `public/data/tennis_model_check.json`):
+   game spread + total slips within 3% of the counted hit rate on average,
+   underdog moneyline + Over 5% to 8% too high against 70%+ favourites. The
+   script already cuts the fair value where the model ran high. Not covered:
+   Challengers and the WTA (most of what Novig lists), and the favourite in
+   the check comes from an Elo rating, not a price. Say that with any play.
 
 ## Asking Novig
 
