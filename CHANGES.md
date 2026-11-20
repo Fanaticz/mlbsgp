@@ -2,6 +2,18 @@
 
 ## 2026-11-20 session
 
+### Novig Scan: each slip is asked once a pass; the re-ask is gone
+Max, 11-20 (the board's WYO ML + Under 37.5 at 7.54x, 31 seconds old, beside the app's slip for it at 6.27x: not matching; then: we don't double ask, right? drop the re-ask, let's test it).
+
+- **What the mismatch was**: not the fee. Novig's quote on that slip depends on when it was last asked. 18 asks over 13 minutes: 36 seconds apart it was 7.54x and 6.27x on about every other ask (4 and 5 of 9); 90 seconds apart, 7.54x, 7.30x, 7.54x, 7.54x after one 6.27x. The board had asked 31 seconds before the app did.
+- **The re-ask did the same thing to the board**: since 11-14 a slip above fair was held and asked again 40 seconds later until two quotes agreed (up to four asks, then the worse of the last two). Only plays were asked more than once, at a gap inside that minute.
+- **Change** (`scan()` in `scan.py`): every slip is asked once a pass and its row is that quote. `SETTLE_S`, `SETTLE_TOL`, `SETTLE_MAX`, the held list and `first_x` / `asks` on a row are gone. Later passes and a row's refresh button still ask the slip again.
+- **The page**: the note on quotes says one ask a pass, and to leave a row alone about 90 seconds (no refresh) before building it in the app.
+- **Tested**, tonight's CFB games, 57 slips: the pass took 68 seconds. Its 10 slips above fair, each asked again after 100 seconds or more: all 10 the same price as the pass. Asked once more 36 seconds after that: 8 the same, 2 lower, both two-leg slips of UNM @ WYO (WYO ML + Under 37.5 7.54x to 7.36x; WYO +7.5 + Under 37.5 3.80x to 3.25x). So the drop on a quick second ask is some slips, not all.
+- **Not known**: why. It reads like one of Novig's pricers not quoting a slip again straight after quoting it, from two slips of one game. The 11-14 cases that led to the re-ask (Goff 4.14x then 2.32x on every ask after) may have been this, or may have been first quotes that never came back; not re-tested.
+- **Watch for**: a row whose price is not on the slip after a 90-second rest. That would be the 11-14 problem back.
+- **Not checked**: against the app (only the keyless quote); the page was not opened; Discord alerts now fire on a single quote.
+
 ### Novig Scan: soccer adds MLS and Liga MX, every leg's fair value is Pinnacle's, and teams are matched by Novig's id
 Max, 11-20: let's add those 2 soccer leagues. And always use pinny=sharp to calc FV. Calc a separate MLS correlation to make sure it still holds.
 
