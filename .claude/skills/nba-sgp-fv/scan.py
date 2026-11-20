@@ -1186,15 +1186,24 @@ def soccer_candidates(a):
         ev = {}
         for m in items:
             o = m["outcomes"]
-            if len(o) != 2 or not all(x.get("bid") for x in o):
+            if len(o) != 2:
                 continue
-            b0, b1 = float(o[0]["bid"]["price"]), float(o[1]["bid"]["price"])
-            if not 0 < b0 < 1 - b1 < 1:
+            # Novig's own book on the market, where it has one on both sides.
+            # A corners or goals market needs none (Max, 11-20): its fair
+            # value is Pinnacle's, so a one-sided or empty book is no reason
+            # to skip the line. The win markets still need theirs: it is how
+            # the favourite is told from the underdog and the match checked
+            # against Pinnacle's.
+            p, width = None, None
+            if all(x.get("bid") for x in o):
+                b0, b1 = float(o[0]["bid"]["price"]), float(o[1]["bid"]["price"])
+                if 0 < b0 < 1 - b1 < 1:
+                    p, width = sgp.devig_worst(1 - b1, 1 - b0), 1 - b1 - b0
+            if p is None and m["marketType"] == "MONEYLINE_3_WAY_WIN":
                 continue
-            f0, f1 = sgp.devig_worst(1 - b1, 1 - b0)
             ev.setdefault(m["eventId"], []).append(
                 {"type": m["marketType"], "desc": m["description"], "strike": m.get("strike"), "starts": m["startsTs"],
-                 "subj": o[0].get("subjectId"), "p": (f0, f1), "width": 1 - b1 - b0, "ids": (o[0]["outcomeId"], o[1]["outcomeId"])})
+                 "subj": o[0].get("subjectId"), "p": p, "width": width, "ids": (o[0]["outcomeId"], o[1]["outcomeId"])})
         for eid, ms in ev.items():
             wins = sorted((m for m in ms if m["type"] == "MONEYLINE_3_WAY_WIN" and m["width"] <= 0.08),
                           key=lambda m: -m["p"][0])
@@ -1230,13 +1239,14 @@ def soccer_candidates(a):
                 continue
 
             def L(m, i, stat, text, sharp=None):
-                """sharp: Pinnacle's (fair chance, American price) on this leg, or None."""
-                leg = {"stat": stat, "side": "under" if i else "over", "line": float(m["strike"] or 0), "p": m["p"][i],
-                       "fair": sgp.american(m["p"][i]), "width": m["width"], "id": m["ids"][i], "text": text}
-                if sharp:
-                    leg.update(p=sharp[0], fair=sgp.american(sharp[0]), sharp=True, novig_p=m["p"][i],
-                               books=f"Pinnacle {sharp[1]:+d}, Novig's book says {sgp.american(m['p'][i]):+d}")
-                return leg
+                """sharp: Pinnacle's (fair chance, American price) on this leg:
+                every leg has one. width and novig_p are None where Novig has
+                no two-sided book on the market."""
+                mine = m["p"][i] if m["p"] else None
+                return {"stat": stat, "side": "under" if i else "over", "line": float(m["strike"] or 0), "p": sharp[0],
+                        "fair": sgp.american(sharp[0]), "width": m["width"], "id": m["ids"][i], "text": text, "sharp": True,
+                        "novig_p": mine, "books": f"Pinnacle {sharp[1]:+d}, " + (f"Novig's book says {sgp.american(mine):+d}" if mine
+                                                                            else "Novig has no two-sided book")}
             base = [L(wins[0], 0, "ml", f"{fav} win", game["ml"][fside]),
                     L(fc, 1, "crn", f"{fav} U{fc['strike']} corners", crn(fc, fside, "under")),
                     L(dc, 0, "crn", f"{dog} O{dc['strike']} corners", crn(dc, dside, "over"))]
@@ -1272,7 +1282,7 @@ def soccer_candidates(a):
                      "team": lg, "starts": wins[0]["starts"], "legs": [dict(x) for x in legs], "label": " · ".join(x["text"] for x in legs),
                      "r": None, "j": j, "forced": False, "devig_r": None, "pair_rs": rs,
                      "lift": j / unrelated, "unrelated_x": 1 / unrelated, "sharp": sum(1 for x in legs if x.get("sharp")),
-                     "rough": any(x["width"] > novig.MAX_SPREAD + 1e-9 for x in legs if not x.get("sharp"))}
+                     "rough": False}   # every leg is Pinnacle's price
                 if alt:
                     c.update(alt=alt["key"], alt_of=alt["label"])
                 return c

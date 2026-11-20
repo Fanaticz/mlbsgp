@@ -561,7 +561,7 @@ function detail(c) {
     c.r === null ? `unrelated legs ${c.unrelated_x.toFixed(2)}x, hits ×${c.lift.toFixed(2)} as often` : c.rs ? `pair r’s ${c.rs.map(sg).join(" / ")}` : c.legs.length === 3 ? `lowest pair r ${sg(c.r)}` : `r ${sg(c.r)} · devig r ${sg(c.devig_r)}`,
     c.games != null ? (LEAGUE === "nbateam" ? (c.role ? `league-wide r for a player with that line${c.spread ? ` on a team ${c.spread < 0 ? "favoured by" : "getting"} ${Math.abs(c.spread)}` : " in an even game"} (${c.games.toLocaleString()} player-games)${c.fit_r ? `, fitted ${c.fit_r.toFixed(2)} less one standard error` : ""}` : `${c.games.toLocaleString()} games`) :
       c.games ? `${c.games} games${c.kind === "mate" ? " together" : ""}` : c.role ? "league-wide r for his position and ice time" : "position average r") : null,
-    `books ${c.legs.map(L => (100 * L.width).toFixed(1)).join(" / ")}¢`,
+    `books ${c.legs.map(L => L.width == null ? "none" : (100 * L.width).toFixed(1)).join(" / ")}¢`,
     c.book === "dk" ? `DraftKings’ parlay price; its two legs multiplied would pay ${c.legs_x.toFixed(2)}x` :
     c.book === "kalshi" ? `Kalshi’s best answer: Yes at ${(c.quote * 100).toFixed(1)}¢ a contract (${c.raw_x.toFixed(2)}x) before its fee` + (c.novig_x ? ` · Novig pays ${c.novig_x.toFixed(2)}x for the same slip (${c.novig_ev >= 0 ? "+" : ""}${(100 * c.novig_ev).toFixed(1)}%)` : ` · Novig has no price for this slip`) : `quote ${c.raw_x.toFixed(2)}x before fee`,
     c.qk > 0 ? `${c.qk.toFixed(2)}u` : null,

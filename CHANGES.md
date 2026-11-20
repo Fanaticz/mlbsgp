@@ -2,6 +2,16 @@
 
 ## 2026-11-20 session
 
+### Novig soccer: a corners or goals leg needs no Novig book
+Max, 11-20 (from the check below: a line Pinnacle prices was skipped where Novig's book was one-sided): fix soccer. No need for both sides.
+
+- **Change** (`soccer_candidates` in `scan.py`): a corners or goals market is used whether or not Novig has a bid on both sides of it. Its fair value was already Pinnacle's; Novig's book was only a condition for looking at the line.
+- **Still needed**: a two-sided Novig book on each team's win market. That is how the favourite is told from the underdog and how the match is checked against Pinnacle's (same kickoff, names, and a win price within 6 points).
+- **Today**, built from the live books: 137 slips on 54 matches, 21 of them (8 matches) with a leg Novig has no two-sided book on. Those were not asked before.
+- **Novig prices them**: six such slips asked, all quoted. Bournemouth v Nottm Forest's three +0.2% to +2.4%; Liverpool v Man Utd -59% and -34%; Brighton v Hull -24%.
+- **The page**: a row's books line says "none" for such a leg, and the leg's note reads "Novig has no two-sided book" beside Pinnacle's price. No soccer row is marked rough: every leg is Pinnacle's price.
+- **Checked**: the lint, the alert checks, the page's script parses. A full pass was not run and the page was not opened on such a row.
+
 ### A check of tonight's changes for bugs
 Max, 11-20: can you check for any bugs.
 
