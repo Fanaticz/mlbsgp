@@ -2,6 +2,20 @@
 
 ## 2026-11-21 session
 
+### Kalshi NBA 3-Leg: a new board for three legs on the high scorers
+Max, 11-21: can we add 3 leg NBA for high usage guys where everything correlates, like Wemby and Luka; for Kalshi.
+
+- **New tab** (Kalshi NBA 3-Leg, after Kalshi NBA; `kalshinbatri` in `server.js` and `public/nba_scan.html`, `--league nbatri` in `scan_kalshi.py`). Fetch only, behind the Kalshi passcode, with the refresh and Bet buttons, on the All tab.
+- **Who**: every player whose main points line is 19.5 or higher (`--tri-pts`; Novig's main line, or Kalshi's milestone nearest even money). The data has no usage rate, so the points line stands in for it.
+- **The slips**: his points with two of rebounds, assists and threes, Yes + Yes + Yes on the milestones beside his main lines, where all three pair r's are above 0.03 (`--tri-r`). Each is also asked with the points leg on the milestone the other side of his line. Not asked: a threes leg that forces the points leg, any leg under 30%, and rebounds + assists + threes without points (lift over unrelated legs about 1.2).
+- **Fair value**: the three-way joint from the three pair r's (`scan.tri_safe`), times 0.96 (`TRI_FIX`). Measured today on 56 players averaging 19+ points, three seasons, each season cut at his own median lines: points + rebounds + assists hit 672 times against 708 modelled (0.95), points + rebounds + threes 811 against 821 (0.99), points + assists + threes 755 against 787 (0.96). The Novig NBA tab's star three-leg slips do not have this cut.
+- **How related the legs are**: points with threes is 0.5 to 0.8; every other pair is 0.05 to 0.3. A slip with threes hits about 1.6 times as often as unrelated legs, points + rebounds + assists about 1.3.
+- **Refresh and Bet** (`reprice`): a three-leg row is rebuilt from its three pair r's and the same cut.
+- **Tonight**, built from the live books: 77 slips on 17 players (48 at the first milestones), about 7 minutes a pass.
+- **Novig's price on nine of them** (keyless quotes, before the 4% cut): one above fair (Maxey 25+ points, 4+ rebounds, 6+ assists, +9.5%, about +5% after the cut), two at about zero, six at -1% to -14%. The run was stopped there; it says nothing about Kalshi's makers.
+- **Checked**: `node --check server.js`, the page's script parses, dry runs of the new board and of Kalshi NBA on the live books.
+- **Not checked**: anything that needs the Kalshi key. No three-leg slip has been asked of Kalshi, so whether it will combine three props of one player is not known (a refused slip shows as a miss with Kalshi's reason). The tab was not opened in a browser. Refresh and Bet were not run on a three-leg row.
+
 ### Tennis scan: Pinnacle is the sharp price
 Max, 11-21: for tennis, use pinny as sharp.
 

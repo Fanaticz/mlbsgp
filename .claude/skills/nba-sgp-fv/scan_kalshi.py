@@ -7,6 +7,7 @@
   python3 scan_kalshi.py --json     # one JSON event per line (server.js: the Kalshi NBA board)
   python3 scan_kalshi.py --league nbaline   # a player's prop with a game line (nbaline_candidates)
   python3 scan_kalshi.py --league nba3      # Points + Threes alone (the Kalshi Pts + 3s board)
+  python3 scan_kalshi.py --league nbatri    # three legs on the high scorers (the Kalshi NBA 3-Leg board)
   python3 scan_kalshi.py --league nfl       # NFL: a player's own pairs and QB + teammate stacks, Overs and Unders (nfl_candidates)
   python3 scan_kalshi.py --league nflline   # NFL: a player's prop with a game line (nflline_candidates)
   python3 scan_kalshi.py --league cfb       # college football: the Novig CFB board's slips (cfb_candidates)
@@ -18,6 +19,12 @@ What it asks, per player with open Kalshi props on a game that has not started:
      points + assists, rebounds + assists, rebounds + threes, assists + threes.
   T  Teammates: each team's two highest main points lines, Yes + Yes, as unrelated
      legs; no slip for a team where either has no priced leg (scan.nba_mate_candidates has the measurement).
+The three-leg board (--league nbatri; Max, 11-21) asks none of those:
+  3  For each player whose main points line is --tri-pts or higher: his points with
+     two of rebounds, assists and threes, Yes + Yes + Yes, where all three pair r's
+     are --tri-r or better (each leg goes with both others). Also asked with the
+     points leg on the milestone the other side of his main line. Fair value is the
+     three-way joint from the three pair r's (scan.tri_safe), scaled by TRI_FIX.
 Kalshi's props are milestones ("25+ points" is Over 24.5). Each leg sits on the
 milestone nearest Novig's main line where Novig has a tight book on that same
 line; where it has none, on Kalshi's own milestone nearest even money.
@@ -48,6 +55,7 @@ create 5,000 new combos a week. So a pass asks at most --max slips (400 on the P
 import argparse
 import base64
 import difflib
+import itertools
 import json
 import math
 import os
@@ -72,6 +80,12 @@ SERIES = {"KXNBAPTS": "pts", "KXNBAREB": "reb", "KXNBAAST": "ast", "KXNBA3PT": "
 NFL_SERIES = {"KXNFLREC": "rec", "KXNFLRECYDS": "yds", "KXNFLTD": "td", "KXNFLPASSATT": "att", "KXNFLPASSCOMP": "cmp",
               "KXNFLPASSYDS": "pyds", "KXNFLPASSTDS": "ptd", "KXNFLRSHATT": "car", "KXNFLRSHYDS": "ryds", "KXNFLRRYDS": "rry"}
 PAIRS = (("pts", "reb"), ("pts", "ast"), ("reb", "ast"), ("reb", "tpm"), ("ast", "tpm"))
+TRI_STATS = ("pts", "reb", "ast", "tpm")   # the three-leg board: points with two of the others
+# Three legs hit together a little less often than the three pair r's say. 56 players averaging
+# 19+ points, three seasons, each season cut at his own median lines (11-21): points + rebounds
+# + assists 672 hits against 708 modelled (0.95), points + rebounds + threes 811 against 821
+# (0.99), points + assists + threes 755 against 787 (0.96); 0.97 together. The joint is scaled by this.
+TRI_FIX = 0.96
 # The collections a same-game sports combo can be made in, the one the tape shows first.
 COLLECTIONS = ("KXMVECROSSCATEGORY-R", "KXMVESPORTSMULTIGAMEEXTENDED-R")
 TIP_S = 3 * 3600      # a market's occurrence_datetime is about this long after the game starts
@@ -598,6 +612,43 @@ def candidates(a):
             if la.get("from") is not None or lb.get("from") is not None:
                 c["model"] = True   # a leg shifted from Novig's main line: the page marks the slip *
             return c
+        # His main points line: Novig's, or Kalshi's milestone nearest even money where Novig lists none.
+        rank = None
+        if "pts" in info["stats"]:
+            nvp = [r for r in rows.get("pts", []) if r.get("fo") is not None]
+            mids = [(abs((k["bid"] + k["ask"]) / 2 - 0.5), k["line"]) for k in info["stats"]["pts"] if 0 < k["bid"] < k["ask"] < 1]
+            rank = scan.main_line(nvp)["line"] if nvp else min(mids)[1] if mids else None
+        if a.league == "nbatri":
+            # Three legs on a high scorer, every pair of them going together (Max, 11-21: Wembanyama, Doncic).
+            # The points leg is always one of the three: without it (rebounds, assists and threes) the legs are close to unrelated.
+            for trio in itertools.combinations([s for s in TRI_STATS if s in legs], 3) if rank is not None and rank >= a.tri_pts else ():
+                if "pts" not in trio:
+                    continue
+                rs = [price.shrunk_r(d, by, p, x, y)[0] for x, y in ((trio[0], trio[1]), (trio[0], trio[2]), (trio[1], trio[2]))]
+                if any(r is None or r < a.tri_r for r in rs):
+                    continue
+                for ls in itertools.product(*(opts[s] if s == "pts" else [legs[s]] for s in trio)):
+                    at = {L["stat"]: L["line"] for L in ls}
+                    # k threes are 3k points: a threes leg that forces the points leg is two legs, not three
+                    if "pts" in at and "tpm" in at and 3 * (math.floor(at["tpm"]) + 1) > at["pts"]:
+                        continue
+                    ps = [L["p"] for L in ls]
+                    try:
+                        j = scan.tri_safe(ps, rs) * TRI_FIX
+                    except (ValueError, ZeroDivisionError, OverflowError):
+                        continue
+                    if not 0 < j < 1:
+                        continue
+                    c = {"key": ",".join(L["id"] for L in ls), "tier": 4, "player": p["name"], "id": p["athlete_id"],
+                         "team": p.get("team_abbr") or info["team"], "starts": info["starts"], "legs": [dict(L) for L in ls],
+                         "label": " · ".join(L["text"] for L in ls), "r": min(rs), "rs": rs, "j": j, "forced": False,
+                         "devig_r": None, "book": "kalshi", "event": info["game"], "pts_line": rank,
+                         "rough": any(L["width"] > a.max_spread + 1e-9 for L in ls), "legs_x": 1 / math.prod(ps),
+                         "alt": 0 if all(L is legs[L["stat"]] for L in ls) else 1}
+                    if any(L.get("from") is not None for L in ls):
+                        c["model"] = True
+                    out.append(c)
+            continue
         # Points + Threes has its own board (--league nba3, Max 11-18); the NBA board asks the rest.
         only3 = a.league == "nba3"
         if only3 and "pts" in legs and "tpm" in legs:
@@ -618,12 +669,8 @@ def candidates(a):
         # tight book on a Kalshi milestone handed his place to the third
         # (11-18: Adebayo, main 17.5, had none, so Thompson was asked with
         # Antetokounmpo).
-        if not only3 and "pts" in info["stats"]:
-            nvp = [r for r in rows.get("pts", []) if r.get("fo") is not None]
-            mids = [(abs((k["bid"] + k["ask"]) / 2 - 0.5), k["line"]) for k in info["stats"]["pts"] if 0 < k["bid"] < k["ask"] < 1]
-            rank = scan.main_line(nvp)["line"] if nvp else min(mids)[1] if mids else None
-            if rank is not None:
-                teams.setdefault((info["game"], info["team"]), []).append((p, rank, opts.get("pts"), row_of))
+        if not only3 and rank is not None:
+            teams.setdefault((info["game"], info["team"]), []).append((p, rank, opts.get("pts"), row_of))
     last = lambda p: p["name"].split(" ", 1)[-1]   # noqa: E731
     for ps in teams.values():
         ps.sort(key=lambda x: -x[1])
@@ -1151,12 +1198,16 @@ def reprice(c, a):
         L.update(p=p, fair=sgp.american(p), width=offer - bid, src="kalshi")
     new = [L["p"] for L in c["legs"]]
     if new != old:
-        lo, hi = -0.99, 0.99   # the r that gave this row's joint
-        for _ in range(30):
-            mid = (lo + hi) / 2
-            lo, hi = (mid, hi) if sgp.joint(mid, *old) < c["j"] else (lo, mid)
-        c["j"] = sgp.joint((lo + hi) / 2, *new)
-        c["devig_r"] = sgp.devig_r(c["j"], *new)
+        if len(new) == 3:   # the three-leg board: the same three pair r's
+            c["j"] = scan.tri_safe(new, c["rs"]) * TRI_FIX
+        else:
+            lo, hi = -0.99, 0.99   # the r that gave this row's joint
+            for _ in range(30):
+                mid = (lo + hi) / 2
+                lo, hi = (mid, hi) if sgp.joint(mid, *old) < c["j"] else (lo, mid)
+            c["j"] = sgp.joint((lo + hi) / 2, *new)
+            c["devig_r"] = sgp.devig_r(c["j"], *new)
+        c["legs_x"] = 1 / math.prod(new)
         c["rough"] = any(L["width"] > a.max_spread + 1e-9 for L in c["legs"])
     return None
 
@@ -1297,7 +1348,7 @@ def positions():
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--league", default="nba", choices=("nba", "nba3", "nbaline", "nfl", "nflline", "cbb", "cfb"))
+    ap.add_argument("--league", default="nba", choices=("nba", "nba3", "nbatri", "nbaline", "nfl", "nflline", "cbb", "cfb"))
     ap.add_argument("--json", action="store_true", help="stream events as JSON lines (server.js)")
     ap.add_argument("--dry", action="store_true", help="list the slips, ask Kalshi for no price (no key needed)")
     ap.add_argument("--requote", action="store_true", help="re-ask the one slip given as JSON on stdin; print it as JSON")
@@ -1306,10 +1357,12 @@ def main():
     ap.add_argument("--positions", action="store_true", help="print the account's open combo positions as JSON (read only)")
     ap.add_argument("--check", action="store_true", help="make one signed read to see that the key is accepted")
     ap.add_argument("--max", type=int, default=None, help="ask at most this many slips a pass (0: all; default 400 on the Points + Threes board, 300 on the NBA board, 200 on the others)")
-    ap.add_argument("--leg-min", type=float, default=0.30, help="nba, nba3: every leg of a slip has a fair value of at least this (teammates slips too)")
+    ap.add_argument("--leg-min", type=float, default=0.30, help="nba, nba3, nbatri: every leg of a slip has a fair value of at least this (teammates slips too)")
     ap.add_argument("--max-fair", type=float, default=0.0,
                     help="nba, nba3: the longest fair value a slip is asked at, American (0: no limit, the default since --leg-min)")
     ap.add_argument("--min-r", type=float, default=0.25, help="smallest r for a pair other than Points + Threes, and for an NFL stack")
+    ap.add_argument("--tri-pts", type=float, default=19.5, help="nbatri: a player's main points line is at least this")
+    ap.add_argument("--tri-r", type=float, default=0.03, help="nbatri: each of the three pair r's is at least this")
     ap.add_argument("--max-spread", type=float, default=novig.MAX_SPREAD, help="widest Novig book a leg's fair value is read from")
     ap.add_argument("--kalshi-spread", type=float, default=0.05, help="widest Kalshi book a leg's fair value is read from when Novig has none")
     ap.add_argument("--line-r", type=float, default=0.30, help="nbaline, nflline: smallest |r| between a prop and a game line")
@@ -1366,7 +1419,7 @@ def main():
         _signer()   # no key, or one that can't be read: say so before anything is fetched
     cands, d = nfl_candidates(a) if a.league == "nfl" else nflline_candidates(a) if a.league == "nflline" else cbb_candidates(a) if a.league == "cbb" else cfb_candidates(a) if a.league == "cfb" else nbaline_candidates(a) if a.league == "nbaline" else candidates(a)
     # Each row links to its game's page on Kalshi, where the combo is built (no link fills the slip in).
-    game = {"nba": "kxnbagame", "nba3": "kxnbagame", "nbaline": "kxnbagame", "nfl": "kxnflgame", "nflline": "kxnflgame", "cbb": "kxncaambgame", "cfb": "kxncaafgame"}[a.league]
+    game = {"nba": "kxnbagame", "nba3": "kxnbagame", "nbatri": "kxnbagame", "nbaline": "kxnbagame", "nfl": "kxnflgame", "nflline": "kxnflgame", "cbb": "kxncaambgame", "cfb": "kxncaafgame"}[a.league]
     for c in cands:
         c["url"] = f"https://kalshi.com/markets/{game}/game/{game}-{c['event'].lower()}"
     emit({"type": "start", "total": len(cands), "players": len({c["id"] for c in cands}), "league": "kalshi" + a.league,
