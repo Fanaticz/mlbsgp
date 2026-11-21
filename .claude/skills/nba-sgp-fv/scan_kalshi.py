@@ -7,6 +7,8 @@
   python3 scan_kalshi.py --json     # one JSON event per line (server.js: the Kalshi NBA board)
   python3 scan_kalshi.py --league nbaline   # a player's prop with a game line (nbaline_candidates)
   python3 scan_kalshi.py --league nba3      # Points + Threes alone (the Kalshi Pts + 3s board)
+  python3 scan_kalshi.py --league nfl       # NFL: a player's own pairs and QB + teammate stacks, Overs and Unders (nfl_candidates)
+  python3 scan_kalshi.py --league nflline   # NFL: a player's prop with a game line (nflline_candidates)
   python3 scan_kalshi.py --league cfb       # college football: the Novig CFB board's slips (cfb_candidates)
 
 Two boards share these slips (Max, 11-18): --league nba3 asks 1 alone, --league nba asks 2 and T.
@@ -280,8 +282,18 @@ WORD = {"pts": "points", "reb": "rebounds", "ast": "assists", "tpm": "threes", "
         "car": "carries", "ryds": "rushing yards", "rry": "rush + rec yards", "pra": "pts + reb + ast"}
 
 
-def nfl_candidates(a):
-    """NFL: one player's own pairs, Yes + Yes, every pair in scan.NFL_PAIRS with r at least --min-r."""
+NFL_TEAM = {"JAC": "JAX", "WAS": "WSH"}   # Kalshi's team code -> Novig's and the data's
+NFL_LINE_SERIES = {"KXNFLSPREAD": "cover", "KXNFLTOTAL": "over", "KXNFLTEAMTOTAL": "tt", "KXNFLGAME": "win",
+                   "KXNFL1HSPREAD": "h1cover", "KXNFL1HTOTAL": "h1over", "KXNFL1H": "h1win"}
+# Novig's market for each kind of line. Its first-half moneyline is left out: Kalshi's "wins the
+# 1st half" loses on a tie at the half, so that leg is priced off Kalshi's own book alone.
+NFL_LINE_NOVIG = {"SPREAD": "cover", "TOTAL": "over", "TEAM_TOTAL": "tt", "MONEY": "win", "SPREAD_1H": "h1cover", "TOTAL_1H": "h1over"}
+
+
+def nfl_legs(a):
+    """([(player, his Kalshi props, {stat: (Yes leg, No leg)})], the data) for every player with open
+    Kalshi NFL props: per stat the milestone pick_leg takes (beside Novig's main line), as "N+"
+    (Yes) and as his Under (No on that same market). A touchdown leg is the anytime one only."""
     d = json.load(open(scan.NFL_DATA))
     key = {novig.norm(p["name"]): p for p in d["players"]}
     board = kalshi_props(a.before, NFL_SERIES)
@@ -295,25 +307,256 @@ def nfl_candidates(a):
         info["starts"] = next((r["starts"] for v in rows.values() for r in v), info["starts"])
         legs = {}
         for stat, kal in info["stats"].items():
+            if stat == "td":   # 2+ touchdowns is a longshot the r's were not fitted for
+                kal = [k for k in kal if k["line"] == 0.5]
             L = pick_leg(stat, kal, rows.get(stat, []), a)
-            if L:
-                n = int(L["line"] + 0.5)
-                L["text"] = "anytime touchdown" if stat == "td" and n == 1 else f"{n}+ {WORD[stat]}"
-                legs[stat] = L
+            if not L:
+                continue
+            n = int(L["line"] + 0.5)
+            L.update(yes=True, text="anytime touchdown" if stat == "td" else f"{n}+ {WORD[stat]}")
+            U = dict(L, side="under", yes=False, p=1 - L["p"], fair=sgp.american(1 - L["p"]),
+                     text="no touchdown" if stat == "td" else f"under {n} {WORD[stat]}")
+            U.pop("nv", None)
+            same = next((r for r in rows.get(stat, []) if r["line"] == L["line"]), None)
+            if same and same["ids"].get("under"):
+                U["nv"] = same["ids"]["under"]
+            legs[stat] = (L, U)
+        if legs:
+            out.append((p, info, legs))
+    return out, d
+
+
+def nfl_on_team(p, info):
+    """Is he still on the team the data has him on? Kalshi's ticker for his prop starts with his team's code."""
+    code = {v: k for k, v in NFL_TEAM.items()}.get(p.get("team_abbr"), p.get("team_abbr") or "?")
+    return info["team"].startswith(code[:3])
+
+
+def nfl_order(c):
+    """The order slips are asked in, so a capped pass spends itself on the next day of games:
+    that day (US Eastern) first, and within it the highest r."""
+    return (int((c["starts"] / 1000 - 5 * 3600) // 86400), -c["r"])
+
+
+def nfl_row(a, p, info, la, lb, r, kind=None, **more):
+    """One two-leg NFL slip. A No leg is marked in the key; a Yes + Yes key is the two tickers, as it always was."""
+    j = sgp.joint(r, la["p"], lb["p"])
+    c = {"key": ",".join(L["id"] + ("" if L["yes"] else ":n") for L in (la, lb)), "tier": 1, "player": p["name"],
+         "id": p.get("athlete_id") or p.get("id") or novig.norm(p["name"]), "team": p.get("team_abbr") or p.get("team") or info["team"],
+         "starts": info["starts"], "legs": [dict(la), dict(lb)], "label": f"{la['text']} · {lb['text']}", "r": r, "j": j,
+         "forced": False, "devig_r": sgp.devig_r(j, la["p"], lb["p"]), "book": "kalshi", "event": info["game"],
+         "rough": any(L["width"] > a.max_spread + 1e-9 for L in (la, lb)), "legs_x": 1 / (la["p"] * lb["p"])}
+    if kind:
+        c["kind"] = kind
+    c.update(more)
+    return c
+
+
+def nfl_vol(d):
+    """vol(player, "tgt_mean" | "car_mean"): this season's once he has three games in it, as scan.nfl_slate has it."""
+    cur = str(max(d["seasons"]))
+
+    def vol(p, k):
+        s = (p.get("by_season") or {}).get(cur) or {}
+        return (s if s.get("games", 0) >= 3 else p).get(k)
+    return vol
+
+
+def nfl_candidates(a):
+    """NFL (--league nfl), the Novig NFL board's two-leg slips on one team's players, as Kalshi combos:
+      own     one player's pairs (scan.NFL_PAIRS) with r at least --min-r, Yes + Yes, and his
+              Under + Under (No + No on the same two markets) at the same r
+      stack   a QB's passing leg with one of his own receivers' (scan.STACK_PAIRS: passing yards +
+              receiving yards, passing TDs + his TD, completions + receptions, passing yards + his
+              TD), by the receiver's targets a game; Yes + Yes and No + No. And the QB's attempts
+              or passing yards against his back's carries or rushing yards (scan.STACK_AGAINST):
+              Yes + No both ways. Each receiver's --per highest of each.
+    Props with a game line are their own board (--league nflline)."""
+    people, d = nfl_legs(a)
+    S, vol = json.load(open(scan.STACK_DATA)), nfl_vol(d)
+    out, teams = [], {}
+    for p, info, legs in people:
+        if nfl_on_team(p, info):   # a stack needs his quarterback: not asked for a player who has moved
+            teams.setdefault((info["game"], p.get("team_abbr")), []).append((p, info, legs))
         for x, y in scan.NFL_PAIRS:
             if x not in legs or y not in legs:
                 continue
             r = scan.nfl_r(p, x, y)
             if r is None or r < a.min_r:
                 continue
-            la, lb = legs[x], legs[y]
-            j = sgp.joint(r, la["p"], lb["p"])
-            out.append({"key": f"{la['id']},{lb['id']}", "tier": 1, "player": p["name"], "id": p.get("athlete_id") or p.get("id") or nm,
-                        "team": p.get("team_abbr") or p.get("team") or info["team"], "starts": info["starts"],
-                        "legs": [dict(la), dict(lb)], "label": f"{la['text']} · {lb['text']}", "r": r, "j": j, "forced": False,
-                        "devig_r": sgp.devig_r(j, la["p"], lb["p"]), "book": "kalshi", "event": info["game"],
-                        "rough": any(L["width"] > a.max_spread + 1e-9 for L in (la, lb)), "legs_x": 1 / (la["p"] * lb["p"])})
-    out.sort(key=lambda c: (c["starts"], -c["r"]))
+            out.append(nfl_row(a, p, info, legs[x][0], legs[y][0], r))
+            # Under 1 reception is under any yards: one leg, not two
+            if a.unders and not any(legs[s][0]["line"] < 1 for s in (x, y) if s not in ("td", "ptd")):
+                out.append(nfl_row(a, p, info, legs[x][1], legs[y][1], r))
+    for ps in teams.values():
+        qbs = [x for x in ps if x[0]["group"] == "QB"]
+        if not qbs:
+            continue
+        qb, _, ql = max(qbs, key=lambda x: x[0].get("att_mean") or 0)
+        who = qb["name"].split()[-1] + " "
+        named = lambda L: dict(L, text=who + L["text"])   # noqa: E731
+        for p, info, legs in ps:
+            if p["group"] == "QB":
+                continue
+            overs, unders = [], []
+            for qs, ts in scan.STACK_PAIRS:
+                if qs not in ql or ts not in legs:
+                    continue
+                r = scan.role_r(S["stack"], vol(p, "tgt_mean"), scan.ptd_at(qs, ql[qs][0]["line"]), qb=qs, stat=ts, pos=p["group"], by="tgt")
+                if r is not None and r >= a.min_r:
+                    overs.append(nfl_row(a, p, info, named(ql[qs][0]), legs[ts][0], r, "stack"))
+                    unders.append(nfl_row(a, p, info, named(ql[qs][1]), legs[ts][1], r, "stack"))
+            for qs, ts in scan.STACK_AGAINST:   # one goes with the other's Under
+                if qs not in ql or ts not in legs:
+                    continue
+                r = scan.role_r(S["stack"], vol(p, "car_mean"), qb=qs, stat=ts, pos=p["group"], by="car")
+                if r is not None and -r >= a.min_r:
+                    unders += [nfl_row(a, p, info, named(ql[qs][i]), legs[ts][1 - i], -r, "stack") for i in (0, 1)]
+            for mine in (overs, unders) if a.unders else (overs,):
+                out += sorted(mine, key=lambda c: -c["r"])[:a.per]
+    out.sort(key=nfl_order)
+    return (out[:a.max] if a.max else out), d
+
+
+def nflline_candidates(a):
+    """NFL prop + game line (--league nflline), the Novig NFL board's slips across a prop and a line:
+    a player's milestone with a game line on the side that goes with it, and his Under (No on the
+    same milestone) with the line's other side. The lines (scan.LINE_TYPES): the game total, his
+    team's spread, moneyline and team total, and the first half's total, spread and winner. The r
+    is scan.line_r's: league-wide for his position and targets or carries a game, and, with a
+    spread or moneyline, for his team's side of today's spread (favoured by 3.5 or more, an
+    underdog by 3.5 or more, or between). Asked where |r| is at least --line-r: his --per
+    highest over the total, the spread and his team total, and his best with each kind of line.
+
+    Kalshi lists "X wins", "X wins by over 7.5", "over 44.5 points" and "X over 24.5 points", and
+    the same for the first half: the other team covering and an Under are No legs on those
+    markets; the other team winning is Yes on its own market. A line leg is priced like a prop
+    leg (the tighter of Novig's book on the same line and Kalshi's own) and is the one nearest
+    even money, inside --lo to --hi."""
+    people, d = nfl_legs(a)
+    S, vol = json.load(open(scan.STACK_DATA)), nfl_vol(d)
+    now, games = time.time() * 1000, {}   # Kalshi's game code -> {"starts", kind: [row]}
+    for series, kind in NFL_LINE_SERIES.items():
+        for m in _markets(series):
+            tail = m["ticker"].rsplit("-", 1)[-1]
+            try:
+                starts = (time.mktime(time.strptime(m["occurrence_datetime"][:19], "%Y-%m-%dT%H:%M:%S")) - time.timezone - TIP_S) * 1000
+                row = {"line": float(m.get("floor_strike") or 0), "ticker": m["ticker"], "event": m["event_ticker"],
+                       "bid": float(m["yes_bid_dollars"]), "ask": float(m["yes_ask_dollars"])}
+            except (KeyError, TypeError, ValueError):
+                continue
+            if starts <= now or (a.before and starts >= a.before) or tail == "TIE":
+                continue
+            if kind not in ("over", "h1over"):
+                code = re.sub(r"\d+$", "", tail)
+                row["team"] = NFL_TEAM.get(code, code)
+            games.setdefault(m["event_ticker"].split("-", 1)[1], {"starts": starts}).setdefault(kind, []).append(row)
+    # Novig's books on the same lines: {the two team codes: {(kind, team or None, line): (p Yes, width, Yes id, No id)}}
+    nv, by_event = {}, {}
+    for m in novig.catalog({"league": "NFL", "eventStatus": "OPEN_PREGAME", "marketType": ",".join(NFL_LINE_NOVIG)}):
+        by_event.setdefault(m["eventId"], []).append(m)
+    for ms in by_event.values():
+        sub = {o.get("subjectId"): o["name"] for m in ms if m["marketType"] == "MONEY" for o in m["outcomes"]}
+        if len(sub) != 2:
+            continue
+        book = nv.setdefault(frozenset(sub.values()), {"starts": ms[0]["startsTs"]})
+        for m in ms:
+            kind, t = NFL_LINE_NOVIG[m["marketType"]], scan.two_way(m)
+            if not t or t["spread"] > a.max_spread + 1e-9:
+                continue
+            if kind.endswith("cover"):
+                for i, n in enumerate(t["names"]):   # "DAL -3.5" is Kalshi's "Dallas wins by over 3.5"
+                    x = re.match(r"(\S+) -(\d+(?:\.\d+)?)$", n)
+                    if x:
+                        book[(kind, x.group(1), float(x.group(2)))] = (t["p"][i], t["spread"], t["ids"][i], t["ids"][1 - i])
+            elif kind == "win":
+                for i, n in enumerate(t["names"]):
+                    book[(kind, n, 0.0)] = (t["p"][i], t["spread"], t["ids"][i], None)
+            elif kind == "tt":
+                tm = sub.get(m["outcomes"][0].get("subjectId"))
+                if tm:
+                    book[(kind, tm, t["strike"])] = (t["p"][0], t["spread"], t["ids"][0], t["ids"][1])
+            else:
+                book[(kind, None, t["strike"])] = (t["p"][0], t["spread"], t["ids"][0], t["ids"][1])
+    for g in games.values():
+        g["teams"] = {r["team"] for k in ("win", "cover", "tt") for r in g.get(k, [])}
+        book = nv.get(frozenset(g["teams"]), {})
+        g["starts"] = book.get("starts", g["starts"])
+        for kind in NFL_LINE_SERIES.values():
+            for r in g.get(kind, []):
+                books, n = [], book.get((kind, r.get("team"), r["line"]))
+                if n:
+                    books.append((n[1], n[0], "novig"))
+                if 0 < r["bid"] < r["ask"] < 1 and r["ask"] - r["bid"] <= a.kalshi_spread + 1e-9:
+                    books.append((r["ask"] - r["bid"], sgp.devig_worst(r["ask"], 1 - r["bid"])[0], "kalshi"))
+                if not books:
+                    continue
+                width, pr, src = min(books)
+                if len(books) == 2 and abs(books[0][0] - books[1][0]) <= 0.01 + 1e-9:
+                    width, pr, src = max(books)[0], (books[0][1] + books[1][1]) / 2, "both"
+                r.update(p=pr, width=width, src=src, nv=n and (n[2], n[3]))
+        # who is favoured and by how much: the full-game "wins by over" nearest even money
+        sp = [r for r in g.get("cover", []) if "p" in r and 0.25 <= r["p"] <= 0.75]
+        if sp:
+            m = min(sp, key=lambda r: abs(r["p"] - 0.5) + r["width"])
+            g["fav"], g["spread"] = m["team"], m["line"]
+
+    def line_leg(g, kind, team, yes):
+        """The game-line leg nearest even money. A spread or a winner: `team` covering or
+        winning (Yes on its own market; covering is also No on the other team's "wins by
+        over"). A total or `team`'s total: the Over when yes, else the Under."""
+        half, opts = " 1H" if kind.startswith("h1") else "", []
+        for r in g.get(kind, []):
+            if "p" not in r:
+                continue
+            if kind.endswith("cover"):
+                y = r["team"] == team
+                text = f"{team} {'-' if y else '+'}{r['line']:g}{half}"
+            elif kind.endswith("win"):
+                if r["team"] != team:
+                    continue
+                y, text = True, f"{team}{half} moneyline"
+            elif kind == "tt":
+                if r["team"] != team:
+                    continue
+                y, text = yes, f"{team} team total {'Over' if yes else 'Under'} {r['line']:g}"
+            else:
+                y, text = yes, f"{'Over' if yes else 'Under'} {r['line']:g}{half}"
+            pr = r["p"] if y else 1 - r["p"]
+            if a.lo <= pr <= a.hi:
+                L = {"stat": kind, "side": "over" if y else "under", "yes": y, "line": r["line"], "p": pr, "fair": sgp.american(pr),
+                     "width": r["width"], "id": r["ticker"], "event": r["event"], "src": r["src"], "text": text}
+                if r.get("nv") and r["nv"][0 if y else 1]:
+                    L["nv"] = r["nv"][0 if y else 1]
+                opts.append(L)
+        return min(opts, key=lambda L: abs(L["p"] - 0.5) + L["width"]) if opts else None
+
+    out = []
+    for p, info, legs in people:
+        g, me = games.get(info["game"]), p.get("team_abbr")
+        if not g or len(g["teams"]) != 2 or me not in g["teams"] or not nfl_on_team(p, info):
+            continue   # no lines on his game, or he has changed teams since the data was built
+        them = next(t for t in g["teams"] if t != me)
+        info["starts"] = g["starts"]
+        side = None if "fav" not in g else "even" if g["spread"] < 3.5 else "fav" if g["fav"] == me else "dog"
+        overs, unders = [], []
+        for s, (la, lu) in legs.items():
+            for line in scan.LINE_TYPES:
+                r = scan.line_r(S, vol, p, s, line, side, scan.ptd_at(s, la["line"]))
+                if r is None or abs(r) < a.line_r:
+                    continue
+                sided = line.endswith("cover") or line.endswith("win")
+                for lp, way, mine in ((la, r, overs), (lu, -r, unders)):   # his Over with the side that goes with it, his Under with the other
+                    lb = line_leg(g, line, (me if way > 0 else them) if sided else me, way > 0)
+                    if lb:
+                        mine.append(nfl_row(a, p, info, lp, lb, abs(r), line, line=line, role=True))
+        for mine in (overs, unders) if a.unders else (overs,):
+            mine.sort(key=lambda c: -c["r"])
+            keep = {c["key"] for c in [c for c in mine if c["kind"] in ("over", "cover", "tt")][:a.per]}
+            for line in scan.LINE_TYPES:
+                keep |= {c["key"] for c in [c for c in mine if c["kind"] == line][:1]}
+            out += [c for c in mine if c["key"] in keep]
+    out.sort(key=nfl_order)
     return (out[:a.max] if a.max else out), d
 
 
@@ -1054,7 +1297,7 @@ def positions():
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--league", default="nba", choices=("nba", "nba3", "nbaline", "nfl", "cbb", "cfb"))
+    ap.add_argument("--league", default="nba", choices=("nba", "nba3", "nbaline", "nfl", "nflline", "cbb", "cfb"))
     ap.add_argument("--json", action="store_true", help="stream events as JSON lines (server.js)")
     ap.add_argument("--dry", action="store_true", help="list the slips, ask Kalshi for no price (no key needed)")
     ap.add_argument("--requote", action="store_true", help="re-ask the one slip given as JSON on stdin; print it as JSON")
@@ -1066,13 +1309,15 @@ def main():
     ap.add_argument("--leg-min", type=float, default=0.30, help="nba, nba3: every leg of a slip has a fair value of at least this (teammates slips too)")
     ap.add_argument("--max-fair", type=float, default=0.0,
                     help="nba, nba3: the longest fair value a slip is asked at, American (0: no limit, the default since --leg-min)")
-    ap.add_argument("--min-r", type=float, default=0.25, help="smallest r for a pair other than Points + Threes")
+    ap.add_argument("--min-r", type=float, default=0.25, help="smallest r for a pair other than Points + Threes, and for an NFL stack")
     ap.add_argument("--max-spread", type=float, default=novig.MAX_SPREAD, help="widest Novig book a leg's fair value is read from")
     ap.add_argument("--kalshi-spread", type=float, default=0.05, help="widest Kalshi book a leg's fair value is read from when Novig has none")
-    ap.add_argument("--line-r", type=float, default=0.30, help="nbaline: smallest fitted |r| between a prop and a game line")
-    ap.add_argument("--per", type=int, default=2, help="nbaline: pairings asked per player, highest r first (each as its Over and its Under slip)")
+    ap.add_argument("--line-r", type=float, default=0.30, help="nbaline, nflline: smallest |r| between a prop and a game line")
+    ap.add_argument("--per", type=int, default=2, help="nbaline, nflline: pairings asked per player, highest r first (each as its Over and its Under slip); nfl: stacks per receiver")
     ap.add_argument("--team-lines", nargs="+", default=list(scan.NBA_PROP_LINES), choices=tuple(scan.NBA_PROP_LINES),
                     help="nbaline: the game lines a prop is asked with (default: all six)")
+    ap.add_argument("--no-unders", dest="unders", action="store_false",
+                    help="nfl, nflline: ask no player-prop Unders (Under + Under, the Over + Under stacks, a prop's Under + a game line)")
     ap.add_argument("--lo", type=float, default=0.15, help="a leg's fair value is at least this")
     ap.add_argument("--hi", type=float, default=0.85, help="and at most this")
     ap.add_argument("--stake", type=float, default=100.0, help="dollars each request for quote is sized at")
@@ -1119,9 +1364,9 @@ def main():
         return
     if not a.dry:
         _signer()   # no key, or one that can't be read: say so before anything is fetched
-    cands, d = nfl_candidates(a) if a.league == "nfl" else cbb_candidates(a) if a.league == "cbb" else cfb_candidates(a) if a.league == "cfb" else nbaline_candidates(a) if a.league == "nbaline" else candidates(a)
+    cands, d = nfl_candidates(a) if a.league == "nfl" else nflline_candidates(a) if a.league == "nflline" else cbb_candidates(a) if a.league == "cbb" else cfb_candidates(a) if a.league == "cfb" else nbaline_candidates(a) if a.league == "nbaline" else candidates(a)
     # Each row links to its game's page on Kalshi, where the combo is built (no link fills the slip in).
-    game = {"nba": "kxnbagame", "nba3": "kxnbagame", "nbaline": "kxnbagame", "nfl": "kxnflgame", "cbb": "kxncaambgame", "cfb": "kxncaafgame"}[a.league]
+    game = {"nba": "kxnbagame", "nba3": "kxnbagame", "nbaline": "kxnbagame", "nfl": "kxnflgame", "nflline": "kxnflgame", "cbb": "kxncaambgame", "cfb": "kxncaafgame"}[a.league]
     for c in cands:
         c["url"] = f"https://kalshi.com/markets/{game}/game/{game}-{c['event'].lower()}"
     emit({"type": "start", "total": len(cands), "players": len({c["id"] for c in cands}), "league": "kalshi" + a.league,

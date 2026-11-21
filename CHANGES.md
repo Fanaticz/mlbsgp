@@ -2,6 +2,21 @@
 
 ## 2026-11-20 session
 
+### Kalshi NFL: Unders, QB + teammate stacks, and a new Kalshi NFL Lines board
+Max, 11-20: also let's expand NFL. (Taken as the Kalshi NFL board, which asked only one player's own pairs, Yes + Yes.)
+
+- **Kalshi NFL** (`nfl_candidates` in `scan_kalshi.py`) now asks what the Novig NFL tab asks of one team's players:
+  - **Unders**: each own pair again as Under + Under (No on the same two markets), at the same correlation. Not where a leg is under 1 reception or the like (that leg decides the other).
+  - **Stacks**: a quarterback's passing leg with one of his receivers' (passing yards + receiving yards, passing TDs + his TD, completions + receptions, passing yards + his TD), at the league-wide correlation for a receiver with his targets a game, 0.25 or better, each receiver's two strongest, as Overs and as Unders. And the quarterback's attempts or passing yards against his back's carries or rushing yards: one Over with the other's Under, both ways.
+  - A touchdown leg is the anytime one only (a 2+ touchdowns milestone could be taken before, where the anytime one had no book).
+- **Kalshi NFL Lines** (new tab; `nflline_candidates`, `--league nflline`): a player's prop with a game line on the side that goes with it, and his Under with the other side. The lines: game total, his team's spread, moneyline and team total, first-half total, spread and winner. Kalshi lists all of them for the NFL. The correlations are the Novig NFL tab's (`scan.line_r`: by position and targets or carries, and by his team's side of today's spread), asked at 0.30 or better: his two strongest over the total, spread and team total, and his best with each kind of line.
+  - The other team covering and an Under are No legs; the other team winning is Yes on its own market. A line leg is priced off the tighter of Novig's book on that line and Kalshi's own. A first-half winner leg is Kalshi's book alone: Kalshi's loses on a tie at the half.
+- **This week**, built from the live books: Kalshi NFL 1,262 slips on 160 players in 12 games (467 own Overs as before, 461 own Unders, 160 stack Overs, 174 with a stack Under); Kalshi NFL Lines 624 slips on 97 players. A pass still asks 200, and now takes the next day of games first and, within it, the strongest correlation first (it was earliest kickoff first); `--max 0` asks all, `--no-unders` leaves the Unders out.
+- **Teams**: Kalshi writes JAC and WAS where Novig and the data write JAX and WSH. A player whose Kalshi ticker is not his team's in the data gets no stack and no line slip.
+- **The page**: both tabs have a filter for Unders and for each kind of slip, and a card is headed by its best row.
+- **Checked**: the lint, `node --check server.js`, the page's script parses. Dry runs of both boards on the live books, one slip of every kind read through: the right market, the right Yes or No, the right team (a quarterback's attempts with the other team covering, a back's carries with his own). Both tabs opened in a browser against a local server with Kalshi's answers replaced by made-up prices: rows, filters, open rows, no script errors. Those passes asked Novig for a real quote on about 90 slips.
+- **Not checked**: anything that needs the Kalshi key. No new slip has been asked of Kalshi: whether it will combine a prop with each kind of line, or a No leg with a No leg, is not known (a refused slip shows as a miss with Kalshi's reason). The Bet button has not been pressed on a row with a No leg on these boards. Kalshi NBA Lines' code was not touched.
+
 ### Kalshi CFB: a new board on the Kalshi page
 Max, 11-20: can you add CFB to Kalshi.
 
