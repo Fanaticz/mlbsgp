@@ -846,6 +846,18 @@ def main() -> None:
         "players": players,
     }
 
+    # ESPN answering with nothing must not replace a good file: on 2026-11-21 a run wrote 0
+    # players and every NBA board came back empty. A full run that finds under half the
+    # players the file has (or under 100) stops here and leaves the file as it is.
+    if not args.limit:
+        try:
+            with open(args.out, encoding="utf-8") as f:
+                had = len(json.load(f).get("players") or [])
+        except (OSError, ValueError):
+            had = 0
+        if len(players) < max(100, had // 2):
+            sys.exit(f"Only {len(players)} players came back (the file has {had}): {args.out} left as it is.")
+
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     with open(args.out, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)

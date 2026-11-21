@@ -44,7 +44,10 @@ jobs:
       - name: Rebuild correlation aggregates
         run: python build_aggregates.py
 
+      # The script exits non-zero rather than overwrite the data file when ESPN
+      # returns few or no players; that shouldn't block the commit below.
       - name: Refresh NBA correlations
+        continue-on-error: true
         run: python scripts/nba_fetch_correlations.py --workers 16
 
       - name: Refresh NBA quarter line scores

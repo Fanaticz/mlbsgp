@@ -2,13 +2,14 @@
 
 ## 2026-11-21 session
 
-### Kalshi boards: an empty pass says why
+### NBA boards empty: today's data refresh wrote a file with no players
 Max, 11-21 (screenshot, 12:33 PM: Kalshi Pts + 3s, "Saved from 12:33 PM · 0 combos", "Nothing to price right now"): why not working.
 
-- **What the screenshot shows**: the pass ended normally having found no slip to ask. Run here at 12:35 PM, the same code built 89 slips for that board (66 on Kalshi NBA 3-Leg, 102 on Kalshi NBA), so the lists the server read from Kalshi or Novig came back empty there. Which one, and why, is not known: the script did not keep the reason.
-- **Cause of the silence** (`kalshi_props`, `_markets` in `scan_kalshi.py`): a markets read that Kalshi answered with an error (a 429 after six tries, or no connection) was taken as "no markets", so the board came back empty with the Novig tab's "no player has two Novig books tight enough".
-- **Change**: a failed read of a Kalshi series stops the pass with Kalshi's answer, shown on the page as "Scan failed: ...". An NBA props pass that reads everything and still has no slip stops with the counts: players with open Kalshi props, how many are in the data, and Novig's prop markets.
-- **Checked**: dry runs of Kalshi Pts + 3s, NBA 3-Leg and NBA Lines on the live books; a run against a wrong Kalshi address stops with the reason. Not run on the server.
+- **Cause**: the daily data refresh ran at 12:10 PM CT (commit `213a7ea`) and ESPN gave it no players, so it wrote `public/data/nba_correlations.json` with 0 players over yesterday's 626. Every board that reads a player's numbers from that file (the Kalshi NBA boards, the Novig NBA tab, the NBA correlations page) then had nobody to price. Not the three-leg change.
+- **Fix now**: yesterday's file (11-20, 626 players) is put back. It lacks last night's games; tomorrow's refresh adds them.
+- **So it can't recur** (`scripts/nba_fetch_correlations.py`): a full run that finds under half the players the file already has, or under 100, stops and leaves the file as it is. The workflow step is marked `continue-on-error`, like the other refresh steps, so the rest of the day's data is still committed.
+- **An empty pass says why** (`scan_kalshi.py`): an NBA props pass with no slip to ask now stops with the counts (players with open Kalshi props, how many are in the data, Novig's prop markets), shown as "Scan failed: ..." in place of the Novig tab's "no player has two Novig books tight enough". A failed read of a Kalshi series (`kalshi_props`, `_markets`) stops the pass with Kalshi's answer; it was taken as "no markets".
+- **Checked**: with the file restored, dry runs on the live books build 91 slips on Kalshi Pts + 3s, 68 on NBA 3-Leg, 106 on Kalshi NBA, 60 on NBA Lines; with the empty file they built 0. A run against a wrong Kalshi address stops with the reason. The fetch script compiles; its new stop was not exercised against ESPN. Not run on the server.
 
 ### Kalshi NBA 3-Leg: a new board for three legs on the high scorers
 Max, 11-21: can we add 3 leg NBA for high usage guys where everything correlates, like Wemby and Luka; for Kalshi.
