@@ -1388,8 +1388,11 @@ def cbb_r(measured, shape, spread):
     return {"r": round(r, 3), "n": v["all"]["n"]}
 
 
-def cfb_candidates(a):
-    """College football or basketball slips across one game's lines (see the module docstring)."""
+def cfb_candidates(a, listed=None):
+    """College football or basketball slips across one game's lines (see the module docstring).
+    listed (scan_kalshi.py's college football board): called once a game with its name and
+    Novig markets, it returns None to leave the game out, or a test a leg must pass to be put
+    on a slip (the line is on the other site too). The model is still fitted to every line."""
     board = LINE_BOARDS[a.league]
     items = novig.catalog({"league": board["league"], "eventStatus": "OPEN_PREGAME",
                            "marketType": "MONEY,SPREAD,TOTAL" + (",TEAM_TOTAL" if board["dogml"] or board["pin"] else "")
@@ -1418,6 +1421,9 @@ def cfb_candidates(a):
         name = next((m["description"].rsplit(" t", 1)[0] for m in ms if m["marketType"] == "TOTAL" and " @ " in m["description"]), None)
         tw = money and two_way(money)
         if not name:
+            continue
+        on = listed(name, ms) if listed else None
+        if listed and not on:
             continue
         if tw:
             f = 0 if tw["p"][0] >= 0.5 else 1
@@ -1542,7 +1548,7 @@ def cfb_candidates(a):
 
         def pick(stat, team=None, side="over", target=0.5, within=0.12, half=False):
             v = [L for L in legs if L["stat"] == stat and L["team"] == team and L["side"] == side and L["half"] == half
-                 and (L.get("sharp") or L["width"] <= a.max_spread + 1e-9) and abs(L["p"] - target) <= within]
+                 and (not on or on(L)) and (L.get("sharp") or L["width"] <= a.max_spread + 1e-9) and abs(L["p"] - target) <= within]
             return min(v, key=lambda L: abs(L["p"] - target) + (0 if L.get("sharp") else L["width"])) if v else None
         dog_ml = pick("ml", dog, within=0.5) if board["dogml"] else None
         if dog_ml and dog_ml["p"] < CFB_MIN_DOG:

@@ -7,6 +7,7 @@
   python3 scan_kalshi.py --json     # one JSON event per line (server.js: the Kalshi NBA board)
   python3 scan_kalshi.py --league nbaline   # a player's prop with a game line (nbaline_candidates)
   python3 scan_kalshi.py --league nba3      # Points + Threes alone (the Kalshi Pts + 3s board)
+  python3 scan_kalshi.py --league cfb       # college football: the Novig CFB board's slips (cfb_candidates)
 
 Two boards share these slips (Max, 11-18): --league nba3 asks 1 alone, --league nba asks 2 and T.
 What it asks, per player with open Kalshi props on a game that has not started:
@@ -44,6 +45,7 @@ create 5,000 new combos a week. So a pass asks at most --max slips (400 on the P
 """
 import argparse
 import base64
+import difflib
 import json
 import math
 import os
@@ -530,6 +532,112 @@ def cbb_candidates(a):
     return (out[:a.max] if a.max else out), {"generated_at": shapes["generated_at"]}
 
 
+CFB_SERIES = {"KXNCAAFGAME": "ml", "KXNCAAFSPREAD": "cover", "KXNCAAFTOTAL": "tot", "KXNCAAFTEAMTOTAL": "tt",
+              "KXNCAAF1HSPREAD": "h1cover", "KXNCAAF1HTOTAL": "h1tot"}
+CFB_MATCH = 0.6       # a Novig game is a Kalshi game when each of its teams matches at least this well (cfb_same)
+CFB_CLEAR = 0.1       # and no other Kalshi game that day comes within this, on the two teams' average
+
+
+def cfb_same(x, y, code):
+    """How alike two spellings of a college are, 0 to 1: 1 only for the same code, or the same
+    name once "St." and "NC" are written out. Anything short of that counts for less (x 0.8),
+    so "South Carolina St." never passes for "North Carolina State" (0.9 letter for letter)."""
+    if code:
+        return 1.0 if x.upper() == y.upper() else 0.8 * difflib.SequenceMatcher(None, x.upper(), y.upper()).ratio()
+    x, y = (" ".join({"nc": "north carolina", "miss": "mississippi"}.get(w, w) for w in _team(n).split()) for n in (x, y))
+    return 1.0 if x == y else 0.8 * difflib.SequenceMatcher(None, x, y).ratio()
+
+
+def cfb_candidates(a):
+    """College football (--league cfb): the Novig CFB board's slips (scan.cfb_candidates:
+    the underdog's moneyline with the Under, spread + total, team totals, the first half),
+    asked as Kalshi combos. The model, its r's and every leg's fair value are that board's:
+    Novig's own two-sided book on the line. A leg is only put on a line Kalshi lists too, so a
+    slip sits on the line nearest even money that both sites have. Kalshi lists "X wins",
+    "X wins by over 7.5", "Over 50.5" and "X over 24.5 points", for the game and for the first
+    half: a favourite's spread, an Over and a moneyline are Yes legs; the underdog's spread
+    is No on the favourite's "wins by over", an Under is No on the Over. A game is matched
+    by its day (the date in Kalshi's ticker, US Eastern) and both teams, by code or by name."""
+    games = {}   # Kalshi's game code -> its teams and every market by (kind, team code, line)
+    for series, kind in CFB_SERIES.items():
+        for m in _markets(series):
+            g = games.setdefault(m["event_ticker"].split("-", 1)[1], {"teams": {}, "mk": {}})
+            tail = m["ticker"].rsplit("-", 1)[-1]
+            row = {"ticker": m["ticker"], "event": m["event_ticker"]}
+            if kind == "ml":
+                g["teams"][tail] = m.get("yes_sub_title") or tail
+                g["mk"][(kind, tail, 0.0)] = row
+                continue
+            try:
+                line = float(m["floor_strike"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            g["mk"][(kind, None if kind.endswith("tot") else re.sub(r"\d+$", "", tail), line)] = row
+    kmap = {}    # a Novig outcome id -> the Kalshi leg that wins with it
+
+    def listed(name, ms):
+        away, _, home = name.partition(" @ ")
+        sub, full = {}, {}   # Novig's subject id -> the team's code, and its full name where a team total gives one
+        for m in ms:
+            if m["marketType"] in ("MONEY", "SPREAD"):
+                for o in m["outcomes"]:
+                    sub[o.get("subjectId")] = o["name"] if m["marketType"] == "MONEY" else o["name"].rpartition(" ")[0]
+            elif m["marketType"] == "TEAM_TOTAL":
+                full[m["outcomes"][0].get("subjectId")] = m["description"].rsplit(" ", 2)[0]
+        names = {t: [t] + [full[i] for i, c in sub.items() if c == t and i in full] for t in (away, home)}
+        # Kalshi's ticker dates a game by its US Eastern day: four or five hours behind UTC
+        days = {time.strftime("%y%b%d", time.gmtime(ms[0]["startsTs"] / 1000 - h * 3600)).upper() for h in (4, 5)}
+        found = []
+        for code, g in games.items():
+            if code[:7] not in days or len(g["teams"]) != 2:
+                continue
+            (k0, n0), (k1, n1) = g["teams"].items()
+            same = lambda t, k, n: max([cfb_same(t, k, True)] + [cfb_same(x, n, False) for x in names[t][1:]])   # noqa: E731
+            for x, y in ((away, home), (home, away)):
+                s0, s1 = same(x, k0, n0), same(y, k1, n1)
+                if min(s0, s1) >= CFB_MATCH:
+                    found.append(((s0 + s1) / 2, code, {x: k0, y: k1}))
+        found.sort(key=lambda f: -f[0])
+        if not found or any(f[1] != found[0][1] and f[0] > found[0][0] - CFB_CLEAR for f in found[1:]):
+            return None
+        _, code, abbr = found[0]
+        mk = games[code]["mk"]
+
+        def on(L):
+            if L["team"] is not None and L["team"] not in abbr:
+                return False
+            pre, team = "h1" if L["half"] else "", abbr.get(L["team"])
+            if L["stat"] == "ml":
+                k, yes = mk.get(("ml", team, 0.0)), True
+            elif L["stat"] == "cover":   # "X -7.5" is X wins by over 7.5; "X +7.5" is the other team not doing so
+                other = next(v for t, v in abbr.items() if t != L["team"])
+                k, yes = (mk.get((pre + "cover", team, -L["line"])), True) if L["line"] < 0 else (mk.get((pre + "cover", other, L["line"])), False)
+            elif L["stat"] == "tot":
+                k, yes = mk.get((pre + "tot", None, L["line"])), L["side"] == "over"
+            else:
+                k, yes = (None if L["half"] else mk.get(("tt", team, L["line"]))), L["side"] == "over"
+            if k:
+                kmap[L["id"]] = dict(k, yes=yes, code=code)
+            return bool(k)
+        return on
+    rows, _ = scan.cfb_candidates(argparse.Namespace(league="cfb", max_spread=a.max_spread, alts=False, max=0), listed)
+    out = []
+    for c in rows:
+        if a.before and c["starts"] >= a.before:
+            continue
+        legs = []
+        for L in c["legs"]:
+            k = kmap[L["id"]]
+            legs.append(dict(L, nv=L["id"], id=k["ticker"], event=k["event"], yes=k["yes"], src="novig"))
+        code = kmap[c["legs"][0]["id"]]["code"]
+        p = 1.0
+        for L in legs:
+            p *= L["p"]
+        out.append(dict(c, key=",".join(f"{L['id']}:{'yes' if L['yes'] else 'no'}" for L in legs), tier=1, id=code, team="CFB",
+                        legs=legs, book="kalshi", event=code, legs_x=1 / p))
+    return (out[:a.max] if a.max else out), {"generated_at": time.strftime("%Y-%m-%d", time.gmtime())}
+
+
 LINE_SERIES = {"KXNBASPREAD": "cover", "KXNBATOTAL": "tot", "KXNBATEAMTOTAL": "tt", "KXNBA1HSPREAD": "h1cover",
                "KXNBA1HTOTAL": "h1tot"}
 LINE_NOVIG = {"SPREAD": "cover", "TOTAL": "tot", "TEAM_TOTAL": "tt", "SPREAD_1H": "h1cover", "TOTAL_1H": "h1tot"}
@@ -774,7 +882,7 @@ def finish(c, yes, unit, kelly):
 def reprice(c, a):
     """Re-read a row's NBA or NFL legs off Kalshi's own book and rebuild its
     fair value at the same r (see requote). None, or why it can't be done."""
-    if a.league == "cbb":
+    if a.league in ("cbb", "cfb"):
         return None
     _, d = call("GET", "/markets", query={"tickers": ",".join(L["id"] for L in c["legs"]), "limit": 10}, signed=False)
     book = {m["ticker"]: m for m in d.get("markets") or []}
@@ -946,7 +1054,7 @@ def positions():
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--league", default="nba", choices=("nba", "nba3", "nbaline", "nfl", "cbb"))
+    ap.add_argument("--league", default="nba", choices=("nba", "nba3", "nbaline", "nfl", "cbb", "cfb"))
     ap.add_argument("--json", action="store_true", help="stream events as JSON lines (server.js)")
     ap.add_argument("--dry", action="store_true", help="list the slips, ask Kalshi for no price (no key needed)")
     ap.add_argument("--requote", action="store_true", help="re-ask the one slip given as JSON on stdin; print it as JSON")
@@ -1011,9 +1119,9 @@ def main():
         return
     if not a.dry:
         _signer()   # no key, or one that can't be read: say so before anything is fetched
-    cands, d = nfl_candidates(a) if a.league == "nfl" else cbb_candidates(a) if a.league == "cbb" else nbaline_candidates(a) if a.league == "nbaline" else candidates(a)
+    cands, d = nfl_candidates(a) if a.league == "nfl" else cbb_candidates(a) if a.league == "cbb" else cfb_candidates(a) if a.league == "cfb" else nbaline_candidates(a) if a.league == "nbaline" else candidates(a)
     # Each row links to its game's page on Kalshi, where the combo is built (no link fills the slip in).
-    game = {"nba": "kxnbagame", "nba3": "kxnbagame", "nbaline": "kxnbagame", "nfl": "kxnflgame", "cbb": "kxncaambgame"}[a.league]
+    game = {"nba": "kxnbagame", "nba3": "kxnbagame", "nbaline": "kxnbagame", "nfl": "kxnflgame", "cbb": "kxncaambgame", "cfb": "kxncaafgame"}[a.league]
     for c in cands:
         c["url"] = f"https://kalshi.com/markets/{game}/game/{game}-{c['event'].lower()}"
     emit({"type": "start", "total": len(cands), "players": len({c["id"] for c in cands}), "league": "kalshi" + a.league,

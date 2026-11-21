@@ -2,6 +2,19 @@
 
 ## 2026-11-20 session
 
+### Kalshi CFB: a new board on the Kalshi page
+Max, 11-20: can you add CFB to Kalshi.
+
+- **New tab** (Kalshi CFB, after Kalshi CBB; `kalshicfb` in `server.js` and `public/nba_scan.html`, `--league cfb` in `scan_kalshi.py`): the CFB tab's slips asked as Kalshi combos. Fetch only, behind the Kalshi passcode, with the Bet button, like the other Kalshi boards.
+- **The slips** are the Novig CFB board's, up to ten a game: underdog's moneyline + Under (main line and the Under nearest +230), those with the underdog's team total Over, favourite's spread + Over, underdog's spread + Under, underdog's spread + his team total Under, favourite's team total Under + Under, both team totals Under, favourite's first-half spread + his spread, first-half Under + Under. Kalshi lists all of these for college football (winner, spread, total, team total, first-half spread and total).
+- **Fair value** is the CFB tab's: each leg is Novig's own book on that line, the correlation from the same two-score model (`scan.cfb_candidates`, now called with a test for which lines may be used). A leg is only put on a line Kalshi lists too, so a slip sits on the line nearest even money that both have (Kalshi's are all half points). Kalshi's own books are not used for fair value. They could be on game day: on tonight's lines near even money for Saturday's games the median Kalshi book is 1 cent wide and 84% are inside 5 cents (next week's are 10 to 30 cents).
+- **Yes and No**: a favourite's spread, an Over, a moneyline are Yes legs; the underdog's spread is No on the favourite's "wins by over", an Under is No on the Over.
+- **Matching a game**: by the day in Kalshi's ticker and both teams, by code or by name; a look-alike counts for less than an exact code or name ("South Carolina St." scored 0.9 against "North Carolina State" letter for letter), and a game is left out when a second Kalshi game comes close. Kalshi's start times were not usable (off from Novig's by anything from 4.5 hours early to 6 hours late).
+- **Tonight**, built from the live books: 536 slips on 59 games, every game on the Novig CFB board matched to its Kalshi game, all 59 read through by eye. A pass asks 200 slips, soonest games first (about 15 minutes); `--max 0` asks all.
+- **Refresh and Bet** on a row ask Kalshi again at the fair value from the last Fetch, as on Kalshi CBB (the legs are priced off Novig and are not re-read): press Fetch before betting.
+- **Checked**: the lint, `node --check server.js`, the page's script parses. The page opened in a browser against a local server on the new tab, with Kalshi's answers replaced by made-up prices (66 rows; the kind filter, the open row, the Novig price beside each row, no script errors). That pass asked Novig for a real quote on each of those 66 slips.
+- **Not checked**: anything that needs the Kalshi key (there is none here). No slip has been asked of Kalshi, so it is not known that Kalshi will combine every pairing (two legs on one team's total and the spread, or a first-half leg with a game leg, may be refused; a refused slip shows as a miss with Kalshi's reason), or what its makers pay. The Bet button has not been pressed on this board.
+
 ### Kalshi NBA Lines, Kalshi CBB: a card is headed by its best row
 Max, 11-20: why is this one hidden under the bad one (Naz Reid 30+ PRA · CHA +7.5 at +3.5%, folded under his -3.0% row).
 
