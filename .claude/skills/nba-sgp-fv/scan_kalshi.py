@@ -94,6 +94,9 @@ PACE_S = 1.0          # between two slips
 REFUSED_AFTER = 3     # this many 401 / 403 answers with no price at all: stop
 
 
+SEEN = {}             # what the NBA props boards read, for the reason an empty pass gives
+
+
 class Refused(Exception):
     """Kalshi answered a signed call with 401 or 403."""
 
@@ -186,7 +189,9 @@ def kalshi_props(before=None, series=SERIES):
             q = {"series_ticker": series, "status": "open", "limit": 1000}
             if cursor:
                 q["cursor"] = cursor
-            _, d = call("GET", "/markets", query=q, signed=False)
+            st, d = call("GET", "/markets", query=q, signed=False)
+            if st != 200:   # an unread series used to pass as "no props": the board came back empty with no reason
+                raise SystemExit(f"Kalshi's {series} markets could not be read: {st} {d.get('code') or d.get('message') or ''}".strip())
             for m in d.get("markets") or []:
                 try:
                     starts = time.mktime(time.strptime(m["occurrence_datetime"][:19], "%Y-%m-%dT%H:%M:%S")) - time.timezone
@@ -579,6 +584,7 @@ def candidates(a):
     key = {novig.norm(n): p for n, p in by.items()}
     board = kalshi_props(a.before)
     markets = novig.fetch()
+    SEEN.update(kalshi=len(board), known=sum(1 for nm in board if nm in key), novig=len(markets))
     out, teams = [], {}
     for nm, info in board.items():
         p = key.get(nm)
@@ -700,7 +706,9 @@ def _markets(series):
         q = {"series_ticker": series, "status": "open", "limit": 1000}
         if cursor:
             q["cursor"] = cursor
-        _, d = call("GET", "/markets", query=q, signed=False)
+        st, d = call("GET", "/markets", query=q, signed=False)
+        if st != 200:
+            raise SystemExit(f"Kalshi's {series} markets could not be read: {st} {d.get('code') or d.get('message') or ''}".strip())
         out += d.get("markets") or []
         cursor = d.get("cursor")
         if not cursor or not d.get("markets"):
@@ -1422,6 +1430,10 @@ def main():
     game = {"nba": "kxnbagame", "nba3": "kxnbagame", "nbatri": "kxnbagame", "nbaline": "kxnbagame", "nfl": "kxnflgame", "nflline": "kxnflgame", "cbb": "kxncaambgame", "cfb": "kxncaafgame"}[a.league]
     for c in cands:
         c["url"] = f"https://kalshi.com/markets/{game}/game/{game}-{c['event'].lower()}"
+    if not cands and SEEN and not a.dry:
+        # Its own line on stderr: server.js shows it as the board's error, in place of an empty board with no reason.
+        raise SystemExit(f"No slip to ask: Kalshi lists open props on {SEEN['kalshi']} players in games that have not started "
+                         f"({SEEN['known']} of them in the data), and Novig lists {SEEN['novig']} NBA prop markets.")
     emit({"type": "start", "total": len(cands), "players": len({c["id"] for c in cands}), "league": "kalshi" + a.league,
           "data": d["generated_at"][:10], "at": t0})
     if a.dry:

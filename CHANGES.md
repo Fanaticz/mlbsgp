@@ -2,6 +2,14 @@
 
 ## 2026-11-21 session
 
+### Kalshi boards: an empty pass says why
+Max, 11-21 (screenshot, 12:33 PM: Kalshi Pts + 3s, "Saved from 12:33 PM · 0 combos", "Nothing to price right now"): why not working.
+
+- **What the screenshot shows**: the pass ended normally having found no slip to ask. Run here at 12:35 PM, the same code built 89 slips for that board (66 on Kalshi NBA 3-Leg, 102 on Kalshi NBA), so the lists the server read from Kalshi or Novig came back empty there. Which one, and why, is not known: the script did not keep the reason.
+- **Cause of the silence** (`kalshi_props`, `_markets` in `scan_kalshi.py`): a markets read that Kalshi answered with an error (a 429 after six tries, or no connection) was taken as "no markets", so the board came back empty with the Novig tab's "no player has two Novig books tight enough".
+- **Change**: a failed read of a Kalshi series stops the pass with Kalshi's answer, shown on the page as "Scan failed: ...". An NBA props pass that reads everything and still has no slip stops with the counts: players with open Kalshi props, how many are in the data, and Novig's prop markets.
+- **Checked**: dry runs of Kalshi Pts + 3s, NBA 3-Leg and NBA Lines on the live books; a run against a wrong Kalshi address stops with the reason. Not run on the server.
+
 ### Kalshi NBA 3-Leg: a new board for three legs on the high scorers
 Max, 11-21: can we add 3 leg NBA for high usage guys where everything correlates, like Wemby and Luka; for Kalshi.
 
