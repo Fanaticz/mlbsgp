@@ -1,5 +1,17 @@
 # Changes
 
+## 2026-11-21 session
+
+### Tennis scan: Pinnacle is the sharp price
+Max, 11-21: for tennis, use pinny as sharp.
+
+- **Change** (`tennis.py` in the novig-tennis-scan skill; new `pinnacle.tennis()`): every leg's fair value is Pinnacle's no-vig price: the moneyline from its match, the total and game spread from its "(Games)" child match, half-game lines only. Novig's own books are no longer read for a fair value, and a Novig market needs no book to be asked. A match Pinnacle doesn't list, or a line it doesn't price, is left out and named.
+- **The fit is per slip**: the model is fitted to Pinnacle's moneyline and to the slip's own total and spread, where before it was fitted once at the match's main lines and read off for the others. The model now only says how the two legs go together.
+- **Pairing a match with Pinnacle's**: both players by first initial and surname, starts within six hours (tennis start times drift), and where Novig has a moneyline book, Pinnacle's price within 8 points of it.
+- **This morning** (7:03 AM CT): 14 of Novig's 31 singles matches are on Pinnacle; the 17 left out are qualifying rounds. 82 slips priced, one above fair: Alcaraz v Shelton, Shelton +3.5 games + Over 22.5 at 2.55x against a fair +128, +11.9%. Median -9.4%.
+- **Alcaraz -3.5 + Under 22.5** (Max's slip at 7:00, 2.80x in the app): fair +151 on Pinnacle's prices (+148 on Novig's books a few minutes earlier). The scan's own ask of it at 7:04 came back 2.32x, -7.7%.
+- **Checked**: the lint; every match's pairing read by eye; the pass above. The results check (`tennis_model_check.json`) is unchanged and still feeds the cut.
+
 ## 2026-11-20 session
 
 ### Kalshi NFL: Unders, QB + teammate stacks, and a new Kalshi NFL Lines board

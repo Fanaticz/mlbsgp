@@ -98,6 +98,55 @@ def board():
     return [g for g in games.values() if g["ml"]]
 
 
+TENNIS = 33
+
+
+def tennis():
+    """Every pregame tennis match, with each two-way price's no-vig value:
+    [{home, away, start (epoch s), league, ml: {home / away: (fair, price)},
+    totals: {games line: {over / under: (fair, price)}}, spreads: {home's
+    games handicap: {home / away: (fair, price)}}}]. Pinnacle keeps the
+    moneyline on the match and the games lines on a child match ("(Games)").
+    Half-game lines only: a whole line can push. Two calls."""
+    games, kids = {}, {}
+    for m in get(f"/sports/{TENNIS}/matchups?withSpecials=false&brandId=0"):
+        if m.get("type") != "matchup" or m.get("isLive"):
+            continue
+        if m.get("parentId"):
+            if m.get("units") == "Games":
+                kids[m["id"]] = m["parentId"]
+            continue
+        ps = {x.get("alignment"): x.get("name") for x in m.get("participants", [])}
+        if not ps.get("home") or not ps.get("away"):
+            continue
+        try:
+            start = time.mktime(time.strptime(m["startTime"][:19], "%Y-%m-%dT%H:%M:%S")) - time.timezone
+        except Exception:
+            continue
+        games[m["id"]] = {"home": ps["home"], "away": ps["away"], "start": start, "league": (m.get("league") or {}).get("name", ""),
+                          "ml": {}, "totals": {}, "spreads": {}}
+    for mk in get(f"/sports/{TENNIS}/markets/straight?primaryOnly=false&withSpecials=false"):
+        if mk.get("period") != 0 or mk.get("status", "open") != "open":
+            continue
+        mid, prices, kind = mk.get("matchupId"), mk.get("prices") or [], mk.get("type")
+        if len(prices) != 2 or not all(isinstance(x.get("price"), (int, float)) for x in prices):
+            continue
+        a, b = prices
+        fa, fb = sgp.devig_worst(implied(a["price"]), implied(b["price"]))
+        pair = {a.get("designation"): (fa, int(a["price"])), b.get("designation"): (fb, int(b["price"]))}
+        if mid in games and kind == "moneyline" and set(pair) == {"home", "away"}:
+            games[mid]["ml"] = pair
+        elif kids.get(mid) in games and kind == "total" and set(pair) == {"over", "under"}:
+            line = a.get("points")
+            if line is not None and float(line) % 1 == 0.5:
+                games[kids[mid]]["totals"][float(line)] = pair
+        elif kids.get(mid) in games and kind == "spread" and set(pair) == {"home", "away"}:
+            line = next((x.get("points") for x in prices if x.get("designation") == "home"), None)
+            if line is not None and float(line) % 1 == 0.5:
+                games[kids[mid]]["spreads"][float(line)] = pair
+    return [g for g in games.values() if g["ml"]]
+
+
 COLLEGE = {"NCAAB": 493, "NCAAF": 880, "NBA": 487}   # Pinnacle's league ids (the NBA Team board reads its team totals the same way)
 
 

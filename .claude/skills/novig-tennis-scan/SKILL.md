@@ -1,6 +1,6 @@
 ---
 name: novig-tennis-scan
-description: Scan Novig's tennis matches for +EV same-match parlays of the game spread with the total games (and the moneyline with the total), priced against a tennis score model fitted to Novig's own lines. Triggers on "tennis plays", "scan tennis", "any tennis on Novig", "check tennis".
+description: Scan Novig's tennis matches for +EV same-match parlays of the game spread with the total games (and the moneyline with the total), priced against a tennis score model fitted to Pinnacle's no-vig lines. Triggers on "tennis plays", "scan tennis", "any tennis on Novig", "check tennis".
 ---
 
 # Novig tennis scan
@@ -14,11 +14,16 @@ quote and prints rows.
     python3 .claude/skills/novig-tennis-scan/tennis.py Alcaraz      # one match
     python3 .claude/skills/novig-tennis-scan/tennis.py --all        # every row, not only above fair
 
-About two minutes for a dozen matches. It reads Novig's catalog, fits the
-model to each best-of-three singles match with tight books (4c or inside) on
-the moneyline, a total and a game spread, asks the four main-line slips of
-each match once, then the lines one either side for any match with a slip at
--3% or better (`--grid-ev`).
+About three minutes for a dozen matches. Every leg's fair value is
+Pinnacle's no-vig price (Max, 11-21: Pinnacle is the sharp price for tennis;
+`pinnacle.tennis()` in the nba-sgp-fv skill, two calls). Novig's own books
+are not read for a fair value and a market needs no book on Novig. The
+script pairs each Novig match with Pinnacle's by the players' names, fits
+the model to Pinnacle's moneyline and the slip's own total and game spread,
+asks the four main-line slips of each match once, then the lines one either
+side for any match with a slip at -3% or better (`--grid-ev`). A match
+Pinnacle doesn't list (most qualifying rounds) or a line it doesn't price is
+left out, and the script says which.
 
 ## What it asks
 
@@ -42,7 +47,7 @@ and UFC (moneyline + goes the distance pays less than Pinnacle's straight
 
 ## Reading a row
 
-Fair is the careful end of the model's range and "to" the other end; EV, QK
+The Pinnacle column is its price on each leg. Fair is the careful end of the model's range and "to" the other end; EV, QK
 and Wager are on the careful end. QK is quarter Kelly, $250 a unit.
 
 Before calling a row a play:

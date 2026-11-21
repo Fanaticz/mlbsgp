@@ -19,9 +19,13 @@ with his own fixed chance, which gives the exact chance of every score. The
 gap between the two players' serve levels varies match to match (normal, sd
 sigma: "day form"), which is what makes sets go the same way more often than
 fixed chances allow; without it the model has far too many three-setters.
-Three numbers (serve level, mean gap, sigma) are fitted to three Novig prices:
-the moneyline, the main total and the main game spread. Fitted that way it
-gave Novig's other lines and its set markets within a point or two (11-20).
+Three numbers (serve level, mean gap, sigma) are fitted to three of
+Pinnacle's no-vig prices (pinnacle.py; Max, 11-21: Pinnacle is the sharp
+price, Novig's own books are not read for a fair value): the moneyline and
+the slip's own total and game spread. A match Pinnacle doesn't list, or a
+line it doesn't price, is not asked. Fitted to Novig's lines the same way,
+the model gave Novig's other lines and its set markets within a point or two
+(11-20).
 Fair value is the lowest joint over the sigmas that fit about as well as the
 best, so it is the careful end; "to" shows the other end.
 
@@ -42,6 +46,7 @@ where one of those came back at --grid-ev or better.
 """
 import argparse
 import collections
+import difflib
 import functools
 import json
 import math
@@ -56,8 +61,8 @@ import concurrent.futures
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "nba-sgp-fv"))
 import novig  # noqa: E402  catalog, parlay, slip_multiplier, american
+import pinnacle  # noqa: E402  tennis
 
-MAX_SPREAD = 0.04       # widest Novig book a leg's fair value is read from
 STEP = 0.004            # grid of serve levels and gaps the match tables are built on
 SIGMAS = (0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08)
 FIT_SLACK = 0.008       # a sigma counts as fitting if its miss is within this of the best one's
@@ -204,28 +209,41 @@ def events():
     return out
 
 
-def book(m):
-    """A two-way market as {name: (outcome id, fair chance)} plus its width, or None."""
+def who(name):
+    """A player's name as (first initial, the rest): Novig's "C. Alcaraz" and
+    Pinnacle's "Carlos Alcaraz" both give ("c", "alcaraz")."""
+    parts = name.replace("-", " ").split()
+    return (novig.norm(parts[0])[:1], novig.norm(" ".join(parts[1:]))) if len(parts) > 1 else ("", novig.norm(name))
+
+
+def same(a, b):
+    (ia, ra), (ib, rb) = who(a), who(b)
+    if not ra or not rb or (ia and ib and ia != ib):
+        return False
+    return ra == rb or ra in rb or rb in ra or difflib.SequenceMatcher(None, ra, rb).ratio() >= 0.85
+
+
+def mid(m, i):
+    """The middle of Novig's own book on outcome i, or None: only a check
+    that Pinnacle's match is the same match."""
     a, b = m["outcomes"]
     if not (a.get("bid") and b.get("bid")):
         return None
     pa, pb = float(a["bid"]["price"]), float(b["bid"]["price"])
-    w = 1 - pa - pb
-    if not 0 <= w <= MAX_SPREAD + 1e-9:
-        return None
-    return {"width": w, a["name"]: (a["outcomeId"], pa + w / 2), b["name"]: (b["outcomeId"], pb + w / 2)}
+    return (pa, pb)[i] + (1 - pa - pb) / 2
 
 
 def matches(want):
-    """Every open singles match with a tight moneyline, total and game spread:
-    its names, lines and fitted tables."""
+    """Every open singles match Pinnacle prices: Novig's outcome ids, and
+    Pinnacle's no-vig price for each leg (Max, 11-21: Pinnacle is the sharp
+    price for tennis; Novig's own books are not read for a fair value, and a
+    market needs no book on Novig to be asked)."""
     ev = events()
+    pin = pinnacle.tennis()
     by = collections.defaultdict(lambda: collections.defaultdict(list))
     for m in novig.catalog({"eventStatus": "OPEN_PREGAME", "marketType": "MONEY,SPREAD,TOTAL"}):
         if m["eventId"] in ev and len(m["outcomes"]) == 2:
-            b = book(m)
-            if b:
-                by[m["eventId"]][m["marketType"]].append(b)
+            by[m["eventId"]][m["marketType"]].append(m)
     out, skipped = [], []
     for eid, T in by.items():
         e = ev[eid]
@@ -233,64 +251,96 @@ def matches(want):
             continue   # doubles, or about to start
         if want and want.lower() not in e["description"].lower():
             continue
-        if not (T["MONEY"] and T["TOTAL"] and T["SPREAD"]):
-            skipped.append(e["description"])
+        if not T["MONEY"]:
             continue
-        ml = {k: v for k, v in T["MONEY"][0].items() if k != "width"}
+        m0 = T["MONEY"][0]
+        names = [o["name"] for o in m0["outcomes"]]
+        g, side = None, None
+        for x in pin:   # same two players, within six hours: tennis start times are loose
+            if abs(x["start"] - e["startsTs"] / 1000) > 6 * 3600:
+                continue
+            for h, a in ((0, 1), (1, 0)):
+                if same(names[h], x["home"]) and same(names[a], x["away"]):
+                    g, side = x, {names[h]: "home", names[a]: "away"}
+        if not g:
+            skipped.append(e["description"] + " (not on Pinnacle)")
+            continue
+        own = mid(m0, 0)
+        if own is not None and abs(own - g["ml"][side[names[0]]][0]) > 0.08:
+            skipped.append(e["description"] + " (Pinnacle's moneyline is not near Novig's: not taken as the same match)")
+            continue
+        ml = {n: (o["outcomeId"], g["ml"][side[n]][0], g["ml"][side[n]][1]) for n, o in zip(names, m0["outcomes"])}
         fav = max(ml, key=lambda k: ml[k][1])
         dog = next(k for k in ml if k != fav)
-        totals = {float(k.split()[1]): {"over" if k.startswith("Over") else "under": v for k, v in b.items() if k != "width"}
-                  for b in T["TOTAL"] for k in b if k.startswith("Over")}
-        for b in T["TOTAL"]:
-            for k, v in b.items():
-                if k.startswith("Under"):
-                    totals[float(k.split()[1])]["under"] = v
-        spreads = {}   # the favourite's line as games he must win by -> {"fav": .., "dog": ..}
-        for b in T["SPREAD"]:
-            f = next((k for k in b if k.startswith(fav + " ")), None)
-            d = next((k for k in b if k.startswith(dog + " ")), None)
-            if f and d:
-                spreads[-float(f.rsplit(" ", 1)[1])] = {"fav": b[f], "dog": b[d]}
+        totals = {}
+        for m in T["TOTAL"]:
+            line = float(m["strike"])
+            if line in g["totals"]:
+                totals[line] = {("over" if o["name"].startswith("Over") else "under"):
+                                (o["outcomeId"],) + g["totals"][line]["over" if o["name"].startswith("Over") else "under"] for o in m["outcomes"]}
+        spreads = {}   # games the favourite must win by -> {"fav": (id, fair, price), "dog": ...}
+        for m in T["SPREAD"]:
+            got = {}
+            for o in m["outcomes"]:
+                who_, pts = o["name"].rsplit(" ", 1)
+                if who_ in side:
+                    got[who_] = (o["outcomeId"], float(pts))
+            if fav not in got or dog not in got:
+                continue
+            hp = got[fav][1] if side[fav] == "home" else -got[fav][1]   # the home player's handicap on Pinnacle
+            if hp in g["spreads"]:
+                spreads[-got[fav][1]] = {"fav": (got[fav][0],) + g["spreads"][hp][side[fav]], "dog": (got[dog][0],) + g["spreads"][hp][side[dog]]}
+        totals = {k: v for k, v in totals.items() if len(v) == 2}
         if not totals or not spreads:
-            skipped.append(e["description"])
+            skipped.append(e["description"] + " (no games line that both Novig lists and Pinnacle prices)")
             continue
         tl = min(totals, key=lambda t: abs(totals[t]["over"][1] - 0.5))
         sl = min(spreads, key=lambda s: abs(spreads[s]["fav"][1] - 0.5))
         if tl > 29.5:
             skipped.append(e["description"] + " (best of five: not modelled)")
             continue
-        fits = fit(ml[fav][1], tl, totals[tl]["over"][1], sl, spreads[sl]["fav"][1])
-        keep = [f for f in fits if f[0] <= fits[0][0] + FIT_SLACK]
         out.append({"id": eid, "league": e["league"], "starts": e["startsTs"], "fav": fav, "dog": dog, "ml": ml,
-                    "totals": totals, "spreads": spreads, "tl": tl, "sl": sl, "tables": [f[3] for f in keep],
-                    "miss": fits[0][0], "sigma": fits[0][1], "serve": fits[0][2]})
+                    "totals": totals, "spreads": spreads, "tl": tl, "sl": sl, "fits": {}, "pinnacle": f"{g['home']} v {g['away']}, {g['league']}"})
     return sorted(out, key=lambda g: g["starts"]), skipped
+
+
+def tables(g, tl, sl):
+    """The match's score tables fitted to Pinnacle's moneyline and to its
+    prices on this total and this spread: a slip is priced from a fit to
+    its own two lines, so the model's shape matters only for how the legs
+    go together, not for where each leg sits."""
+    if (tl, sl) not in g["fits"]:
+        fits = fit(g["ml"][g["fav"]][1], tl, g["totals"][tl]["over"][1], sl, g["spreads"][sl]["fav"][1])
+        g["fits"][(tl, sl)] = ([f[3] for f in fits if f[0] <= fits[0][0] + FIT_SLACK], fits[0][0])
+    return g["fits"][(tl, sl)]
 
 
 def slips(g, sls, tls, ml=True):
     """The candidate slips of a match on these spread and total lines."""
     out = []
     for tl in tls:
-        if tl not in g["totals"] or "under" not in g["totals"][tl]:
+        if tl not in g["totals"]:
             continue
         over, under = g["totals"][tl]["over"], g["totals"][tl]["under"]
         for sl in sls:
             if sl not in g["spreads"]:
                 continue
-            out.append(("dog_games_over", f"{g['dog']} {sl:+g} games + Over {tl}", [g["spreads"][sl]["dog"], over],
+            out.append(("dog_games_over", f"{g['dog']} {sl:+g} games + Over {tl}", [g["spreads"][sl]["dog"], over], (tl, sl),
                         lambda w, n, a, b, sl=sl, tl=tl: a - b < sl and a + b > tl))
-            out.append(("fav_games_under", f"{g['fav']} {-sl:+g} games + Under {tl}", [g["spreads"][sl]["fav"], under],
+            out.append(("fav_games_under", f"{g['fav']} {-sl:+g} games + Under {tl}", [g["spreads"][sl]["fav"], under], (tl, sl),
                         lambda w, n, a, b, sl=sl, tl=tl: a - b > sl and a + b < tl))
         if ml:
-            out.append(("fav_ml_under", f"{g['fav']} ML + Under {tl}", [g["ml"][g["fav"]], under], lambda w, n, a, b, tl=tl: w and a + b < tl))
-            out.append(("dog_ml_over", f"{g['dog']} ML + Over {tl}", [g["ml"][g["dog"]], over], lambda w, n, a, b, tl=tl: (not w) and a + b > tl))
+            out.append(("fav_ml_under", f"{g['fav']} ML + Under {tl}", [g["ml"][g["fav"]], under], (tl, g["sl"]), lambda w, n, a, b, tl=tl: w and a + b < tl))
+            out.append(("dog_ml_over", f"{g['dog']} ML + Over {tl}", [g["ml"][g["dog"]], over], (tl, g["sl"]), lambda w, n, a, b, tl=tl: (not w) and a + b > tl))
     rows = []
-    for shape, label, legs, f in out:
+    for shape, label, legs, at, f in out:
+        ts, miss = tables(g, *at)
         cut = trim(shape, g["ml"][g["fav"]][1])
-        fs = [P(d, f) / (1 + cut) for d in g["tables"]]
+        fs = [P(d, f) / (1 + cut) for d in ts]
         rows.append({"match": f"{g['fav']} v {g['dog']}", "league": g["league"], "starts": g["starts"], "event": g["id"],
-                     "label": label, "ids": [x[0] for x in legs], "leg_fair": [round(x[1], 4) for x in legs],
-                     "shape": shape, "trim": cut, "fair": min(fs), "fair_hi": max(fs)})
+                     "label": label, "ids": [x[0] for x in legs], "leg_fair": [round(x[1], 4) for x in legs], "pinnacle": [x[2] for x in legs],
+                     "shape": shape, "trim": cut, "fit_miss": round(miss, 4), "fair": min(min(fs), min(x[1] for x in legs)),
+                     "fair_hi": min(max(fs), min(x[1] for x in legs))})
     return rows
 
 
@@ -305,8 +355,10 @@ def main():
     a = ap.parse_args()
     games, skipped = matches(a.name)
     say = (lambda *x: print(*x, file=sys.stderr)) if a.json else print
-    say(f"Novig tennis · {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime())} · {len(games)} matches with tight books"
-        + (f" · {len(skipped)} without" if skipped else ""))
+    say(f"Novig tennis · {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime())} · {len(games)} matches priced by Pinnacle"
+        + (f" · {len(skipped)} left out" if skipped else ""))
+    for x in skipped:
+        say("  left out: " + x)
     lock, last = threading.Lock(), [0.0]
 
     def ask(r):
@@ -347,10 +399,10 @@ def main():
     say(f"{len(priced)} slips priced ({len(rows) - len(priced)} with no quote), {sum(1 for r in priced if r['ev'] > 0)} above fair"
         + (f", median {evs[len(evs) // 2]:+.1%}" if evs else ""))
     if show:
-        print("| Match | Starts (UTC) | Legs | Fair | to | Novig | EV | to | QK | Wager |")
-        print("|---|---|---|---|---|---|---|---|---|---|")
+        print("| Match | Starts (UTC) | Legs | Pinnacle | Fair | to | Novig | EV | to | QK | Wager |")
+        print("|---|---|---|---|---|---|---|---|---|---|---|")
     for r in show:
-        print(f"| {r['match']} {r['league']} | {time.strftime('%m-%d %H:%M', time.gmtime(r['starts'] / 1000))} | {r['label']} | "
+        print(f"| {r['match']} {r['league']} | {time.strftime('%m-%d %H:%M', time.gmtime(r['starts'] / 1000))} | {r['label']} | {' / '.join(f'{x:+d}' for x in r['pinnacle'])} | "
               f"{novig.american(r['fair']):+d} | {novig.american(r['fair_hi']):+d} | {r['slip_x']:.2f}x | {r['ev']:+.1%} | {r['ev_hi']:+.1%} | "
               f"{r['qk']:.2f}u | ${r['wager']:.0f} |")
     for r in show:
