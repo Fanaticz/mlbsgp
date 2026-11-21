@@ -664,6 +664,10 @@ function render() {
   } else {
     st.textContent = S.busy ? `A ${BOARD[S.busy] || S.busy} pass is running. Wait for it, or stop it and fetch this board.` : "Press Fetch to scan.";
   }
+  // Slips the pass asked and got no price for, by the reason given: a board of misses is not an empty slate.
+  const whys = !ALL() && S.why ? Object.entries(S.why).sort((a, b) => b[1] - a[1]) : [];
+  if (whys.length && !S.error) st.appendChild(Object.assign(document.createElement("div"),
+    { textContent: `No price for ${whys.reduce((t, w) => t + w[1], 0)} of ${S.done} asked: ` + whys.slice(0, 3).map(w => `${w[1]} × ${w[0]}`).join(" · ") }));
   if (S.events && S.events.length && (S.scanning || S.finished || S.stopped)) st.appendChild(Object.assign(document.createElement("div"),
     { textContent: `Last pass: ${S.events.length === 1 ? "one game" : S.events.length + " games"} only. Other games’ rows are from earlier passes (see Age).` }));
   else if (S.before && (S.scanning || S.finished || S.stopped)) st.appendChild(Object.assign(document.createElement("div"),
@@ -692,6 +696,7 @@ function render() {
       !all.length ? (S.scanning ? (KALSHI(LEAGUE) ? "Pricing the slate. Rows appear as Kalshi answers." : "Pricing the slate. Rows appear as Novig answers (about one a second).") :
         !S.finished ? "Nothing fetched yet. Press <b>Fetch</b> to price the slate." :
         started ? "Every game on this board has started. Press <b>Fetch</b> to price the next slate." :
+        KALSHI(LEAGUE) && S.done ? `Kalshi gave no price for any of the ${S.done} slips asked. The reasons are in the line at the top.` :
         LEAGUE === "cfb" ? "No open game has tight two-sided books on its lines right now. Saturday’s slate fills in through the week." :
         LEAGUE === "cbb" ? `No open game has tight two-sided books on both its spread and its total right now.${S.wide ? "" : " Tick <b>Wide books</b> for rough numbers."}` :
         LEAGUE === "nbateam" ? `No open game has a tight spread book and a player whose prop goes with it strongly enough right now.${S.wide ? "" : " Tick <b>Wide books</b> for rough numbers."}` :

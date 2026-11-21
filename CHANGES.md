@@ -2,6 +2,14 @@
 
 ## 2026-11-21 session
 
+### Kalshi boards: slips that got no price are counted, with the reason
+Max, 11-21: am I out of scans???
+
+- **Not known from here**: there is no Kalshi key in this session, so the account's use of its 5,000 new combos a week can't be read, and the script still does not count them.
+- **Cause of not being able to tell** (`startNovigScan` in `server.js`): a slip Kalshi gave no price for was dropped along with Kalshi's reason, so a pass where every ask failed looked like an empty slate.
+- **Change**: the server counts each pass's misses by reason and the page prints them under the status line ("No price for 91 of 91 asked: 91 × ..."), the three most common. A Kalshi board where every slip missed says so in place of "no player has two Novig books tight enough". A used-up weekly limit, a refused request for quote, a combination Kalshi won't make and "no maker answered" each read differently there.
+- **Checked**: `node --check server.js`; the page's script parses. Not opened in a browser, not run against Kalshi.
+
 ### NBA boards empty: today's data refresh wrote a file with no players
 Max, 11-21 (screenshot, 12:33 PM: Kalshi Pts + 3s, "Saved from 12:33 PM · 0 combos", "Nothing to price right now"): why not working.
 

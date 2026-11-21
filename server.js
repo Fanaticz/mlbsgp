@@ -2634,7 +2634,7 @@ function startNovigScan(league, wide, events, auto, before, full) {
     return;
   }
   let live = true;   // false once the pass has ended or been stopped
-  Object.assign(B, { started: Date.now(), total: 0, done: 0, error: null, stopped: 0, seen: new Set(), events, before: before || 0 });
+  Object.assign(B, { started: Date.now(), total: 0, done: 0, error: null, stopped: 0, seen: new Set(), events, before: before || 0, why: {} });
   // A Kalshi board starts each pass empty (Max, 11-20): only what this
   // Fetch priced is on it. A pass stopped part-way keeps the rows it reached.
   if (onKalshi) B.rows.clear();
@@ -2645,7 +2645,8 @@ function startNovigScan(league, wide, events, auto, before, full) {
     if (e.type === 'start') { B.total = e.total; B.players = e.players; B.data = e.data; B.books = e.books || null; }
     else if (e.type === 'more') { B.total += e.add; if (e.players) B.players = e.players; }
     else if (e.type === 'row') { B.done++; B.seen.add(e.key); B.rows.set(e.key, e); nvAlert(league, wide, e); }
-    else if (e.type === 'miss') { B.done++; B.rows.delete(e.key); }
+    // why a slip got no price, counted for the page (Max, 11-21: am I out of scans?)
+    else if (e.type === 'miss') { B.done++; B.rows.delete(e.key); const w = String(e.why || 'no reason given').slice(0, 120); B.why = B.why || {}; B.why[w] = (B.why[w] || 0) + 1; }
     else if (e.type === 'done') { ok = true; B.seconds = e.seconds; }
   };
   proc.stdout.on('data', chunk => {
@@ -2975,7 +2976,7 @@ app.get('/api/nba/novig-scan', (req, res) => {
     now, league, wide, scanning: mine, busy: RUN && !mine ? busyName() : null,
     started: B.started, finished: B.finished, stopped: B.stopped || 0, total: B.total, done: B.done, players: B.players, data: B.data,
     seconds: B.seconds, error: B.error, books: B.books || null, events: B.events || [], before: B.before || 0, rows: shown,
-    out: B.rows.size - shown.length, cycle: nvCycleState(),
+    out: B.rows.size - shown.length, cycle: nvCycleState(), why: B.why || {},
   });
 });
 // The boards the All tab gathers (the hidden NHL boards are left out).
