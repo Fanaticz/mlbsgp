@@ -22,7 +22,8 @@ player, ranked by EV at what Novig's slip pays.
   python3 scan.py --json          # one JSON object per line as quotes land
                                   # (server.js reads this for the Scanner page)
 
-Fair value: each leg is Novig's own exchange book at that line, devigged
+Fair value (NBA: where Kalshi lists the same line, the tighter of the two
+exchanges' books, as on the Kalshi boards: two_books): each leg is Novig's own exchange book at that line, devigged
 worst case (novig.py), and the two are joined with the player's shrunk
 correlation in a Gaussian copula (price.py), exactly as
 `price.py ... novig` does. Price: Novig's public parlay quote after its 10%
@@ -591,6 +592,8 @@ def shifted(p, stat, row, main):
             po = min(po, cap)
     out = {"stat": stat, "side": "over", "line": row["line"], "p": po, "fair": sgp.american(po),
            "width": main["spread"], "id": row["ids"]["over"], "from": None if row is main else main["line"]}
+    if row is main and row.get("kal"):
+        out["kal"] = row["kal"]
     if book_text:
         out["books"] = book_text   # shown in the open row: "FD +600"
     return out
@@ -620,10 +623,60 @@ def beside(rows, main):
     return [r for r in out if abs(r["line"] - main["line"]) == 1]
 
 
+KALSHI = {"spread": 0.05, "props": None}   # widest Kalshi book a leg is read from; its NBA props, pulled once a run
+
+
+def two_books(nv, kbid, kask, max_spread, kalshi_spread=None):
+    """One line's fair value from the two exchanges' books on it: (Over, Under,
+    width, "novig" | "kalshi" | "both"), or None when neither has a book tight
+    enough. The tighter book, each side devigged worst case; where the two are
+    within a cent of each other in width, the average of their fair values.
+    nv: Novig's row on the line (novig.quote) or None. kbid, kask: Kalshi's
+    Yes bid and ask on the same milestone. The one rule for every NBA board,
+    Novig's and Kalshi's (Max, 11-22: the same slip read +132 on one and +125
+    on the other, the Novig board having priced off Novig's book alone)."""
+    books = []
+    if nv is not None and usable(nv, max_spread):
+        books.append((nv["spread"], nv["fo"], nv["fu"], "novig"))
+    ks = KALSHI["spread"] if kalshi_spread is None else kalshi_spread
+    if kbid is not None and kask is not None and 0 < kbid < kask < 1 and kask - kbid <= ks + 1e-9:
+        books.append((kask - kbid,) + tuple(sgp.devig_worst(kask, 1 - kbid)) + ("kalshi",))
+    if not books:
+        return None
+    if len(books) == 2 and abs(books[0][0] - books[1][0]) <= 0.01 + 1e-9:
+        return (books[0][1] + books[1][1]) / 2, (books[0][2] + books[1][2]) / 2, max(books)[0], "both"
+    width, fo, fu, src = min(books)
+    return fo, fu, width, src
+
+
+def kalshi_blend(nm, rows, max_spread):
+    """Novig's ladder rows for one NBA player, each line Kalshi also lists
+    re-priced by two_books. A row that changes carries "kal" (Kalshi's ticker,
+    for the refresh) and "src". Kalshi unreachable: the rows stay Novig's."""
+    if KALSHI["props"] is None:
+        try:
+            import scan_kalshi
+            KALSHI["props"] = scan_kalshi.kalshi_props()
+        except (SystemExit, Exception) as e:  # noqa: BLE001
+            print(f"Kalshi's books were not read ({e}): fair values are off Novig's alone", file=sys.stderr)
+            KALSHI["props"] = {}
+    who = KALSHI["props"].get(novig.norm(nm))
+    for stat, rs in rows.items() if who else ():
+        ks = {k["line"]: k for k in who["stats"].get(stat, [])}
+        for r in rs:
+            k = ks.get(r["line"])
+            if not k or r.get("spread") is None or not 0 < r["bid"] < r["ask"] < 1:
+                continue
+            b = two_books(r, k["bid"], k["ask"], max_spread)
+            if b and b[3] != "novig":
+                r.update(fo=b[0], fu=b[1], spread=b[2], src=b[3], kal=k["ticker"])
+
+
 def leg(stat, row, side):
     p = row["fo"] if side > 0 else row["fu"]
     return {"stat": stat, "side": "over" if side > 0 else "under", "line": row["line"], "p": p,
-            "fair": sgp.american(p), "width": row["spread"], "id": row["ids"]["over" if side > 0 else "under"]}
+            "fair": sgp.american(p), "width": row["spread"], "id": row["ids"]["over" if side > 0 else "under"],
+            **({"kal": row["kal"]} if row.get("kal") else {})}
 
 
 def leg_text(L):
@@ -1799,6 +1852,7 @@ def nba_team_candidates(d, by, a):
             me, them = ("fav", "dog") if team == g["fav"] else ("dog", "fav")
             my_spread = -g["spread"] if me == "fav" else g["spread"]
             _, rows = novig.ladder(markets, nm)
+            kalshi_blend(nm, rows, a.max_spread)
             mine = []
             for s in NBA_TEAM_STATS:
                 ok = [r for r in rows.get(s, []) if usable(r, a.max_spread)]
@@ -1849,6 +1903,7 @@ def candidates(markets, d, by, a):
         if not p:
             continue
         _, rows = novig.ladder(markets, nm)
+        kalshi_blend(nm, rows, a.max_spread)
         tight = {s: [r for r in rows.get(s, []) if usable(r, a.max_spread)] for s in STATS}
         main = {s: main_line(v) for s, v in tight.items() if v}
         # A stat whose real main line has a wide book has no main line here:
@@ -2186,6 +2241,17 @@ def requote(c, league, max_spread, unit, kelly):
         for L in c["legs"]:
             m, i = where[L["id"]]
             t = two_way(m) if L.get("from") is None and not L.get("src") else None
+            if t and L.get("kal"):   # a line Kalshi lists too: both books again, by the same rule (two_books)
+                import scan_kalshi
+                st, d = scan_kalshi.call("GET", "/markets/" + L["kal"], signed=False)
+                try:
+                    kb, ka = float(d["market"]["yes_bid_dollars"]), float(d["market"]["yes_ask_dollars"])
+                except (KeyError, TypeError, ValueError):
+                    kb = ka = None
+                b = two_books({"spread": t["spread"], "fo": t["p"][0], "fu": t["p"][1], "bid": 0.001, "ask": 0.999}   # two_way checked the book
+                              if t["spread"] <= max_spread + 1e-9 else None, kb, ka, max_spread) if st == 200 else None
+                if b:
+                    t = dict(t, p=(b[0], b[1]), spread=b[2])
             if t and t["spread"] <= max(max_spread, L["width"]) + 1e-9:
                 L.update(p=t["p"][i], fair=sgp.american(t["p"][i]), width=t["spread"])
         new = [L["p"] for L in c["legs"]]

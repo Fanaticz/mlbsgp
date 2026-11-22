@@ -2,6 +2,17 @@
 
 ## 2026-11-22 session
 
+### One fair value for a slip on the Novig and Kalshi NBA boards
+Max, 11-22 (Klay Thompson 15+ points + 4+ threes: +132 on the Novig board, +125 on the Kalshi one): how do we prevent this?
+
+- **What it was**: the two boards read the legs off different books. The Kalshi boards take the tighter of Novig's book and Kalshi's own on each line, averaged where they are within a cent in width (11-16). The Novig boards read Novig's book alone. Klay's 15+ points was 0.492 on Novig (2.5c wide) and 0.505 on Kalshi (1c wide), his 4+ threes 0.522 and 0.535: the same r (+0.89) gives +132 and +125.
+- **Change** (`two_books`, `kalshi_blend` in `scan.py`; `pick_leg` in `scan_kalshi.py` now calls the same `two_books`): the Novig NBA, NBA Ladder and NBA Team boards read Kalshi's open props once a pass (no key needed) and price every line Kalshi also lists by the Kalshi boards' rule. A line Kalshi does not list (18.5, 11.5) stays on Novig's book. The refresh button re-reads both books for such a leg.
+- **What moves**: Novig-board fair values on round-number lines, by a point or so of probability a leg where the two books disagree; near tip most such legs now come off Kalshi's 1c book. A Novig line wider than 4c that Kalshi has tight is now priced, where it had no fair value before.
+- **Still different**: the two boards scan at different times, so a row 8 minutes old and one 2 minutes old can differ by whatever the legs moved. Refresh brings either to now.
+- **Not changed**: NFL (the Kalshi NFL board has the same two-book rule, the Novig NFL board is still Novig's alone), and the price.py slip pricer.
+- **If Kalshi can't be read**, the pass says so on stderr and prices off Novig alone, as before.
+- **Checked** live: Klay's row from `scan.py --tier 1` reads +125, the same as `scan_kalshi.py --dry --league nba3`; a 33-quote pass finished; `--requote` on a row with Kalshi-priced legs returned a row. Not looked at in the browser.
+
 ### Novig's parlay fee: the app has moved to the new one
 Max, 11-22 (two slips a little above their rows: Herbert 2.91x beside 2.89x, Lawrence 2.86x beside 2.84x): see if they changed their fees.
 

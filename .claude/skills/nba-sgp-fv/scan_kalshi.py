@@ -225,16 +225,9 @@ def pick_leg(stat, kal, nv_rows, a, p=None, skip=()):
     nv = {r["line"]: r for r in nv_rows if scan.usable(r, a.max_spread)}
     priced = []
     for k in kal:
-        books = []
-        if k["line"] in nv:
-            books.append((nv[k["line"]]["spread"], nv[k["line"]]["fo"], "novig"))
-        if 0 < k["bid"] < k["ask"] < 1 and k["ask"] - k["bid"] <= a.kalshi_spread + 1e-9:
-            books.append((k["ask"] - k["bid"], sgp.devig_worst(k["ask"], 1 - k["bid"])[0], "kalshi"))
-        if books:
-            width, fo, src = min(books)   # the tighter book
-            if len(books) == 2 and abs(books[0][0] - books[1][0]) <= 0.01 + 1e-9:
-                # about as tight as each other: the two fair values averaged
-                width, fo, src = max(books)[0], (books[0][1] + books[1][1]) / 2, "both"
+        b = scan.two_books(nv.get(k["line"]), k["bid"], k["ask"], a.max_spread, a.kalshi_spread)   # the Novig boards' rule too
+        if b:
+            fo, _, width, src = b
             if a.lo <= fo <= a.hi:
                 priced.append((k, fo, width, src))
     if not priced and not p:
