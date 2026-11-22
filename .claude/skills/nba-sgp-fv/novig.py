@@ -138,7 +138,9 @@ def slip_multiplier(price):
     0.330 four minutes before Max's slip and again just after it, and the slip
     showed 2.86x, the new fee (2.857x) and not the old (2.840x); Herbert U18.5
     completions + U200.5 passing yards showed 2.91x beside a 0.324 quote 47
-    seconds old (new 2.907x, old 2.891x). No payout to the cent was read. The
+    seconds old (new 2.907x, old 2.891x). $100 on the Lawrence slip paid
+    $285.67: the new fee at 0.330 to the cent (285.6675), where the old fee at
+    0.328, the nearest it comes, is $285.68. The
     new fee pays more than the old on slips shorter than about +270 and less
     on longer ones (at 0.10: 8.88x against 9.17x)."""
     return 1 / (price * (1 + FEE_RULES[FEE_RULE](price)))

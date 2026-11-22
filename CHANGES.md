@@ -9,7 +9,7 @@ Max, 11-22 (two slips a little above their rows: Herbert 2.91x beside 2.89x, Law
 - **Change** (`FEE_RULE`, `FEE_RULES` in `novig.py`): the new fee. It is now written as the fee page has it, 0.038 x -log2(price) x stake; the 0.055 x -ln(price) used on 11-18 was a rounding of that and read $12.66 on $100 at 0.10 where the page says $12.62.
 - **What moves**: slips shorter than about +270 pay a little more than the boards said (about 0.6% here), longer ones less (a 0.133 quote: 6.77x, not 6.92x).
 - **Not known**: when between 11-19 and today the app switched. Long slips on the boards were over-read since then.
-- **Checked**: the rule gives the page's three examples ($3.80, $7.60, $12.62). No payout to the cent was read off a slip: each slip alone would also fit the old fee at a quote 0.002 lower, and the Lawrence quote being 0.330 on both sides of the slip is what rules that out.
+- **Checked**: the rule gives the page's three examples ($3.80, $7.60, $12.62). $100 on the Lawrence slip paid $285.67, the new fee at a 0.330 quote to the cent (285.6675); the old fee at 0.330 is $284.00 and at 0.328, the nearest it comes, $285.68.
 - **Rows already on the boards** keep the old fee's numbers until their next pass or refresh.
 
 ## 2026-11-21 session
