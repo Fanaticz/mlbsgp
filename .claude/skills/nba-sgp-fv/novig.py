@@ -121,25 +121,26 @@ def quote(m):
 
 
 # Novig's taker fee on a parlay, as a share of the stake at quote `price`.
-# "old": 0.10 x (1 - price). "new": 0.055 x -ln(price), which docs.novig.com/fees
-# says takes effect 11-19. FEE_RULE is the one the app charges: change it here
-# when a slip in the app stops matching.
-FEE_RULES = {"old": lambda p: 0.10 * (1 - p), "new": lambda p: 0.055 * -math.log(p)}
-FEE_RULE = "old"
+# "new": 0.038 x -log2(price), docs.novig.com/fees ("RFQ trades"), which the
+# app charges (see slip_multiplier). "old": 0.10 x (1 - price), kept for
+# reading slips from before the switch.
+FEE_RULES = {"old": lambda p: 0.10 * (1 - p), "new": lambda p: 0.038 * -math.log2(p)}
+FEE_RULE = "new"
 
 
 def slip_multiplier(price):
     """What Novig's order slip pays for a parlay quoted at `price`: the quote
     after the parlay taker fee, 1 / (price x (1 + fee share)).
-    The app was still on the old fee on the morning of 11-19 (Max's slip,
-    Hutchinson 70+ receiving yards + 4+ receptions, 9:48 AM CT: $100 paid
-    $691.89, which is the old fee at a 0.133 quote to the cent, 6.9189x; the
-    new fee at that quote is 6.77x, what the alert said, and no quote in
-    tenths of a cent gives $691.89 under it). The scanner had moved to the new
-    fee the night before on the docs' date, unchecked against a slip. Under
-    the old fee +359 (0.218) is 4.25x (checked on Tatum U26.5 points + O7.5
-    assists, 11-09). The new one pays more than the old on slips shorter than
-    about +270 and less on longer ones (at 0.10: 8.88x against 9.17x)."""
+    The fee page dates the new fee 11-19, but the app was still on the old one
+    that morning (Hutchinson 70+ receiving yards + 4+ receptions, 9:48 AM CT:
+    $100 paid $691.89, the old fee at a 0.133 quote to the cent). By 11-22 the
+    app had moved: Lawrence U30.5 attempts + U19.5 completions was quoted
+    0.330 four minutes before Max's slip and again just after it, and the slip
+    showed 2.86x, the new fee (2.857x) and not the old (2.840x); Herbert U18.5
+    completions + U200.5 passing yards showed 2.91x beside a 0.324 quote 47
+    seconds old (new 2.907x, old 2.891x). No payout to the cent was read. The
+    new fee pays more than the old on slips shorter than about +270 and less
+    on longer ones (at 0.10: 8.88x against 9.17x)."""
     return 1 / (price * (1 + FEE_RULES[FEE_RULE](price)))
 
 

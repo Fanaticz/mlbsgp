@@ -1,5 +1,17 @@
 # Changes
 
+## 2026-11-22 session
+
+### Novig's parlay fee: the app has moved to the new one
+Max, 11-22 (two slips a little above their rows: Herbert 2.91x beside 2.89x, Lawrence 2.86x beside 2.84x): see if they changed their fees.
+
+- **What the slips say**: Lawrence U30.5 attempts + U19.5 completions was quoted 0.330 on the board four minutes before the slip and 0.330 again when asked just after it. At 0.330 the old fee is 2.840x and the new one 2.857x; the slip showed 2.86x. Herbert U18.5 completions + U200.5 passing yards: a 0.324 quote 47 seconds old, old fee 2.891x, new 2.907x, slip 2.91x.
+- **Change** (`FEE_RULE`, `FEE_RULES` in `novig.py`): the new fee. It is now written as the fee page has it, 0.038 x -log2(price) x stake; the 0.055 x -ln(price) used on 11-18 was a rounding of that and read $12.66 on $100 at 0.10 where the page says $12.62.
+- **What moves**: slips shorter than about +270 pay a little more than the boards said (about 0.6% here), longer ones less (a 0.133 quote: 6.77x, not 6.92x).
+- **Not known**: when between 11-19 and today the app switched. Long slips on the boards were over-read since then.
+- **Checked**: the rule gives the page's three examples ($3.80, $7.60, $12.62). No payout to the cent was read off a slip: each slip alone would also fit the old fee at a quote 0.002 lower, and the Lawrence quote being 0.330 on both sides of the slip is what rules that out.
+- **Rows already on the boards** keep the old fee's numbers until their next pass or refresh.
+
 ## 2026-11-21 session
 
 ### Kalshi boards: slips that got no price are counted, with the reason

@@ -10,7 +10,7 @@
 for its parlay price at the legs' lines (player-stat legs only): its quote
 after the parlay fee, which is what the slip shows. --before-fee takes
 that fee off a payout given by hand (Pikkit's Novig price is the raw quote:
-+359 there is 4.25x on the slip). The payout adds EV% and a
++359 there is 4.23x on the slip). The payout adds EV% and a
 quarter-Kelly stake at the FV as shown: units = f/4 x 100 (1u = 1% of
 bankroll), dollars = units x --unit (default $250, Max's unit).
 
@@ -350,7 +350,7 @@ def main():
     ap.add_argument("legs", nargs="+")
     ap.add_argument("--payout", help="slip price: decimal (3.80, 3.80x) or American (+280), or 'novig' for Novig's parlay quote")
     ap.add_argument("--before-fee", action="store_true",
-                    help="--payout is Novig's raw quote (Pikkit's Novig price): take its 10%% parlay fee off")
+                    help="--payout is Novig's raw quote (Pikkit's Novig price): take its parlay fee off")
     ap.add_argument("--unit", type=float, default=250.0, help="dollars per unit, 1u = 1%% of bankroll")
     ap.add_argument("--kelly", type=float, default=0.25, help="Kelly fraction (default quarter)")
     ap.add_argument("--no-books", action="store_true",
