@@ -623,10 +623,12 @@ def beside(rows, main):
     return [r for r in out if abs(r["line"] - main["line"]) == 1]
 
 
-KALSHI = {"spread": 0.05, "props": None}   # widest Kalshi book a leg is read from; its NBA props, pulled once a run
+# spread: widest Kalshi book a leg is read from. size: contracts ($1 each) on the thinner side of
+# Kalshi's best bid and ask for its book to count beside Novig's. props: its NBA props, pulled once a run.
+KALSHI = {"spread": 0.05, "size": 500, "props": None}
 
 
-def two_books(nv, kbid, kask, max_spread, kalshi_spread=None):
+def two_books(nv, kbid, kask, max_spread, kalshi_spread=None, ksize=None):
     """One line's fair value from the two exchanges' books on it: (Over, Under,
     width, "novig" | "kalshi" | "both"), or None when neither has a book tight
     enough. The tighter book, each side devigged worst case; where the two are
@@ -634,7 +636,13 @@ def two_books(nv, kbid, kask, max_spread, kalshi_spread=None):
     nv: Novig's row on the line (novig.quote) or None. kbid, kask: Kalshi's
     Yes bid and ask on the same milestone. The one rule for every NBA board,
     Novig's and Kalshi's (Max, 11-22: the same slip read +132 on one and +125
-    on the other, the Novig board having priced off Novig's book alone)."""
+    on the other, the Novig board having priced off Novig's book alone).
+    ksize: the contracts on the thinner side of Kalshi's best bid and ask.
+    Under KALSHI["size"] (or not known), Novig's book is used where it has
+    one: Kalshi's cent-wide books are mostly a few contracts (11-22: Klay
+    15+ points 50 / 51 with 7 contracts bid and 150 traded, against 9,500 bid
+    and 87,000 traded on Novig; the slate's median 23 contracts against
+    3,700). A thin Kalshi book still prices a line Novig has no tight book on."""
     books = []
     if nv is not None and usable(nv, max_spread):
         books.append((nv["spread"], nv["fo"], nv["fu"], "novig"))
@@ -643,6 +651,8 @@ def two_books(nv, kbid, kask, max_spread, kalshi_spread=None):
         books.append((kask - kbid,) + tuple(sgp.devig_worst(kask, 1 - kbid)) + ("kalshi",))
     if not books:
         return None
+    if len(books) == 2 and (ksize is None or ksize < KALSHI["size"]):
+        books = books[:1]
     if len(books) == 2 and abs(books[0][0] - books[1][0]) <= 0.01 + 1e-9:
         return (books[0][1] + books[1][1]) / 2, (books[0][2] + books[1][2]) / 2, max(books)[0], "both"
     width, fo, fu, src = min(books)
@@ -667,7 +677,7 @@ def kalshi_blend(nm, rows, max_spread):
             k = ks.get(r["line"])
             if not k or r.get("spread") is None or not 0 < r["bid"] < r["ask"] < 1:
                 continue
-            b = two_books(r, k["bid"], k["ask"], max_spread)
+            b = two_books(r, k["bid"], k["ask"], max_spread, ksize=k.get("size"))
             if b and b[3] != "novig":
                 r.update(fo=b[0], fu=b[1], spread=b[2], src=b[3], kal=k["ticker"])
 
@@ -2246,10 +2256,11 @@ def requote(c, league, max_spread, unit, kelly):
                 st, d = scan_kalshi.call("GET", "/markets/" + L["kal"], signed=False)
                 try:
                     kb, ka = float(d["market"]["yes_bid_dollars"]), float(d["market"]["yes_ask_dollars"])
+                    kz = min(float(d["market"]["yes_bid_size_fp"]), float(d["market"]["yes_ask_size_fp"]))
                 except (KeyError, TypeError, ValueError):
-                    kb = ka = None
+                    kb = ka = kz = None
                 b = two_books({"spread": t["spread"], "fo": t["p"][0], "fu": t["p"][1], "bid": 0.001, "ask": 0.999}   # two_way checked the book
-                              if t["spread"] <= max_spread + 1e-9 else None, kb, ka, max_spread) if st == 200 else None
+                              if t["spread"] <= max_spread + 1e-9 else None, kb, ka, max_spread, ksize=kz) if st == 200 else None
                 if b:
                     t = dict(t, p=(b[0], b[1]), spread=b[2])
             if t and t["spread"] <= max(max_spread, L["width"]) + 1e-9:

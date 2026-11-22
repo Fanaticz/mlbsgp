@@ -200,13 +200,17 @@ def kalshi_props(before=None, series=SERIES):
                     bid, ask = float(m["yes_bid_dollars"]), float(m["yes_ask_dollars"])
                 except (KeyError, TypeError, ValueError):
                     continue
+                try:   # contracts on the thinner side of the best bid and ask (scan.two_books)
+                    size = min(float(m["yes_bid_size_fp"]), float(m["yes_ask_size_fp"]))
+                except (KeyError, TypeError, ValueError):
+                    size = None
                 starts = (starts - TIP_S) * 1000
                 if not name or len(parts) < 4 or starts <= now or (before and starts >= before):
                     continue
                 who = out.setdefault(novig.norm(name), {"name": name, "team": parts[2][:3], "starts": starts,
                                                         "game": parts[1], "stats": {}})
                 who["stats"].setdefault(stat, []).append({"line": line, "ticker": m["ticker"], "event": m["event_ticker"],
-                                                          "bid": bid, "ask": ask})
+                                                          "bid": bid, "ask": ask, "size": size})
             cursor = d.get("cursor")
             if not cursor or not d.get("markets"):
                 break
@@ -225,7 +229,7 @@ def pick_leg(stat, kal, nv_rows, a, p=None, skip=()):
     nv = {r["line"]: r for r in nv_rows if scan.usable(r, a.max_spread)}
     priced = []
     for k in kal:
-        b = scan.two_books(nv.get(k["line"]), k["bid"], k["ask"], a.max_spread, a.kalshi_spread)   # the Novig boards' rule too
+        b = scan.two_books(nv.get(k["line"]), k["bid"], k["ask"], a.max_spread, a.kalshi_spread, k.get("size"))   # the Novig boards' rule too
         if b:
             fo, _, width, src = b
             if a.lo <= fo <= a.hi:

@@ -2,6 +2,16 @@
 
 ## 2026-11-22 session
 
+### Kalshi's book counts beside Novig's only with real size on it
+Max, 11-22: which one is better? Can you see liquidity on them?
+
+- **Both show size.** Novig's catalog gives the size on each side's best bid and the market's volume; Kalshi's market list gives the size on its best bid and ask (`yes_bid_size_fp`, `yes_ask_size_fp`) and its volume, and its order book every level, without a key.
+- **What it shows**: Klay 15+ points on Kalshi was 50 / 51 with 7 contracts ($3.50) on the bid, the next bids 47 at 49 and 119 at 48, and 150 contracts traded. Novig's 14.5 had 9,500 on the Over bid, 57,000 on the Under bid and 87,000 traded. Over the slate, lines near even money with a tight book: Kalshi's thinner side a median 23 contracts (320 of 351 under 200) and 36 traded; Novig's a median 3,700 and 43,000 traded. Kalshi's books are a cent wide because of a few contracts, so "the tighter book" (11-16) was reading the smaller market.
+- **Change** (`two_books` in `scan.py`, `KALSHI["size"]`; `kalshi_props` in `scan_kalshi.py` carries the size): Kalshi's book is weighed against Novig's (tighter wins, averaged within a cent) only with 500 contracts or more on the thinner side of its best bid and ask. Under that, Novig's book is the fair value where Novig has a tight one. A line Novig has no tight book on is still priced off Kalshi's, thin or not, as before. One rule, both sets of boards, and the refresh.
+- **What moves**: Kalshi-board NBA rows whose legs came off Kalshi's book go back to Novig's; today 141 legs on Novig, 98 on Kalshi (lines Novig has no tight book on), 3 averaged, and the same number of slips. Klay reads +132 on both.
+- **Not changed**: NFL and the game-line boards on the Kalshi side (their own copies of the 11-16 rule, no size test). 500 is a judgement, not fitted.
+- **Checked** live: `scan_kalshi.py --dry --league nba3` and `scan.py --tier 1` both give Klay 0.49 / 0.52 off Novig; the alert checks pass.
+
 ### One fair value for a slip on the Novig and Kalshi NBA boards
 Max, 11-22 (Klay Thompson 15+ points + 4+ threes: +132 on the Novig board, +125 on the Kalshi one): how do we prevent this?
 
