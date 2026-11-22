@@ -226,7 +226,7 @@ def pick_leg(stat, kal, nv_rows, a, p=None, skip=()):
     book), or nearest even money where Novig lists nothing. None when no milestone has a book to price it from.
     skip: lines not to take, for the player's second leg on the stat (the
     milestone on the other side of his main line)."""
-    nv = {r["line"]: r for r in nv_rows if scan.usable(r, a.max_spread)}
+    nv = {r["line"]: r for r in nv_rows}   # wide ones too: two_books holds a thin Kalshi book inside them
     priced = []
     for k in kal:
         b = scan.two_books(nv.get(k["line"]), k["bid"], k["ask"], a.max_spread, a.kalshi_spread, k.get("size"))   # the Novig boards' rule too
@@ -266,7 +266,8 @@ def shift_leg(stat, kal, nv_rows, a, p, main, near):
     Novig's main line does (Max, 11-18: use Novig for help on the main line).
     The nearer milestone's fair value is shifted from that main line with the
     Ladder's model (price.leg_prob), then held inside both exchanges' own
-    bid and ask on the milestone itself, however wide those are. The leg
+    bid and ask on the milestone itself, however wide those are (Kalshi's
+    only with size on them, or where Novig has none). The leg
     carries `from`, and its slip is marked modelled (*)."""
     if not scan.usable(main, a.max_spread):
         return None
@@ -276,7 +277,13 @@ def shift_leg(stat, kal, nv_rows, a, p, main, near):
             continue
         po = price.leg_prob(p, {"stat": stat, "side": 1, "line": k["line"], "from": main["line"], "p_over": main["fo"],
                                 "over": None, "under": None})[0]
-        books = [(k["bid"], k["ask"])] + ([(nv[k["line"]].get("bid"), nv[k["line"]].get("ask"))] if k["line"] in nv else [])
+        # Kalshi's own bid and ask bound the leg with real size on them, or
+        # where Novig has neither on the line (11-22: one contract bid at 30
+        # raised Stirtz's 4+ assists from the model's 0.254).
+        ok = lambda x: x is not None and 0 < x < 1   # noqa: E731
+        books = [(nv[k["line"]].get("bid"), nv[k["line"]].get("ask"))] if k["line"] in nv else []
+        if (k.get("size") or 0) >= scan.KALSHI["size"] or not any(ok(x) for b in books for x in b):
+            books.append((k["bid"], k["ask"]))
         asks = [x for _, x in books if x is not None and 0 < x < 1]
         bids = [x for x, _ in books if x is not None and 0 < x < 1]
         if asks:

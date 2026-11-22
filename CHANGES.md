@@ -2,6 +2,15 @@
 
 ## 2026-11-22 session
 
+### A thin Kalshi book can't price a leg outside Novig's bid and ask
+Max, 11-22 (Kalshi NBA: Stirtz 15+ points + 4+ assists, fair +487, +79.9% at 10.56x; the books had each leg +233 and the slip +535 to +975): FV doesn't seem right.
+
+- **What it was**: both legs were read too high off Kalshi books minutes old. His props opened late (points 3:47 PM, assists 4:27 PM). About 4:37 the 15+ points book stood 38 / 41 on a few contracts, so the leg read 0.39 (Novig's 14.5 was wider than 4c, so it had no say); 4,900 contracts then traded and it settled at 27 / 28. The 4+ assists leg was modelled from Novig's 2.5 (0.254) and raised to 0.30 by one contract bid at 30 on Kalshi. At r +0.28 that is about 0.17; off the books at 4:55 (0.274, 0.278) it is 0.109, +815.
+- **Change 1** (`two_books` in `scan.py`; `pick_leg` in `scan_kalshi.py` passes Novig's row whatever its width): a Kalshi book under 500 contracts that prices a line alone is held inside Novig's own bid and ask on that line, however wide. Both sets of NBA boards.
+- **Change 2** (`shift_leg` in `scan_kalshi.py`): Kalshi's bid and ask bound a modelled leg (*) only with 500 contracts on them, or where Novig has neither on the line.
+- **Checked**: the 4:55 books with Kalshi's 4:37 prices put back read +538 before and +842 after, with both legs under 30%, so the slip is not asked. Live dry runs: 144 slips on Kalshi NBA, 111 on Pts + 3s, 61 on 3-Leg; the alert checks pass. Novig's book at 4:37 was not saved, so the row's exact +487 was not reproduced.
+- **Not changed**: the refresh and Bet buttons on a Kalshi row still re-read the legs off Kalshi's book alone (`reprice`), thin or not. A row from a book that has since moved is still stale until refreshed; this one was 11 minutes old.
+
 ### Kalshi's book counts beside Novig's only with real size on it
 Max, 11-22: which one is better? Can you see liquidity on them?
 

@@ -642,7 +642,9 @@ def two_books(nv, kbid, kask, max_spread, kalshi_spread=None, ksize=None):
     one: Kalshi's cent-wide books are mostly a few contracts (11-22: Klay
     15+ points 50 / 51 with 7 contracts bid and 150 traded, against 9,500 bid
     and 87,000 traded on Novig; the slate's median 23 contracts against
-    3,700). A thin Kalshi book still prices a line Novig has no tight book on."""
+    3,700). A thin Kalshi book still prices a line Novig has no tight book on,
+    held inside Novig's bid and ask on that line where it has them. nv may be
+    a Novig row of any width: it is a book only inside max_spread."""
     books = []
     if nv is not None and usable(nv, max_spread):
         books.append((nv["spread"], nv["fo"], nv["fu"], "novig"))
@@ -651,11 +653,23 @@ def two_books(nv, kbid, kask, max_spread, kalshi_spread=None, ksize=None):
         books.append((kask - kbid,) + tuple(sgp.devig_worst(kask, 1 - kbid)) + ("kalshi",))
     if not books:
         return None
-    if len(books) == 2 and (ksize is None or ksize < KALSHI["size"]):
+    thin = ksize is None or ksize < KALSHI["size"]
+    if len(books) == 2 and thin:
         books = books[:1]
     if len(books) == 2 and abs(books[0][0] - books[1][0]) <= 0.01 + 1e-9:
         return (books[0][1] + books[1][1]) / 2, (books[0][2] + books[1][2]) / 2, max(books)[0], "both"
     width, fo, fu, src = min(books)
+    if src == "kalshi" and thin and nv is not None:
+        # A thin Kalshi book pricing the line alone is held inside Novig's own
+        # bid and ask there, however wide (Max, 11-22: Stirtz 15+ points read
+        # 0.395 off a Kalshi book 38 / 41 minutes after it opened, Novig's
+        # wider one on 14.5 offering it near 0.29; the slip showed +487, the
+        # books +815).
+        bid, ask = nv.get("bid"), nv.get("ask")
+        if ask is not None and 0 < ask < 1:
+            fo, fu = min(fo, ask), max(fu, 1 - ask)
+        if bid is not None and 0 < bid < 1:
+            fo, fu = max(fo, bid), min(fu, 1 - bid)
     return fo, fu, width, src
 
 
