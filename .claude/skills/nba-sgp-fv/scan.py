@@ -864,7 +864,7 @@ def role_r(table, vol, at=None, **match):
         return None
     # Between the middles of two volume buckets the r is read off the straight
     # line through them, not the bucket's own: a receiver at 5.25 targets is
-    # nearer the 3-5 bucket (PTD·TD 0.565) than the 5-7 one's middle (0.607).
+    # nearer the 3-5 bucket (PTD·TD 0.473) than the 5-7 one's middle (0.518).
     # The open top bucket's middle is taken half the bucket below's width up.
     mids = [(e["min"] + e["max"]) / 2 if e["max"] is not None else
             e["min"] + ((e["min"] - rows[i - 1]["min"]) / 2 if i else 0.0) for i, e in enumerate(rows)]

@@ -2,6 +2,17 @@
 
 ## 2026-11-22 session
 
+### NFL role r's with a touchdown leg were about 0.1 too high
+Max, 11-22 (Kalshi NFL: Samuel anytime TD + Purdy 2+ passing TDs, fair +430, +17.9% at 6.25x; DraftKings had the slip +525, Fanatics +465): this FV seems wrong?
+
+- **The legs were right.** Kalshi's own books at the time: Samuel's TD 22 / 23 with 19,000 contracts bid and 250,000 traded, Purdy 2+ 52 / 53. 0.225 and 0.525 at r 0.569 is 0.186, the +430 on the card.
+- **The r was not.** `fit` solved r from each group's own hit rates (one receiver with one QB in one season, about 12 games), as if those were the true rates. A touchdown rate read off 12 games is 1 in 12, 2 in 12 or none, and the joint's excess over a x b is curved in the rates, so the equation needs a higher r on noisy rates to reach the same count of games both hit. On made-up seasons with a known r it returned 0.43 for 0.35, 0.55 for 0.45 and 0.68 for 0.57. Legs cut at the group's median are not affected (the rate is one half by construction).
+- **Ruled out first**: his carries (WRs with a carry a game fit 0.46 to 0.54, too few games to tell apart) and the matchup already being in both legs' prices (fitted within games of like implied team total, r is no lower).
+- **Change** (`fit_groups`, `Seasons`, `rates`, `tally` in `scripts/nfl_stack_correlations.py`; `check` reads off the same simulated seasons): r is solved by simulation. Seasons of the real groups' lengths are drawn at a trial r, a counted leg's true rate from the spread of rates the bucket's groups show beyond chance, a median leg cut at each made-up season's own median, groups dropped by the same rule; r is the one whose made-up seasons show the real groups' games both hit beyond n a b. On made-up seasons it returns the r put in (0.30 / 0.45 / 0.60 came back 0.28 to 0.32 / 0.45 / 0.59 to 0.60). Lines fitted in bands of the spread (moneyline, sides) pool 50+ games a cell and keep the equation.
+- **What moves** (`public/data/nfl_stack_correlations.json`, regenerated): passing TDs + a receiver's TD, WR by targets 0.57 / 0.60 / 0.63 → 0.47 / 0.52 / 0.55 (at 3+: 0.45 / 0.54 / 0.54 → 0.37 / 0.47 / 0.48), TE 0.52 / 0.58 → 0.44 / 0.50. Passing yards + his TD 0.23 → 0.20. Passing TDs with the team total 0.68 → 0.60 (3+: 0.82 → 0.71), with the Over 0.62 → 0.55. A TD with a game line 0.24 → 0.20 on average. Yardage, reception and carry pairs 0.01 to 0.02. The fit takes about two minutes, from seconds.
+- **This slip**: r 0.473, 0.175, **+472**; at 6.25x that is +9%, not +18%.
+- **Not changed**: `STACKLINE_FIX` (x0.95 on a QB prop + receiver prop + game line) was measured against the old r's and not measured again; with lower pair r's it now errs toward a longer fair. A player's own pairs (`nfl_fetch_correlations.py`, receptions + TD and the like) are fitted another way and were not looked at. The role r knows position and targets only, not how much of his scoring is on the ground.
+
 ### A thin Kalshi book can't price a leg outside Novig's bid and ask
 Max, 11-22 (Kalshi NBA: Stirtz 15+ points + 4+ assists, fair +487, +79.9% at 10.56x; the books had each leg +233 and the slip +535 to +975): FV doesn't seem right.
 

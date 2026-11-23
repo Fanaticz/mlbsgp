@@ -31,6 +31,22 @@ slip of two legs near their main lines, priced with this r, hits as often as
 it did over these seasons; `check` in the output is the same comparison at
 harder lines (each stat's upper third), which the fit never saw.
 
+That equation is only right when a and b are the group's true rates. They are
+not: a receiver's touchdown rate is read off a dozen games (2 in 12, or none),
+and the joint's excess over a b is curved in a and b, so on rates that noisy
+the equation needs a higher r to reach the same count. On made-up seasons
+with a known r of 0.45 it returned 0.55 (passing TDs + a receiver's TD), and
+the slips priced with it showed fair values the books were nowhere near
+(Samuel's TD with Purdy 2+, 11-22: +430 here, +525 at DraftKings). So r is
+solved by simulation instead (fit_groups): seasons of the same lengths are
+drawn at a trial r, a counted leg's true rate from the spread of rates the
+bucket really has, a median leg cut at each made-up season's own median, the
+same groups dropped; r is the one whose made-up seasons show the excess the
+real ones did. Legs cut at a median are barely touched (the rate is one half
+by construction); anything with a touchdown leg comes down about 0.1. Lines
+fitted in bands of the spread pool hundreds of games a cell and keep the
+equation.
+
 Winning (the moneyline) has no closing number to cut at: a favourite wins
 more often, and a favourite's back also carries more, so cutting "won" at a
 player's season average counts the spread itself as correlation (a lead
@@ -79,6 +95,7 @@ import datetime as dt
 import io
 import json
 import math
+import random
 import os
 import statistics
 import sys
@@ -94,6 +111,8 @@ MIN_GROUP = 6        # games a group needs
 QB_MIN_ATT = 15      # pass attempts for a QB's game to count (the team's most that day)
 EDGES = {"tgt": (3.0, 5.0, 7.0, 9.0), "car": (8.0, 13.0, 18.0)}  # role buckets: per-game volume from
 MIN_GAMES = 1500     # a bucket with fewer games is merged into the one below it
+SIM_GAMES = 100_000  # made-up games a fit is solved on (fit_groups)
+KEEP = (0.08, 0.92)  # a group counts when each leg hit in this share of its games
 
 # stat -> nflverse column(s)
 COLS = {"att": ("attempts",), "cmp": ("completions",), "pyds": ("passing_yards",), "ptd": ("passing_tds",),
@@ -285,16 +304,21 @@ def line_of(vals: list[float], stat: str, q: float = 0.5, at: dict | None = None
     return statistics.median(s) if q == 0.5 else s[min(len(s) - 1, int(q * len(s)))]
 
 
-def cut(pairs: list[tuple[float, float]], sx: str, sy: str, q: float = 0.5, at: dict | None = None):
-    """(n, a, b, both) for one group at its lines, or None if a leg never / always hits.
+def fixed(stat: str, at: dict | None = None) -> bool:
+    """Is this leg a count against a set line (a rate to estimate), not a cut at the group's own median?"""
+    return bool(at and stat in at) or stat in FIXED
+
+
+def tally(pairs: list[tuple[float, float]], sx: str, sy: str, q: float = 0.5, at: dict | None = None):
+    """(n, games x hit, games y hit, games both hit) for one group at its lines.
     `at` fixes a stat's line ({"ptd": 2.5}) in place of FIXED's."""
-    n = len(pairs)
     lx, ly = line_of([x for x, _ in pairs], sx, q, at), line_of([y for _, y in pairs], sy, q, at)
-    a = sum(x > lx for x, _ in pairs) / n
-    b = sum(y > ly for _, y in pairs) / n
-    if not (0.08 <= a <= 0.92 and 0.08 <= b <= 0.92):
-        return None
-    return n, a, b, sum(x > lx and y > ly for x, y in pairs)
+    return (len(pairs), sum(x > lx for x, _ in pairs), sum(y > ly for _, y in pairs),
+            sum(x > lx and y > ly for x, y in pairs))
+
+
+def kept(n: int, kx: int, ky: int) -> bool:
+    return KEEP[0] <= kx / n <= KEEP[1] and KEEP[0] <= ky / n <= KEEP[1]
 
 
 def banded(groups: list[list[tuple]], sy: str, at: dict | None = None) -> list[tuple]:
@@ -317,7 +341,9 @@ def banded(groups: list[list[tuple]], sy: str, at: dict | None = None) -> list[t
 
 
 def fit(cuts: list[tuple]) -> dict | None:
-    """The r that reproduces the games both legs hit, with a rough standard error."""
+    """The r that reproduces the games both legs hit, with a rough standard
+    error, by the equation: for cells of many games each (banded), whose rates
+    are near enough the true ones. Small groups go through fit_groups."""
     if not cuts:
         return None
     both = sum(c[3] for c in cuts)
@@ -343,15 +369,109 @@ def fit(cuts: list[tuple]) -> dict | None:
             "unrelated": round(sum(n * a * b for n, a, b, _ in cuts) / games, 4)}
 
 
+def rates(ks: list[int], ns: list[int]):
+    """The true rates behind a bucket's groups, as a draw: a Beta with the
+    bucket's mean and the spread its groups show beyond what their few games
+    would alone (one fixed rate when they show none)."""
+    m = sum(ks) / sum(ns)
+    extra = statistics.fmean((k / n - m) ** 2 for k, n in zip(ks, ns)) - m * (1 - m) * statistics.fmean(1 / n for n in ns)
+    if extra <= 1e-4 or not 0 < m < 1:
+        return lambda rng: m
+    c = max(m * (1 - m) / extra - 1, 2.0)
+    return lambda rng: rng.betavariate(m * c, (1 - m) * c)
+
+
+class Seasons:
+    """Made-up seasons for one bucket's groups (tallies), to be read at any r.
+    A counted leg (fx / fy true) hits when its normal passes the line its drawn
+    rate sets; a median leg hits in as many games as it did in the real group,
+    the top ones. The draws are made once: every r is read off the same ones."""
+
+    def __init__(self, tallies: list[tuple], fx: bool, fy: bool, seed: int = 7):
+        rng = random.Random(seed)
+        ts = [t for t in tallies if (fx or KEEP[0] <= t[1] / t[0] <= KEEP[1]) and (fy or KEEP[0] <= t[2] / t[0] <= KEEP[1])]
+        self.reps, self.rows = 0, []
+        if not ts:
+            return
+        ax, ay = rates([t[1] for t in ts], [t[0] for t in ts]), rates([t[2] for t in ts], [t[0] for t in ts])
+        self.reps = max(4, round(SIM_GAMES / sum(t[0] for t in ts)))
+        for rep in range(self.reps):
+            for n, kx, ky, _ in ts:
+                z = [rng.gauss(0, 1) for _ in range(n)]
+                e = [rng.gauss(0, 1) for _ in range(n)]
+                if fx:
+                    lx = ND.inv_cdf(1 - min(max(ax(rng), 1e-4), 1 - 1e-4))
+                    hx = [v > lx for v in z]
+                else:
+                    top = sorted(z)[n - kx] if kx else math.inf
+                    hx = [v >= top for v in z]
+                ly = ND.inv_cdf(1 - min(max(ay(rng), 1e-4), 1 - 1e-4)) if fy else None
+                self.rows.append((rep, n, sum(hx), hx, z, e, ly, ky))
+
+    def read(self, r: float) -> list[tuple[float, float, int]]:
+        """Per made-up bucket: (games both hit beyond n a b, games both hit, games), over the groups kept."""
+        out, s = [[0.0, 0.0, 0] for _ in range(self.reps)], math.sqrt(1 - r * r)
+        for rep, n, kx, hx, z, e, ly, ky in self.rows:
+            w = [r * a + s * b for a, b in zip(z, e)]
+            if ly is None:
+                ly = sorted(w)[n - ky] - 1e-12 if ky else math.inf
+            hy = [v > ly for v in w]
+            k = sum(hy)
+            if not kept(n, kx, k):
+                continue
+            both = sum(a and b for a, b in zip(hx, hy))
+            o = out[rep]
+            o[0] += both - kx * k / n
+            o[1] += both
+            o[2] += n
+        return [tuple(o) for o in out]
+
+
+def fit_groups(tallies: list[tuple], fx: bool, fy: bool) -> tuple[dict | None, Seasons | None]:
+    """The r whose made-up seasons show the games both legs hit, beyond n a b,
+    that the real groups do (the module docstring's "What r is"), with a rough
+    standard error; and the seasons, for check."""
+    real = [t for t in tallies if kept(*t[:3])]
+    if not real:
+        return None, None
+    games = sum(t[0] for t in real)
+    want = sum(t[3] - t[1] * t[2] / t[0] for t in real)
+    sim = Seasons(tallies, fx, fy)
+
+    def excess(r: float) -> float:
+        return statistics.fmean(o[0] for o in sim.read(r))
+
+    lo, hi = -0.95, 0.95
+    for _ in range(11):
+        mid = (lo + hi) / 2
+        if excess(mid) < want:
+            lo = mid
+        else:
+            hi = mid
+    r = (lo + hi) / 2
+    slope = (excess(min(r + 0.03, 0.97)) - excess(max(r - 0.03, -0.97))) / 0.06
+    sd = statistics.pstdev(o[0] for o in sim.read(r))
+    return {"r": round(r, 3), "se": round(sd / slope, 3) if slope > 0 else None,
+            "games": games, "groups": len(real), "both": round(sum(t[3] for t in real) / games, 4),
+            "unrelated": round(sum(t[1] * t[2] / t[0] for t in real) / games, 4)}, sim
+
+
 def check(groups: list[list[tuple[float, float]]], sx: str, sy: str, r: float, at: dict | None = None) -> dict | None:
     """Out of the fit's sight: both legs at each group's upper-third lines
-    (counts with a fixed line keep it), actual vs what r says."""
-    cuts = [c for g in groups for c in [cut(g, sx, sy, 2 / 3, at)] if c]
-    if not cuts or (sx in FIXED and sy in FIXED):   # both lines fixed: nothing the fit didn't see
+    (counts with a fixed line keep it), actual vs what r says (made-up seasons
+    at r, cut the same way)."""
+    if fixed(sx, at) and fixed(sy, at):   # both lines fixed: nothing the fit didn't see
         return None
-    games = sum(c[0] for c in cuts)
-    model = sum(n * a * b + (n - 1) * (joint(r, ND.inv_cdf(a), ND.inv_cdf(b), a * b) - a * b) for n, a, b, _ in cuts)
-    return {"actual": round(sum(c[3] for c in cuts) / games, 4), "model": round(model / games, 4)}
+    tallies = [tally(g, sx, sy, 2 / 3, at) for g in groups]
+    real = [t for t in tallies if kept(*t[:3])]
+    if not real:
+        return None
+    sim = Seasons(tallies, fixed(sx, at), fixed(sy, at), seed=11).read(r)
+    n = sum(o[2] for o in sim)
+    if not n:
+        return None
+    return {"actual": round(sum(t[3] for t in real) / sum(t[0] for t in real), 4),
+            "model": round(sum(o[1] for o in sim) / n, 4)}
 
 
 def buckets(rows: list[tuple[float, list]], edges: tuple, sx: str, sy: str, bands: bool = False,
@@ -380,7 +500,7 @@ def buckets(rows: list[tuple[float, list]], edges: tuple, sx: str, sy: str, band
             if f:
                 out.append({"min": lo, "max": hi, **f, "groups": len(groups), "check": None})
             continue
-        f = fit([c for g in groups for c in [cut(g, sx, sy, at=at)] if c])
+        f, _ = fit_groups([tally(g, sx, sy, at=at) for g in groups], fixed(sx, at), fixed(sy, at))
         if f:
             out.append({"min": lo, "max": hi, **f, "check": check(groups, sx, sy, f["r"], at)})
     return out
@@ -464,7 +584,8 @@ def main() -> None:
         "halves": HALF,
         "seasons": seasons,
         "team_games": len(teams),
-        "method": "Gaussian-copula r that reproduces how often both legs hit at each group's median lines "
+        "method": "Gaussian-copula r that reproduces how often both legs hit at each group's median lines, "
+                  "solved on simulated seasons so a rate read off a dozen games does not inflate it "
                   "(anytime TD 1+, game lines at the closing number; passing TDs at 2+ and again at 3+, "
                   "one row each, `at` 1.5 and 2.5); role = position and "
                   "that season's targets or carries a game; check = the same at upper-third lines. "

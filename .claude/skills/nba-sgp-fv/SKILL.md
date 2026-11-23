@@ -215,14 +215,24 @@ or better (Pritchard 25+ / 3+ at 11.31x against +640, Curry 27+ / 7+ and
 **Passing TDs at 3+** (11-15): the role r's with passing TDs are fitted at
 2+ and again at 3+ (`at` 1.5 / 2.5 in `nfl_stack_correlations.json`), and
 the scanner takes the row nearest the leg's line. At 3+ the r with a
-receiver's TD is lower (WR 7+ targets 0.62 to 0.54) and with the team total
-higher (0.67 to 0.82). The three-leg joint at 3+ matched ten seasons of
+receiver's TD is lower (WR 7+ targets 0.55 to 0.48) and with the team total
+higher (0.60 to 0.71). The three-leg joint at 3+ matched ten seasons of
 results within 2% with the team total.
+
+**NFL role r's are solved on simulated seasons** (11-22): the equation the
+r's were fitted with reads each group's hit rates off its own dozen games,
+and on rates that noisy it returns an r about 0.1 too high wherever a leg is
+a touchdown (0.45 came back as 0.55 on made-up seasons). `fit_groups` in
+`scripts/nfl_stack_correlations.py` solves r on simulated seasons instead.
+PTD·TD for a WR: 0.57 / 0.60 / 0.63 became 0.47 / 0.52 / 0.55 by targets;
+passing TDs with the team total 0.68 to 0.60; yardage pairs moved 0.01 to
+0.02. `STACKLINE_FIX` (x0.95) was measured against the old r's and has not
+been measured again.
 
 **NFL role r's and the three-leg stack fix** (11-15): a receiver's role r
 is read off the line between the middles of the target buckets (3-5, 5-7,
-7+), not the bucket's own (5.25 targets: PTD·TD 0.591, not the 5-7
-bucket's 0.607). A QB prop + his receiver's prop + a game line is then
+7+), not the bucket's own (5.25 targets: PTD·TD 0.501, not the 5-7
+bucket's 0.518). A QB prop + his receiver's prop + a game line is then
 scaled x0.95 (`STACKLINE_FIX` in scan.py): over ten seasons those slips hit
 0.93 to 0.98 of what the pair r's model, the pairs themselves 0.97 to 1.00.
 Rodgers 2+ pass TDs + Bernard TD + Over 49.5 went from +559 to +606.
