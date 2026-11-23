@@ -327,6 +327,7 @@ try { KKEY = KPAGE ? localStorage.getItem(KKEYLS) || "" : ""; } catch (_) {}
 const KALSHI = l => String(l).startsWith("kalshi");
 function kalshiAsk() {
   const v = (prompt("Kalshi scanner passcode") || "").trim();
+  KWHY = "";
   if (v) { KKEY = v; try { localStorage.setItem(KKEYLS, v); } catch (_) {} }
   kalshiNote();
 }
@@ -335,7 +336,9 @@ function kalshiLock() {   // the server refused it: forget it and ask once more
   try { localStorage.removeItem(KKEYLS); } catch (_) {}
   kalshiAsk();
 }
-const kalshiNote = () => { if (KPAGE && !KKEY) document.getElementById("rows").innerHTML = '<div class="empty">Locked. Click the title three times to enter the Kalshi passcode.</div>'; };
+// KWHY: what the server said when it refused without a wrong passcode (the boards are off, or too many wrong ones from this connection).
+let KWHY = "";
+const kalshiNote = () => { if (KPAGE && !KKEY) document.getElementById("rows").innerHTML = `<div class="empty">${KWHY ? esc(KWHY) : "Locked. Click the title three times to enter the Kalshi passcode."}</div>`; };
 // What the account already holds on Kalshi (GET /api/nba/kalshi-positions, read
 // once a minute and after a bet): a strip above the board and a line on the
 // row whose legs match.
@@ -802,7 +805,20 @@ async function poll() {
     const stop = STOP; STOP = false;
     const tab = LEAGUE;
     const r = await fetch(ALL() ? `/api/nba/novig-scan?league=all&min=${MINEV}${WIDE ? "&wide=1" : ""}` : `/api/nba/novig-scan?league=${LEAGUE}${WIDE ? "&wide=1" : ""}${stop ? "&stop=1" : ""}${NOW ? "&now=1" + (document.getElementById("game").value ? "&events=" + document.getElementById("game").value : "") : ""}`, { cache: "no-store", headers: { "X-Scan-Key": KEY, "X-Kalshi-Key": KKEY } });
-    if (r.status === 423) { kalshiLock(); return; }
+    if (r.status === 423 || r.status === 429) {
+      const j = await r.json().catch(() => ({}));
+      if (r.status === 429 && j.kind !== "kalshi") {
+        KEY = "";
+        try { localStorage.removeItem(KEYLS); } catch (_) {}
+        return lock("Too many wrong passcodes from this connection. Try again in 15 minutes.");
+      }
+      if (r.status === 423 && !j.off) { kalshiLock(); return; }
+      // No prompt: the passcode isn't the problem (or can't be tried yet). It is forgotten on this device either way.
+      KKEY = "";
+      try { localStorage.removeItem(KKEYLS); } catch (_) {}
+      KWHY = j.off ? "The Kalshi boards are switched off on the server: KALSHI_TAB_KEY is not set there (8 characters or more)." : "Too many wrong Kalshi passcodes from this connection. Try again in 15 minutes, then click the title three times.";
+      return kalshiNote();
+    }
     if (r.status === 403) {
       KEY = "";
       try { localStorage.removeItem(KEYLS); } catch (_) {}

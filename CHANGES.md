@@ -1,5 +1,19 @@
 # Changes
 
+## 2026-11-23 session
+
+### Scanner passcodes: no built-in Kalshi passcode, a lockout on wrong ones, a day's limit on bets
+Max, 11-23 (an email from Kalshi: new sign-in, Mac, Chrome, Louisville KY, 3:37 PM ET): I think we need to up the security on the scanner.
+
+- **The email is not the scanner.** It reports a sign-in to kalshi.com in a browser, with the account's email and password. The scanner never has those: it signs each call with the API key (`KALSHI_KEY_ID`, `KALSHI_PRIVATE_KEY`), which makes no sign-in. Nothing below would have stopped or caused it; that is settled on Kalshi (password, two-factor, a new API key).
+- **What was weak here**: the Kalshi boards and the Bet button answered to `yyy` whenever `KALSHI_TAB_KEY` was not set, and `yyy` is written in this repo. Wrong passcodes cost 0.8 s each and nothing else, so either passcode could be guessed at about 100,000 tries a day per connection. Nothing limited a day's bets but $250 each.
+- **No built-in Kalshi passcode** (`NV_KALSHI_ON` in `server.js`): with no `KALSHI_TAB_KEY`, one under 8 characters, or the scanner's own, the Kalshi boards, the positions read, the refresh and the Bet button are off for everyone (423, and the page says why instead of asking for a passcode). **Set `KALSHI_TAB_KEY` in Railway or the Kalshi page stays off.**
+- **Lockout** (`nvCheck`): 5 wrong passcodes in 15 minutes from one address and that address is refused for 15 minutes, right passcode or not (429). Counted apart for the scanner's passcode and the Kalshi one, on every route that takes them. A request with no passcode is not a guess. Passcodes are compared in constant time. The address is the one Railway's edge reports (`trust proxy`), not the caller's own `X-Forwarded-For`.
+- **A day's limit** (`KALSHI_BET_DAY_MAX`, $2,500 unless set: ten bets at the cap): all bets in one US Eastern day together, kept in `kalshi_bet_state.json`. A bet that got no answer in 60 seconds counts in full. The bet's log line now carries the caller's address and the day's total.
+- **Page** (`public/nba_scan.html`): both refusals show as a message; the passcode on that device is forgotten.
+- **Checked** against the local server: the right passcodes; seven requests with none (no lockout); five wrong then 429 with the right one, for each passcode; the Novig boards still open while the Kalshi passcode is locked out; `yyy` refused with no `KALSHI_TAB_KEY` and with `KALSHI_TAB_KEY=yyy`, on the board and the bet route; the page's three states in a browser. **Not checked**: on Railway. If its edge is more than one hop, every caller shares one address and five wrong guesses by anyone lock everyone out for 15 minutes: the `[passcode]` log line names the address it counted. No bet was placed, so the day's limit was not run.
+- **Not changed**: the rest of the app has no passcode (the DraftKings cookie routes, the screenshot readers that spend the Anthropic key, the correlations upload and rollback). Passcodes are still kept in the browser's storage on each device.
+
 ## 2026-11-22 session
 
 ### A receiver who is handed the ball: his TD moves less with his QB's passing

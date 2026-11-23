@@ -12,6 +12,9 @@ const { foldAscii } = require('./public/utils/nameNormalize.js');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+// Railway's edge is the one proxy in front: req.ip is the caller's address as the edge saw it,
+// not what the caller wrote in X-Forwarded-For. The passcode lockout below counts by it.
+app.set('trust proxy', 1);
 
 /* Server-side diagnostic flag. Mirrors the DEBUG flag in public/index.html
    but lives in this process. Set DEBUG=true in env to see dedup collapses,
@@ -2918,22 +2921,47 @@ function nvCycleState() {
 // as X-Scan-Key; the page asks for it once and keeps it on that device).
 // With no NOVIG_SCAN_KEY set, the scanner is off for everyone.
 const NV_SCAN_KEY = (process.env.NOVIG_SCAN_KEY || '').trim();
-// The Kalshi board's own passcode (KALSHI_TAB_KEY on the server changes it).
-const NV_KALSHI_KEY = (process.env.KALSHI_TAB_KEY || 'yyy').trim();
+// The Kalshi boards' own passcode: KALSHI_TAB_KEY on the server. It stands in front of the Bet
+// button, so there is no built-in one (it was 'yyy' until 11-23, readable in this file): with
+// none set, one under 8 characters, or the scanner's own, the Kalshi boards are off for everyone.
+const NV_KALSHI_KEY = (process.env.KALSHI_TAB_KEY || '').trim();
+const NV_KALSHI_ON = NV_KALSHI_KEY.length >= 8 && NV_KALSHI_KEY !== NV_SCAN_KEY;
+if (!NV_KALSHI_ON) console.log('[kalshi] boards off: ' + (NV_KALSHI_KEY ? 'KALSHI_TAB_KEY must be 8 characters or more and not the scanner\'s passcode' : 'no KALSHI_TAB_KEY set'));
+// Wrong passcodes are counted per caller address and per passcode: after 5 in 15 minutes that
+// address is refused for 15 minutes, right passcode or not (429). A request with no passcode
+// on it is not a guess. The 0.8 s wait on a wrong answer stays.
+const NV_GUESS = new Map(), NV_GUESS_MAX = 5, NV_GUESS_MS = 15 * 60 * 1000;   // 'scan:ip' -> { n, since, until }
+const nvSame = (a, b) => { const h = x => require('crypto').createHash('sha256').update(String(x)).digest(); return require('crypto').timingSafeEqual(h(a), h(b)); };
+// { ok: true } or { ok: false, code, body, slow } for the scanner's passcode ('scan') or the Kalshi one ('kalshi').
+function nvCheck(req, kind) {
+  const want = kind === 'kalshi' ? NV_KALSHI_KEY : NV_SCAN_KEY, got = String(req.get(kind === 'kalshi' ? 'X-Kalshi-Key' : 'X-Scan-Key') || '');
+  const no = kind === 'kalshi' ? { code: 423, body: { error: 'locked' } } : { code: 403, body: { error: 'wrong passcode' } };
+  if (kind === 'kalshi' && !NV_KALSHI_ON) return { ok: false, code: 423, body: { error: 'the Kalshi boards are off on the server (no KALSHI_TAB_KEY set)', off: true } };
+  const k = kind + ':' + (req.ip || ''), now = Date.now(), g = NV_GUESS.get(k);
+  if (g && g.until > now) return { ok: false, code: 429, body: { error: 'too many wrong passcodes: try again in ' + Math.ceil((g.until - now) / 60000) + ' min', kind, wait: g.until - now } };
+  if (!got) return Object.assign({ ok: false }, no);
+  if (nvSame(got, want)) { NV_GUESS.delete(k); return { ok: true }; }
+  const n = g && now - g.since < NV_GUESS_MS ? g : { n: 0, since: now, until: 0 };
+  if (++n.n >= NV_GUESS_MAX) { n.until = now + NV_GUESS_MS; n.n = 0; n.since = now; console.log('[passcode] ' + kind + ': ' + NV_GUESS_MAX + ' wrong from ' + req.ip + ', refused for 15 min'); }
+  if (NV_GUESS.size > 5000) for (const [x, v] of NV_GUESS) if (v.until < now && now - v.since > NV_GUESS_MS) NV_GUESS.delete(x);
+  NV_GUESS.set(k, n);
+  return Object.assign({ ok: false, slow: true }, no);
+}
+const nvDeny = (res, c) => { const go = () => res.status(c.code).json(c.body); if (c.slow) setTimeout(go, 800); else go(); return false; };
+const nvKalshiAuth = (req, res) => { const c = nvCheck(req, 'kalshi'); return c.ok || nvDeny(res, c); };
 app.get('/api/nba/novig-scan', (req, res) => {
   res.set('Cache-Control', 'no-store');
   if (!NV_SCAN_KEY) return res.status(503).json({ error: 'scanner off' });
-  if ((req.get('X-Scan-Key') || '') !== NV_SCAN_KEY) {
-    return setTimeout(() => res.status(403).json({ error: 'wrong passcode' }), 800);  // slows guessing
-  }
+  const sc = nvCheck(req, 'scan');
+  if (!sc.ok) return nvDeny(res, sc);
   const wide = req.query.wide === '1';
   const league = NV_LEAGUES.includes(req.query.league) ? req.query.league : 'nba';
   const now = Date.now();
   // The Kalshi board asks with the owner's own Kalshi key, so it has a second
   // passcode (X-Kalshi-Key). Without it the board can't be read or started,
   // its rows stay off the All tab, and a pass on it shows as no board's.
-  const kalshiOk = (req.get('X-Kalshi-Key') || '') === NV_KALSHI_KEY;
-  if (nvKalshi(league) && !kalshiOk) return setTimeout(() => res.status(423).json({ error: 'locked' }), 800);
+  const kc = nvCheck(req, 'kalshi'), kalshiOk = kc.ok;
+  if (nvKalshi(league) && !kalshiOk) return nvDeny(res, kc);
   // A Kalshi board looks at the Kalshi slot, every other board at Novig's.
   const RUN = nvKalshi(league) && req.query.league !== 'all' ? NV_KRUN : NV_RUN;
   const busyName = () => (RUN ? RUN.key.split(':')[0] : null);
@@ -3033,8 +3061,8 @@ if (NV_SCAN_FILE) require('fs').rename(path.join(path.dirname(NV_SCAN_FILE), 'no
 function nvBetsAuth(req, res) {
   res.set('Cache-Control', 'no-store');
   if (!NV_SCAN_KEY) { res.status(503).json({ error: 'scanner off' }); return false; }
-  if ((req.get('X-Scan-Key') || '') !== NV_SCAN_KEY) { setTimeout(() => res.status(403).json({ error: 'wrong passcode' }), 800); return false; }
-  return true;
+  const c = nvCheck(req, 'scan');
+  return c.ok || nvDeny(res, c);
 }
 // POST /api/nba/novig-requote { league, wide, key } — price one row of a
 // board again (the refresh button on a row): scan.py --requote re-reads the
@@ -3082,6 +3110,10 @@ function nvRequote(league, wide, key, cb) {
 // the No side turns the button off until the server is told otherwise.
 // $250 a bet: the page stakes a row's QK $ (Max, 11-18); it was $25 for the night of 11-16. KALSHI_BET_MAX on the server overrides it.
 const NV_KBET_MAX = Math.max(1, parseFloat(process.env.KALSHI_BET_MAX) || 250);
+// And at KALSHI_BET_DAY_MAX in one day (US Eastern), all bets together: ten bets at the cap unless set.
+// A bet that got no answer in 60 seconds counts in full, since it may have gone in.
+const NV_KBET_DAY_MAX = Math.max(1, parseFloat(process.env.KALSHI_BET_DAY_MAX) || 10 * NV_KBET_MAX);
+const nvKbetDay = () => { const d = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }); if (!NV_KBET.day || NV_KBET.day.date !== d) NV_KBET.day = { date: d, spent: 0 }; return NV_KBET.day; };
 const NV_KBET_FILE = NV_SCAN_FILE ? path.join(path.dirname(NV_SCAN_FILE), 'kalshi_bet_state.json') : null;
 // ok: the button's side was seen right on the real exchange 11-16 (a $2 bet, $1.88 in, on the Yes side),
 // so no $2 test is asked for any more. The position is still read after every bet.
@@ -3093,7 +3125,8 @@ app.post('/api/nba/kalshi-bet', (req, res) => {
   const { league, wide, key } = req.body || {};
   let stake = Math.round(Number((req.body || {}).stake) * 100) / 100;
   const x = Number((req.body || {}).x);
-  if (!nvKalshi(league) || (req.get('X-Kalshi-Key') || '') !== NV_KALSHI_KEY) return res.status(423).json({ error: 'locked' });
+  if (!nvKalshi(league)) return res.status(423).json({ error: 'locked' });
+  if (!nvKalshiAuth(req, res)) return;
   if (NV_KBET.off) return res.status(409).json({ error: 'Betting is off: ' + NV_KBET.off });
   const B = NV_BOARDS.get(`${league}:${wide ? 1 : 0}`), row = B && B.rows.get(String(key));
   if (!row) return res.status(404).json({ error: 'that slip is no longer on the board' });
@@ -3103,12 +3136,14 @@ app.post('/api/nba/kalshi-bet', (req, res) => {
   if (first) stake = Math.min(stake, 2);
   if (stake > NV_KBET_MAX) return res.status(400).json({ error: `the most one bet can be is $${NV_KBET_MAX}` });
   if (NV_KBET_BUSY) return res.status(429).json({ error: 'another bet is being placed' });
+  const day = nvKbetDay();
+  if (day.spent + stake > NV_KBET_DAY_MAX + 1e-9) return res.status(400).json({ error: `today's limit is $${NV_KBET_DAY_MAX} across all bets and $${Math.round(day.spent * 100) / 100} is already in (KALSHI_BET_DAY_MAX on the server)` });
   NV_KBET_BUSY = true;
   let out = '', err = '', done = false, timer = null, proc;
   const finish = (code, body) => { if (done) return; done = true; NV_KBET_BUSY = false; clearTimeout(timer); res.status(code).json(body); };
   try { proc = require('child_process').spawn(PYTHON, [NV_KALSHI_PY, '--bet', '--league', NV_PY_LEAGUE(league)], { stdio: ['pipe', 'pipe', 'pipe'] }); }
   catch (e) { return finish(502, { error: 'could not start: ' + e.message }); }
-  timer = setTimeout(() => { proc.kill(); finish(504, { error: 'No answer in 60 seconds. The bet may or may not have gone in: look at your Kalshi positions before trying again.' }); }, 60 * 1000);
+  timer = setTimeout(() => { proc.kill(); nvKbetDay().spent += stake; nvKbetSave(); finish(504, { error: 'No answer in 60 seconds. The bet may or may not have gone in: look at your Kalshi positions before trying again.' }); }, 60 * 1000);
   proc.stdout.on('data', c => { out += c; });
   proc.stderr.on('data', c => { err = (err + c).slice(-2000); });
   proc.on('error', e => finish(502, { error: 'could not start: ' + e.message }));
@@ -3118,9 +3153,10 @@ app.post('/api/nba/kalshi-bet', (req, res) => {
     if (!r || r.error || !r.bet) return finish(502, { error: (r && r.error) || err.trim().split('\n').pop() || 'no answer' });
     if (r.bet.side === 'yes') NV_KBET.ok = true;
     else if (r.bet.side === 'no') NV_KBET.off = 'the last bet landed on the No side of the combo. Close that position on Kalshi; the button stays off until this is fixed in the code.';
+    nvKbetDay().spent += Number(r.bet.stake) > 0 ? Number(r.bet.stake) : stake;
     nvKbetSave();
     NV_KPOS.at = 0;   // the next read of positions is fresh
-    console.log('[kalshi-bet]', JSON.stringify({ label: row.label, player: row.player, bet: r.bet }));
+    console.log('[kalshi-bet]', JSON.stringify({ label: row.label, player: row.player, bet: r.bet, from: req.ip, today: nvKbetDay().spent }));
     if (r.row && B.rows.has(r.row.key)) { r.row.type = 'row'; B.rows.set(r.row.key, r.row); nvSaveBoards(); }
     finish(200, { bet: r.bet, row: r.row, first, off: NV_KBET.off, now: Date.now() });
   });
@@ -3134,7 +3170,7 @@ app.post('/api/nba/kalshi-bet', (req, res) => {
 let NV_KPOS = { at: 0, list: [], error: null, busy: null };
 app.get('/api/nba/kalshi-positions', (req, res) => {
   if (!nvBetsAuth(req, res)) return;
-  if ((req.get('X-Kalshi-Key') || '') !== NV_KALSHI_KEY) return res.status(423).json({ error: 'locked' });
+  if (!nvKalshiAuth(req, res)) return;
   const send = () => res.json({ positions: NV_KPOS.list, error: NV_KPOS.error, at: NV_KPOS.at, now: Date.now() });
   if (Date.now() - NV_KPOS.at < 60 * 1000) return send();
   if (!NV_KPOS.busy) {
@@ -3153,7 +3189,7 @@ app.get('/api/nba/kalshi-positions', (req, res) => {
 app.post('/api/nba/novig-requote', (req, res) => {
   if (!nvBetsAuth(req, res)) return;
   const { league, wide, key } = req.body || {};
-  if (nvKalshi(league) && (req.get('X-Kalshi-Key') || '') !== NV_KALSHI_KEY) return res.status(423).json({ error: 'locked' });
+  if (nvKalshi(league) && !nvKalshiAuth(req, res)) return;
   nvRequote(league, wide, key, (why, row, code) => why ? res.status(code).json({ error: why }) : res.json({ row, now: Date.now() }));
 });
 
