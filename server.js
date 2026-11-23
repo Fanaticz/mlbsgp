@@ -2566,19 +2566,19 @@ try {
   }
 } catch (_) { /* no saved boards yet */ }
 
-const NV_PY_LEAGUE = league => ({ ladder: 'nba', nbateam: 'nba', dknba: 'nba', kalshinba: 'nba', kalshinba3: 'nba', kalshinbatri: 'nba', kalshinbaline: 'nba', kalshinfl: 'nfl', kalshinflline: 'nfl', kalshicbb: 'cbb', kalshicfb: 'cfb', nflladder: 'nfl', nhllines: 'nhl' }[league] || league);
+const NV_PY_LEAGUE = league => ({ ladder: 'nba', nbateam: 'nba', dknba: 'nba', kalshinba: 'nba', kalshinba3: 'nba', kalshinbatri: 'nba', kalshinbaline: 'nba', kalshinfl: 'nfl', kalshinflline: 'nfl', kalshinfltri: 'nfl', kalshicbb: 'cbb', kalshicfb: 'cfb', nflladder: 'nfl', nhllines: 'nhl' }[league] || league);
 // The DK NBA board: the NBA slips priced on DraftKings (scan_dk.py). Its own script; same events.
 const NV_DK_PY = path.join(__dirname, '.claude', 'skills', 'nba-sgp-fv', 'scan_dk.py');
 // Every board but 'nba' (the default). 'nbateam' is the NBA Team board:
 // scan.py --league nba --kind team.
 // The Kalshi boards: slips asked as Kalshi combos (scan_kalshi.py; 'kalshinba3' is Points + Threes
 // alone, 'kalshinba' the other pairs and teammates: split 11-18; 'kalshinbatri' three legs on the
-// high scorers, 11-21), signed with
+// high scorers, 11-21; 'kalshinfltri' the NFL three-leg slips, 11-23), signed with
 // KALSHI_KEY_ID / KALSHI_PRIVATE_KEY. Fetch only, like the DK board.
 const NV_KALSHI_PY = path.join(__dirname, '.claude', 'skills', 'nba-sgp-fv', 'scan_kalshi.py');
-const NV_OWN_SCRIPT = { dknba: NV_DK_PY, kalshinba: NV_KALSHI_PY, kalshinba3: NV_KALSHI_PY, kalshinbatri: NV_KALSHI_PY, kalshinbaline: NV_KALSHI_PY, kalshinfl: NV_KALSHI_PY, kalshinflline: NV_KALSHI_PY, kalshicbb: NV_KALSHI_PY, kalshicfb: NV_KALSHI_PY };
+const NV_OWN_SCRIPT = { dknba: NV_DK_PY, kalshinba: NV_KALSHI_PY, kalshinba3: NV_KALSHI_PY, kalshinbatri: NV_KALSHI_PY, kalshinbaline: NV_KALSHI_PY, kalshinfl: NV_KALSHI_PY, kalshinflline: NV_KALSHI_PY, kalshinfltri: NV_KALSHI_PY, kalshicbb: NV_KALSHI_PY, kalshicfb: NV_KALSHI_PY };
 const nvKalshi = league => String(league).startsWith('kalshi');
-const NV_LEAGUES = ['nfl', 'nhl', 'nhllines', 'soccer', 'cfb', 'cbb', 'ladder', 'nflladder', 'nbateam', 'dknba', 'kalshinba3', 'kalshinba', 'kalshinbatri', 'kalshinbaline', 'kalshinfl', 'kalshinflline', 'kalshicbb', 'kalshicfb'];
+const NV_LEAGUES = ['nfl', 'nhl', 'nhllines', 'soccer', 'cfb', 'cbb', 'ladder', 'nflladder', 'nbateam', 'dknba', 'kalshinba3', 'kalshinba', 'kalshinbatri', 'kalshinbaline', 'kalshinfl', 'kalshinflline', 'kalshinfltri', 'kalshicbb', 'kalshicfb'];
 // GET /api/nba/novig-games?league= — the league's open pregame games for the
 // page's game picker: [{ id, name, starts }]. One catalog read, kept 2 minutes.
 const NV_GAMES = new Map();   // python league -> { at, games }
@@ -3008,7 +3008,7 @@ app.get('/api/nba/novig-scan', (req, res) => {
   });
 });
 // The boards the All tab gathers (the hidden NHL boards are left out).
-const NV_ALL_BOARDS = ['nba', 'ladder', 'nbateam', 'nfl', 'nflladder', 'soccer', 'cfb', 'cbb', 'kalshinba3', 'kalshinba', 'kalshinbatri', 'kalshinbaline', 'kalshinfl', 'kalshinflline', 'kalshicbb', 'kalshicfb'];   // DK NBA's tab was removed 11-18
+const NV_ALL_BOARDS = ['nba', 'ladder', 'nbateam', 'nfl', 'nflladder', 'soccer', 'cfb', 'cbb', 'kalshinba3', 'kalshinba', 'kalshinbatri', 'kalshinbaline', 'kalshinfl', 'kalshinflline', 'kalshinfltri', 'kalshicbb', 'kalshicfb'];   // DK NBA's tab was removed 11-18
 
 // GET /n/<outcome id,outcome id,...> — a slip's link into Novig, for the
 // scanner's rows (and for alerts sent off the page). Novig's own app routes

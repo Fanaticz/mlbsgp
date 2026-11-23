@@ -2,6 +2,20 @@
 
 ## 2026-11-23 session
 
+### Kalshi NFL 3-Leg: a new board for three-leg NFL slips
+Max, 11-23: can we add 3 leg Kalshi. (Kalshi NBA 3-Leg has been up since 11-21, so this was read as the NFL one.)
+
+- **New tab** (Kalshi NFL 3-Leg, after Kalshi NFL Lines; `kalshinfltri` in `server.js` and `public/nba_scan.html`, `--league nfltri` in `scan_kalshi.py`). Fetch only, behind the Kalshi passcode, with the refresh and Bet buttons, on the All tab.
+- **The slips** (`nfltri_candidates`): the NFL tab's three-leg slips (`scan.nfl_tri_candidates`) built on Kalshi's markets. Every prop is a Yes on the milestone beside the player's main line; all three legs pull the same way. Four shapes, each a choice in the tab's filter: three of one player's props (receptions + receiving yards + touchdown; a QB's completions + passing yards + passing TDs); two of his props + a game line; a QB's passing leg + his receiver's + a game line; a QB with one receiver across three props.
+- **The game line**: the total, the team's spread, moneyline or team total, or the first half's, on the side that goes with both props (each at r 0.10 or better with it, one at 0.30). The other team covering and an Under are No legs, as on Kalshi NFL Lines.
+- **Fair value**: the three-way joint from the three pair r's (`scan.tri_safe`): the player's own r for two of his props, the league-wide role r's across a QB and his receiver or with a line. A QB + receiver + line slip is times 0.95 (`scan.STACKLINE_FIX`, measured 11-15 for the NFL tab). The other three shapes have no such cut, as on the NFL tab; none has been measured for them.
+- **Which are asked**: each player leads his three best by lift over unrelated legs (`--per`), at most two of a shape and one of each kind of line; pairs at r 0.25 or better (`--min-r`). 200 slips a pass, the next day of games first, most lift first. No prop Unders. Not asked: a slip where one leg decides another (`nfl_forced`).
+- **Refresh and Bet** (`reprice`): a three-leg row is rebuilt from its own three pair r's and its own cut (`tri_fix` on the row; an NBA three-leg row keeps 0.96).
+- **Moved, not changed**: the game-line code of `nflline_candidates` is now `nfl_games` and `nfl_line_leg`, shared by both boards. Kalshi NFL Lines builds 180 slips on tonight's books, as it does with the code before the move.
+- **Tonight**, built from the live books: 161 slips on 66 players (58 QB + receiver + line, 35 own props, 35 two props + line, 33 QB + receiver on three props), about 13 minutes a pass.
+- **Checked**: dry run on the live books; the re-price run on one row of each shape (Kalshi's public book); `node --check server.js`; the tab opened in a browser on a local server with those 161 slips and made-up Kalshi prices: rows, filter and game picker show, no page errors.
+- **Not checked**: anything that needs the Kalshi key. No three-leg NFL slip has been asked of Kalshi, so which shapes it will combine is not known (a refused slip shows as a miss with Kalshi's reason). The Bet button was not pressed on one.
+
 ### Scanner passcodes: no built-in Kalshi passcode, and a lockout on wrong ones
 Max, 11-23 (an email from Kalshi: new sign-in, Mac, Chrome, Louisville KY, 3:37 PM ET): I think we need to up the security on the scanner.
 
