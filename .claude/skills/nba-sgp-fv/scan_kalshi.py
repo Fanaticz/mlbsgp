@@ -425,7 +425,7 @@ def nfl_candidates(a):
             for qs, ts in scan.STACK_PAIRS:
                 if qs not in ql or ts not in legs:
                     continue
-                r = scan.role_r(S["stack"], vol(p, "tgt_mean"), scan.ptd_at(qs, ql[qs][0]["line"]), qb=qs, stat=ts, pos=p["group"], by="tgt")
+                r = scan.stack_r(S["stack"], p, vol, qs, ts, scan.ptd_at(qs, ql[qs][0]["line"]))
                 if r is not None and r >= a.min_r:
                     overs.append(nfl_row(a, p, info, named(ql[qs][0]), legs[ts][0], r, "stack"))
                     unders.append(nfl_row(a, p, info, named(ql[qs][1]), legs[ts][1], r, "stack"))

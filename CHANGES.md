@@ -2,6 +2,16 @@
 
 ## 2026-11-22 session
 
+### A receiver who is handed the ball: his TD moves less with his QB's passing
+Max, 11-22 (the same slip, after the fix below put it at +472): Deebo isn't a traditional WR.
+
+- **What it was**: the role r knew position and targets only. Samuel has 2.0 carries a game this season on 3.8 targets; a rushing touchdown is not a passing one (a back's TD by carries has r 0.00 with his QB's passing TDs), so his anytime TD moves less with Purdy's than a WR's whose touchdowns are all catches.
+- **Change** (`rush_share`, `rush_r`, `stack_r` in `scan.py`; all three stack call sites, Novig's NFL board, its three-leg slips and `scan_kalshi.py`): a receiver's rushing share of scoring is his carries and targets a game at the league's touchdowns per carry and per target (WR 0.0385 / 0.0486, TE 0.0781 / 0.0547, nflverse 2017-2026), less the 3% a typical receiver has. His TD is split into a receiving one at the role r and a rushing one at none, and the r used is the one that prices the two together. Passing TDs + TD and passing yards + TD. Under 2% is left alone.
+- **Data** (`_box` in `scripts/nfl_fetch_correlations.py`; `public/data/nfl_correlations.json` refetched): WRs and TEs now carry `car_mean`, overall and by season.
+- **Who moves**: 57 of 402 receivers, most by little. With a stack r today: Savion Williams 0.47 → 0.37, Samuel 0.47 → 0.37, Barner 0.44 → 0.38, Reed 0.47 → 0.43, Freiermuth 0.45 → 0.41, Malik Washington 0.51 → 0.47.
+- **This slip**: r 0.37, 0.162, **+516** (DraftKings +525): about +1.5% at 6.25x, not a play.
+- **Not changed**: a TD with a game line (a rushing TD moves with the team total as much as a receiving one). The split is read at even money on the QB's leg and a 25% TD, not at each slip's own prices. Not checked against results: receivers with a carry a game are too few to fit (30 seasons of them, r 0.54 ± 0.19 by the old fit).
+
 ### NFL role r's with a touchdown leg were about 0.1 too high
 Max, 11-22 (Kalshi NFL: Samuel anytime TD + Purdy 2+ passing TDs, fair +430, +17.9% at 6.25x; DraftKings had the slip +525, Fanatics +465): this FV seems wrong?
 
@@ -11,7 +21,7 @@ Max, 11-22 (Kalshi NFL: Samuel anytime TD + Purdy 2+ passing TDs, fair +430, +17
 - **Change** (`fit_groups`, `Seasons`, `rates`, `tally` in `scripts/nfl_stack_correlations.py`; `check` reads off the same simulated seasons): r is solved by simulation. Seasons of the real groups' lengths are drawn at a trial r, a counted leg's true rate from the spread of rates the bucket's groups show beyond chance, a median leg cut at each made-up season's own median, groups dropped by the same rule; r is the one whose made-up seasons show the real groups' games both hit beyond n a b. On made-up seasons it returns the r put in (0.30 / 0.45 / 0.60 came back 0.28 to 0.32 / 0.45 / 0.59 to 0.60). Lines fitted in bands of the spread (moneyline, sides) pool 50+ games a cell and keep the equation.
 - **What moves** (`public/data/nfl_stack_correlations.json`, regenerated): passing TDs + a receiver's TD, WR by targets 0.57 / 0.60 / 0.63 → 0.47 / 0.52 / 0.55 (at 3+: 0.45 / 0.54 / 0.54 → 0.37 / 0.47 / 0.48), TE 0.52 / 0.58 → 0.44 / 0.50. Passing yards + his TD 0.23 → 0.20. Passing TDs with the team total 0.68 → 0.60 (3+: 0.82 → 0.71), with the Over 0.62 → 0.55. A TD with a game line 0.24 → 0.20 on average. Yardage, reception and carry pairs 0.01 to 0.02. The fit takes about two minutes, from seconds.
 - **This slip**: r 0.473, 0.175, **+472**; at 6.25x that is +9%, not +18%.
-- **Not changed**: `STACKLINE_FIX` (x0.95 on a QB prop + receiver prop + game line) was measured against the old r's and not measured again; with lower pair r's it now errs toward a longer fair. A player's own pairs (`nfl_fetch_correlations.py`, receptions + TD and the like) are fitted another way and were not looked at. The role r knows position and targets only, not how much of his scoring is on the ground.
+- **Not changed**: `STACKLINE_FIX` (x0.95 on a QB prop + receiver prop + game line) was measured against the old r's and not measured again; with lower pair r's it now errs toward a longer fair. A player's own pairs (`nfl_fetch_correlations.py`, receptions + TD and the like) are fitted another way and were not looked at.
 
 ### A thin Kalshi book can't price a leg outside Novig's bid and ask
 Max, 11-22 (Kalshi NBA: Stirtz 15+ points + 4+ assists, fair +487, +79.9% at 10.56x; the books had each leg +233 and the slip +535 to +975): FV doesn't seem right.

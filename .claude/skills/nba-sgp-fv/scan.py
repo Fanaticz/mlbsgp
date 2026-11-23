@@ -871,6 +871,53 @@ def role_r(table, vol, at=None, **match):
     return price.interp(list(zip(mids, (e["r"] for e in rows))), vol)
 
 
+# Touchdowns a carry and a target are worth to a receiver (nflverse 2017-2026,
+# WR 0.0385 / 0.0486, TE 0.0781 / 0.0547), and the share of a typical
+# receiver's touchdowns that are rushing (3%: the role r's already carry it).
+TD_PER = {"WR": (0.0385, 0.0486), "TE": (0.0781, 0.0547)}
+RUSH_TYPICAL = 0.03
+
+
+def rush_share(p, vol):
+    """The share of a receiver's scoring that is on the ground beyond a
+    typical receiver's, from his carries and targets a game (0 for one who is
+    not handed the ball, or where the data has no carries for him)."""
+    per = TD_PER.get(p.get("group"))
+    car, tgt = vol(p, "car_mean"), vol(p, "tgt_mean")
+    if not per or not car or not tgt:
+        return 0.0
+    s = car * per[0] / (car * per[0] + tgt * per[1])
+    return max(0.0, (s - RUSH_TYPICAL) / (1 - RUSH_TYPICAL))
+
+
+def rush_r(r, share, a=0.5, td=0.25):
+    """A QB's passing leg with a receiver's anytime TD, for a receiver who
+    also scores on the ground (Max, 11-22: Deebo Samuel isn't a traditional
+    WR). The role r is a receiver's whose touchdowns are catches; a rushing
+    touchdown is not a passing one, and a back's TD by carries has no r with
+    his QB's passing TDs (0.00). So his TD is split into a receiving one, at
+    r, and a rushing one, at none, and the r returned is the one that prices
+    the two together (read at even money on the QB's leg and a 25% TD)."""
+    if share < 0.02 or r is None:
+        return r
+    lam = -math.log(1 - td)
+    rec, rush = 1 - math.exp(-(1 - share) * lam), 1 - math.exp(-share * lam)
+    j = sgp.joint(r, a, rec)
+    want = j + (a - j) * rush
+    lo, hi = (0.0, r) if r > 0 else (r, 0.0)
+    for _ in range(30):
+        mid = (lo + hi) / 2
+        lo, hi = (mid, hi) if sgp.joint(mid, a, td) < want else (lo, mid)
+    return (lo + hi) / 2
+
+
+def stack_r(table, p, vol, qs, ts, at=None):
+    """role_r for a QB's leg with his receiver's, by the receiver's targets;
+    his TD's r comes down by how much of his scoring is on the ground."""
+    r = role_r(table, vol(p, "tgt_mean"), at, qb=qs, stat=ts, pos=p["group"], by="tgt")
+    return rush_r(r, rush_share(p, vol)) if ts == "td" else r
+
+
 def ptd_at(stat, line):
     """`at` for role_r: the leg's line when it is passing TDs, else None."""
     return line if stat == "ptd" else None
@@ -1046,8 +1093,7 @@ def nflx_candidates(a, game):
                         continue
                     mine, unders = [], []
                     for qs, ts in STACK_PAIRS + (STACK_MORE if a.scope == "all" else ()):
-                        r = role_r(S["stack"], vol(p, "tgt_mean"), ptd_at(qs, qmain[qs]["line"]) if qs in qmain else None,
-                                   qb=qs, stat=ts, pos=p["group"], by="tgt")
+                        r = stack_r(S["stack"], p, vol, qs, ts, ptd_at(qs, qmain[qs]["line"]) if qs in qmain else None)
                         if qs in qmain and ts in main and r is not None and r >= a.min_r:
                             mine.append(row(p, starts, prop_leg(qb, qs, qmain, who), prop_leg(p, ts, main), r, "stack", 7))
                             unders.append(row(p, starts, prop_leg(qb, qs, qmain, who, -1), prop_leg(p, ts, main, side=-1), r, "stack", 7))
@@ -1172,8 +1218,7 @@ def nfl_tri_candidates(a):
                 if qb and p is not qb:
                     Q = {s: prop_leg(qb, s, qmain, who) for s in qmain}
                     st = {(qs, ts): r for qs, ts in STACK_PAIRS + STACK_MORE if qs in Q and ts in L
-                          for r in [role_r(S["stack"], vol(p, "tgt_mean"), ptd_at(qs, Q[qs]["line"]),
-                                           qb=qs, stat=ts, pos=p["group"], by="tgt")]
+                          for r in [stack_r(S["stack"], p, vol, qs, ts, ptd_at(qs, Q[qs]["line"]))]
                           if r is not None and r >= a.min_r}
                     for (qs, ts), r in st.items():
                         mine += [("stackline", line, legs, rs) for legs, rs, line in with_line(ev, team, qb, Q[qs], p, L[ts], r)]

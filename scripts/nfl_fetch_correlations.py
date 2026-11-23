@@ -378,7 +378,8 @@ def _box(games: list[dict], group: str) -> dict:
                 "ptd_mean": round(sum(g["ptd"] for g in games) / n, 2),
                 "int_mean": round(sum(g["int"] for g in games) / n, 2),
                 "ryds_mean": round(sum(g["ryds"] for g in games) / n, 1)}
-    return {"tgt_mean": round(sum(g["tgt"] for g in games) / n, 2),
+    return {"car_mean": round(sum(g.get("car", 0.0) for g in games) / n, 2),   # a receiver who is handed the ball (scan.rush_share)
+            "tgt_mean": round(sum(g["tgt"] for g in games) / n, 2),
             "rec_mean": round(sum(g["rec"] for g in games) / n, 2),
             "yds_mean": round(sum(g["yds"] for g in games) / n, 1),
             "td_rate": round(sum(1 for g in games if g["td"] >= 1) / n, 3)}

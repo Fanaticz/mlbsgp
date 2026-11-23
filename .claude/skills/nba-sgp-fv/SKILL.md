@@ -229,6 +229,12 @@ passing TDs with the team total 0.68 to 0.60; yardage pairs moved 0.01 to
 0.02. `STACKLINE_FIX` (x0.95) was measured against the old r's and has not
 been measured again.
 
+**A receiver who is handed the ball** (11-22): a QB's passing leg with a
+receiver's anytime TD uses `stack_r`, which lowers the role r by the share
+of his scoring that is rushing (`rush_share`: carries and targets a game at
+the league's TDs per carry and per target). Samuel, 2.0 carries on 3.8
+targets: 0.47 to 0.37.
+
 **NFL role r's and the three-leg stack fix** (11-15): a receiver's role r
 is read off the line between the middles of the target buckets (3-5, 5-7,
 7+), not the bucket's own (5.25 targets: PTD·TD 0.501, not the 5-7
