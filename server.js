@@ -3110,10 +3110,6 @@ function nvRequote(league, wide, key, cb) {
 // the No side turns the button off until the server is told otherwise.
 // $250 a bet: the page stakes a row's QK $ (Max, 11-18); it was $25 for the night of 11-16. KALSHI_BET_MAX on the server overrides it.
 const NV_KBET_MAX = Math.max(1, parseFloat(process.env.KALSHI_BET_MAX) || 250);
-// And at KALSHI_BET_DAY_MAX in one day (US Eastern), all bets together: ten bets at the cap unless set.
-// A bet that got no answer in 60 seconds counts in full, since it may have gone in.
-const NV_KBET_DAY_MAX = Math.max(1, parseFloat(process.env.KALSHI_BET_DAY_MAX) || 10 * NV_KBET_MAX);
-const nvKbetDay = () => { const d = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }); if (!NV_KBET.day || NV_KBET.day.date !== d) NV_KBET.day = { date: d, spent: 0 }; return NV_KBET.day; };
 const NV_KBET_FILE = NV_SCAN_FILE ? path.join(path.dirname(NV_SCAN_FILE), 'kalshi_bet_state.json') : null;
 // ok: the button's side was seen right on the real exchange 11-16 (a $2 bet, $1.88 in, on the Yes side),
 // so no $2 test is asked for any more. The position is still read after every bet.
@@ -3136,14 +3132,12 @@ app.post('/api/nba/kalshi-bet', (req, res) => {
   if (first) stake = Math.min(stake, 2);
   if (stake > NV_KBET_MAX) return res.status(400).json({ error: `the most one bet can be is $${NV_KBET_MAX}` });
   if (NV_KBET_BUSY) return res.status(429).json({ error: 'another bet is being placed' });
-  const day = nvKbetDay();
-  if (day.spent + stake > NV_KBET_DAY_MAX + 1e-9) return res.status(400).json({ error: `today's limit is $${NV_KBET_DAY_MAX} across all bets and $${Math.round(day.spent * 100) / 100} is already in (KALSHI_BET_DAY_MAX on the server)` });
   NV_KBET_BUSY = true;
   let out = '', err = '', done = false, timer = null, proc;
   const finish = (code, body) => { if (done) return; done = true; NV_KBET_BUSY = false; clearTimeout(timer); res.status(code).json(body); };
   try { proc = require('child_process').spawn(PYTHON, [NV_KALSHI_PY, '--bet', '--league', NV_PY_LEAGUE(league)], { stdio: ['pipe', 'pipe', 'pipe'] }); }
   catch (e) { return finish(502, { error: 'could not start: ' + e.message }); }
-  timer = setTimeout(() => { proc.kill(); nvKbetDay().spent += stake; nvKbetSave(); finish(504, { error: 'No answer in 60 seconds. The bet may or may not have gone in: look at your Kalshi positions before trying again.' }); }, 60 * 1000);
+  timer = setTimeout(() => { proc.kill(); finish(504, { error: 'No answer in 60 seconds. The bet may or may not have gone in: look at your Kalshi positions before trying again.' }); }, 60 * 1000);
   proc.stdout.on('data', c => { out += c; });
   proc.stderr.on('data', c => { err = (err + c).slice(-2000); });
   proc.on('error', e => finish(502, { error: 'could not start: ' + e.message }));
@@ -3153,10 +3147,9 @@ app.post('/api/nba/kalshi-bet', (req, res) => {
     if (!r || r.error || !r.bet) return finish(502, { error: (r && r.error) || err.trim().split('\n').pop() || 'no answer' });
     if (r.bet.side === 'yes') NV_KBET.ok = true;
     else if (r.bet.side === 'no') NV_KBET.off = 'the last bet landed on the No side of the combo. Close that position on Kalshi; the button stays off until this is fixed in the code.';
-    nvKbetDay().spent += Number(r.bet.stake) > 0 ? Number(r.bet.stake) : stake;
     nvKbetSave();
     NV_KPOS.at = 0;   // the next read of positions is fresh
-    console.log('[kalshi-bet]', JSON.stringify({ label: row.label, player: row.player, bet: r.bet, from: req.ip, today: nvKbetDay().spent }));
+    console.log('[kalshi-bet]', JSON.stringify({ label: row.label, player: row.player, bet: r.bet, from: req.ip }));
     if (r.row && B.rows.has(r.row.key)) { r.row.type = 'row'; B.rows.set(r.row.key, r.row); nvSaveBoards(); }
     finish(200, { bet: r.bet, row: r.row, first, off: NV_KBET.off, now: Date.now() });
   });
