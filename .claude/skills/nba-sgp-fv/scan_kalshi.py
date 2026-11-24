@@ -1582,6 +1582,9 @@ def main():
         c["url"] = f"https://kalshi.com/markets/{game}/game/{game}-{c['event'].lower()}"
     if not cands and SEEN and not a.dry:
         # Its own line on stderr: server.js shows it as the board's error, in place of an empty board with no reason.
+        if not SEEN["kalshi"]:   # nothing is broken: the page shows this line plainly, not as a failed scan
+            raise SystemExit("Nothing listed yet: Kalshi has no open NBA player props on a game that has not started. "
+                             "Fetch again once it lists the next games' props.")
         raise SystemExit(f"No slip to ask: Kalshi lists open props on {SEEN['kalshi']} players in games that have not started "
                          f"({SEEN['known']} of them in the data), and Novig lists {SEEN['novig']} NBA prop markets.")
     emit({"type": "start", "total": len(cands), "players": len({c["id"] for c in cands}), "league": "kalshi" + a.league,
