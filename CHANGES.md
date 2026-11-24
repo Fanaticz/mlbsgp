@@ -10,6 +10,14 @@ Max, 11-24: let's change units to $200.
 - **Not changed**: the skills' own sizing ($250 a unit in `price.py`, the daily Points + Threes run and tennis; `scan.py`'s `wager` field). If `ALERT_UNIT` is set on Railway, alerts keep that value.
 - **Checked**: `scripts/novig_alerts_check.js` passes with the stake line at $120 for 0.60u. **Not checked**: the page in a browser; a press of the Bet button.
 
+### Kalshi Bet button: no $250 cap
+Max, 11-24: don't cap at $250.
+
+- **Change** (`NV_KBET_MAX` in `server.js`; `kbetStake` in `public/nba_scan.html`): one press stakes the row's full QK $, or the stake typed, whatever its size. The server's $250 limit on one bet and the page's matching one are gone. The entry above was written with the cap still on.
+- **`KALSHI_BET_MAX`** still caps a bet if it is set on Railway: a press over it is refused, not cut down. Unset it for no cap.
+- **Still stops a bet**: the price more than 1% worse than the row showed; the slip no longer above fair; no Kalshi passcode; another bet in flight.
+- **Checked**: `node --check server.js`; the page's script parses. **Not checked**: a press over $250 on the real exchange.
+
 ## 2026-11-23 session
 
 ### Kalshi NFL 3-Leg: a new board for three-leg NFL slips

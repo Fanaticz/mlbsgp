@@ -381,9 +381,9 @@ setTimeout(kposLoad, 1500);
 setInterval(kposLoad, 60 * 1000);
 // The Bet button on a Kalshi row: the server places it (POST /api/nba/kalshi-bet) and says what was bought.
 // One press stakes the row's QK $ (quarter Kelly at $200 a unit) unless a stake is typed (Max, 11-18; it was a flat $25).
-// KBET_MAX is the server's cap on one bet (NV_KBET_MAX in server.js): a larger QK $ is bet at the cap.
-const KMSG = new Map(), KBET_MAX = 250;
-const kbetStake = c => Math.min(KBET_MAX, Math.max(1, Math.round(c.qk * UNIT) || 1));
+// No cap on one bet (Max, 11-24); the server refuses a stake over KALSHI_BET_MAX only if that is set.
+const KMSG = new Map();
+const kbetStake = c => Math.max(1, Math.round(c.qk * UNIT) || 1);
 let KBETTING = false;
 async function kalshiBet(b) {
   const id = b.dataset.kbet, c = S && S.rows.find(r => rk(r) === id), f = b.closest(".row") && b.closest(".row").querySelector(".det");
@@ -494,7 +494,7 @@ function kbetLine(c) {
   const msg = KMSG.get(rk(c)) || "";
   if (c.book !== "kalshi" || !(c.ev > 0 || msg)) return "";
   return `<div class="betform kbetrow" style="grid-column:1 / -1">` + (c.ev > 0 ? `<button type="button" class="kbet" data-kbet="${esc(rk(c))}"` +
-    ` title="Buys this combo on Kalshi now: the row's QK $ ($${KBET_MAX} at most), or the stake typed in the opened row. Not placed if the price is more than 1% worse than shown or the slip is no longer above fair.">` +
+    ` title="Buys this combo on Kalshi now: the row's QK $, or the stake typed in the opened row. Not placed if the price is more than 1% worse than shown or the slip is no longer above fair.">` +
     `Bet $${kbetStake(c)} at ${c.slip_x.toFixed(2)}x</button>` : "") + `<span class="kmsg">${esc(msg)}</span></div>`;
 }
 function betLine(c, sub) {
