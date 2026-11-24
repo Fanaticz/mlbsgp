@@ -45,7 +45,7 @@ const row = (o) => Object.assign({ key: 'a,b', player: 'Cam Spencer', id: 77, te
   assert.strictEqual(e.url, 'https://novig.onelink.me/JHQQ/events/' + two);   // the title: the phone's link
   assert.ok(e.description.includes(`[Open in the Novig app ↗](https://novig.onelink.me/JHQQ/events/${two})** · [on a computer ↗](https://novig.com/events/${two})`));
   assert.ok(A.embed(A.settings({ PUBLIC_URL: 'https://app.example/' }), 'nba', row({})).description.includes('[on a computer ↗](https://app.example/n/11111111-'));
-  assert.strictEqual(e.fields.find(f => f.name.startsWith('Stake')).value, '$60 · 0.60u');   // 0.6u x $100
+  assert.strictEqual(e.fields.find(f => f.name.startsWith('Stake')).value, '$120 · 0.60u');   // 0.6u x $200
   assert.strictEqual(a.consider('nba', row({ ev: 0.085 })), 'already sent');   // under 2 points: nothing
   // moved 2+ points: the message is edited where it stands, no new message
   calls = [];

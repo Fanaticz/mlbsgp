@@ -1533,7 +1533,7 @@ def main():
     ap.add_argument("--wait", type=float, default=3.0, help="seconds to wait for makers' answers")
     ap.add_argument("--polls", type=int, default=2, help="reads of the answers within --wait")
     ap.add_argument("--before", type=float, default=None, metavar="MS", help="only games starting before this time (epoch ms)")
-    ap.add_argument("--unit", type=float, default=100.0, help="dollars in one unit on the Kalshi boards (Max, 11-16: 1u = $100)")
+    ap.add_argument("--unit", type=float, default=200.0, help="dollars in one unit on the Kalshi boards (Max, 11-24: 1u = $200; $100 from 11-16)")
     ap.add_argument("--kelly", type=float, default=0.25)
     ap.add_argument("--top", type=int, default=25)
     ap.add_argument("--first", default=None, help="accepted for server.js; not used")

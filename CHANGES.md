@@ -1,5 +1,15 @@
 # Changes
 
+## 2026-11-24 session
+
+### Scanner: one unit is $200
+Max, 11-24: let's change units to $200.
+
+- **Change**: the QK $ column on every scanner tab (`UNIT` in `public/nba_scan.html`), the stake in a Discord alert (`ALERT_UNIT` in `novigAlerts.js`) and `--unit` in `scan_kalshi.py` are at $200 a unit; all three were $100. The QK column in units is unchanged: 1.24u is now $248, was $124.
+- **The Bet button stakes twice as much.** One press on a Kalshi row stakes the row's QK $, so every press doubles, up to the $250 cap on one bet (`KALSHI_BET_MAX`), which is not changed: any row at 1.25u or more is now bet at $250.
+- **Not changed**: the skills' own sizing ($250 a unit in `price.py`, the daily Points + Threes run and tennis; `scan.py`'s `wager` field). If `ALERT_UNIT` is set on Railway, alerts keep that value.
+- **Checked**: `scripts/novig_alerts_check.js` passes with the stake line at $120 for 0.60u. **Not checked**: the page in a browser; a press of the Bet button.
+
 ## 2026-11-23 session
 
 ### Kalshi NFL 3-Leg: a new board for three-leg NFL slips
