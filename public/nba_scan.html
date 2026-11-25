@@ -100,7 +100,6 @@
   #hidebets { background:none; border:1px solid var(--line); color:var(--muted); border-radius:8px; padding:7px 11px; font-size:13px; cursor:pointer; }
   .betline { grid-column:1 / -1; padding-top:5px; font-size:12.5px; color:var(--pos); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .betline b { font-variant-numeric:tabular-nums; }
-  .betline.other { color:var(--muted); }
   .row.has { box-shadow:inset 3px 0 0 var(--pos); }
   body.nobets .bet, body.nobets .betline, body.nobets .betform:not(.kbetrow) { display:none; }
   body.nobets .row.has { box-shadow:none; }
@@ -493,7 +492,6 @@ function bets(body) {
 // A bet shows until about five hours after tip (a day after it was added when
 // the row had no start time).
 const liveBets = () => BETS.filter(b => (b.starts ? b.starts + 5 * 3600000 : b.at + 86400000) > Date.now());
-const betsOn = player => liveBets().filter(b => b.player === player);
 const total = list => list.reduce((s, b) => s + b.stake, 0);
 // A row's own line for what I have down: on this slip (green, with a green
 // edge on the row), or, on a player's first row, on his other slips (grey).
@@ -505,14 +503,13 @@ function kbetLine(c) {
     ` title="Buys this combo on Kalshi now: the row's QK $, or the stake typed in the opened row. Not placed if the price is more than 1% worse than shown or the slip is no longer above fair.">` +
     `Bet $${kbetStake(c)} at ${c.slip_x.toFixed(2)}x</button>` : "") + `<span class="kmsg">${esc(msg)}</span></div>`;
 }
-function betLine(c, sub) {
+function betLine(c) {
   const onK = heldLine(c);
   if (onK) return onK;   // what Kalshi says is held beats this device's own note of it
   const mine = liveBets().filter(b => b.key === c.key);
   if (mine.length) return `<div class="betline">✓ You bet <b>${usd(total(mine))}</b>` +
     (mine.length === 1 ? (mine[0].x ? ` at ${mine[0].x.toFixed(2)}x` : "") : ` in ${mine.length} bets: ${mine.map(b => usd(b.stake) + (b.x ? ` at ${b.x.toFixed(2)}x` : "")).join(", ")}`) + `</div>`;
-  const rest = sub ? [] : betsOn(c.player);
-  return rest.length ? `<div class="betline other">${usd(total(rest))} on ${rest.length === 1 ? "another slip of his" : `${rest.length} other slips of his`}: ${esc(rest.map(b => b.label).join("; "))}</div>` : "";
+  return "";   // a bet on another slip of his is not shown here (Max, 11-25: a bet shows in its own row only)
 }
 // The strip of my bets above the board is gone (Max, 11-18: not needed). A
 // bet shows on its own row, and is removed with the × in the opened row.
@@ -735,7 +732,7 @@ function render() {
       `<div class="num"><span class="lab">QK $</span>${c.qk > 0 ? "$" + Math.round(c.qk * UNIT).toLocaleString() : "—"}</div>` +
       `<div class="num rr">${c.r === null ? "" : (c.r >= 0 ? "+" : "−") + Math.abs(c.r).toFixed(2)}</div>` +
       `<div class="num"><span class="lab">Age</span>${age(c)}<button type="button" class="re${BUSY.has(rk(c)) ? " spin" : ""}" data-re="${esc(rk(c))}" title="Price this slip again: today’s leg prices and a new Novig quote"${BUSY.has(rk(c)) ? " disabled" : ""}>↻</button></div>` +
-      betLine(c, sub) + kbetLine(c) + (OPEN.has(rk(c)) ? detail(c) : "") + `</div>`;
+      betLine(c) + kbetLine(c) + (OPEN.has(rk(c)) ? detail(c) : "") + `</div>`;
     rowsEl.innerHTML = cards.map(({ head, others }) =>
       one(head, false, others) + (GOPEN.has(cardOf(head)) ? others.map(c => one(c, true)).join("") : "")).join("");
     rowsEl.querySelectorAll(".more").forEach(b => b.onclick = e => {

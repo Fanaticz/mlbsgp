@@ -2,6 +2,12 @@
 
 ## 2026-11-25 session
 
+### Novig scan: a bet shows on its own row only
+Max, 11-25: remove from Novig too (after the Kalshi strip).
+
+- **Change** (`betLine` in `public/nba_scan.html`): the grey line on a player's other row ("$159 on another slip of his: 3+ receptions · 25+ receiving yards") is gone. It was the one place the Novig page showed a bet off its own row; the strip above the board went on 11-18. The green "✓ You bet" line on the bet's own row is unchanged.
+- **Checked** in a phone-sized browser: the page loads and draws its rows with no error. **Not checked**: with a saved bet on the page.
+
 ### Kalshi scan: the "On Kalshi" strip above the board is gone
 Max, 11-25 (screenshot, the strip of twelve combos circled): always hide this; bets should show in their own row only.
 
