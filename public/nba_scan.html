@@ -514,6 +514,16 @@ function keepRows() {
   if (changed) try { localStorage.setItem(BETSLS, JSON.stringify(BETS)); } catch (_) {}
 }
 let GHOSTS = [];           // bets' rows drawn from their saved copy (render)
+// A bet saved before rows were kept with bets has no copy: its row is made
+// from what the bet itself holds (who, the legs' text, the fair value and the
+// price taken), so it shows straight away and not only after its slip is priced again.
+function stubRow(b) {
+  const fair = Number.isFinite(b.fair) && b.fair !== 0 ? b.fair : null;
+  const p = fair === null ? null : fair > 0 ? 100 / (fair + 100) : -fair / (100 - fair);
+  const x = b.x || (p ? 1 / p : 1);
+  return { key: b.key, id: b.key, player: b.player, team: b.team, label: b.label, starts: b.starts, at: b.at / 1000, legs: [], stub: true, nox: !b.x,
+           fair: fair === null ? 0 : fair, slip_x: x, ev: p && b.x ? b.x * p - 1 : 0, qk: 0, r: null, book: KALSHI(b.board) ? "kalshi" : undefined };
+}
 const rowBy = k => (S && S.rows.find(r => rk(r) === k)) || GHOSTS.find(r => rk(r) === k);
 // A bet shows until about five hours after tip (a day after it was added when
 // the row had no start time).
@@ -604,6 +614,10 @@ function tip(ms) {
 // Expanded row: just what the row doesn't already say. Each leg's own fair
 // odds, then one quiet line of the working numbers.
 function detail(c) {
+  if (c.stub) {   // a bet's row made from the bet alone (stubRow): its bets, each with its ×, and nothing to price
+    return `<div class="det"><div class="tech">Saved before rows were kept with bets: this is the bet as you saved it. Its legs and today’s price come back when a pass prices the slip.</div><div class="betform">` +
+      liveBets().filter(b => b.key === c.key).map(b => `<span class="mine">${usd(b.stake)}${b.x ? ` at ${b.x.toFixed(2)}x` : ""}<button type="button" class="x" data-del="${b.id}" title="Remove this bet">×</button></span>`).join("") + `</div></div>`;
+  }
   const legs = c.legs.map(L =>
     `<span class="lg">${L.text ? esc(L.text) : `${LABEL[L.stat]} ${L.side === "over" ? "o" : "u"}${L.line}`} <b>${am(L.fair)}</b>${L.from != null ? ` <small>from ${L.src ? esc(L.src) : L.from}</small>` : ""}${L.books ? ` <small>· ${esc(L.books)}</small>` : ""}</span>`).join("");
   const sg = v => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
@@ -643,10 +657,10 @@ function render() {
   const started = S.rows.filter(c => c.starts && c.starts <= nowMs).length;
   GHOSTS = [];
   for (const b of liveBets()) {
-    if (!b.row || !b.row.legs || KALSHI(b.board) !== KPAGE || !(ALL() || b.board === LEAGUE)) continue;
+    if (KALSHI(b.board) !== KPAGE || !(ALL() || b.board === LEAGUE)) continue;
     const k = ALL() ? b.board + "|" + b.key : b.key;
     if (S.rows.some(r => rk(r) === k) || GHOSTS.some(r => rk(r) === k)) continue;
-    GHOSTS.push(Object.assign({}, b.row, { ghost: true }, ALL() ? { board: b.board } : {}));
+    GHOSTS.push(Object.assign({}, b.row && b.row.legs ? b.row : stubRow(b), { ghost: true }, ALL() ? { board: b.board } : {}));
   }
   const open = S.rows.concat(GHOSTS).filter(c => !c.starts || c.starts > nowMs);
   const all = open.filter(c => !HIDDEN.has(c.key)).sort((a, b) => b.ev - a.ev);
@@ -766,9 +780,9 @@ function render() {
         (others && others.length ? `<button type="button" class="more" data-g="${esc(cardOf(c))}">${GOPEN.has(cardOf(c)) ? "hide" :
           `+${others.length} more${others[0].ev > c.ev ? `, to ${pct(others[0].ev)}` : ""}`}</button>` : "")}</div>` +
       `<div class="legs">${esc(c.label)}${c.model ? `<span class="rough" title="A higher line: fair value is modelled from the main line, not read off a book.">*</span>` : ""}${c.rough ? `<span class="rough" title="A leg sits on a Novig book wider than 4¢: rough fair value. Check sharp odds.">~</span>` : ""}</div>` +
-      `<div class="num fair"><span class="lab">Fair</span>${am(c.fair)}</div>` +
-      `<div class="num"><span class="lab">${c.book === "dk" ? "DK" : c.book === "kalshi" ? "Kalshi" : "Novig"}</span>${nvLink(c, c.slip_x.toFixed(2) + "x")}${c.book === "kalshi" && c.novig_x ? `<small style="display:block;color:var(--muted)" title="What Novig's slip pays for the same legs">NV ${c.novig_x.toFixed(2)}x</small>` : ""}</div>` +
-      `<div class="num ev ${c.ev >= 0 ? "pos" : "neg"}">${pct(c.ev)}</div>` +
+      `<div class="num fair"><span class="lab">Fair</span>${c.stub && !c.fair ? "—" : am(c.fair)}</div>` +
+      `<div class="num"><span class="lab">${c.book === "dk" ? "DK" : c.book === "kalshi" ? "Kalshi" : "Novig"}</span>${c.stub ? (c.nox ? "—" : c.slip_x.toFixed(2) + "x") : nvLink(c, c.slip_x.toFixed(2) + "x")}${c.book === "kalshi" && c.novig_x ? `<small style="display:block;color:var(--muted)" title="What Novig's slip pays for the same legs">NV ${c.novig_x.toFixed(2)}x</small>` : ""}</div>` +
+      `<div class="num ev ${c.ev >= 0 ? "pos" : "neg"}">${c.stub && (c.nox || !c.fair) ? "" : pct(c.ev)}</div>` +
       `<div class="num qk"><span class="lab">QK</span>${c.qk > 0 ? c.qk.toFixed(2) + "u" : "—"}</div>` +
       `<div class="num"><span class="lab">QK $</span>${c.qk > 0 ? "$" + Math.round(c.qk * UNIT).toLocaleString() : "—"}</div>` +
       `<div class="num rr">${c.r === null ? "" : (c.r >= 0 ? "+" : "−") + Math.abs(c.r).toFixed(2)}</div>` +
