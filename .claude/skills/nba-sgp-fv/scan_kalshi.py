@@ -299,10 +299,8 @@ def shift_leg(stat, kal, nv_rows, a, p, main, near):
             books.append((k["bid"], k["ask"]))
         asks = [x for _, x in books if x is not None and 0 < x < 1]
         bids = [x for x, _ in books if x is not None and 0 < x < 1]
-        if asks:
-            po = min(po, min(asks))   # someone sells the Yes there: a ceiling
-        if bids:
-            po = max(po, max(bids))   # and a buyer is a floor
+        # The lowest ask is a ceiling and the highest bid a floor; outside both, the book's own fair value (scan.inside).
+        po = scan.inside(po, max(bids) if bids else None, min(asks) if asks else None)
         if not a.lo <= po <= a.hi:
             continue
         L = {"stat": stat, "side": "over", "line": k["line"], "p": po, "fair": sgp.american(po), "width": main["spread"],

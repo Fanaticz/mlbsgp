@@ -2,6 +2,15 @@
 
 ## 2026-11-25 session
 
+### A modelled leg outside its own book takes the book's fair value, not its edge
+Max, 11-25 (Kalshi Pts + 3s, Yaxel Lendeborg): these FVs are really odd. 20+ points + 3+ threes * showed fair +225 (30.8%) while 3+ threes alone was 27 / 30 on Kalshi and 25.5 / 30.5 on Novig: a slip likelier than its harder leg.
+
+- **Cause**: a starred leg is shifted from Novig's main line by the Ladder's model, then held under the line's ask and over its bid. The model put 3+ threes at 0.349 from his 2+ line (56%), above the whole book, so it was held at the ask: the most optimistic value the book allows.
+- **Change** (`inside` in `scan.py`, used by `shifted` there and `shift_leg` in `scan_kalshi.py`): where the line has both a bid and an ask and the model falls outside them, the leg takes that book's own fair value (worst-case devig), 0.282 here. A model inside the book stands, and a one-sided book is still only a ceiling or a floor. Applies to every starred row: the Kalshi NBA boards and the Novig NBA Ladder.
+- **Effect here**: 20+ points + 3+ threes at 20+ 62% goes from about +225 to +282, so 3.29x reads about -14%, not +1%.
+- **Checked**: the helper on eight book shapes (outside above, outside below, inside, one-sided, no book, crossed); a Kalshi Pts + 3s pass with no prices asked still lists its 12 modelled slips. **Not checked**: a priced pass, the Ladder board live. Rows on the boards keep their old fair values until their next pass.
+- **Not changed**: the first row (25+ points + 2+ threes, +222) is right as arithmetic; its points leg is Kalshi's own untraded 5c book (the ~).
+
 ### Novig scan: a bet shows on its own row only
 Max, 11-25: remove from Novig too (after the Kalshi strip).
 

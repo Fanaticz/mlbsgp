@@ -571,6 +571,25 @@ LADDER_FIX = {(0, 0): 1.00, (0, 1): 1.06, (0, 2): 1.13, (2, 0): 1.00, (2, 1): 1.
 BOOKS = {"on": True, "ladders": None, "check": None, "seen": None}   # pulled once, on the first shifted leg
 
 
+def inside(po, bid, ask):
+    """A modelled chance held to the line's own book. An ask is a ceiling and
+    a bid a floor. With both, a model that falls outside them takes the book's
+    own fair value (each side devigged worst case), not the edge nearest the
+    model: the book as a whole says the model is off, and its edge is the
+    most the model's way it could be (11-25: Lendeborg's 3+ threes modelled
+    0.349 from his 2+ line against 27 / 30 on Kalshi and 25.5 / 30.5 on
+    Novig, held at the ask, made 20+ points + 3+ threes fair +225, likelier
+    than the threes leg alone). Inside the book the model stands."""
+    ok = lambda x: x is not None and 0 < x < 1   # noqa: E731
+    if ok(bid) and ok(ask) and bid < ask:
+        return po if bid <= po <= ask else sgp.devig_worst(ask, 1 - bid)[0]
+    if ok(ask):
+        po = min(po, ask)
+    if ok(bid):
+        po = max(po, bid)
+    return po
+
+
 def shifted(p, stat, row, main):
     """A leg at `row`'s line with its fair value shifted from the main line's."""
     book_text = ""
@@ -578,11 +597,9 @@ def shifted(p, stat, row, main):
         p, {"stat": stat, "side": 1, "line": row["line"], "from": main["line"], "p_over": main["fo"],
             "over": None, "under": None})[0]
     # Novig's own ask on that line is a ceiling: someone is selling the Over
-    # there, so the true chance is below it however wide the book is.
-    if row is not main and row.get("ask") is not None:
-        po = min(po, row["ask"])
-    if row is not main and row.get("bid") is not None:   # and a buyer there is a floor
-        po = max(po, row["bid"])
+    # there, so the true chance is below it however wide the book is. A buyer there is a floor.
+    if row is not main:
+        po = inside(po, row.get("bid"), row.get("ask"))
     if row is not main and BOOKS["on"]:   # FanDuel one-way price, least margin out: a ceiling
         if BOOKS["ladders"] is None:
             import books
