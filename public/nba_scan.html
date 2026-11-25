@@ -418,7 +418,7 @@ async function kalshiBet(b) {
           (j.first ? `. That was the $2 test of the button and it landed on the Yes side: the next press bets the full amount.` : "")
         : t.side === "no" ? "WRONG SIDE: this landed on the No side of the combo. Close it on Kalshi. The button is now off."
         : `Accepted at ${t.x.toFixed(2)}x, but no position showed within 9 seconds: look at your Kalshi positions before betting again.`;
-      if (t.side !== "no") bets({ add: { key: c.key, board: c.board || LEAGUE, player: c.player, team: c.team, label: c.label, stake: t.stake, x: t.x, fair: c.fair, starts: c.starts } });
+      if (t.side !== "no") bets({ add: { key: c.key, board: c.board || LEAGUE, player: c.player, team: c.team, label: c.label, stake: t.stake, x: t.x, fair: c.fair, starts: c.starts, row: c } });
       if (j.row && S) { const i = S.rows.findIndex(r => rk(r) === id); if (i >= 0) S.rows[i] = Object.assign({}, S.rows[i], j.row); }
     } else msg = j.error || `not placed (${r.status})`;
   } catch (e) { msg = "No answer from the server. The bet may or may not have gone in: look at your Kalshi positions."; }
@@ -487,15 +487,34 @@ function bets(body) {
     const a = body.add, stake = Math.round(Number(a.stake) * 100) / 100, x = Number(a.x);
     if (stake > 0 && a.player) list.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7), at: Date.now(),
       key: String(a.key || ""), board: String(a.board || ""), player: String(a.player), team: String(a.team || ""), label: String(a.label || ""),
-      stake, x: x > 1 ? x : null, fair: Number.isFinite(Number(a.fair)) ? Number(a.fair) : null, starts: Number(a.starts) > 0 ? Number(a.starts) : null });
+      stake, x: x > 1 ? x : null, fair: Number.isFinite(Number(a.fair)) ? Number(a.fair) : null, starts: Number(a.starts) > 0 ? Number(a.starts) : null,
+      row: a.row ? Object.assign({}, a.row, { board: undefined, ghost: undefined }) : null });
   }
   // A bet leaves the list three days after its game (or after it was added).
   list = list.filter(b => (b.starts || b.at) > Date.now() - 3 * 86400000);
   try { localStorage.setItem(BETSLS, JSON.stringify(list)); localStorage.removeItem("nbaScanBets"); } catch (_) {}
   BETS = list;
   BETS_AT = Date.now();
+  keepRows();
   render();
 }
+// A bet keeps the row it was made on (Max, 11-25: bets went away after an
+// update). A bet shows on its own row only, so when the board lost that row
+// (a redeploy that emptied the board, a pass that no longer asks the slip, a
+// row under Min EV on the All tab) the bet was nowhere. Each bet now carries
+// its row as last seen, refreshed whenever the board shows it, and render()
+// draws that copy, dimmed, while the board has none.
+function keepRows() {
+  if (!S || !S.rows) return;
+  let changed = false;
+  for (const b of BETS) {
+    const r = S.rows.find(r => r.key === b.key && (r.board || LEAGUE) === b.board);
+    if (r && (!b.row || b.row.at !== r.at)) { b.row = Object.assign({}, r, { board: undefined }); changed = true; }
+  }
+  if (changed) try { localStorage.setItem(BETSLS, JSON.stringify(BETS)); } catch (_) {}
+}
+let GHOSTS = [];           // bets' rows drawn from their saved copy (render)
+const rowBy = k => (S && S.rows.find(r => rk(r) === k)) || GHOSTS.find(r => rk(r) === k);
 // A bet shows until about five hours after tip (a day after it was added when
 // the row had no start time).
 const liveBets = () => BETS.filter(b => (b.starts ? b.starts + 5 * 3600000 : b.at + 86400000) > Date.now());
@@ -505,7 +524,7 @@ const total = list => list.reduce((s, b) => s + b.stake, 0);
 // A Kalshi row above fair carries its Bet button on the row, open or not: one press buys it.
 function kbetLine(c) {
   const msg = KMSG.get(rk(c)) || "";
-  if (c.book !== "kalshi" || !(c.ev > 0 || msg)) return "";
+  if (c.book !== "kalshi" || c.ghost || !(c.ev > 0 || msg)) return "";
   return `<div class="betform kbetrow" style="grid-column:1 / -1">` + (c.ev > 0 ? `<button type="button" class="kbet" data-kbet="${esc(rk(c))}"` +
     ` title="Buys this combo on Kalshi now: the row's QK $ less what is already on this slip, or the stake typed in the opened row. Not placed if the price is more than 1% worse than shown or the slip is no longer above fair.">` +
     (kbetOn(c) > 0 ? (kbetStake(c) > 0 ? `Bet $${kbetStake(c)} more` : `QK $${kbetFull(c)} is on · bet a typed stake`) : `Bet $${kbetStake(c)}`) + ` at ${c.slip_x.toFixed(2)}x</button>` : "") + `<span class="kmsg">${esc(msg)}</span></div>`;
@@ -522,7 +541,8 @@ function betLine(c, group) {
   if (onK) return onK;   // what Kalshi says is held beats this device's own note of it
   const mine = liveBets().filter(b => b.key === c.key);
   if (mine.length) return `<div class="betline">✓ You bet <b>${usd(total(mine))}</b>` +
-    (mine.length === 1 ? (mine[0].x ? ` at ${mine[0].x.toFixed(2)}x` : "") : ` in ${mine.length} bets: ${mine.map(b => usd(b.stake) + (b.x ? ` at ${b.x.toFixed(2)}x` : "")).join(", ")}`) + `</div>`;
+    (mine.length === 1 ? (mine[0].x ? ` at ${mine[0].x.toFixed(2)}x` : "") : ` in ${mine.length} bets: ${mine.map(b => usd(b.stake) + (b.x ? ` at ${b.x.toFixed(2)}x` : "")).join(", ")}`) +
+    (c.ghost ? ` <span style="color:var(--muted)" title="This slip is not on the board now (the board was emptied, or its last pass did not ask it). The numbers are from when it was last priced.">· not on the board now</span>` : "") + `</div>`;
   return alsoLine(c, group);
 }
 // The strip of my bets above the board is gone (Max, 11-18: not needed). A
@@ -621,12 +641,19 @@ function render() {
   // slate once tonight's last game is under way).
   const nowMs = S.now + (Date.now() - GOT);
   const started = S.rows.filter(c => c.starts && c.starts <= nowMs).length;
-  const open = S.rows.filter(c => !c.starts || c.starts > nowMs);
+  GHOSTS = [];
+  for (const b of liveBets()) {
+    if (!b.row || !b.row.legs || KALSHI(b.board) !== KPAGE || !(ALL() || b.board === LEAGUE)) continue;
+    const k = ALL() ? b.board + "|" + b.key : b.key;
+    if (S.rows.some(r => rk(r) === k) || GHOSTS.some(r => rk(r) === k)) continue;
+    GHOSTS.push(Object.assign({}, b.row, { ghost: true }, ALL() ? { board: b.board } : {}));
+  }
+  const open = S.rows.concat(GHOSTS).filter(c => !c.starts || c.starts > nowMs);
   const all = open.filter(c => !HIDDEN.has(c.key)).sort((a, b) => b.ev - a.ev);
   const gone = open.length - all.length, un = document.getElementById("unhide");
   un.style.display = gone ? "" : "none";
   un.textContent = `Unhide ${gone}`;
-  const plays = all.filter(c => c.ev * 100 >= MINEV);
+  const plays = all.filter(c => !c.ghost && c.ev * 100 >= MINEV);
   const q = document.getElementById("search").value.trim().toLowerCase();
   let rows = all;
   if (q) rows = rows.filter(c => c.player.toLowerCase().includes(q));
@@ -638,7 +665,7 @@ function render() {
   // chip. A player with no such row, or any view filtered to one kind of
   // combo, is headed by his best row. Plays keeps a card when any of his rows
   // clears Min EV, and folds only the rows that do.
-  const pass = c => (MODE !== "plays" && !ALL()) || c.ev * 100 >= MINEV;
+  const pass = c => c.ghost || (MODE !== "plays" && !ALL()) || c.ev * 100 >= MINEV;
   const byId = new Map();
   // NFL shows every row on its own (a player's props, stacks and game-line
   // slips are different bets, not versions of one).
@@ -662,13 +689,13 @@ function render() {
     cards.push({ head, others: shown.filter(c => c !== head), g });   // g: his rows under Min EV too, for alsoLine
   }
   cards.sort((a, b) => b.head.ev - a.head.ev);
-  if (!TOPRUN) TOP = cards.map(c => rk(c.head));
+  if (!TOPRUN) TOP = cards.filter(c => !c.head.ghost).map(c => rk(c.head));
 
   // Status line.
   // "Nothing listed yet": the book has not opened the next games' props. Said plainly, not as a failed scan.
   const idle = !!S.error && S.error.startsWith("Nothing listed yet");
   st.classList.toggle("err", !!S.error && !S.scanning && !idle);
-  const n = `<b>${plays.length}</b> at ${MINEV > 0 ? "+" : ""}${MINEV}% or better of ${ALL() ? S.boards.reduce((t, b) => t + b.priced, 0) : all.length} priced`;
+  const n = `<b>${plays.length}</b> at ${MINEV > 0 ? "+" : ""}${MINEV}% or better of ${ALL() ? S.boards.reduce((t, b) => t + b.priced, 0) : all.filter(c => !c.ghost).length} priced`;
   if (ALL()) {
     // Where each board's last pass stands, in the order they'd be worth a look.
     const at = b => b.scanning ? (b.total ? `scanning ${b.done} / ${b.total}` : "reading lines") :
@@ -734,7 +761,7 @@ function render() {
     }</div>`;
   } else {
     const one = (c, sub, others, group) =>
-      `<div class="row${sub ? " sub" : ""}${isOld(c) ? " old" : ""}${kbetOn(c) > 0 ? " has" : ""}" data-k="${esc(rk(c))}">` +
+      `<div class="row${sub ? " sub" : ""}${c.ghost || isOld(c) ? " old" : ""}${kbetOn(c) > 0 ? " has" : ""}" data-k="${esc(rk(c))}">` +
       `<div class="who">${sub ? "" : `${c.board ? `<span class="tag">${BOARD[c.board]}</span>` : ""}<b>${esc(c.player)}</b>${c.gtd ? `<span class="tag q" title="${esc(c.gtd)}">GTD</span>` : ""}<small>${esc(c.team)}${c.starts ? " · " + tip(c.starts) : ""}</small>` +
         (others && others.length ? `<button type="button" class="more" data-g="${esc(cardOf(c))}">${GOPEN.has(cardOf(c)) ? "hide" :
           `+${others.length} more${others[0].ev > c.ev ? `, to ${pct(others[0].ev)}` : ""}`}</button>` : "")}</div>` +
@@ -745,7 +772,7 @@ function render() {
       `<div class="num qk"><span class="lab">QK</span>${c.qk > 0 ? c.qk.toFixed(2) + "u" : "—"}</div>` +
       `<div class="num"><span class="lab">QK $</span>${c.qk > 0 ? "$" + Math.round(c.qk * UNIT).toLocaleString() : "—"}</div>` +
       `<div class="num rr">${c.r === null ? "" : (c.r >= 0 ? "+" : "−") + Math.abs(c.r).toFixed(2)}</div>` +
-      `<div class="num"><span class="lab">Age</span>${age(c)}<button type="button" class="re${BUSY.has(rk(c)) ? " spin" : ""}" data-re="${esc(rk(c))}" title="Price this slip again: today’s leg prices and a new Novig quote"${BUSY.has(rk(c)) ? " disabled" : ""}>↻</button></div>` +
+      `<div class="num"><span class="lab">Age</span>${age(c)}${c.ghost ? "" : `<button type="button" class="re${BUSY.has(rk(c)) ? " spin" : ""}" data-re="${esc(rk(c))}" title="Price this slip again: today’s leg prices and a new Novig quote"${BUSY.has(rk(c)) ? " disabled" : ""}>↻</button>`}</div>` +
       betLine(c, group) + kbetLine(c) + (OPEN.has(rk(c)) ? detail(c) : "") + `</div>`;
     rowsEl.innerHTML = cards.map(({ head, others, g }) =>
       one(head, false, others, g) + (GOPEN.has(cardOf(head)) ? others.map(c => one(c, true, null, g)).join("") : "")).join("");
@@ -762,14 +789,14 @@ function render() {
       try { window.top.location.href = a.href; } catch (_) { location.href = a.href; }
     });
     rowsEl.querySelectorAll("[data-add]").forEach(b => b.onclick = () => {
-      const c = S.rows.find(r => rk(r) === b.dataset.add), f = b.closest(".betform");
+      const c = rowBy(b.dataset.add), f = b.closest(".betform");
       const stake = parseFloat(f.querySelector(".stake").value), x = parseFloat(f.querySelector(".px").value);
       if (!c || !(stake > 0)) return f.querySelector(".stake").focus();
       b.disabled = true;
       f.dataset.saved = "1";
       document.activeElement.blur();
       OPEN.delete(b.dataset.add);   // saved: the row folds back up (Max, 11-18)
-      bets({ add: { key: c.key, board: c.board || LEAGUE, player: c.player, team: c.team, label: c.label, stake, x, fair: c.fair, starts: c.starts } });
+      bets({ add: { key: c.key, board: c.board || LEAGUE, player: c.player, team: c.team, label: c.label, stake, x, fair: c.fair, starts: c.starts, row: c } });
     });
     rowsEl.querySelectorAll("[data-del]").forEach(b => b.onclick = () => bets({ del: b.dataset.del }));
     rowsEl.querySelectorAll("[data-kbet]").forEach(b => b.onclick = () => kalshiBet(b));
@@ -859,7 +886,7 @@ async function poll() {
     if (tab !== LEAGUE) return;   // the tab changed while this was on its way
     S = j;
     GOT = Date.now();
-    if (Date.now() - BETS_AT > 30000) { BETS_AT = Date.now(); bets(); }
+    if (Date.now() - BETS_AT > 30000) { BETS_AT = Date.now(); bets(); } else keepRows();
     if (S.scanning) NOW = false;
     // While a pass runs the button stops it: this board's own, or another
     // board's to fetch this one in its place.

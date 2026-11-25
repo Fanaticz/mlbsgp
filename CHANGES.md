@@ -2,6 +2,14 @@
 
 ## 2026-11-25 session
 
+### A bet keeps its row on the page when the board no longer has it
+Max, 11-25: is there any way for the bets to not go away after we do an update?
+
+- **Why they went**: the bets themselves were never lost: they are kept in the browser, not on the server. But a bet shows only on its own row, and after an update the board can come back without that row: the server restarts, and its saved boards survive only where `/data` is a mounted volume; a new pass may not ask the slip again; on the All tab a row under Min EV is not sent. With no row, the bet had nowhere to show.
+- **Change** (`keepRows`, `GHOSTS` in `public/nba_scan.html`): each bet now carries a copy of its row, taken when the bet is saved (Save, or the Kalshi Bet button) and refreshed every time the board shows that row. When the board has no such row, the page draws the copy: dimmed, marked "not on the board now", with the numbers from when it was last priced, on the bet's own tab and on All. It can be opened and the bet removed; it has no refresh or Bet button, and is left out of the counts and of Rescan top 10. It gives way to the real row as soon as the board has it again, and leaves when the game starts, as rows do.
+- **Bets already saved** pick up their copy the next time their row is on the board on that device. A bet whose row is already gone has no copy to draw: it shows again only if a pass prices that slip.
+- **Not changed**: bets are still kept on each device only. Kalshi positions read from Kalshi (the "On Kalshi" line) still show only on a row the board has; a Kalshi bet made with the Bet button is also a saved bet, so it keeps its row like the others.
+- **Checked** in a phone-sized browser with stand-in server answers: a bet saved through the page and one saved in the old form both stay on the CBB tab and the All tab after the board is emptied, not on another tab, and the real row takes over when the board is back. **Not checked**: on the live site across a real deploy; whether the live server's `/data` is a volume.
 ### Scan: a player's other rows say what is already on him
 Max, 11-25 (Day'Ron Sharpe: $241.80 on 10+ points + 8+ rebounds, and his 10+ points + 10+ rebounds row above it showed only "Bet $205"): does a bad job of showing I already have a bet on that player.
 
