@@ -2,6 +2,14 @@
 
 ## 2026-11-25 session
 
+### Kalshi scan: the Bet button stakes the QK $ less what is already on the slip
+Max, 11-25 (Stafford 34+ attempts + 22+ completions, QK $446 with $135.55 already on): bet the recommended less what we have outstanding.
+
+- **Change** (`kbetStake`, `kbetOn`, `kbetFull` in `public/nba_scan.html`): one press stakes the row's QK $ minus what is on that slip, and the button reads **Bet $305 more at 2.35x**. What is on is the larger of Kalshi's own figure for the position (dollars in) and this device's note of bets on the slip, so a bet Kalshi's list has not caught up with is not placed twice.
+- **Once the QK $ is on**, the button reads "QK $446 is on · bet a typed stake" and a press places nothing unless a stake is typed in the opened row. A typed stake is bet as typed, as before.
+- **Not counted**: a position on the No side of the combo, and bets on the player's other slips.
+- **Checked**: the page's script parses, and the three functions on five cases (nothing on, Kalshi and the device both, Kalshi only, over the QK $, No side). **Not checked**: in a browser, and no bet was placed.
+
 ### A modelled leg outside its own book takes the book's fair value, not its edge
 Max, 11-25 (Kalshi Pts + 3s, Yaxel Lendeborg): these FVs are really odd. 20+ points + 3+ threes * showed fair +225 (30.8%) while 3+ threes alone was 27 / 30 on Kalshi and 25.5 / 30.5 on Novig: a slip likelier than its harder leg.
 

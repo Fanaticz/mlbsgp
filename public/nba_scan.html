@@ -390,13 +390,18 @@ setInterval(kposLoad, 60 * 1000);
 // One press stakes the row's QK $ (quarter Kelly at $200 a unit) unless a stake is typed (Max, 11-18; it was a flat $25).
 // No cap on one bet (Max, 11-24); the server refuses a stake over KALSHI_BET_MAX only if that is set.
 const KMSG = new Map();
-const kbetStake = c => Math.max(1, Math.round(c.qk * UNIT) || 1);
+// Less what is already on the slip (Max, 11-25): the larger of what Kalshi says is held (dollars in) and this
+// device's own note of it, so a bet Kalshi's list hasn't caught up with is not placed twice. 0 once the QK $ is on.
+const kbetFull = c => Math.max(1, Math.round(c.qk * UNIT) || 1);
+const kbetOn = c => Math.max(held(c).reduce((s, x) => s + (x.contracts > 0 ? x.cost : 0), 0), total(liveBets().filter(b => b.key === c.key)));
+const kbetStake = c => (kbetOn(c) > 0 ? Math.max(0, Math.round(kbetFull(c) - kbetOn(c))) : kbetFull(c));
 let KBETTING = false;
 async function kalshiBet(b) {
   const id = b.dataset.kbet, c = S && S.rows.find(r => rk(r) === id), f = b.closest(".row") && b.closest(".row").querySelector(".det");
   if (!c || KBETTING) return;
   const typed = f ? parseFloat(f.querySelector(".stake").value) : NaN;
   const stake = typed > 0 ? typed : kbetStake(c);
+  if (!(stake > 0)) { KMSG.set(id, "The QK $ is already on this slip. To add more, open the row and type a stake."); render(); return; }
   // The typed stake is this bet's: empty the box so the "I bet this" form doesn't save it a second time.
   if (f) { f.querySelector(".stake").value = ""; f.querySelector(".stake").closest(".betform").dataset.saved = "1"; }
   KBETTING = true; b.disabled = true; KMSG.set(id, `placing $${stake}…`); render();
@@ -500,8 +505,8 @@ function kbetLine(c) {
   const msg = KMSG.get(rk(c)) || "";
   if (c.book !== "kalshi" || !(c.ev > 0 || msg)) return "";
   return `<div class="betform kbetrow" style="grid-column:1 / -1">` + (c.ev > 0 ? `<button type="button" class="kbet" data-kbet="${esc(rk(c))}"` +
-    ` title="Buys this combo on Kalshi now: the row's QK $, or the stake typed in the opened row. Not placed if the price is more than 1% worse than shown or the slip is no longer above fair.">` +
-    `Bet $${kbetStake(c)} at ${c.slip_x.toFixed(2)}x</button>` : "") + `<span class="kmsg">${esc(msg)}</span></div>`;
+    ` title="Buys this combo on Kalshi now: the row's QK $ less what is already on this slip, or the stake typed in the opened row. Not placed if the price is more than 1% worse than shown or the slip is no longer above fair.">` +
+    (kbetOn(c) > 0 ? (kbetStake(c) > 0 ? `Bet $${kbetStake(c)} more` : `QK $${kbetFull(c)} is on · bet a typed stake`) : `Bet $${kbetStake(c)}`) + ` at ${c.slip_x.toFixed(2)}x</button>` : "") + `<span class="kmsg">${esc(msg)}</span></div>`;
 }
 function betLine(c) {
   const onK = heldLine(c);
