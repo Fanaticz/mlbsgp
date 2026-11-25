@@ -2,6 +2,14 @@
 
 ## 2026-11-25 session
 
+### Novig scan: a Rescan top 10 button
+Max, 11-25: a lot of weird pings (Sam LaPorta U4.5 receptions + U44.5 yards on the board at 2.91x, 7 seconds old, and 2.17x on Novig's slip); add a rescan top 10 button.
+
+- **What the pings were**: Novig's quote on that slip, asked 30 times over 90 seconds, sat at 0.44 (2.17x), then 0.328 (2.89x) for about 30 seconds, then 0.44 again. Two prices take turns, a quote's 30 seconds each; a pass shows whichever it caught. ARIZ -5.5 + Over 156.5 at 10.36x (fair +340, right on Novig's own books) is likely the same: its four corners summed to 0.73.
+- **Change** (`requoteTop` in `public/nba_scan.html`): **Rescan top 10**, beside Auto-scan, prices the ten best rows on screen again one after another (each row's own refresh, in turn), on any tab and with the filters as set. The button counts them off and stops when pressed again. The ten are the ones on screen when it is pressed.
+- **Also**: a row's refresh button now spins on the All tab while it is priced (it compared two different keys there).
+- **Checked** in a desktop and a phone-sized browser with stand-in server answers and 18 real CBB rows marked above fair for the test: ten asked in screen order, one refused row does not stop the rest, a second press stops it. **Not checked**: against the live server.
+
 ### Kalshi scan refused with 401: the page now says which variable is wrong
 Max, 11-25: a screenshot of the Kalshi page, "Scan failed: Kalshi is refusing this key's requests: 401 authentication_error We could not authenticate your request".
 

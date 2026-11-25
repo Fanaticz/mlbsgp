@@ -98,6 +98,8 @@
   .betform .kbet { border-color:var(--pos); color:var(--pos); font-weight:600; }
   .betform .kmsg { color:var(--txt); }
   .betform .x { padding:1px 7px; color:var(--muted); margin-left:2px; }
+  #top10 { background:none; border:1px solid var(--line); color:var(--muted); border-radius:8px; padding:7px 11px; font-size:13px; cursor:pointer; white-space:nowrap; }
+  #top10.on { border-color:var(--accent); color:var(--accent); font-weight:600; }
   #hidebets { background:none; border:1px solid var(--line); color:var(--muted); border-radius:8px; padding:7px 11px; font-size:13px; cursor:pointer; }
   .betline { grid-column:1 / -1; padding-top:5px; font-size:12.5px; color:var(--pos); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .betline b { font-variant-numeric:tabular-nums; }
@@ -190,6 +192,7 @@
   </select>
   <button type="button" id="now" title="Run one pass. Nothing is asked of Novig until you press this: each pass sends every combo to its pricers as a live auction. While a pass runs, this button stops it." style="background:var(--accent);border:0;color:#1a1a1a;font-weight:600;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;white-space:nowrap">Fetch</button>
   <button type="button" id="auto" title="Auto-scan: the server prices every board (NBA, NBA Team, NFL, CBB, CFB, soccer; NBA Ladder and NFL Ladder are Fetch only) one after another, over and over, with this page open or closed. Each board's next day of games only; the NFL and soccer through Sunday and CFB through Saturday. It runs until you press this again; with it off the server prices nothing by itself. Each pass sends every combo to Novig's pricers.">Auto-scan</button>
+  <button type="button" id="top10" title="Price the ten best rows on screen again, one after another: today’s leg prices and a new Novig quote for each. Press again to stop.">Rescan top 10</button>
   <button type="button" id="unhide" style="display:none" title="Bring back the rows you swiped away."></button>
   <button type="button" id="hidebets" title="Hide or show your own bets on this page, for a screenshot.">Hide my bets</button>
   <a class="back" id="corr" href="nba.html">Correlations →</a>
@@ -312,6 +315,29 @@ async function requote(key) {
     }
   } catch (_) { NOTE = "Could not refresh that slip: no connection."; setTimeout(() => { NOTE = ""; render(); }, 6000); }
   BUSY.delete(key); render();
+}
+// The ten best rows on screen again, one after another (the server prices
+// one slip at a time). Novig's quote on a slip can sit at two prices in turn,
+// about 30 seconds each (11-25: LaPorta 2.17x and 2.89x), so the price a pass
+// caught may not be the one the app shows: this asks again without a whole pass.
+// The ten are fixed when the button is pressed; pressing it again stops after the row in hand.
+let TOP = [];              // the head row of each card on screen, best first (render)
+let TOPRUN = null;         // { i, n, stop } while the ten are being priced
+function topBtn() {
+  const b = document.getElementById("top10");
+  b.classList.toggle("on", !!TOPRUN);
+  b.textContent = TOPRUN ? `Rescanning ${Math.min(TOPRUN.i + 1, TOPRUN.n)} / ${TOPRUN.n} · stop` : "Rescan top 10";
+}
+async function requoteTop() {
+  if (TOPRUN) { TOPRUN.stop = true; return; }
+  const keys = TOP.slice(0, 10), tab = LEAGUE;
+  if (!keys.length || BUSY.size) return;
+  const run = TOPRUN = { i: 0, n: keys.length, stop: false };
+  for (; run.i < keys.length && !run.stop && tab === LEAGUE; run.i++) {
+    topBtn();
+    await requote(keys[run.i]);
+  }
+  TOPRUN = null; topBtn();
 }
 let NOTE = "";             // a short message under the status line
 const GOPEN = new Set();   // cards whose other rows are unfolded
@@ -643,6 +669,7 @@ function render() {
     cards.push({ head, others: shown.filter(c => c !== head) });
   }
   cards.sort((a, b) => b.head.ev - a.head.ev);
+  if (!TOPRUN) TOP = cards.map(c => rk(c.head));
 
   // Status line.
   // "Nothing listed yet": the book has not opened the next games' props. Said plainly, not as a failed scan.
@@ -725,7 +752,7 @@ function render() {
       `<div class="num qk"><span class="lab">QK</span>${c.qk > 0 ? c.qk.toFixed(2) + "u" : "—"}</div>` +
       `<div class="num"><span class="lab">QK $</span>${c.qk > 0 ? "$" + Math.round(c.qk * UNIT).toLocaleString() : "—"}</div>` +
       `<div class="num rr">${c.r === null ? "" : (c.r >= 0 ? "+" : "−") + Math.abs(c.r).toFixed(2)}</div>` +
-      `<div class="num"><span class="lab">Age</span>${age(c)}<button type="button" class="re${BUSY.has(c.key) ? " spin" : ""}" data-re="${esc(rk(c))}" title="Price this slip again: today’s leg prices and a new Novig quote"${BUSY.has(c.key) ? " disabled" : ""}>↻</button></div>` +
+      `<div class="num"><span class="lab">Age</span>${age(c)}<button type="button" class="re${BUSY.has(rk(c)) ? " spin" : ""}" data-re="${esc(rk(c))}" title="Price this slip again: today’s leg prices and a new Novig quote"${BUSY.has(rk(c)) ? " disabled" : ""}>↻</button></div>` +
       betLine(c, sub) + kbetLine(c) + (OPEN.has(rk(c)) ? detail(c) : "") + `</div>`;
     rowsEl.innerHTML = cards.map(({ head, others }) =>
       one(head, false, others) + (GOPEN.has(cardOf(head)) ? others.map(c => one(c, true)).join("") : "")).join("");
@@ -898,6 +925,7 @@ document.querySelectorAll("#league button").forEach(b => {
   };
 });
 document.getElementById("pair").onchange = render;
+document.getElementById("top10").onclick = requoteTop;
 // Swipe a row right to hide it. The drag starts on the row itself, not on
 // its buttons, links, bet form or opened details.
 {
