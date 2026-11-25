@@ -2677,7 +2677,7 @@ function startNovigScan(league, wide, events, auto, before, full) {
         if (!B.seen.has(k) && (!events.length || events.includes(r.event)) && (!before || !r.starts || r.starts < before)) B.rows.delete(k);
       }
     } else {
-      B.error = (why || err.trim().split('\n').pop() || 'scan stopped early').slice(0, 300);
+      B.error = (why || err.trim().split('\n').pop() || 'scan stopped early').slice(0, 500);
     }
     nvSaveBoards();
   };

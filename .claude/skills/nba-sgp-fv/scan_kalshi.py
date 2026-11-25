@@ -102,6 +102,16 @@ class Refused(Exception):
     """Kalshi answered a signed call with 401 or 403."""
 
 
+def refused_fix(why):
+    """What to change for a refusal whose reason Kalshi names, or ""."""
+    if "NOT_FOUND" in why:
+        return (". Kalshi has no key with this id: the key was deleted, or KALSHI_KEY_ID is not the id of the key in "
+                "KALSHI_PRIVATE_KEY. Make a key on Kalshi (Account, API Keys) and set both in Railway, Variables.")
+    if "SIGNATURE" in why:
+        return ". KALSHI_PRIVATE_KEY is not the private key of the key id in KALSHI_KEY_ID (Railway, Variables)."
+    return ""
+
+
 _KEY = None
 
 
@@ -170,7 +180,9 @@ def call(method, path, body=None, query=None, signed=True):
                 time.sleep(float(e.headers.get("Retry-After") or 2 + 2 * attempt))
                 continue
             if signed and e.code in (401, 403):
-                raise Refused(f"{e.code} {err.get('code') or ''} {err.get('message') or ''}".strip())
+                # "details" is Kalshi's own reason (NOT_FOUND: it has no key with this id)
+                why = f"{e.code} {err.get('code') or ''} {err.get('message') or ''}".strip()
+                raise Refused(why + (f" ({err['details']})" if err.get("details") else ""))
             return e.code, err
         except OSError:
             if attempt == 5:
@@ -1606,7 +1618,7 @@ def main():
             refused, why_refused, yes, why = refused + 1, str(e), None, "Kalshi refused the key"
             if not rows and refused >= REFUSED_AFTER:
                 # Its own line on stderr: server.js shows the last one as the board's error.
-                raise SystemExit(f"Kalshi is refusing this key's requests: {why_refused}")
+                raise SystemExit(f"Kalshi is refusing this key's requests: {why_refused}{refused_fix(why_refused)}")
         if yes:
             finish(c, yes, a.unit, a.kelly)
             novig_price(c)

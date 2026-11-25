@@ -1,5 +1,15 @@
 # Changes
 
+## 2026-11-25 session
+
+### Kalshi scan refused with 401: the page now says which variable is wrong
+Max, 11-25: a screenshot of the Kalshi page, "Scan failed: Kalshi is refusing this key's requests: 401 authentication_error We could not authenticate your request".
+
+- **Cause**: on Kalshi's side or in Railway's variables, not in the code. Kalshi's answer carries a `details` field with its reason, which the scanner dropped.
+- **Change** (`call` and `refused_fix` in `scan_kalshi.py`): the reason is kept in the message, with the fix for the two it names: `NOT_FOUND` (Kalshi has no key with the id in `KALSHI_KEY_ID`) and a signature mismatch (`KALSHI_PRIVATE_KEY` is not that key's private key).
+- **The "On Kalshi" strip** keeps the last list it read when a read fails, so the positions in the screenshot do not show the key working.
+- **Checked**: `--check` with a made-up key id and a fresh RSA key prints `... (NOT_FOUND)`; Kalshi's exchange status is up. **Not checked**: the real key (it is only on Railway); the wording Kalshi uses for a wrong signature (`SIGNATURE` is matched from its documented `INCORRECT_API_KEY_SIGNATURE`).
+
 ## 2026-11-24 session
 
 ### NBA teammates' assists and rebounds, measured again on games to date: still not added
