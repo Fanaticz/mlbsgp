@@ -2,6 +2,15 @@
 
 ## 2026-11-25 session
 
+### Scan: a player's other rows say what is already on him
+Max, 11-25 (Day'Ron Sharpe: $241.80 on 10+ points + 8+ rebounds, and his 10+ points + 10+ rebounds row above it showed only "Bet $205"): does a bad job of showing I already have a bet on that player.
+
+- **Change** (`alsoLine` in `public/nba_scan.html`): each row of a player's card with nothing on it carries a grey line, "Already on Sharpe: **$241.80** on 10+ points · 8+ rebounds", for every other slip of his with money on it (Kalshi's figure or this device's note, whichever is larger). It shows with the card folded too, and for a slip of his that is under Min EV. A row with its own bet keeps its green line and shows only that.
+- **Green edge**: a Kalshi row now gets it from Kalshi's position too, not only from a bet saved on this device.
+- **This puts back, reworded,** the grey line taken off this morning ("a bet shows on its own row only"). Then it was on the player's first row only and named no amount per slip.
+- **Not changed**: the Bet button's amount on those rows is still that row's own QK $; money on his other slips is not taken off it. Boards where every row is its own card (NFL, NBA Team) have no such line.
+- **Checked**: the page's script parses. **Not checked**: in a browser.
+
 ### Kalshi scan: the Bet button stakes the QK $ less what is already on the slip
 Max, 11-25 (Stafford 34+ attempts + 22+ completions, QK $446 with $135.55 already on): bet the recommended less what we have outstanding.
 
