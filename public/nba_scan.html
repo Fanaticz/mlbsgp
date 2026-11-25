@@ -80,9 +80,6 @@
   .tech { color:var(--muted); font-size:11.5px; margin-top:7px; }
   /* My bets: the strip above the board, the badges on rows and the form in an
      open row. body.nobets hides all of it (for a screenshot). */
-  .mybets { padding:8px 22px; border-bottom:1px solid var(--line); display:flex; flex-wrap:wrap; gap:6px 8px; align-items:center; font-size:13px; }
-  .mybets .t { color:var(--muted); margin-right:4px; }
-  .mybets .t b { color:var(--txt); }
   /* A chip is never wider than the screen: a long slip's text is cut short, not the page pushed sideways. */
   .chip { border:1px solid var(--line); border-radius:999px; padding:2px 10px; white-space:nowrap; background:var(--panel);
     display:inline-flex; align-items:baseline; max-width:100%; box-sizing:border-box; }
@@ -105,7 +102,7 @@
   .betline b { font-variant-numeric:tabular-nums; }
   .betline.other { color:var(--muted); }
   .row.has { box-shadow:inset 3px 0 0 var(--pos); }
-  body.nobets .mybets, body.nobets .bet, body.nobets .betline, body.nobets .betform:not(.kbetrow) { display:none; }
+  body.nobets .bet, body.nobets .betline, body.nobets .betform:not(.kbetrow) { display:none; }
   body.nobets .row.has { box-shadow:none; }
   body.nobets #hidebets { border-color:var(--accent); color:var(--accent); font-weight:600; }
   .tag.q { margin:0 0 0 7px; border-color:#b8860b; color:#e0a82e; font-weight:700; }   /* questionable on the injury report */
@@ -143,7 +140,6 @@
     .lab { display:block; font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; font-weight:400; }
     .rr { display:none; }
     .foot { padding:4px 14px 60px; }
-    .mybets { padding:8px 14px; }
     .betform input { font-size:16px; }
   }
 </style>
@@ -203,7 +199,6 @@
   <input type="password" id="pass" autocomplete="current-password" style="margin-top:10px;background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:9px 12px;font-size:16px;width:220px" />
   <button type="submit" style="margin-left:6px;background:var(--accent);border:0;border-radius:8px;padding:10px 16px;font-weight:600;font-size:14px">Open</button>
 </form>
-<div class="mybets" id="kpos" style="display:none"></div>
 <div class="board">
   <div class="head">
     <div>Player</div><div>Legs</div><div class="num">Fair</div><div class="num" id="bookhead">Novig</div>
@@ -368,8 +363,8 @@ function kalshiLock() {   // the server refused it: forget it and ask once more
 let KWHY = "";
 const kalshiNote = () => { if (KPAGE && !KKEY) document.getElementById("rows").innerHTML = `<div class="empty">${KWHY ? esc(KWHY) : "Locked. Click the title three times to enter the Kalshi passcode."}</div>`; };
 // What the account already holds on Kalshi (GET /api/nba/kalshi-positions, read
-// once a minute and after a bet): a strip above the board and a line on the
-// row whose legs match.
+// once a minute and after a bet): a line on the row whose legs match. The strip
+// of every combo above the board is gone (Max, 11-25: bets show in their row only).
 let KPOS = [], KPOS_ERR = "";
 const legKey = legs => legs.map(L => `${L.id}:${L.side}`).sort().join("|");
 const rowLegKey = c => legKey((c.legs || []).map(L => ({ id: L.id, side: L.yes === false ? "no" : "yes" })));
@@ -381,18 +376,6 @@ function heldLine(c) {
   return `<div class="betline">On Kalshi: <b>${usd(cost)}</b> in, pays <b>${usd(Math.abs(n))}</b>` +
     (cost > 0 && n > 0 ? ` (${(n / cost).toFixed(2)}x before fees)` : "") + (n < 0 ? " · on the NO side" : "") + `</div>`;
 }
-function kposStrip() {
-  const el = document.getElementById("kpos");
-  if (!el) return;
-  el.style.display = KPAGE && (KPOS.length || KPOS_ERR) ? "" : "none";
-  if (!KPAGE) return;
-  const cost = KPOS.reduce((s, x) => s + x.cost, 0);
-  el.innerHTML = KPOS_ERR && !KPOS.length ? `<span class="t">On Kalshi: could not be read (${esc(KPOS_ERR)})</span>` :
-    `<span class="t">On Kalshi <b>${usd(cost)}</b> in ${KPOS.length} ${KPOS.length === 1 ? "combo" : "combos"}</span>` +
-    KPOS.slice().sort((a, b) => b.cost - a.cost).map(h =>
-      `<span class="chip" title="${esc(h.ticker)}">${esc(String(h.title).replace(/\byes /g, "").replace(/,/g, " · "))}<b>${usd(h.cost)}</b>` +
-      `<small>pays ${usd(Math.abs(h.contracts))}${h.contracts < 0 ? " · NO side" : ""}</small></span>`).join("");
-}
 async function kposLoad() {
   if (!KPAGE || !KEY || !KKEY) return;
   try {
@@ -400,7 +383,6 @@ async function kposLoad() {
     const j = await r.json().catch(() => ({}));
     if (r.ok) { KPOS = Array.isArray(j.positions) ? j.positions : []; KPOS_ERR = j.error || ""; }
   } catch (_) { /* the next read will do */ }
-  kposStrip();
   if (S) render();
 }
 setTimeout(kposLoad, 1500);

@@ -2,6 +2,13 @@
 
 ## 2026-11-25 session
 
+### Kalshi scan: the "On Kalshi" strip above the board is gone
+Max, 11-25 (screenshot, the strip of twelve combos circled): always hide this; bets should show in their own row only.
+
+- **Change** (`public/nba_scan.html`): the strip listing every combo held on Kalshi is removed. A held combo still shows on its own row ("On Kalshi: $171.29 in, pays $475"), read from Kalshi once a minute and after a bet, as before.
+- **What no longer shows anywhere**: a combo you hold whose row is not on the board (not fetched yet, another tab, or its game has started), the total staked, and the "could not be read" message when Kalshi's positions fail to load.
+- **Checked** in a phone-sized browser with stand-in positions: no strip, the held row carries its line, a held combo with no row shows nothing.
+
 ### Novig scan: a Rescan top 10 button
 Max, 11-25: a lot of weird pings (Sam LaPorta U4.5 receptions + U44.5 yards on the board at 2.91x, 7 seconds old, and 2.17x on Novig's slip); add a rescan top 10 button.
 
