@@ -2,6 +2,21 @@
 
 ## 2026-11-24 session
 
+### NBA teammates' assists and rebounds, measured again on games to date: still not added
+Max, 11-24: look at teammate correlation again (this player gets 2 assists a game from that one; one gets 7 rebounds and one gets 4, and Novig adds too much negative correlation). Update games to date.
+
+- **Games to date**: `public/data/nba_teammate_logs.json` rebuilt through tonight (1,494 games, 2025-26 and 2026-27; the NBA TEAMMATES tab reads it).
+- **Measured** (`scripts/nba_mate_research.py`, new; research only, no board reads it): every pair of teammates in every game both played 20+ minutes, each leg "Over his median of his previous 15 games", r the copula correlation of both hitting, ± one standard error.
+  - **A's assists + B's points**: +0.07 for any pair. By how many assists A fed B a game in their earlier games together: under 1, +0.06; 1 to 2, +0.08 ± 0.015; 2 or more, +0.12 ± 0.035 (707 pair-games). This season alone: +0.07, and +0.10 ± 0.03 at 1 to 2.
+  - **A's assists + B's threes**: +0.07; +0.10 ± 0.02 at 0.75+ three-point assists a game.
+  - **Rebounds + rebounds**: 0.00 (+0.006 ± 0.006 on 32,590 pair-games). A line of 6 to 9 with one of 3.5 to 5.5 (the 7 with the 4): -0.01 ± 0.014. Two starters, starter + bench, by position: all within 0.03 of zero.
+  - **A pair's own r does not carry over.** For pairs with 40+ games together, r on their odd games against r on their even games correlates -0.07 to +0.07 (150 to 190 pairs a pairing). A pair showing +0.3 on 50 games is what chance gives around the pairing's average.
+- **Novig**, three reads tonight on the 8 teams with books open for 11-25 (`--novig`; legs on books to 8c wide): rebounds + rebounds, 61 to 64 slips a read, its price implies r +0.04 to +0.055 at the median (-0.09 to +0.11); assists + a fed teammate's points, 17 to 18 slips, +0.10 to +0.115. It is not pricing these as pulling against each other: it is at the measured number or a little over. After the parlay fee the medians are -11% to -12%. Four slips of about 240 came back above fair (best +3.2%); none did on the next read.
+- **What it would take**: the fee is about 7% on a +270 slip, so a slip is +3% only where Novig's r is about 0.15 under the real one. None was.
+- **Teammates' points, the slip already on the board**: 8 teams, implied r +0.03 at the median (-0.05 to +0.07), best -5.7%. The -0.12 to -0.15 of 11-16 was not there tonight.
+- **The NBA TEAMMATES tab** prices off each pair's raw r by default and lists pairs at |r| 0.20 or more. By the odd-against-even check those rows are mostly chance, so its fair prices for them run long, and Novig looks too low beside them. Not changed (raw was Max's choice, 11-04); the shrunk toggle is the nearer one.
+- **Not changed**: any board, any price. **Not checked**: a game-day read (books are tighter and more teams are open); steals and blocks.
+
 ### Scanner: one unit is $200
 Max, 11-24: let's change units to $200.
 
