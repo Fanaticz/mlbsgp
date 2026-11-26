@@ -45,6 +45,7 @@
   .row { border-bottom:1px solid var(--line); cursor:pointer; }
   .row:hover { background:#161d25; }
   .row.old { opacity:.55; }
+  .kept { padding:14px 12px 6px; color:var(--muted); font-size:11.5px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; border-top:1px solid var(--line); }
   .who b { font-weight:600; }
   /* Name, then team and tip (which give way first), then the chip, always whole. */
   .who { display:flex; align-items:baseline; min-width:0; }
@@ -723,10 +724,13 @@ function render() {
     // The Kalshi boards other than the two NBA props ones have no such row (every row is
     // tier 1), so the card is headed by its best row, not the one nearest 50%.
     const m = !ALL() && !pair && !(KALSHI(LEAGUE) && LEAGUE !== "kalshinba" && LEAGUE !== "kalshinba3") && mainOf(g);
-    const head = (m && shown.includes(m) && m) || shown.slice().sort((a, b) => b.ev - a.ev)[0];
+    // A kept bet row (the board has no such row now) heads a card only when the card has no priced row.
+    const head = (m && shown.includes(m) && m) || shown.slice().sort((a, b) => !!a.ghost - !!b.ghost || b.ev - a.ev)[0];
     cards.push({ head, others: shown.filter(c => c !== head), g });   // g: his rows under Min EV too, for alsoLine
   }
-  cards.sort((a, b) => b.head.ev - a.head.ev);
+  // Kept bet rows go under the priced ones, below a line of their own (Max, 11-27: after a Fetch
+  // his bets from 13 hours before sat among the new plays, ranked by their old EV).
+  cards.sort((a, b) => !!a.head.ghost - !!b.head.ghost || b.head.ev - a.head.ev);
   if (!TOPRUN) TOP = cards.filter(c => !c.head.ghost).map(c => rk(c.head));
 
   // Status line.
@@ -817,7 +821,9 @@ function render() {
       `<div class="num rr">${c.r === null ? "" : (c.r >= 0 ? "+" : "−") + Math.abs(c.r).toFixed(2)}</div>` +
       `<div class="num"><span class="lab">Age</span>${age(c)}${c.ghost ? "" : `<button type="button" class="re${BUSY.has(rk(c)) ? " spin" : ""}" data-re="${esc(rk(c))}" title="Price this slip again: today’s leg prices and a new Novig quote"${BUSY.has(rk(c)) ? " disabled" : ""}>↻</button>`}</div>` +
       betLine(c, group) + kbetLine(c) + (OPEN.has(rk(c)) ? detail(c) : "") + `</div>`;
-    rowsEl.innerHTML = cards.map(({ head, others, g }) =>
+    const firstKept = cards.findIndex(c => c.head.ghost);
+    rowsEl.innerHTML = cards.map(({ head, others, g }, i) =>
+      (i === firstKept ? `<div class="kept">Your bets · not priced by the last Fetch (numbers from when each was last priced)</div>` : "") +
       one(head, false, others, g) + (GOPEN.has(cardOf(head)) ? others.map(c => one(c, true, null, g)).join("") : "")).join("");
     rowsEl.querySelectorAll(".more").forEach(b => b.onclick = e => {
       e.stopPropagation();
