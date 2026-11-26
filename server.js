@@ -2538,9 +2538,11 @@ const NV_LEAD_EV = -0.02, NV_LEAD_MAX = 400;
 let NV_RUN = null;   // { proc, key, stop, auto } while a pass is running
 let NV_KRUN = null;  // the same for a Kalshi board: its own slot, so it runs beside a Novig pass
 // The Kalshi NBA tab's Fetch (Max, 11-26: hard to tell which board to run): the four NBA boards
-// priced one after another in this order, on the one Kalshi slot. NV_KQUEUE holds the ones still to
+// priced one after another in the order listed, on the one Kalshi slot. NV_KQUEUE holds the ones still to
 // come, as { league, wide }. A pass that fails or times out moves on to the next; Stop ends the lot.
-const NV_KNBA = ['kalshinba3', 'kalshinba', 'kalshinbatri', 'kalshinbaline'];
+// The Kalshi NFL tab is the same over its three boards (Max, 11-26: let's combine NFL too).
+const NV_KGROUPS = { kalshinbaall: ['kalshinba3', 'kalshinba', 'kalshinbatri', 'kalshinbaline'],
+                     kalshinflall: ['kalshinfl', 'kalshinflline', 'kalshinfltri'] };
 let NV_KQUEUE = [];
 function nvKNext() { while (!NV_KRUN && NV_KQUEUE.length) { const q = NV_KQUEUE.shift(); startNovigScan(q.league, q.wide); } }
 let NV_LAST_END = 0; // when the last pass ended, however it ended
@@ -2971,8 +2973,8 @@ app.get('/api/nba/novig-scan', (req, res) => {
   const kc = nvCheck(req, 'kalshi'), kalshiOk = kc.ok;
   if (nvKalshi(league) && !kalshiOk) return nvDeny(res, kc);
   // A Kalshi board looks at the Kalshi slot, every other board at Novig's.
-  // league=kalshinbaall: the Kalshi NBA tab, the four NBA boards as one list with one Fetch.
-  const group = req.query.league === 'kalshinbaall' ? NV_KNBA : null;
+  // league=kalshinbaall or kalshinflall: the Kalshi NBA or NFL tab, its boards as one list with one Fetch.
+  const group = Object.prototype.hasOwnProperty.call(NV_KGROUPS, req.query.league) ? NV_KGROUPS[req.query.league] : null;
   if (group && !kalshiOk) return nvDeny(res, kc);
   const RUN = group || (nvKalshi(league) && req.query.league !== 'all') ? NV_KRUN : NV_RUN;
   const busyName = () => (RUN ? RUN.key.split(':')[0] : null);
@@ -2983,7 +2985,7 @@ app.get('/api/nba/novig-scan', (req, res) => {
   // or better whose game hasn't started, each tagged with its board, and
   // where each board's last pass stands. Never starts a pass.
   if (req.query.league === 'all' || group) {
-    // The Kalshi NBA tab does start passes: all four boards, queued. It waits for a pass on
+    // A Kalshi NBA or NFL tab does start passes: all its boards, queued. It waits for a pass on
     // another Kalshi board unless that one was stopped just above.
     if (group && req.query.now === '1' && !NV_KRUN) { NV_KQUEUE = group.map(league => ({ league, wide })); nvKNext(); }
     const floor = Number.isFinite(parseFloat(req.query.min)) ? parseFloat(req.query.min) / 100 : 0;
@@ -3007,7 +3009,7 @@ app.get('/api/nba/novig-scan', (req, res) => {
     }
     if (group) {
       const mine = boards.some(b => b.scanning || b.queued);
-      return res.json({ now, league: 'kalshinbaall', wide, scanning: mine, busy: NV_KRUN && !mine ? NV_KRUN.key.split(':')[0] : null,
+      return res.json({ now, league: req.query.league, wide, scanning: mine, busy: NV_KRUN && !mine ? NV_KRUN.key.split(':')[0] : null,
                         boards, rows, out, cycle: nvCycleState() });
     }
     return res.json({ now, league: 'all', wide, scanning: false, busy: busyName(),

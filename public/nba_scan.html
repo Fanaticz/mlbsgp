@@ -166,6 +166,7 @@
     <button data-league="cfb" title="College football: slips across one game's lines (moneyline, spread, total, team total)">CFB</button>
     <button data-league="cbb" title="College basketball: a game's spread with its total">CBB</button>
     <button data-league="kalshinbaall" hidden title="NBA: the four NBA boards in one list, best first. Fetch prices all four, one after another. The dropdown below shows one board alone.">Kalshi NBA</button>
+    <button data-league="kalshinflall" hidden title="NFL: the three NFL boards in one list, best first. Fetch prices all three, one after another. The dropdown below shows one board alone.">Kalshi NFL</button>
     <button data-league="kalshinba3" hidden title="NBA: one player's Points + Threes, asked as Kalshi combos. Fetch only: Auto-scan leaves it out.">Kalshi Pts + 3s</button>
     <button data-league="kalshinba" hidden title="NBA: a player's other pairs and each team's top two scorers, asked as Kalshi combos. Fetch only: Auto-scan leaves it out.">Kalshi NBA Pairs</button>
     <button data-league="kalshinbatri" hidden title="NBA: three legs on one high scorer (points with two of rebounds, assists and threes), asked as Kalshi combos. Fetch only: Auto-scan leaves it out.">Kalshi NBA 3-Leg</button>
@@ -180,13 +181,7 @@
     <button data-mode="plays" class="on">Plays</button>
     <button data-mode="all">All combos</button>
   </div>
-  <select id="kboard" title="Kalshi NBA: all four boards together, or one board alone (its own Fetch, and its slips under Min EV)" style="display:none;background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:7px 10px;font-size:13px">
-    <option value="kalshinbaall">All four boards</option>
-    <option value="kalshinba3">Pts + 3s</option>
-    <option value="kalshinba">Pairs + teammates</option>
-    <option value="kalshinbatri">3-Leg</option>
-    <option value="kalshinbaline">Lines</option>
-  </select>
+  <select id="kboard" title="All of this sport's Kalshi boards together, or one board alone (its own Fetch, and its slips under Min EV)" style="display:none;background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:7px 10px;font-size:13px"></select>
   <input type="search" id="search" placeholder="Filter by name…" />
   <select id="pair" title="Show one kind of combo" style="background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:7px 10px;font-size:13px">
   </select>
@@ -250,6 +245,7 @@ const PAIR_OPTS = {
   cfb: [["k:dogml", "Underdog ML + Under"], ["k:cover", "Spread + total"], ["k:tt", "With a team total"], ["k:half", "First half + game"]],
   cbb: [["k:cover", "Spread + total"], ["k:tt", "With a team total"], ["k:half", "First half + game"]],
   kalshinbaall: [],   // the four Kalshi NBA boards together
+  kalshinflall: [],   // the three Kalshi NFL boards together
   kalshinba3: [],
   kalshinba: [],
   kalshinbatri: [],
@@ -269,9 +265,12 @@ function pairOpts() {
     PAIR_OPTS[LEAGUE].map(([v, t]) => `<option value="${v}">${t}</option>`).join("");
   document.getElementById("corr").href = CORR[LEAGUE] || "nba.html";
   // The Kalshi NBA tab's board picker: the four boards have no tab of their own (Max, 11-26: one NBA tab).
-  const kb = document.getElementById("kboard"), nba = LEAGUE === "kalshinbaall" || KNBA.includes(LEAGUE);
-  kb.style.display = nba ? "" : "none";
-  if (nba) kb.value = LEAGUE;
+  const kb = document.getElementById("kboard"), g = KGROUPS[tabOf(LEAGUE)];
+  kb.style.display = g ? "" : "none";
+  if (g) {
+    kb.innerHTML = `<option value="${tabOf(LEAGUE)}">All ${g.n} boards</option>` + g.boards.map((b, i) => `<option value="${b}">${g.pick[i]}</option>`).join("");
+    kb.value = LEAGUE;
+  }
 }
 // The game picker: Fetch prices only the game or slate chosen (Novig event
 // ids), so one game takes a couple of minutes instead of the whole board's
@@ -469,11 +468,17 @@ const LABEL = { pts:"PTS", reb:"REB", ast:"AST", tpm:"3PM", rec:"REC", yds:"YDS"
                 car:"CAR", ryds:"RUSH YDS", rry:"RUSH+REC YDS", g:"G", sog:"SOG", blk:"BLK", pra:"PTS+REB+AST" };
 const UNIT = 200;   // dollars a unit, for the QK $ column. $200 on every tab (Max, 11-24; it was $100 from 11-19, the Novig tabs $500 before)
 const SOC = () => LEAGUE === "soccer";
-// The Kalshi NBA tab: these four boards as one list (the server's NV_KNBA), drawn as the All tab is.
-const KNBA = ["kalshinba3", "kalshinba", "kalshinbatri", "kalshinbaline"];
-const GROUP = () => LEAGUE === "kalshinbaall";
-const ALL = () => LEAGUE === "all" || GROUP();
-const allClass = () => { document.body.classList.toggle("all", ALL()); document.body.classList.toggle("grp", GROUP()); };
+// The Kalshi NBA and NFL tabs: each sport's boards as one list (the server's NV_KGROUPS), drawn as the
+// All tab is. The boards have no tab of their own: the tab's dropdown picks one (pick: its name there).
+const KGROUPS = {
+  kalshinbaall: { sport: "NBA", n: "four", boards: ["kalshinba3", "kalshinba", "kalshinbatri", "kalshinbaline"], pick: ["Pts + 3s", "Pairs + teammates", "3-Leg", "Lines"] },
+  kalshinflall: { sport: "NFL", n: "three", boards: ["kalshinfl", "kalshinflline", "kalshinfltri"], pick: ["Props + stacks", "Lines", "3-Leg"] },
+};
+// The tab a board sits under.
+const tabOf = l => Object.keys(KGROUPS).find(t => KGROUPS[t].boards.includes(l)) || l;
+const GROUP = () => KGROUPS[LEAGUE];
+const ALL = () => LEAGUE === "all" || !!GROUP();
+const allClass = () => { document.body.classList.toggle("all", ALL()); document.body.classList.toggle("grp", !!GROUP()); };
 // A row's key on this page: on the All tab two boards can hold the same key.
 const rk = c => c.board ? c.board + "|" + c.key : c.key;
 // Rows swiped away (swipe a row right): slip key -> when to forget it (its
@@ -483,7 +488,7 @@ let HIDDEN = new Map();
 try { HIDDEN = new Map(Object.entries(JSON.parse(localStorage.getItem("nbaScanHidden") || "{}")).filter(([, t]) => t > Date.now())); } catch (_) {}
 const saveHidden = () => { try { localStorage.setItem("nbaScanHidden", JSON.stringify(Object.fromEntries(HIDDEN))); } catch (_) {} };
 let SWIPE = null, SWIPED = 0;   // the drag under way; when the last one ended (its click is not a row press)
-const BOARD = { all:"All", nba:"NBA", ladder:"NBA Ladder", nbateam:"NBA Team", nfl:"NFL", nflladder:"NFL Ladder", nhl:"NHL", nhllines:"NHL Lines", soccer:"soccer", cfb:"CFB", cbb:"CBB", dknba:"DK NBA", kalshinbaall:"Kalshi NBA", kalshinba3:"Kalshi Pts + 3s", kalshinba:"Kalshi NBA Pairs", kalshinbatri:"Kalshi NBA 3-Leg", kalshinbaline:"Kalshi NBA Lines", kalshinfl:"Kalshi NFL", kalshinflline:"Kalshi NFL Lines", kalshinfltri:"Kalshi NFL 3-Leg", kalshicbb:"Kalshi CBB", kalshicfb:"Kalshi CFB" };
+const BOARD = { all:"All", nba:"NBA", ladder:"NBA Ladder", nbateam:"NBA Team", nfl:"NFL", nflladder:"NFL Ladder", nhl:"NHL", nhllines:"NHL Lines", soccer:"soccer", cfb:"CFB", cbb:"CBB", dknba:"DK NBA", kalshinbaall:"Kalshi NBA", kalshinba3:"Kalshi Pts + 3s", kalshinba:"Kalshi NBA Pairs", kalshinbatri:"Kalshi NBA 3-Leg", kalshinbaline:"Kalshi NBA Lines", kalshinflall:"Kalshi NFL", kalshinfl:"Kalshi NFL Props", kalshinflline:"Kalshi NFL Lines", kalshinfltri:"Kalshi NFL 3-Leg", kalshicbb:"Kalshi CBB", kalshicfb:"Kalshi CFB" };
 
 // My bets: what I have down, kept on the server (same list on every device).
 let BETS = [], BETS_AT = 0;
@@ -676,7 +681,7 @@ function render() {
   const started = S.rows.filter(c => c.starts && c.starts <= nowMs).length;
   GHOSTS = [];
   for (const b of liveBets()) {
-    if (KALSHI(b.board) !== KPAGE || !(GROUP() ? KNBA.includes(b.board) : ALL() || b.board === LEAGUE)) continue;
+    if (KALSHI(b.board) !== KPAGE || !(GROUP() ? GROUP().boards.includes(b.board) : ALL() || b.board === LEAGUE)) continue;
     const k = ALL() ? b.board + "|" + b.key : b.key;
     if (S.rows.some(r => rk(r) === k) || GHOSTS.some(r => rk(r) === k)) continue;
     GHOSTS.push(Object.assign({}, b.row && b.row.legs ? b.row : stubRow(b), { ghost: true }, ALL() ? { board: b.board } : {}));
@@ -736,9 +741,9 @@ function render() {
       b.error ? `<span style="color:var(--neg)" title="${esc(b.error)}">failed</span>` :
       Math.max(b.finished, b.stopped) ? ago(nowMs - Math.max(b.finished, b.stopped)) : "";
     st.classList.remove("err");
-    st.innerHTML = `${n} on ${GROUP() ? "the four NBA boards" : "all boards"}${S.out ? ` · ${S.out} hidden, player out` : ""}<div>` + S.boards.filter(b => at(b)).map(b => `${BOARD[b.league]} <b>${at(b)}</b>`).join(" · ") + `</div>` +
+    st.innerHTML = `${n} on ${GROUP() ? `the ${GROUP().n} ${GROUP().sport} boards` : "all boards"}${S.out ? ` · ${S.out} hidden, player out` : ""}<div>` + S.boards.filter(b => at(b)).map(b => `${BOARD[b.league]} <b>${at(b)}</b>`).join(" · ") + `</div>` +
       (GROUP() && S.busy ? `<div>A ${BOARD[S.busy] || S.busy} pass is running. Wait for it, or stop it and fetch these.</div>` : "") +
-      (GROUP() && !S.scanning && !S.busy && !S.boards.some(b => at(b)) ? `<div>Press Fetch to price all four boards.</div>` : "");
+      (GROUP() && !S.scanning && !S.busy && !S.boards.some(b => at(b)) ? `<div>Press Fetch to price all ${GROUP().n} boards.</div>` : "");
   } else if (S.scanning) {
     st.innerHTML = S.total ? `Scanning ${S.done} / ${S.total} combos on ${S.players} players · ${n}` : "Reading Novig’s lines…";
   } else if (S.error) {
@@ -782,8 +787,8 @@ function render() {
     const best = all[0];
     rowsEl.innerHTML = `<div class="empty">${
       q ? "No combo for that name." :
-      GROUP() ? (S.scanning ? "Pricing the four NBA boards, one after another. Plays appear as Kalshi answers." :
-        `No play at ${MINEV > 0 ? "+" : ""}${MINEV}% or better on the four NBA boards right now. Press <b>Fetch</b> to price all four.`) :
+      GROUP() ? (S.scanning ? `Pricing the ${GROUP().n} ${GROUP().sport} boards, one after another. Plays appear as Kalshi answers.` :
+        `No play at ${MINEV > 0 ? "+" : ""}${MINEV}% or better on the ${GROUP().n} ${GROUP().sport} boards right now. Press <b>Fetch</b> to price all ${GROUP().n}.`) :
       ALL() ? `No play at ${MINEV > 0 ? "+" : ""}${MINEV}% or better on any board right now.${S.cycle && S.cycle.on ? "" : " Fetch a board, or switch <b>Auto-scan</b> on to keep every board priced."}` :
       !all.length ? (S.scanning ? (KALSHI(LEAGUE) ? "Pricing the slate. Rows appear as Kalshi answers." : "Pricing the slate. Rows appear as Novig answers (about one a second).") :
         idle ? esc(S.error) :
@@ -856,8 +861,8 @@ function render() {
     });
   }
   document.getElementById("foot").innerHTML = GROUP() ?
-    `Kalshi NBA: the four NBA boards in one list, slips at Min EV or better, best first, for games that haven’t started. <b>Fetch</b> prices all four, one after another on the one Kalshi connection: Kalshi Pts + 3s, then Kalshi NBA Pairs, NBA 3-Leg and NBA Lines; the line at the top says which is running and which are next, and <b>Stop</b> ends the one running and drops the rest. Each board starts its pass empty, so its plays leave this list when its turn comes and return as Kalshi answers. All four is about as many new combos as fetching each tab in turn, against Kalshi’s 5,000 a week. ` +
-    `Each row carries its board; pick that board in the dropdown beside the name filter for how its fair value is made, for the slips under Min EV, and to fetch that board alone. A 3-Leg fair value is rougher than a two-leg one, and an NBA Lines row uses a league-wide correlation, not the player’s own. A dimmed row is over an hour old, or its board is being priced and hasn’t reached it yet. Press ↻ on a row to price it again now; a row’s refresh and Bet ask Kalshi again at the fair value from the last Fetch.` :
+    `Kalshi ${GROUP().sport}: the ${GROUP().n} ${GROUP().sport} boards in one list, slips at Min EV or better, best first, for games that haven’t started. <b>Fetch</b> prices all ${GROUP().n}, one after another on the one Kalshi connection: ${GROUP().boards.map(b => BOARD[b]).join(", then ")}; the line at the top says which is running and which are next, and <b>Stop</b> ends the one running and drops the rest. Each board starts its pass empty, so its plays leave this list when its turn comes and return as Kalshi answers. All ${GROUP().n} is as many new combos as fetching each board in turn, against Kalshi’s 5,000 a week${LEAGUE === "kalshinflall" ? " (up to 200 a board, 600 a Fetch, next day of games first)" : ""}. ` +
+    `Each row carries its board; pick that board in the dropdown beside the name filter for how its fair value is made, for the slips under Min EV, and to fetch that board alone. A 3-Leg fair value is rougher than a two-leg one, and ${LEAGUE === "kalshinflall" ? "a slip across two players or with a game line" : "an NBA Lines row"} uses a league-wide correlation, not the player’s own. A dimmed row is over an hour old, or its board is being priced and hasn’t reached it yet. Press ↻ on a row to price it again now; a row’s refresh and Bet ask Kalshi again at the fair value from the last Fetch.` :
     ALL() ?
     `All: every board’s slips at Min EV or better, best first, for games that haven’t started. Each row carries its board; open that board’s tab for how its fair value is made and for the rest of its slips. A dimmed row is over an hour old, or its board is being priced and hasn’t reached it yet; a pass prices its board’s best rows from last time first, so those clear within minutes. Press ↻ on a row to price it again now. ` +
     `<b>Auto-scan</b> has the server price each board’s next day of games on NBA, NBA Team, NFL, CBB, CFB and soccer in turn (NBA Ladder and NFL Ladder are Fetch only) (today’s games; once those have started, the next day that has any, up to midnight your time; the NFL and soccer run through Sunday and CFB through Saturday; an NFL game more than a day off gets only its QB’s 2+ passing TDs with a teammate’s TD, and everything else from the day before; Fetch a board for later days or for all of it), with this page open or closed: a minute between passes, no board more often than every ten minutes, and it runs, day and night, until you switch it off. ` +
@@ -866,9 +871,9 @@ function render() {
     (LEAGUE === "cfb" ? `CFB: Novig lists no college player props, so these are slips across one game’s own lines: the underdog’s moneyline with the game Under (at the main line and at the Under nearest +230), those two with the underdog’s team total Over, the favourite’s spread with the Over, and the underdog’s spread with the Under; then, where Novig’s team-total and first-half books are tight, the underdog’s spread with his team total Under, the favourite’s team total Under with the game Under, both team totals Under, the favourite’s first-half spread with his spread, and the first-half Under with the game Under. Up to ten a game; underdogs longer than about +900 get no moneyline slips. Each leg’s fair value is Novig’s own book at that line. The correlation is modelled, not measured: the two teams’ scores are fitted to that game’s alt spreads and alt totals, and a favourite covering is tied to the Over by half of spread ÷ total (an assumption). Novig prices these lines close to that model, so most rows sit under fair after its parlay fee; treat anything above fair as a lead to check. ` : "") +
     (LEAGUE === "kalshicbb" ? `Kalshi CBB: a college game’s spread with its total, asked as Kalshi combos: the two pairings that go together in four seasons of box scores (the favourite covering with the Under and the underdog with the Over; the other way round on spreads of 20 or more). The underdog covering and the Under are No legs on Kalshi’s “wins by over” and “Over” markets. Fair values are Novig’s books on the same lines; a game Novig doesn’t list is left out. These pairings are close to unrelated (r 0.04 to 0.14), so a slip is above fair only where Kalshi’s makers price it under two unrelated legs by more than the fee. Price, fee and limits as on Kalshi NBA Pairs. ` : "") +
     (LEAGUE === "kalshicfb" ? `Kalshi CFB: the CFB tab’s slips asked as Kalshi combos, up to ten a game: the underdog’s moneyline with the game Under (at the main line and at the Under nearest +230), those two with the underdog’s team total Over, the favourite’s spread with the Over, the underdog’s spread with the Under, the underdog’s spread with his team total Under, the favourite’s team total Under with the game Under, both team totals Under, the favourite’s first-half spread with his spread, and the first-half Under with the game Under. A favourite’s spread, an Over and a moneyline are Yes legs; the underdog’s spread is No on the favourite’s “wins by over”, and an Under is No on the Over. Each leg sits on the line nearest even money that both Kalshi and Novig list, and its fair value is Novig’s own book on that line, not Kalshi’s; a game Novig has no tight books on, or whose teams can’t be matched to Kalshi’s, is left out. The correlation is the CFB tab’s: modelled, not measured, from the game’s alt spreads and alt totals on Novig, with a favourite covering tied to the Over by half of spread ÷ total (an assumption). A row’s refresh and Bet ask Kalshi again at the fair value from the last Fetch: press Fetch before betting. Price, fee and limits as on Kalshi NBA Pairs. ` : "") +
-    (LEAGUE === "kalshinfl" ? `Kalshi NFL: slips on one team’s players, asked as Kalshi combos. One player’s own props: receptions, receiving yards and a touchdown for receivers; a quarterback’s attempts, completions, passing yards and passing TDs; rushing yards, carries or rush + receiving yards with a touchdown, wherever his correlation is 0.25 or better. Then a quarterback’s passing leg with one of his own receivers’ (passing yards with receiving yards or a touchdown, passing TDs with a touchdown, completions with receptions), at the league-wide correlation for a receiver with his targets a game, each receiver’s two strongest. Every slip is asked as its Overs (Yes on each milestone: 60+ yards is Over 59.5) and as its Unders (No on the same two markets) at the same correlation; and a quarterback’s attempts or passing yards go against his back’s carries or rushing yards, asked as one Over with the other’s Under, both ways. A touchdown leg is the anytime one. Each leg is the Kalshi milestone beside Novig’s main line, priced off the tighter of Novig’s book and Kalshi’s own on that line, or the average of the two where they are about as tight (a row with a leg on a book wider than 4¢ is marked ~). A pass asks 200 slips: the next day of games first, strongest correlation first. Props with a game line are on Kalshi NFL Lines. Price, fee and limits as on Kalshi NBA Pairs. ` : "") +
+    (LEAGUE === "kalshinfl" ? `Kalshi NFL Props: slips on one team’s players, asked as Kalshi combos. One player’s own props: receptions, receiving yards and a touchdown for receivers; a quarterback’s attempts, completions, passing yards and passing TDs; rushing yards, carries or rush + receiving yards with a touchdown, wherever his correlation is 0.25 or better. Then a quarterback’s passing leg with one of his own receivers’ (passing yards with receiving yards or a touchdown, passing TDs with a touchdown, completions with receptions), at the league-wide correlation for a receiver with his targets a game, each receiver’s two strongest. Every slip is asked as its Overs (Yes on each milestone: 60+ yards is Over 59.5) and as its Unders (No on the same two markets) at the same correlation; and a quarterback’s attempts or passing yards go against his back’s carries or rushing yards, asked as one Over with the other’s Under, both ways. A touchdown leg is the anytime one. Each leg is the Kalshi milestone beside Novig’s main line, priced off the tighter of Novig’s book and Kalshi’s own on that line, or the average of the two where they are about as tight (a row with a leg on a book wider than 4¢ is marked ~). A pass asks 200 slips: the next day of games first, strongest correlation first. Props with a game line are on Kalshi NFL Lines. Price, fee and limits as on Kalshi NBA Pairs. ` : "") +
     (LEAGUE === "kalshinflline" ? `Kalshi NFL Lines: a player’s prop with a game line, asked as Kalshi combos: his milestone (Yes) with the side of the line that goes with it, and his Under (No on the same milestone) with the other side. The lines: the game total, his team’s spread, moneyline and team total, and the first half’s total, spread and winner (a back’s carries go with his team covering or winning; a quarterback’s pass attempts with the other team). The other team covering and an Under are No legs on Kalshi’s “wins by over” and “over” markets; the other team winning is Yes on its own market. The correlation is league-wide for his position and targets or carries a game, and with a spread or a moneyline it is the one for his team’s side of today’s spread (favoured by 3.5 or more, an underdog by 3.5 or more, or between); asked at 0.30 or better: his two strongest over the total, spread and team total, and his best with each kind of line. Every leg is priced off the tighter of Novig’s book on the same line and Kalshi’s own; a first-half winner leg is Kalshi’s book alone (it loses on a tie at the half). A pass asks 200 slips: the next day of games first, strongest correlation first. Price, fee and limits as on Kalshi NBA Pairs. ` : "") +
-    (LEAGUE === "kalshinfltri" ? `Kalshi NFL 3-Leg: three legs in one game, asked as Kalshi combos, every prop a Yes on the milestone beside the player’s main line (60+ yards is Over 59.5) and all three pulling the same way. Four shapes: three of one player’s own props (receptions, receiving yards and a touchdown; a quarterback’s completions, passing yards and passing TDs); two of his props with a game line; a quarterback’s passing leg, his receiver’s leg and a game line; and a quarterback with one receiver across three props. The game line is the total, the team’s spread, moneyline or team total, or the first half’s, on the side that goes with both props (each at 0.10 or better with it, one at 0.30); the other team covering and an Under are No legs. Fair value is the three-way joint from the three pair correlations (the player’s own for two of his props, league-wide ones for his position and volume across players and with a line; a quarterback + receiver + line slip is then cut 5%, as on the NFL tab). Each player leads his three best by lift over unrelated legs, at most two of a shape and one of each kind of line. No prop Unders. A pass asks 200 slips: the next day of games first, most lift first. Legs, price, fee and limits as on Kalshi NFL. ` : "") +
+    (LEAGUE === "kalshinfltri" ? `Kalshi NFL 3-Leg: three legs in one game, asked as Kalshi combos, every prop a Yes on the milestone beside the player’s main line (60+ yards is Over 59.5) and all three pulling the same way. Four shapes: three of one player’s own props (receptions, receiving yards and a touchdown; a quarterback’s completions, passing yards and passing TDs); two of his props with a game line; a quarterback’s passing leg, his receiver’s leg and a game line; and a quarterback with one receiver across three props. The game line is the total, the team’s spread, moneyline or team total, or the first half’s, on the side that goes with both props (each at 0.10 or better with it, one at 0.30); the other team covering and an Under are No legs. Fair value is the three-way joint from the three pair correlations (the player’s own for two of his props, league-wide ones for his position and volume across players and with a line; a quarterback + receiver + line slip is then cut 5%, as on the NFL tab). Each player leads his three best by lift over unrelated legs, at most two of a shape and one of each kind of line. No prop Unders. A pass asks 200 slips: the next day of games first, most lift first. Legs, price, fee and limits as on Kalshi NFL Props. ` : "") +
     (LEAGUE === "kalshinbatri" ? `Kalshi NBA 3-Leg: three legs on one high scorer, asked as Kalshi combos. For every player whose main points line is 19.5 or higher: his points with two of rebounds, assists and threes, each a Yes on the milestone beside his main line (25+ points is Over 24.5), where every pair of the three goes together (each correlation above 0.03); also asked with the points leg on the milestone the other side of his line. A threes leg that would force the points leg is not asked. Every leg has a fair value of 30% or better. Fair value is a three-way joint from the three pair correlations (open a row to see them), cut 4%: over three seasons the three legs hit together about that much less often than the pairs say. Points with threes is the strong pair (0.5 to 0.8); the others are 0.05 to 0.3, so most of a slip’s edge over three unrelated legs comes from one pair, and a three-leg fair value is rougher than a two-leg one. Legs are priced as on Kalshi NBA Pairs; price, fee and limits as on Kalshi NBA Pairs. Fetch only.` : "") +
     (LEAGUE === "kalshinbaline" ? `Kalshi NBA Lines: a player’s prop with a game line, asked as Kalshi combos. His milestone (25+ points is Over 24.5; points, rebounds, assists, threes, or points + rebounds + assists) with the side of a game line that goes with it, and his Under (No on the same milestone) with the other side. The lines: his team covering, his team’s total, the other team’s total, the game total, and the first half’s spread and total; the other team covering and an Under are No legs. The correlation is league-wide for a player with that line on a team with tonight’s spread, less one standard error, asked at 0.30 or better, each player’s two strongest pairings. Every leg sits within 13 points of 50% and is priced off the tighter of Novig’s book on the same line and Kalshi’s own. Fetch only.` : "") +
     (LEAGUE === "kalshinba" || LEAGUE === "kalshinba3" ? (LEAGUE === "kalshinba3" ? `Kalshi Pts + 3s: one player’s Points + Threes, asked as Kalshi combos, for every player with open Kalshi props tonight; his other pairs and the teammates slips are on Kalshi NBA Pairs. Every leg is a Yes on a milestone (25+ points is Over 24.5).` : `Kalshi NBA Pairs: the NBA slips asked as Kalshi combos, other than Points + Threes (its own board, Kalshi Pts + 3s). Per player with open Kalshi props tonight: his pairs where the correlation is 0.25 or better (points + rebounds, points + assists, rebounds + assists, rebounds + threes, assists + threes), and each team’s two highest points lines together (priced at r -0.05: measured unrelated across the league, with a margin because one pair can differ), every leg a Yes on a milestone (25+ points is Over 24.5).`) + ` Every leg has a fair value of 30% or better, teammates slips included: a slip with a longer leg is not asked or shown. The price is the best answer Kalshi’s makers gave to a $100 request, after Kalshi’s fee (7% × price × (1 − price) a contract). Fair value: each leg is priced off the tighter of two books on its line, Novig’s or Kalshi’s own bid and ask, or the average of the two where they are about as tight as each other (a row with a leg on a book wider than 4¢ is marked ~). A leg sits on the milestone just under or just over his main line on Novig. Where neither has a tight book but Novig’s main line does, the nearer milestone’s fair value is shifted from that main line (the Ladder’s model) and held inside Kalshi’s and Novig’s own bid and ask on the milestone: the row is marked *, and the opened row says which line it came from. Each pair is also asked on the milestone on the other side of his main line (25+ and 20+ points with 2+ and 3+ threes: up to four slips a pair), after every pair’s first slip. Fetch only, at most 400 slips a pass on Kalshi Pts + 3s, 300 on Kalshi NBA and 200 on the other Kalshi boards, about 15 minutes at 300: every ask is a real auction on your Kalshi account, and Kalshi makes asking dearer for accounts that ask often and never accept. Nothing is ever accepted from here. ` : "") +
@@ -966,7 +971,7 @@ document.getElementById("now").onclick = () => {
 pairOpts();
 loadGames();
 allClass();
-document.querySelectorAll("#league button").forEach(b => { if (KALSHI(b.dataset.league) !== KPAGE || KNBA.includes(b.dataset.league)) b.hidden = true; else if (KPAGE) b.hidden = false; });
+document.querySelectorAll("#league button").forEach(b => { if (KALSHI(b.dataset.league) !== KPAGE || tabOf(b.dataset.league) !== b.dataset.league) b.hidden = true; else if (KPAGE) b.hidden = false; });
 if (KPAGE) {
   document.title = "Kalshi SGP Scanner";
   document.querySelector("h1").textContent = "Kalshi SGP scanner";
@@ -975,8 +980,6 @@ if (KPAGE) {
   document.querySelector("h1").addEventListener("click", e => { if (e.detail === 3 && !KKEY) { getSelection().removeAllRanges(); kalshiAsk(); } });
 }
 bookHead();
-// The tab a board sits under: the four Kalshi NBA boards are under Kalshi NBA.
-const tabOf = l => (KNBA.includes(l) ? "kalshinbaall" : l);
 const go = league => {
   LEAGUE = league; save(); OPEN.clear(); pairOpts(); loadGames(); bookHead();
   allClass(); S = null;
