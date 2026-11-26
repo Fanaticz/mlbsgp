@@ -2987,7 +2987,13 @@ app.get('/api/nba/novig-scan', (req, res) => {
   if (req.query.league === 'all' || group) {
     // A Kalshi NBA or NFL tab does start passes: all its boards, queued. It waits for a pass on
     // another Kalshi board unless that one was stopped just above.
-    if (group && req.query.now === '1' && !NV_KRUN) { NV_KQUEUE = group.map(league => ({ league, wide })); nvKNext(); }
+    // Every board in it is emptied at the press, not when its turn comes (Max, 11-27: old ones
+    // don't go away when you hit Fetch): the list holds only what this Fetch has priced.
+    if (group && req.query.now === '1' && !NV_KRUN) {
+      for (const league of group) nvBoard(`${league}:${wide ? 1 : 0}`).rows.clear();
+      nvSaveBoards();
+      NV_KQUEUE = group.map(league => ({ league, wide })); nvKNext();
+    }
     const floor = Number.isFinite(parseFloat(req.query.min)) ? parseFloat(req.query.min) / 100 : 0;
     const boards = [], rows = [];
     let out = 0;
