@@ -1,5 +1,17 @@
 # Changes
 
+## 2026-11-26 session
+
+### Kalshi NBA: one tab for the four NBA boards, and one Fetch that prices all four
+Max, 11-26: should we combine the NBA tabs for Kalshi; I have a hard time trying to figure out which one to run.
+
+- **New tab, Kalshi NBA** (`kalshinbaall` in `public/nba_scan.html`; `NV_KNBA` in `server.js`): the first tab on the Kalshi page, and the one a new device opens on. It lists the four NBA boards' slips at Min EV or better in one list, best first, each row tagged with its board, drawn as the All tab is. Rows keep their own refresh and Bet buttons.
+- **Its Fetch** (`NV_KQUEUE`, `nvKNext` in `server.js`) prices all four, one after another on the one Kalshi slot: Kalshi Pts + 3s, then Pairs, 3-Leg and Lines. The line at the top says which board is scanning and which are next. Stop ends the board that is running and drops the ones still queued. A board that fails or times out does not hold up the ones behind it. With a pass on another Kalshi board running, the button reads "Stop … and fetch", as on the other tabs.
+- **The four boards are not merged**: each keeps its own tab, its own pass, cap and rules, and can still be fetched alone. The old Kalshi NBA tab (other pairs and teammates) is now named **Kalshi NBA Pairs**; a device last left on it still opens there.
+- **Cost**: the same slips as fetching the four tabs in turn, so the same new combos against Kalshi's 5,000 a week, which the script still does not count. A full Fetch is the four passes end to end (about 20 minutes for 390 slips at Kalshi's pace). Each board starts its pass empty, so its plays leave the list when its turn comes and return as Kalshi answers.
+- **Not changed**: what each board asks, fair values, the Bet button, the Novig page and its All tab. A single tab's Fetch pressed while the four are queued stops them, as it stops any other board's pass.
+- **Checked** on a local server with a stand-in for Kalshi's quotes (the real slip lists off tonight's books, made-up prices, no quote asked of Kalshi): the four passes ran in order (56, 49, 35 and 40 slips); Stop ended the run and cleared the queue; a board made to fail was passed over; a CBB pass in the way showed as running and was stopped by "Stop … and fetch"; without the Kalshi passcode the tab answers 423. In a browser: the tab, Fetch, Stop and a run to the end, rows from all four boards with their Bet buttons, no script errors. **Not checked**: a pass against Kalshi itself, the Bet button, the server on Railway.
+
 ## 2026-11-25 session
 
 ### A bet keeps its row on the page when the board no longer has it
