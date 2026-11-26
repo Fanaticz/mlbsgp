@@ -769,7 +769,7 @@ h1 em{color:var(--ac);font-style:normal;}
     style="width:100%;height:calc(100vh - 132px);min-height:560px;border:0;display:block;background:#0f1419"></iframe>
 </div>
 <!-- Ladder scanner tab (?sport=ladderscan): the same page with the NBA and NFL Ladder boards, off the
-     Novig tab since 11-27. Each slip is priced on Novig and, with the Kalshi passcode on the device, on Kalshi. -->
+     Novig tab since 11-27. Each slip is priced on Novig and on Kalshi. Behind the Kalshi passcode. -->
 <div id="page-ladderscan" class="page" style="padding:0">
   <iframe id="ladderScanFrame" title="Ladder SGP Scanner" data-src="nba_scan.html?ladders=1"
     style="width:100%;height:calc(100vh - 132px);min-height:560px;border:0;display:block;background:#0f1419"></iframe>
@@ -3768,10 +3768,10 @@ function applyPF(){
      more taps on the label, while the Novig scanner is open, open it the first time. */
   var kbtn = document.getElementById('sportBtnKalshiScan');
   var khas = function(){ try { return !!localStorage.getItem('nbaScanKalshiKey'); } catch(_) { return false; } };
-  /* The Ladder scanner's button shows with the Novig one: the same passcode opens it. */
+  /* The Ladder scanner's button shows with the Kalshi one: it is behind the Kalshi passcode. */
   var lbtn = document.getElementById('sportBtnLadderScan');
   var sync = function(){ if(btn) btn.style.display = (has() || document.body.classList.contains('sport-nbascan')) ? '' : 'none';
-    if(lbtn) lbtn.style.display = (has() || document.body.classList.contains('sport-ladderscan')) ? '' : 'none';
+    if(lbtn) lbtn.style.display = (khas() || document.body.classList.contains('sport-ladderscan')) ? '' : 'none';
     if(kbtn) kbtn.style.display = (khas() || document.body.classList.contains('sport-kalshiscan')) ? '' : 'none'; };
   sync();
   window.addEventListener('storage', sync);

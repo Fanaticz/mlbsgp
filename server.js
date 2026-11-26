@@ -2589,8 +2589,8 @@ const nvKalshi = league => String(league).startsWith('kalshi');
 // The Ladder boards (Max, 11-27: their own tab, off the Novig one; and look up Novig and Kalshi,
 // to see a slip taken on Novig isn't better on Kalshi). A pass on one asks Novig as before, then
 // Kalshi for the same slip where it lists every leg on the same line (scan.py --kalshi). The
-// Kalshi asks are signed with the owner's key, so they are made only for a Fetch or a refresh
-// that carries the Kalshi passcode; without it the pass is Novig's alone.
+// Kalshi asks are signed with the owner's key, so the Ladder boards answer only to a request that
+// carries the Kalshi passcode as well as the scanner's (423 without it, as the Kalshi boards).
 const NV_LADDERS = ['ladder', 'nflladder'];
 const NV_LEAGUES = ['nfl', 'nhl', 'nhllines', 'soccer', 'cfb', 'cbb', 'ladder', 'nflladder', 'nbateam', 'dknba', 'kalshinba3', 'kalshinba', 'kalshinbatri', 'kalshinbaline', 'kalshinfl', 'kalshinflline', 'kalshinfltri', 'kalshicbb', 'kalshicfb'];
 // GET /api/nba/novig-games?league= — the league's open pregame games for the
@@ -2985,6 +2985,8 @@ app.get('/api/nba/novig-scan', (req, res) => {
   // its rows stay off the All tab, and a pass on it shows as no board's.
   const kc = nvCheck(req, 'kalshi'), kalshiOk = kc.ok;
   if (nvKalshi(league) && !kalshiOk) return nvDeny(res, kc);
+  // The Ladder boards are behind the Kalshi passcode too (Max, 11-27: make it hidden behind the Kalshi PW).
+  if (NV_LADDERS.includes(league) && !kalshiOk) return nvDeny(res, kc);
   // A Kalshi board looks at the Kalshi slot, every other board at Novig's.
   // league=kalshinbaall or kalshinflall: the Kalshi NBA or NFL tab, its boards as one list with one Fetch.
   const group = Object.prototype.hasOwnProperty.call(NV_KGROUPS, req.query.league) ? NV_KGROUPS[req.query.league] : null;
@@ -3047,9 +3049,8 @@ app.get('/api/nba/novig-scan', (req, res) => {
     started: B.started, finished: B.finished, stopped: B.stopped || 0, total: B.total, done: B.done, players: B.players, data: B.data,
     seconds: B.seconds, error: B.error, books: B.books || null, events: B.events || [], before: B.before || 0, rows: shown,
     out: B.rows.size - shown.length, cycle: nvCycleState(), why: B.why || {},
-    // A Ladder board: did its last pass ask Kalshi too, why not if it could not, and whether this
-    // request's Kalshi passcode would let a Fetch ask ('ok'), was wrong or missing ('locked'), or the Kalshi side is off.
-    ...(ladder ? { kalshi: !!B.kalshi, knote: B.knote || null, kkey: kalshiOk ? 'ok' : NV_KALSHI_ON ? 'locked' : 'off' } : {}),
+    // A Ladder board: did its last pass ask Kalshi too, and why not if it could not.
+    ...(ladder ? { kalshi: !!B.kalshi, knote: B.knote || null } : {}),
   });
 });
 // The boards the All tab gathers (the hidden NHL boards are left out; the Ladder boards have their own tab since 11-27).
@@ -3230,8 +3231,9 @@ app.post('/api/nba/novig-requote', (req, res) => {
   if (!nvBetsAuth(req, res)) return;
   const { league, wide, key } = req.body || {};
   if (nvKalshi(league) && !nvKalshiAuth(req, res)) return;
-  // A Ladder row's refresh asks Kalshi too when the Kalshi passcode came with it (no passcode sent is not a wrong guess).
-  const kalshi = NV_LADDERS.includes(league) && nvCheck(req, 'kalshi').ok;
+  // A Ladder row is behind the Kalshi passcode, and its refresh asks Kalshi too.
+  const kalshi = NV_LADDERS.includes(league);
+  if (kalshi && !nvKalshiAuth(req, res)) return;
   nvRequote(league, wide, key, (why, row, code) => why ? res.status(code).json({ error: why }) : res.json({ row, now: Date.now() }), kalshi);
 });
 
