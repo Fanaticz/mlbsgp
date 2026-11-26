@@ -717,10 +717,12 @@ def kalshi_blend(nm, rows, max_spread):
 
 
 # The Ladder boards' second price (Max, 11-27: when we do ladders, look up Novig and Kalshi;
-# make sure a slip taken on Novig isn't better on Kalshi). ev: Kalshi is asked for a slip Novig
-# priced at this EV% or better, best first. max: asks a pass. stake: dollars a request is sized at.
-KALSHI_LOOK = {"ev": -10.0, "max": 120, "stake": 100.0, "nfl": None}
-KALSHI_FIELDS = ("kalshi_x", "kalshi_ev", "kalshi_quote", "kalshi_why", "kalshi_url", "kalshi_at")
+# make sure a slip taken on Novig isn't better on Kalshi). The Ladder tab then shows each slip at
+# whichever of the two pays more (Max, the same day: make ladders adaptive), so Kalshi is asked for
+# every slip Novig prices, not only the ones that are plays on Novig: ev is the Novig EV% under
+# which it is not asked (-100: none), best first. max: asks a pass. stake: dollars a request is sized at.
+KALSHI_LOOK = {"ev": -100.0, "max": 150, "stake": 100.0, "nfl": None}
+KALSHI_FIELDS = ("kalshi_x", "kalshi_ev", "kalshi_qk", "kalshi_quote", "kalshi_why", "kalshi_url", "kalshi_at", "kalshi_legs")
 
 
 def kalshi_same(c, league):
@@ -751,11 +753,13 @@ def kalshi_same(c, league):
     return legs, f"https://kalshi.com/markets/{game}/game/{game}-{who['game'].lower()}", None
 
 
-def kalshi_look(c, league, stake=None):
+def kalshi_look(c, league, stake=None, kelly=0.25):
     """Kalshi's price for a row Novig has priced, as the fields to put on it:
     kalshi_x (what $1 pays on the same slip after Kalshi's taker fee),
-    kalshi_ev (at this row's fair value), kalshi_quote (Yes a contract before
-    the fee) and kalshi_url; or kalshi_why where there is no price. One
+    kalshi_ev and kalshi_qk (EV and quarter-Kelly units at this row's fair
+    value), kalshi_quote (Yes a contract before the fee), kalshi_legs (the
+    legs as Kalshi markets, for the Bet button) and kalshi_url; or kalshi_why
+    where there is no price. One
     request for quote, signed with the server's Kalshi key (scan_kalshi.ask);
     nothing is accepted. Raises scan_kalshi.Refused, and SystemExit when the
     key is not set."""
@@ -765,9 +769,10 @@ def kalshi_look(c, league, stake=None):
         return {"kalshi_why": why, "kalshi_at": time.time()}
     yes, why = scan_kalshi.ask({"legs": legs}, types.SimpleNamespace(stake=stake or KALSHI_LOOK["stake"], wait=3.0, polls=2))
     if not yes:
-        return {"kalshi_why": why, "kalshi_url": url, "kalshi_at": time.time()}
-    x = scan_kalshi.slip_x(yes)
-    return {"kalshi_x": x, "kalshi_ev": x / c["fair_x"] - 1, "kalshi_quote": yes, "kalshi_url": url, "kalshi_at": time.time()}
+        return {"kalshi_why": why, "kalshi_url": url, "kalshi_legs": legs, "kalshi_at": time.time()}
+    x, p = scan_kalshi.slip_x(yes), 1 / c["fair_x"]
+    return {"kalshi_x": x, "kalshi_ev": x * p - 1, "kalshi_qk": max(0.0, (p * (x - 1) - (1 - p)) / (x - 1)) * kelly * 100,
+            "kalshi_quote": yes, "kalshi_url": url, "kalshi_legs": legs, "kalshi_at": time.time()}
 
 
 def kalshi_set(c, got):
@@ -2569,7 +2574,7 @@ def scan(a, emit):
                 got = {"kalshi_why": f"not asked: this pass's {a.kalshi_max} Kalshi asks were used (the row's refresh asks)", "kalshi_at": time.time()}
             else:
                 try:
-                    got = kalshi_look(c, a.league, a.kalshi_stake)
+                    got = kalshi_look(c, a.league, a.kalshi_stake, a.kelly)
                     if got.get("kalshi_quote") or got.get("kalshi_url"):   # a request went out
                         kst["asked"] += 1
                         kst["got"] += 1 if got.get("kalshi_quote") else 0
@@ -2757,8 +2762,8 @@ def main():
                          "every leg on the same line (needs KALSHI_KEY_ID / KALSHI_PRIVATE_KEY; one request for quote a slip, "
                          "nothing accepted)")
     ap.add_argument("--kalshi-ev", type=float, default=KALSHI_LOOK["ev"],
-                    help="--kalshi: ask Kalshi only for slips Novig prices at this EV%% or better (default -10)")
-    ap.add_argument("--kalshi-max", type=int, default=KALSHI_LOOK["max"], help="--kalshi: Kalshi asks a pass, best Novig EV first (default 120)")
+                    help="--kalshi: ask Kalshi only for slips Novig prices at this EV%% or better (default -100: all of them)")
+    ap.add_argument("--kalshi-max", type=int, default=KALSHI_LOOK["max"], help="--kalshi: Kalshi asks a pass, best Novig EV first (default 150)")
     ap.add_argument("--kalshi-stake", type=float, default=KALSHI_LOOK["stake"], help="--kalshi: dollars each Kalshi request is sized at")
     a = ap.parse_args()
     a.events = set(a.events) if a.events else None
@@ -2770,7 +2775,7 @@ def main():
                            a.unit or (500.0 if a.league == "nhl" else 250.0), a.kelly)
         if row and a.kalshi:   # a Ladder row: Kalshi's price for the same slip, whatever Novig's EV
             try:
-                kalshi_set(row, kalshi_look(row, a.league, a.kalshi_stake))
+                kalshi_set(row, kalshi_look(row, a.league, a.kalshi_stake, a.kelly))
             except SystemExit as e:
                 kalshi_set(row, {"kalshi_why": f"not asked: {e}", "kalshi_at": time.time()})
             except Exception as e:  # noqa: BLE001  scan_kalshi.Refused, or Kalshi unreachable: Novig's new price still stands

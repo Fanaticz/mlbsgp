@@ -1350,6 +1350,15 @@ def reprice(c, a):
             bid, offer = float(book[L["id"]]["yes_bid_dollars"]), float(book[L["id"]]["yes_ask_dollars"])
         except (KeyError, TypeError, ValueError):
             return "Kalshi's book on a leg could not be read"
+        if c.get("hold"):
+            # A Ladder row bet on Kalshi (server.js: the Ladder tab's Bet button): its legs' fair values are the
+            # Novig scanner's (Novig's book, or modelled from the main line), and Kalshi's own book on a far
+            # milestone is often one-sided. The fair value stands, under Kalshi's ask and over its bid where it has them.
+            p = L["p"]
+            p = min(p, offer) if 0 < offer < 1 else p
+            p = max(p, bid) if 0 < bid < 1 else p
+            L.update(p=p, fair=sgp.american(p))
+            continue
         if L.get("from") is not None and 0 < bid < offer < 1:
             # A leg shifted from Novig's main line (shift_leg) has no tight book of its own: its
             # fair value stands, held inside Kalshi's bid and ask as they are now.

@@ -3149,7 +3149,7 @@ function nvRequote(league, wide, key, cb, kalshi) {
   proc.stdin.end(JSON.stringify(row));
 }
 // POST /api/nba/kalshi-bet { league, wide, key, stake, x } — the Bet button on
-// a Kalshi row: scan_kalshi.py --bet re-prices the legs, asks Kalshi for
+// a Kalshi row (and on a Ladder row that pays more on Kalshi, x being its kalshi_x): scan_kalshi.py --bet re-prices the legs, asks Kalshi for
 // `stake` dollars and accepts the best answer if the slip still pays within
 // 1% of x (the price on the row) and is not under today's fair value. Needs
 // both passcodes. One bet at a time. There is no cap on a stake unless
@@ -3157,6 +3157,7 @@ function nvRequote(league, wide, key, cb, kalshi) {
 // the combo (the account's position is read after every bet); a bet seen on
 // the No side turns the button off until the server is told otherwise.
 // No cap on one bet (Max, 11-24: don't cap at $250): the page stakes a row's QK $. KALSHI_BET_MAX on the server, if set, is still a cap.
+const NV_LBET_AGE_MS = 10 * 60 * 1000;   // a Ladder row older than this is not bet on Kalshi without a refresh
 const NV_KBET_MAX = parseFloat(process.env.KALSHI_BET_MAX) >= 1 ? parseFloat(process.env.KALSHI_BET_MAX) : Infinity;
 const NV_KBET_FILE = NV_SCAN_FILE ? path.join(path.dirname(NV_SCAN_FILE), 'kalshi_bet_state.json') : null;
 // ok: the button's side was seen right on the real exchange 11-16 (a $2 bet, $1.88 in, on the Yes side),
@@ -3169,11 +3170,25 @@ app.post('/api/nba/kalshi-bet', (req, res) => {
   const { league, wide, key } = req.body || {};
   let stake = Math.round(Number((req.body || {}).stake) * 100) / 100;
   const x = Number((req.body || {}).x);
-  if (!nvKalshi(league)) return res.status(423).json({ error: 'locked' });
+  const ladder = NV_LADDERS.includes(league);
+  if (!nvKalshi(league) && !ladder) return res.status(423).json({ error: 'locked' });
   if (!nvKalshiAuth(req, res)) return;
   if (NV_KBET.off) return res.status(409).json({ error: 'Betting is off: ' + NV_KBET.off });
   const B = NV_BOARDS.get(`${league}:${wide ? 1 : 0}`), row = B && B.rows.get(String(key));
   if (!row) return res.status(404).json({ error: 'that slip is no longer on the board' });
+  // A Ladder row (Max, 11-27: the bet button for Kalshi if better on Kalshi): the same slip bought on
+  // Kalshi, on the markets its last Kalshi look found (kalshi_legs). Its fair value is the Novig
+  // scanner's, not re-read off Kalshi's books as a Kalshi row's is, so the row must be newly priced:
+  // one more than NV_LBET_AGE_MS old is refused and wants its refresh first.
+  let betRow = row;
+  if (ladder) {
+    const kl = row.kalshi_legs;
+    if (!Array.isArray(kl) || kl.length !== (row.legs || []).length || !(row.kalshi_x > 1)) return res.status(409).json({ error: 'Kalshi has no price for this slip: press its refresh' });
+    const age = Date.now() - Math.min(row.at || 0, row.kalshi_at || 0) * 1000;
+    if (age > NV_LBET_AGE_MS) return res.status(409).json({ error: `this row was priced ${Math.round(age / 60000)} min ago: press its refresh, then bet` });
+    betRow = { key: row.key, hold: true, player: row.player, label: row.label, j: row.j, r: row.r, devig_r: row.devig_r, starts: row.starts,
+               legs: row.legs.map((L, i) => ({ id: kl[i].id, event: kl[i].event, yes: true, side: 'over', stat: L.stat, line: L.line, p: L.p, fair: L.fair, width: L.width || 0 })) };
+  }
   if (!(stake >= 1) || !(x > 1)) return res.status(400).json({ error: 'a stake of $1 or more and the row\'s price are needed' });
   // Until one bet has been seen on the Yes side, a press stakes $2 whatever was asked for.
   const first = !NV_KBET.ok;
@@ -3198,11 +3213,21 @@ app.post('/api/nba/kalshi-bet', (req, res) => {
     nvKbetSave();
     NV_KPOS.at = 0;   // the next read of positions is fresh
     console.log('[kalshi-bet]', JSON.stringify({ label: row.label, player: row.player, bet: r.bet, from: req.ip }));
+    if (ladder) {
+      // The Ladder row stays Novig's row: only Kalshi's price on it is new (what the bet was taken at).
+      if (r.bet.x > 1 && row.fair_x > 1) {
+        const p = 1 / row.fair_x, x = r.bet.x;
+        Object.assign(row, { kalshi_x: x, kalshi_quote: r.bet.yes, kalshi_ev: x * p - 1, kalshi_qk: Math.max(0, (p * (x - 1) - (1 - p)) / (x - 1)) * 25, kalshi_at: Date.now() / 1000 });
+        delete row.kalshi_why;
+        nvSaveBoards();
+      }
+      return finish(200, { bet: r.bet, row, first, off: NV_KBET.off, now: Date.now() });
+    }
     if (r.row && B.rows.has(r.row.key)) { r.row.type = 'row'; B.rows.set(r.row.key, r.row); nvSaveBoards(); }
     finish(200, { bet: r.bet, row: r.row, first, off: NV_KBET.off, now: Date.now() });
   });
   proc.stdin.on('error', () => {});
-  proc.stdin.end(JSON.stringify({ row, stake, min_x: x * 0.99, min_ev: 0 }));
+  proc.stdin.end(JSON.stringify({ row: betRow, stake, min_x: x * 0.99, min_ev: 0 }));
 });
 // GET /api/nba/kalshi-positions — the account's open combo positions on
 // Kalshi (scan_kalshi.py --positions), for the Kalshi page's "On Kalshi"
