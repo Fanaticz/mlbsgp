@@ -2,6 +2,14 @@
 
 ## 2026-11-27 session
 
+### Ladders: the DraftKings pull is taken out
+Max, 11-27, a screenshot of NFL Ladder with a red line at the top (DraftKings prices did not load: DK request failed after 6 attempts, status 403): remove DK thing, doesn't work.
+
+- **Change** (`load` in `books.py`): the Ladder boards no longer ask DraftKings for its prices. DraftKings refused every pull from the server, so each NFL pass spent six tries on it and then showed the red line. FanDuel alone caps a shifted leg and supplies the main line where Novig has no tight one, which is what was already happening whenever DraftKings refused. The NBA Ladder was FanDuel only already.
+- **Page** (`public/nba_scan.html`): the red DraftKings line is gone, and the NFL and NBA Ladder notes name FanDuel only. A line still shows if FanDuel's prices fail to load.
+- **Not changed**: fair values (DraftKings was not contributing), the DK code in `books.py` and `dk_api.py`, which is left in place and not called from the ladders.
+- **Checked**: an NFL ladder slip list built with FanDuel alone (`books` reported as FanDuel only, no DraftKings request made or error given). **Not checked**: on Railway.
+
 ### Ladder tab: adaptive, each slip at whichever of Novig and Kalshi pays more
 Max, 11-27: instead of saying better on Kalshi, show both odds and make the bet button for Kalshi if better on Kalshi and then link to Novig if better on Novig. Make ladders adaptive, not like either of the other 2 tabs.
 

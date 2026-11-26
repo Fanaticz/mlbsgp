@@ -211,11 +211,13 @@ def _cache():
 def load(team=None, league="nba"):
     """{book: {player key: {stat: {line: implied}}}} for the game `team` (his
     team's full name) plays in, or for every game. A book that fails is left
-    out: the other still caps. NBA asks FanDuel only. NFL also carries each
+    out. FanDuel only, for both leagues (Max, 11-27: remove the DK thing, it
+    doesn't work: DraftKings refused every pull from the server with 403, six
+    tries a pass; the DK code below is left in place, not called). NFL also carries each
     two-way main line as "main:<stat>": [line, P(over), hold]."""
     c, now, out, dirty = _cache(), time.time(), {}, False
     games = {"fd": fd_game if league == "nba" else fd_game_nfl, "dk": dk_game_nfl}
-    for book, events in (("fd", fd_events), ("dk", dk_events))[:1 if league == "nba" else 2]:
+    for book, events in (("fd", fd_events), ("dk", dk_events))[:1]:
         game = games[book]
         try:
             evs = c.get(f"{league}:{book}:events")
