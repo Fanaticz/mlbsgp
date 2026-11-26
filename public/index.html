@@ -283,6 +283,7 @@ h1 em{color:var(--ac);font-style:normal;}
   <button class="sport-btn" id="sportBtnTennis" type="button" onclick="setSport('tennis')" aria-pressed="false"><span class="sport-dot"></span>TENNIS</button>
   -->
   <button class="sport-btn" id="sportBtnNbaScan" style="display:none" type="button" onclick="setSport('nbascan')" aria-pressed="false"><span class="sport-dot"></span>NOVIG SCAN</button>
+  <button class="sport-btn" id="sportBtnLadderScan" style="display:none" type="button" onclick="setSport('ladderscan')" aria-pressed="false"><span class="sport-dot"></span>LADDER SCAN</button>
   <button class="sport-btn" id="sportBtnKalshiScan" style="display:none" type="button" onclick="setSport('kalshiscan')" aria-pressed="false"><span class="sport-dot"></span>KALSHI SCAN</button>
   <button class="sport-btn active" id="sportBtnNbaCorr" type="button" onclick="setSport('nbacorr')" aria-pressed="true"><span class="sport-dot"></span>NBA</button>
   <!-- NBA QTRS tab hidden for now (not in use). The page and JS are kept and
@@ -765,6 +766,12 @@ h1 em{color:var(--ac);font-style:normal;}
      this tab is the one on screen. -->
 <div id="page-nbascan" class="page" style="padding:0">
   <iframe id="nbaScanFrame" title="Novig SGP Scanner" data-src="nba_scan.html"
+    style="width:100%;height:calc(100vh - 132px);min-height:560px;border:0;display:block;background:#0f1419"></iframe>
+</div>
+<!-- Ladder scanner tab (?sport=ladderscan): the same page with the NBA and NFL Ladder boards, off the
+     Novig tab since 11-27. Each slip is priced on Novig and, with the Kalshi passcode on the device, on Kalshi. -->
+<div id="page-ladderscan" class="page" style="padding:0">
+  <iframe id="ladderScanFrame" title="Ladder SGP Scanner" data-src="nba_scan.html?ladders=1"
     style="width:100%;height:calc(100vh - 132px);min-height:560px;border:0;display:block;background:#0f1419"></iframe>
 </div>
 <!-- Kalshi scanner tab (?sport=kalshiscan): the same page in its Kalshi mode, with its own passcode. -->
@@ -3471,11 +3478,11 @@ function getRawCorr(rc,leg1,leg2){if(!rc)return null;var s1=statOf(leg1);var s2=
    keep behaving exactly as before. NBA side is a shell in this phase —
    its page content fills in during Phase 3. */
 function getSportFromUrl(){
-  var m = window.location.search.match(/[?&]sport=(mlb|nba|tennis|worldcup|nbacorr|nbaqtr|nbatm|nbadunk|nbascan|kalshiscan|nfl|nhl)(?:&|$)/i);
+  var m = window.location.search.match(/[?&]sport=(mlb|nba|tennis|worldcup|nbacorr|nbaqtr|nbatm|nbadunk|nbascan|ladderscan|kalshiscan|nfl|nhl)(?:&|$)/i);
   return m ? m[1].toLowerCase() : 'nbacorr';
 }
 function setSport(sport){
-  if(sport !== 'nba' && sport !== 'tennis' && sport !== 'worldcup' && sport !== 'nbacorr' && sport !== 'nbaqtr' && sport !== 'nbatm' && sport !== 'nbadunk' && sport !== 'nbascan' && sport !== 'kalshiscan' && sport !== 'nfl' && sport !== 'nhl') sport = 'mlb';
+  if(sport !== 'nba' && sport !== 'tennis' && sport !== 'worldcup' && sport !== 'nbacorr' && sport !== 'nbaqtr' && sport !== 'nbatm' && sport !== 'nbadunk' && sport !== 'nbascan' && sport !== 'ladderscan' && sport !== 'kalshiscan' && sport !== 'nfl' && sport !== 'nhl') sport = 'mlb';
   document.body.classList.toggle('sport-mlb', sport==='mlb');
   document.body.classList.toggle('sport-nba', sport==='nba');
   document.body.classList.toggle('sport-tennis', sport==='tennis');
@@ -3488,6 +3495,7 @@ function setSport(sport){
   document.body.classList.toggle('sport-nbadunk', sport==='nbadunk');
   document.body.classList.toggle('sport-nbascan', sport==='nbascan');
   document.body.classList.toggle('sport-kalshiscan', sport==='kalshiscan');
+  document.body.classList.toggle('sport-ladderscan', sport==='ladderscan');
   var show = function(id, on){var el=document.getElementById(id); if(el) el.style.display = on ? '' : 'none';};
   show('navMlb',       sport==='mlb');
   show('navNba',       sport==='nba');
@@ -3511,6 +3519,8 @@ function setSport(sport){
   if(btnNbaDunk){btnNbaDunk.classList.toggle('active', sport==='nbadunk'); btnNbaDunk.setAttribute('aria-pressed', sport==='nbadunk');}
   var btnNbaScan=document.getElementById('sportBtnNbaScan');
   if(btnNbaScan){btnNbaScan.classList.toggle('active', sport==='nbascan'); btnNbaScan.setAttribute('aria-pressed', sport==='nbascan');}
+  var btnLadderScan=document.getElementById('sportBtnLadderScan');
+  if(btnLadderScan){btnLadderScan.classList.toggle('active', sport==='ladderscan'); btnLadderScan.setAttribute('aria-pressed', sport==='ladderscan');}
   var btnKalshiScan=document.getElementById('sportBtnKalshiScan');
   if(btnKalshiScan){btnKalshiScan.classList.toggle('active', sport==='kalshiscan'); btnKalshiScan.setAttribute('aria-pressed', sport==='kalshiscan');}
   var btnNfl=document.getElementById('sportBtnNfl');
@@ -3565,6 +3575,10 @@ function setSport(sport){
     var al = document.getElementById('appLoading'); if(al) al.style.display = 'none';
     var ns=document.getElementById('page-nbascan'); if(ns) ns.classList.add('active');
     var fs2=document.getElementById('nbaScanFrame'); if(fs2 && !fs2.getAttribute('src') && fs2.dataset.src) fs2.setAttribute('src', fs2.dataset.src);
+  } else if(sport === 'ladderscan'){
+    var al = document.getElementById('appLoading'); if(al) al.style.display = 'none';
+    var ls=document.getElementById('page-ladderscan'); if(ls) ls.classList.add('active');
+    var fl=document.getElementById('ladderScanFrame'); if(fl && !fl.getAttribute('src') && fl.dataset.src) fl.setAttribute('src', fl.dataset.src);
   } else if(sport === 'kalshiscan'){
     var al = document.getElementById('appLoading'); if(al) al.style.display = 'none';
     var ks=document.getElementById('page-kalshiscan'); if(ks) ks.classList.add('active');
@@ -3599,6 +3613,7 @@ function setSport(sport){
     else if(sport === 'nbadunk') u.searchParams.set('sport','nbadunk');
     else if(sport === 'nbascan') u.searchParams.set('sport','nbascan');
     else if(sport === 'kalshiscan') u.searchParams.set('sport','kalshiscan');
+    else if(sport === 'ladderscan') u.searchParams.set('sport','ladderscan');
     else if(sport === 'nfl') u.searchParams.set('sport','nfl');
     else if(sport === 'nhl') u.searchParams.set('sport','nhl');
     else u.searchParams.delete('sport');
@@ -3753,7 +3768,10 @@ function applyPF(){
      more taps on the label, while the Novig scanner is open, open it the first time. */
   var kbtn = document.getElementById('sportBtnKalshiScan');
   var khas = function(){ try { return !!localStorage.getItem('nbaScanKalshiKey'); } catch(_) { return false; } };
+  /* The Ladder scanner's button shows with the Novig one: the same passcode opens it. */
+  var lbtn = document.getElementById('sportBtnLadderScan');
   var sync = function(){ if(btn) btn.style.display = (has() || document.body.classList.contains('sport-nbascan')) ? '' : 'none';
+    if(lbtn) lbtn.style.display = (has() || document.body.classList.contains('sport-ladderscan')) ? '' : 'none';
     if(kbtn) kbtn.style.display = (khas() || document.body.classList.contains('sport-kalshiscan')) ? '' : 'none'; };
   sync();
   window.addEventListener('storage', sync);

@@ -107,6 +107,7 @@
   body.nobets .bet, body.nobets .betline, body.nobets .betform:not(.kbetrow) { display:none; }
   body.nobets .row.has { box-shadow:none; }
   body.nobets #hidebets { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  .tag.kbetter { margin:0 0 0 7px; border-color:var(--pos); color:var(--pos); font-weight:700; white-space:nowrap; }   /* a Ladder slip that pays more on Kalshi */
   .tag.q { margin:0 0 0 7px; border-color:#b8860b; color:#e0a82e; font-weight:700; }   /* questionable on the injury report */
   .tag { flex:none; margin-right:7px; border:1px solid var(--line); border-radius:5px; padding:0 5px; font-size:10.5px;
     font-weight:600; color:var(--accent); white-space:nowrap; letter-spacing:.02em; }
@@ -157,10 +158,10 @@
   <div class="toggle" id="league">
     <button data-league="all" title="Every board's plays in one list, best first">All</button>
     <button data-league="nba" class="on">NBA</button>
-    <button data-league="ladder" title="NBA shooters' higher lines, one-way lines included">NBA Ladder</button>
+    <button data-league="ladder" title="NBA shooters' higher lines, one-way lines included, priced on Novig and on Kalshi">NBA Ladder</button>
     <button data-league="nbateam" title="NBA: a player's prop with his game's spread, total or a team total, and slips across a game's own lines">NBA Team</button>
     <button data-league="nfl">NFL</button>
-    <button data-league="nflladder" title="NFL: higher yards lines with a touchdown, receptions or passing TDs">NFL Ladder</button>
+    <button data-league="nflladder" title="NFL: higher yards lines with a touchdown, receptions or passing TDs, priced on Novig and on Kalshi">NFL Ladder</button>
     <button data-league="nhl" hidden title="NHL: a skater's goals with his shots on goal, and two teammates' points">NHL</button>
     <button data-league="nhllines" hidden title="NHL: a skater's points with the moneyline, puck line, game total or his team's total">NHL Lines</button>
     <button data-league="soccer">Soccer</button>
@@ -194,7 +195,7 @@
     <option value="">All games</option>
   </select>
   <button type="button" id="now" title="Run one pass. Nothing is asked of Novig until you press this: each pass sends every combo to its pricers as a live auction. While a pass runs, this button stops it." style="background:var(--accent);border:0;color:#1a1a1a;font-weight:600;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;white-space:nowrap">Fetch</button>
-  <button type="button" id="auto" title="Auto-scan: the server prices every board (NBA, NBA Team, NFL, CBB, CFB, soccer; NBA Ladder and NFL Ladder are Fetch only) one after another, over and over, with this page open or closed. Each board's next day of games only; the NFL and soccer through Sunday and CFB through Saturday. It runs until you press this again; with it off the server prices nothing by itself. Each pass sends every combo to Novig's pricers.">Auto-scan</button>
+  <button type="button" id="auto" title="Auto-scan: the server prices every board (NBA, NBA Team, NFL, CBB, CFB, soccer; the Ladder boards are on the Ladder tab, Fetch only) one after another, over and over, with this page open or closed. Each board's next day of games only; the NFL and soccer through Sunday and CFB through Saturday. It runs until you press this again; with it off the server prices nothing by itself. Each pass sends every combo to Novig's pricers.">Auto-scan</button>
   <button type="button" id="top10" title="Price the ten best rows on screen again, one after another: today’s leg prices and a new Novig quote for each. Press again to stop.">Rescan top 10</button>
   <button type="button" id="unhide" style="display:none" title="Bring back the rows you swiped away."></button>
   <button type="button" id="hidebets" title="Hide or show your own bets on this page, for a screenshot.">Hide my bets</button>
@@ -224,7 +225,7 @@ let S = null;              // last response
 let NOW = false;           // Fetch was pressed: ask for a pass on the next poll
 let STOP = false;          // Stop was pressed: end the running pass on the next poll
 let GOT = 0;               // when it arrived (ms, this clock)
-let MODE = "plays", WIDE = false, MINEV = 0, LEAGUE = new URLSearchParams(location.search).has("kalshi") ? "kalshinbaall" : "nba";
+let MODE = "plays", WIDE = false, MINEV = 0, LEAGUE = new URLSearchParams(location.search).has("kalshi") ? "kalshinbaall" : new URLSearchParams(location.search).has("ladders") ? "ladder" : "nba";
 const PAIR_OPTS = {
   all: [],   // every board's plays together
   nba: [],   // one slip a player now: main-line Points + Threes
@@ -360,15 +361,24 @@ try { KEY = localStorage.getItem(KEYLS) || ""; } catch (_) {}
 // a Kalshi pass and a Novig pass run side by side. That page has a second
 // passcode, kept on this device; the Novig page never shows a Kalshi tab.
 const KPAGE = new URLSearchParams(location.search).has("kalshi");
+// The Ladder boards have a page of their own too (?ladders; Max, 11-27: off the Novig tab, and
+// look up Novig and Kalshi). Its Fetch asks Novig as before and then Kalshi for the same slip.
+// The Kalshi asks need the Kalshi passcode on this device; without it the page prices on Novig alone.
+const LPAGE = !KPAGE && new URLSearchParams(location.search).has("ladders");
 const KKEYLS = "nbaScanKalshiKey";
 let KKEY = "";
-try { KKEY = KPAGE ? localStorage.getItem(KKEYLS) || "" : ""; } catch (_) {}
+try { KKEY = KPAGE || LPAGE ? localStorage.getItem(KKEYLS) || "" : ""; } catch (_) {}
 const KALSHI = l => String(l).startsWith("kalshi");
+const LADDER = l => l === "ladder" || l === "nflladder";
+// Which of the three pages a board's tab is on.
+const PAGE = KPAGE ? "kalshi" : LPAGE ? "ladders" : "novig";
+const pageOf = l => KALSHI(l) ? "kalshi" : LADDER(l) ? "ladders" : "novig";
 function kalshiAsk() {
   const v = (prompt("Kalshi scanner passcode") || "").trim();
   KWHY = "";
   if (v) { KKEY = v; try { localStorage.setItem(KKEYLS, v); } catch (_) {} }
   kalshiNote();
+  if (LPAGE) poll();
 }
 function kalshiLock() {   // the server refused it: forget it and ask once more
   KKEY = "";
@@ -449,12 +459,12 @@ function lock(msg) {
   document.querySelector(".controls").style.display = "none";
   document.getElementById("status").textContent = "";
 }
-const LS = KPAGE ? "nbaKalshiScan" : "nbaNovigScan";
+const LS = KPAGE ? "nbaKalshiScan" : LPAGE ? "nbaLadderScan" : "nbaNovigScan";
 try {
   const v = JSON.parse(localStorage.getItem(LS) || "{}");
   if (v.mode === "all") MODE = "all";
   // NHL and NHL Lines are hidden (11-13): ~800 test slips, none above fair.
-  if (PAIR_OPTS[v.league] && !v.league.startsWith("nhl") && KALSHI(v.league) === KPAGE) LEAGUE = v.league;
+  if (PAIR_OPTS[v.league] && !v.league.startsWith("nhl") && pageOf(v.league) === PAGE) LEAGUE = v.league;
   WIDE = !!v.wide;
   if (Number.isFinite(v.minev)) MINEV = v.minev;
 } catch (_) {}
@@ -620,6 +630,24 @@ const nvLink = (c, text) => {
     : `<a class="nv" href="/n/${ids.join(",")}" target="_blank" rel="noopener" title="Open Novig with these legs on the slip">${text} ↗</a>`;
 };
 
+// A Ladder row's second price: what Kalshi pays for the same slip after its fee (the server's
+// kalshi_x; kalshi_why where it has none). Green when it is more than Novig's.
+const kalBetter = c => c.book !== "kalshi" && c.kalshi_x > 0 && c.kalshi_x > c.slip_x + 0.005;
+const kalLine = c => {
+  if (c.book === "kalshi" || c.stub || !(c.kalshi_x || c.kalshi_why)) return "";
+  if (!c.kalshi_x) return `<small style="display:block;color:var(--muted)" title="Kalshi: ${esc(c.kalshi_why)}">KAL —</small>`;
+  return `<small style="display:block;color:var(--${kalBetter(c) ? "pos" : "muted"});${kalBetter(c) ? "font-weight:700" : ""}" title="What Kalshi pays for the same slip after its fee (${pct(c.kalshi_ev)} at this fair value)">KAL ${c.kalshi_x.toFixed(2)}x</small>`;
+};
+// The same, spelt out in the opened row.
+const kalTech = c => {
+  if (c.book === "kalshi" || !(c.kalshi_x || c.kalshi_why)) return null;
+  const link = /^https:\/\/kalshi\.com\//.test(c.kalshi_url || "") ? ` · <a href="${esc(c.kalshi_url)}" target="_blank" rel="noopener" style="color:inherit">its game on Kalshi ↗</a>` : "";
+  if (!c.kalshi_x) return `Kalshi: ${esc(c.kalshi_why)}${link}`;
+  const d = c.kalshi_x / c.slip_x - 1;
+  return `Kalshi pays ${c.kalshi_x.toFixed(2)}x for the same slip (Yes at ${(c.kalshi_quote * 100).toFixed(1)}¢ before its fee; ${pct(c.kalshi_ev)} at this fair value): ` +
+    (kalBetter(c) ? `<b style="color:var(--pos)">${(100 * d).toFixed(1)}% more than Novig</b>` : d < -0.0005 ? `${(-100 * d).toFixed(1)}% less than Novig` : "the same as Novig") + link;
+};
+
 // What auto-scan is doing, for the status line.
 function autoLine() {
   const c = S.cycle;
@@ -656,7 +684,7 @@ function detail(c) {
     c.book === "kalshi" ? `Kalshi’s best answer: Yes at ${(c.quote * 100).toFixed(1)}¢ a contract (${c.raw_x.toFixed(2)}x) before its fee` + (c.novig_x ? ` · Novig pays ${c.novig_x.toFixed(2)}x for the same slip (${c.novig_ev >= 0 ? "+" : ""}${(100 * c.novig_ev).toFixed(1)}%)` : ` · Novig has no price for this slip`) : `quote ${c.raw_x.toFixed(2)}x before fee`,
     c.qk > 0 ? `${c.qk.toFixed(2)}u` : null,
     c.forced ? "threes alone clear the points line" : null,
-  ].filter(Boolean).join(" · ");
+  ].filter(Boolean).join(" · ") + (kalTech(c) ? `<div>${kalTech(c)}</div>` : "");
   const mine = liveBets().filter(b => b.key === c.key);
   const form = `<div class="betform">` +
     mine.map(b => `<span class="mine">${usd(b.stake)}${b.x ? ` at ${b.x.toFixed(2)}x` : ""}<button type="button" class="x" data-del="${b.id}" title="Remove this bet">×</button></span>`).join("") +
@@ -682,7 +710,7 @@ function render() {
   const started = S.rows.filter(c => c.starts && c.starts <= nowMs).length;
   GHOSTS = [];
   for (const b of liveBets()) {
-    if (KALSHI(b.board) !== KPAGE || !(GROUP() ? GROUP().boards.includes(b.board) : ALL() || b.board === LEAGUE)) continue;
+    if (pageOf(b.board) !== PAGE || !(GROUP() ? GROUP().boards.includes(b.board) : ALL() || b.board === LEAGUE)) continue;
     const k = ALL() ? b.board + "|" + b.key : b.key;
     if (S.rows.some(r => rk(r) === k) || GHOSTS.some(r => rk(r) === k)) continue;
     GHOSTS.push(Object.assign({}, b.row && b.row.legs ? b.row : stubRow(b), { ghost: true }, ALL() ? { board: b.board } : {}));
@@ -773,6 +801,17 @@ function render() {
     { textContent: `Last pass: games through ${new Date(S.before - 60000).toLocaleDateString([], { weekday: "long" })} only (Auto-scan: the board’s next day of games; the NFL and soccer through Sunday, CFB through Saturday). Later days’ rows are from earlier passes (see Age).` }));
   if (autoLine()) st.appendChild(Object.assign(document.createElement("div"), { textContent: autoLine(), style: "color:var(--pos)" }));
   if (NOTE) st.appendChild(Object.assign(document.createElement("div"), { textContent: NOTE, style: "color:var(--accent)" }));
+  // Ladder boards: is Kalshi being asked for the same slips, and how many pay more there.
+  if (LADDER(LEAGUE) && !S.error) {
+    const more = all.filter(c => !c.ghost && kalBetter(c)).length, got = all.filter(c => !c.ghost && c.kalshi_x).length;
+    const line = !KKEY ? (KWHY || (S.kkey === "off" ? "Kalshi is not asked: the Kalshi side is switched off on the server (KALSHI_TAB_KEY)." :
+        "Kalshi is not asked from this device: click the title three times to enter the Kalshi passcode. Fetch then asks Kalshi for the same slips.")) :
+      S.knote ? `Kalshi was not asked: ${S.knote}` :
+      (S.scanning || S.finished || S.stopped) && !S.kalshi ? "The last pass asked Novig only (it was started without the Kalshi passcode). Fetch asks Kalshi too." :
+      got ? `Kalshi priced ${got} of these slips: ${more ? `${more} pay${more === 1 ? "s" : ""} more on Kalshi (marked Better on Kalshi)` : "none pays more there than on Novig"}.` :
+      S.scanning ? "Kalshi is asked for each slip after Novig prices it, the best first." : "";
+    if (line) st.appendChild(Object.assign(document.createElement("div"), { textContent: line, style: !KKEY || S.knote ? "color:var(--accent)" : more ? "color:var(--pos)" : "" }));
+  }
   // Ladder boards lean on FanDuel's prices (NFL: DK's too): say so when one didn't load.
   if (LEAGUE.endsWith("ladder") && S.books && (S.finished || S.scanning) && !S.error) {
     const miss = (LEAGUE === "ladder" ? ["fd"] : ["dk", "fd"]).filter(b => !S.books[b]);   // NBA asks FanDuel only
@@ -812,14 +851,14 @@ function render() {
       `<div class="who">${sub ? "" : `${c.board ? `<span class="tag">${BOARD[c.board]}</span>` : ""}<b>${esc(c.player)}</b>${c.gtd ? `<span class="tag q" title="${esc(c.gtd)}">GTD</span>` : ""}<small>${esc(c.team)}${c.starts ? " · " + tip(c.starts) : ""}</small>` +
         (others && others.length ? `<button type="button" class="more" data-g="${esc(cardOf(c))}">${GOPEN.has(cardOf(c)) ? "hide" :
           `+${others.length} more${others[0].ev > c.ev ? `, to ${pct(others[0].ev)}` : ""}`}</button>` : "")}</div>` +
-      `<div class="legs">${esc(c.label)}${c.model ? `<span class="rough" title="A higher line: fair value is modelled from the main line, not read off a book.">*</span>` : ""}${c.rough ? `<span class="rough" title="A leg sits on a Novig book wider than 4¢: rough fair value. Check sharp odds.">~</span>` : ""}</div>` +
+      `<div class="legs">${esc(c.label)}${c.model ? `<span class="rough" title="A higher line: fair value is modelled from the main line, not read off a book.">*</span>` : ""}${c.rough ? `<span class="rough" title="A leg sits on a Novig book wider than 4¢: rough fair value. Check sharp odds.">~</span>` : ""}${kalBetter(c) ? `<span class="tag kbetter" title="Kalshi pays ${c.kalshi_x.toFixed(2)}x for the same slip after its fee, Novig ${c.slip_x.toFixed(2)}x">Better on Kalshi</span>` : ""}</div>` +
       `<div class="num fair"><span class="lab">Fair</span>${c.stub && !c.fair ? "—" : am(c.fair)}</div>` +
-      `<div class="num"><span class="lab">${c.book === "dk" ? "DK" : c.book === "kalshi" ? "Kalshi" : "Novig"}</span>${c.stub ? (c.nox ? "—" : c.slip_x.toFixed(2) + "x") : nvLink(c, c.slip_x.toFixed(2) + "x")}${c.book === "kalshi" && c.novig_x ? `<small style="display:block;color:var(--muted)" title="What Novig's slip pays for the same legs">NV ${c.novig_x.toFixed(2)}x</small>` : ""}</div>` +
+      `<div class="num"><span class="lab">${c.book === "dk" ? "DK" : c.book === "kalshi" ? "Kalshi" : "Novig"}</span>${c.stub ? (c.nox ? "—" : c.slip_x.toFixed(2) + "x") : nvLink(c, c.slip_x.toFixed(2) + "x")}${c.book === "kalshi" && c.novig_x ? `<small style="display:block;color:var(--muted)" title="What Novig's slip pays for the same legs">NV ${c.novig_x.toFixed(2)}x</small>` : ""}${kalLine(c)}</div>` +
       `<div class="num ev ${c.ev >= 0 ? "pos" : "neg"}">${c.stub && (c.nox || !c.fair) ? "" : pct(c.ev)}</div>` +
       `<div class="num qk"><span class="lab">QK</span>${c.qk > 0 ? c.qk.toFixed(2) + "u" : "—"}</div>` +
       `<div class="num"><span class="lab">QK $</span>${c.qk > 0 ? "$" + Math.round(c.qk * UNIT).toLocaleString() : "—"}</div>` +
       `<div class="num rr">${c.r === null ? "" : (c.r >= 0 ? "+" : "−") + Math.abs(c.r).toFixed(2)}</div>` +
-      `<div class="num"><span class="lab">Age</span>${age(c)}${c.ghost ? "" : `<button type="button" class="re${BUSY.has(rk(c)) ? " spin" : ""}" data-re="${esc(rk(c))}" title="Price this slip again: today’s leg prices and a new Novig quote"${BUSY.has(rk(c)) ? " disabled" : ""}>↻</button>`}</div>` +
+      `<div class="num"><span class="lab">Age</span>${age(c)}${c.ghost ? "" : `<button type="button" class="re${BUSY.has(rk(c)) ? " spin" : ""}" data-re="${esc(rk(c))}" title="Price this slip again: today’s leg prices and a new Novig quote${LPAGE ? ", and Kalshi’s price for the same slip" : ""}"${BUSY.has(rk(c)) ? " disabled" : ""}>↻</button>`}</div>` +
       betLine(c, group) + kbetLine(c) + (OPEN.has(rk(c)) ? detail(c) : "") + `</div>`;
     const firstKept = cards.findIndex(c => c.head.ghost);
     rowsEl.innerHTML = cards.map(({ head, others, g }, i) =>
@@ -871,7 +910,7 @@ function render() {
     `Each row carries its board; pick that board in the dropdown beside the name filter for how its fair value is made, for the slips under Min EV, and to fetch that board alone. A 3-Leg fair value is rougher than a two-leg one, and ${LEAGUE === "kalshinflall" ? "a slip across two players or with a game line" : "an NBA Lines row"} uses a league-wide correlation, not the player’s own. A dimmed row is over an hour old, or its board is being priced and hasn’t reached it yet. Press ↻ on a row to price it again now; a row’s refresh and Bet ask Kalshi again at the fair value from the last Fetch.` :
     ALL() ?
     `All: every board’s slips at Min EV or better, best first, for games that haven’t started. Each row carries its board; open that board’s tab for how its fair value is made and for the rest of its slips. A dimmed row is over an hour old, or its board is being priced and hasn’t reached it yet; a pass prices its board’s best rows from last time first, so those clear within minutes. Press ↻ on a row to price it again now. ` +
-    `<b>Auto-scan</b> has the server price each board’s next day of games on NBA, NBA Team, NFL, CBB, CFB and soccer in turn (NBA Ladder and NFL Ladder are Fetch only) (today’s games; once those have started, the next day that has any, up to midnight your time; the NFL and soccer run through Sunday and CFB through Saturday; an NFL game more than a day off gets only its QB’s 2+ passing TDs with a teammate’s TD, and everything else from the day before; Fetch a board for later days or for all of it), with this page open or closed: a minute between passes, no board more often than every ten minutes, and it runs, day and night, until you switch it off. ` +
+    `<b>Auto-scan</b> has the server price each board’s next day of games on NBA, NBA Team, NFL, CBB, CFB and soccer in turn (the Ladder boards are on their own tab, Ladder Scan, and are Fetch only) (today’s games; once those have started, the next day that has any, up to midnight your time; the NFL and soccer run through Sunday and CFB through Saturday; an NFL game more than a day off gets only its QB’s 2+ passing TDs with a teammate’s TD, and everything else from the day before; Fetch a board for later days or for all of it), with this page open or closed: a minute between passes, no board more often than every ten minutes, and it runs, day and night, until you switch it off. ` +
     `Quotes move by a few percent between asks and last about 30 seconds, so a row is a lead to re-check on the slip, and against sharp odds, before betting.` :
     (SOC() ? `Soccer (the top five leagues, the Champions League, MLS and Liga MX): favourite to win + favourite’s corners Under + underdog’s corners Over, with and without a goals Over; and, in a close game (the underdog at least 26% to win, about +285 or shorter), the mirror: underdog to win + favourite’s corners Over + underdog’s corners Under (a favourite who is behind piles up corners). Each three-leg slip is also asked with a corner leg moved one line, where Pinnacle prices that line. Fair value comes from how each pair of legs moves together, measured on 19,761 top-five-league matches by strength of favourite and applied to each leg’s own price, so it holds on any corner line (within 5% of the counted hit rate at every line tested); MLS and Liga MX use the same numbers, checked against 4,871 and 3,365 of their own matches. Every leg’s fair value is Pinnacle’s no-vig price on that line (open a row to see it beside Novig’s book); a match or a line Pinnacle doesn’t price is not asked. League averages, not this match’s teams: treat rows as leads. ` : "") +
     (LEAGUE === "cfb" ? `CFB: Novig lists no college player props, so these are slips across one game’s own lines: the underdog’s moneyline with the game Under (at the main line and at the Under nearest +230), those two with the underdog’s team total Over, the favourite’s spread with the Over, and the underdog’s spread with the Under; then, where Novig’s team-total and first-half books are tight, the underdog’s spread with his team total Under, the favourite’s team total Under with the game Under, both team totals Under, the favourite’s first-half spread with his spread, and the first-half Under with the game Under. Up to ten a game; underdogs longer than about +900 get no moneyline slips. Each leg’s fair value is Novig’s own book at that line. The correlation is modelled, not measured: the two teams’ scores are fitted to that game’s alt spreads and alt totals, and a favourite covering is tied to the Over by half of spread ÷ total (an assumption). Novig prices these lines close to that model, so most rows sit under fair after its parlay fee; treat anything above fair as a lead to check. ` : "") +
@@ -886,6 +925,7 @@ function render() {
     (LEAGUE === "cbb" ? `CBB: Novig lists no college player props, so these are slips across one game’s own lines, up to six a game: the favourite’s spread with the Over; the underdog’s spread with the Under; the underdog’s spread with the underdog’s team total Under; the favourite’s team total Under with the game Under; both team totals Under; and the favourite’s first-half spread with his full-game spread. Each slip with a team total or first-half leg is asked again with one leg moved a line either way (Under 76 for Under 74), and a spread + total slip is when it prices within 8% of fair: Novig’s price does not follow the line the way the fair value does, so the line beside can be the better play. Novig’s own books on team totals and the first half are too wide to price from, so those legs take Pinnacle’s no-vig price on the same line (open a row to see it); the game’s spread and total are Novig’s own book. A game Pinnacle doesn’t list gets the first two slips only. The correlation for each kind of slip is measured on 17,319 games of the last three seasons against closing spreads and totals, by size of spread: an underdog covering with its own total Under is −0.60 (both hit in 14.4% of games), a team total Under with the game Under +0.83, both team totals Under +0.37 in a close game falling to +0.33 at a 20-point spread, +0.25 at 30 and +0.20 at 35 (the two scores move together less in a lopsided game), a first-half spread with the game’s spread +0.63, a spread with the total about zero (+0.12 at a 30-point spread). Team-total and first-half lines in that history are derived from the closing spread and total, not posted ones, so the Pinnacle leg is the softest input: check it before sizing a play. ` : "") +
     (LEAGUE === "nfl" ? `NFL: receptions, receiving yards and anytime touchdown for WRs, TEs and RBs; rushing yards, rushing + receiving yards and carries with anytime touchdown for RBs; pass attempts, completions, passing yards and passing touchdowns for QBs. Then a quarterback’s passing Over with one of his own receivers’ Over, and a player’s prop Over with a game line on the side that goes with it (a back’s carries with his team covering or winning; a quarterback’s pass attempts with the other team): the game total, his team’s spread, moneyline and team total, and the first half’s total, spread and moneyline. Each player gets his best prop with each kind of line, where the correlation is 0.25 or better. With the spread and the moneyline the correlation used is the one for his team’s side of today’s spread (underdog of 3.5 or more, favourite of 3.5 or more, or between): a quarterback’s attempts go against his team covering at −0.44 as a favourite and only −0.15 as an underdog, and a lead back’s carries go with it at +0.22 as a favourite and +0.54 otherwise. A prop moves with the moneyline much as it does with the spread; with first-half lines a back’s carries and yards hold up (0.43) and scoring props run about three quarters of the full game’s. First-half scores are ESPN’s, cut at stand-ins for the closing first-half lines (about half the total, 0.57 of the spread). Unders are asked too, at the same correlations: a player’s Under + Under on each of those pairs, a quarterback’s Under with his receiver’s Under, a quarterback’s pass attempts against his back’s carries and his passing yards against the back’s rushing yards (one Over, one Under, both ways; −0.29 and −0.15 for a lead back), and a prop’s Under with the line’s other side. Pick “Unders” in the filter to see them alone. Then three legs at main lines, all Overs, all pulling the same way. Three of a player’s own props (receptions, yards and a touchdown); two of his props with a game line; his quarterback’s passing Over, his own Over and a game line; or three props across him and his quarterback. The game line is the total, spread, moneyline or team total, or the first half’s total, spread or moneyline, on the side that goes with both props. Each player leads up to three three-leg slips: the ones that hit most often compared with unrelated legs, at most two of one shape and one of each kind of line. Fair value is a three-way joint from the three pair correlations (open a row to see them); the ones across two players or with a game line are league-wide for the role and each carries about ±0.05, so a three-leg fair value is rougher than a two-leg one, by roughly ±5%. ` : "") +
     (LEAGUE === "ladder" ? `NBA Ladder: higher lines only, for shooters whose Points and Threes move together (r 0.70 or better): his points lines above the main line (to main + 15) with threes at main to + 3, one-way lines included, where the slip’s fair value is between +500 and +800. The main-line slips are on the NBA tab and are not asked again here. Every row has a leg whose fair value is shifted from his main line with a count model, held under Novig’s own ask and under DraftKings’ and FanDuel’s one-way price on that line. Check a play against another book before sizing it. ` : "") +
+    `` + (LADDER(LEAGUE) ? `<b>Kalshi:</b> each slip Novig prices within 10% of fair or better is then asked of Kalshi as the same combo (a request for quote for $100, nothing bought), the best first, up to 120 a pass, where Kalshi lists every leg on the same line (its milestones are 5 points or 10 yards apart, so many ladder lines have no Kalshi market: the row shows KAL — and the opened row says which leg). KAL under Novig’s price is what the same slip pays on Kalshi after its fee; a row marked <b>Better on Kalshi</b> pays more there. The fair value and EV on the row are Novig’s slip; open the row for Kalshi’s EV and its game’s page. Press ↻ to ask both again, whatever the row’s EV. The Kalshi asks need the Kalshi passcode on this device and count toward Kalshi’s 5,000 new combos a week. ` : "") + `` +
     (LEAGUE === "nflladder" ? `NFL Ladder: each player’s yards lines above his main line (receiving, rushing, passing; one-way lines included), with his anytime touchdown, receptions or passing touchdowns at its own main line, where the slip’s fair value is between +500 and +800. Rows marked * have a yards leg shifted from the main line (Novig’s when it has a tight one, else DraftKings’ or FanDuel’s) with a curve fitted to those books’ own ladders, held under Novig’s ask and under both books’ one-way price on that line. ` : "") +
     (LEAGUE === "nhl" ? `NHL: a skater’s goals with his shots on goal, each at its main line as “N+ · Yes” legs (1+ goal goes with 2+ shots, since a goal is a shot). Goals with assists and assists with shots are not asked: those legs are close to unrelated. Novig refuses any slip with a skater’s points and another of his stats, and lists no blocked shots. Then teammates: one skater’s points with a teammate’s points, or his goal with a teammate’s assist or points, in the same game, where their correlation is 0.20 or better, up to three slips led by one skater. It comes from the games the two both played for the same team (40 needed, else the average for their positions and ice time): about 0.15 for any two teammates, 0.3 to 0.4 for linemates. A skater’s shots with a teammate’s points is about zero (0.05 for linemates), so those slips are not asked. Points with game lines are on the NHL Lines tab. Skaters need 40 games of 10+ minutes. The correlation is fitted to the two legs’ hit-or-miss record at those exact lines and shrunk toward the skater’s position: goals with shots runs 0.3 to 0.6. Units are $200. Data: <a href="https://moneypuck.com" target="_blank" rel="noopener" style="color:inherit">MoneyPuck.com</a>, new games from ESPN box scores. ` : "") +
     (LEAGUE === "nhllines" ? `NHL Lines: a skater’s points at his main line with his team’s moneyline, the puck line (−1.5 or +1.5, whichever his team has), the game total and his team’s total, on the side that goes with his points, where the correlation is 0.25 or better. The correlation is league-wide for his position and ice time, not his own: a top forward’s point runs about 0.5 with his team’s total over, 0.38 with a win and 0.32 with the game over, measured on the raw result (won, won by two, over 5.5) across 1,600 games. Skaters need 40 games of 10+ minutes. Units are $200. Data: <a href="https://moneypuck.com" target="_blank" rel="noopener" style="color:inherit">MoneyPuck.com</a>, scores from ESPN. ` : "") +
@@ -938,6 +978,11 @@ async function poll() {
     if (tab !== LEAGUE) return;   // the tab changed while this was on its way
     S = j;
     GOT = Date.now();
+    if (LPAGE && KKEY && j.kkey && j.kkey !== "ok") {
+      KKEY = "";
+      try { localStorage.removeItem(KKEYLS); } catch (_) {}
+      KWHY = j.kkey === "off" ? "" : "Kalshi is not asked: the server did not take this device’s Kalshi passcode. Click the title three times to enter it again.";
+    }
     if (Date.now() - BETS_AT > 30000) { BETS_AT = Date.now(); bets(); } else keepRows();
     if (S.scanning) NOW = false;
     // While a pass runs the button stops it: this board's own, or another
@@ -977,7 +1022,13 @@ document.getElementById("now").onclick = () => {
 pairOpts();
 loadGames();
 allClass();
-document.querySelectorAll("#league button").forEach(b => { if (KALSHI(b.dataset.league) !== KPAGE || tabOf(b.dataset.league) !== b.dataset.league) b.hidden = true; else if (KPAGE) b.hidden = false; });
+document.querySelectorAll("#league button").forEach(b => { if (pageOf(b.dataset.league) !== PAGE || tabOf(b.dataset.league) !== b.dataset.league) b.hidden = true; else if (KPAGE) b.hidden = false; });
+if (LPAGE) {
+  document.title = "Ladder SGP Scanner";
+  document.querySelector("h1").textContent = "Ladder SGP scanner";
+  document.getElementById("auto").hidden = true;   // the Ladder boards are Fetch only
+  document.querySelector("h1").addEventListener("click", e => { if (e.detail === 3 && !KKEY) { getSelection().removeAllRanges(); kalshiAsk(); } });
+}
 if (KPAGE) {
   document.title = "Kalshi SGP Scanner";
   document.querySelector("h1").textContent = "Kalshi SGP scanner";
@@ -985,6 +1036,7 @@ if (KPAGE) {
   if (!KKEY) kalshiAsk();
   document.querySelector("h1").addEventListener("click", e => { if (e.detail === 3 && !KKEY) { getSelection().removeAllRanges(); kalshiAsk(); } });
 }
+if (LPAGE) document.getElementById("now").title = "Run one pass: every slip is sent to Novig's pricers as a live auction, and each one Novig prices within 10% of fair is then asked of Kalshi as the same combo (a request for quote; nothing is bought). While a pass runs, this button stops it.";
 bookHead();
 const go = league => {
   LEAGUE = league; save(); OPEN.clear(); pairOpts(); loadGames(); bookHead();

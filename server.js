@@ -2586,6 +2586,12 @@ const NV_DK_PY = path.join(__dirname, '.claude', 'skills', 'nba-sgp-fv', 'scan_d
 const NV_KALSHI_PY = path.join(__dirname, '.claude', 'skills', 'nba-sgp-fv', 'scan_kalshi.py');
 const NV_OWN_SCRIPT = { dknba: NV_DK_PY, kalshinba: NV_KALSHI_PY, kalshinba3: NV_KALSHI_PY, kalshinbatri: NV_KALSHI_PY, kalshinbaline: NV_KALSHI_PY, kalshinfl: NV_KALSHI_PY, kalshinflline: NV_KALSHI_PY, kalshinfltri: NV_KALSHI_PY, kalshicbb: NV_KALSHI_PY, kalshicfb: NV_KALSHI_PY };
 const nvKalshi = league => String(league).startsWith('kalshi');
+// The Ladder boards (Max, 11-27: their own tab, off the Novig one; and look up Novig and Kalshi,
+// to see a slip taken on Novig isn't better on Kalshi). A pass on one asks Novig as before, then
+// Kalshi for the same slip where it lists every leg on the same line (scan.py --kalshi). The
+// Kalshi asks are signed with the owner's key, so they are made only for a Fetch or a refresh
+// that carries the Kalshi passcode; without it the pass is Novig's alone.
+const NV_LADDERS = ['ladder', 'nflladder'];
 const NV_LEAGUES = ['nfl', 'nhl', 'nhllines', 'soccer', 'cfb', 'cbb', 'ladder', 'nflladder', 'nbateam', 'dknba', 'kalshinba3', 'kalshinba', 'kalshinbatri', 'kalshinbaline', 'kalshinfl', 'kalshinflline', 'kalshinfltri', 'kalshicbb', 'kalshicfb'];
 // GET /api/nba/novig-games?league= — the league's open pregame games for the
 // page's game picker: [{ id, name, starts }]. One catalog read, kept 2 minutes.
@@ -2611,7 +2617,8 @@ function nvGames(lg, cb) {
 // events: Novig event ids picked on the page (the game picker); empty = the whole board.
 // before: only games starting before this time (ms); Auto-scan's end of today.
 // full: games starting at or after this time (ms) get one slip only (scan.py --full-before).
-function startNovigScan(league, wide, events, auto, before, full) {
+// kalshi: a Ladder board's pass also asks Kalshi for each slip (the request carried the Kalshi passcode).
+function startNovigScan(league, wide, events, auto, before, full, kalshi) {
   const onKalshi = String(league).startsWith('kalshi');
   if (onKalshi ? NV_KRUN : NV_RUN) return;
   events = events || [];
@@ -2626,6 +2633,8 @@ function startNovigScan(league, wide, events, auto, before, full) {
     league === 'nbateam' ? ['--league', 'nba', '--kind', 'team'] : ['--league', league]).concat(wide ? ['--max-spread', '0.08', '--alt-spread', '0.10'] : [])
     .concat(events.length ? ['--events', ...events] : []).concat(before ? ['--before', String(before)] : [])
     .concat(full ? ['--full-before', String(full)] : []);
+  kalshi = !!kalshi && NV_LADDERS.includes(league);
+  if (kalshi) args.push('--kalshi');
   // The last pass's best rows are asked first (scan.py --first), so the top
   // of the board is fresh minutes into a pass instead of whenever the pass
   // reaches each row (an NFL pass is about 50 minutes).
@@ -2645,7 +2654,7 @@ function startNovigScan(league, wide, events, auto, before, full) {
     return;
   }
   let live = true;   // false once the pass has ended or been stopped
-  Object.assign(B, { started: Date.now(), total: 0, done: 0, error: null, stopped: 0, seen: new Set(), events, before: before || 0, why: {} });
+  Object.assign(B, { started: Date.now(), total: 0, done: 0, error: null, stopped: 0, seen: new Set(), events, before: before || 0, why: {}, kalshi, knote: null });
   // A Kalshi board starts each pass empty (Max, 11-20): only what this
   // Fetch priced is on it. A pass stopped part-way keeps the rows it reached.
   if (onKalshi) B.rows.clear();
@@ -2658,6 +2667,9 @@ function startNovigScan(league, wide, events, auto, before, full) {
     else if (e.type === 'row') { B.done++; B.seen.add(e.key); B.rows.set(e.key, e); nvAlert(league, wide, e); }
     // why a slip got no price, counted for the page (Max, 11-21: am I out of scans?)
     else if (e.type === 'miss') { B.done++; B.rows.delete(e.key); const w = String(e.why || 'no reason given').slice(0, 120); B.why = B.why || {}; B.why[w] = (B.why[w] || 0) + 1; }
+    // A Ladder row's Kalshi price, after its Novig one (scan.py --kalshi): set on the row it belongs to.
+    else if (e.type === 'kalshi') { const r = B.rows.get(e.key); if (r && e.set) { for (const k of Object.keys(r)) if (k.startsWith('kalshi_')) delete r[k]; Object.assign(r, e.set); } }
+    else if (e.type === 'kalshi_off') { B.knote = String(e.why || '').slice(0, 300); }
     else if (e.type === 'done') { ok = true; B.seconds = e.seconds; }
   };
   proc.stdout.on('data', chunk => {
@@ -2925,6 +2937,7 @@ function nvCycleState() {
 
 // GET /api/nba/novig-scan?league=nba|ladder|nbateam|nfl|nflladder|nhl|nhllines|soccer|cfb|cbb[&wide=1][&now=1][&stop=1][&events=id,id] — that
 // board's last pass (or the one running), and what else is running.
+// ladder and nflladder: with the Kalshi passcode on the request (X-Kalshi-Key), a pass started here also asks Kalshi for each slip.
 // stop=1 ends the pass that is running, whichever board it is on; with now=1
 // this board's pass then starts in its place.
 // Private: the scanner answers only to the passcode in NOVIG_SCAN_KEY (sent
@@ -3025,7 +3038,8 @@ app.get('/api/nba/novig-scan', (req, res) => {
   const events = String(req.query.events || '').split(',').filter(x => /^[0-9a-f-]{16,40}$/i.test(x)).slice(0, 40);
   const key = `${league}:${wide ? 1 : 0}`, B = nvBoard(key);
   const other = events.join() !== (B.events || []).join();   // other games than the last pass: no minute's wait
-  if (req.query.now === '1' && !RUN && (B.stopped || other || now - Math.max(B.finished, B.started) > NV_SCAN_NOW_MS)) startNovigScan(league, wide, events);
+  const ladder = NV_LADDERS.includes(league);
+  if (req.query.now === '1' && !RUN && (B.stopped || other || now - Math.max(B.finished, B.started) > NV_SCAN_NOW_MS)) startNovigScan(league, wide, events, false, 0, 0, ladder && kalshiOk);
   const mine = !!RUN && RUN.key === key;
   const shown = [...B.rows.values()].filter(r => !nvLong(league, r) && !nvOut(league, r)).map(r => nvFlag(league, r));
   res.json({
@@ -3033,10 +3047,13 @@ app.get('/api/nba/novig-scan', (req, res) => {
     started: B.started, finished: B.finished, stopped: B.stopped || 0, total: B.total, done: B.done, players: B.players, data: B.data,
     seconds: B.seconds, error: B.error, books: B.books || null, events: B.events || [], before: B.before || 0, rows: shown,
     out: B.rows.size - shown.length, cycle: nvCycleState(), why: B.why || {},
+    // A Ladder board: did its last pass ask Kalshi too, why not if it could not, and whether this
+    // request's Kalshi passcode would let a Fetch ask ('ok'), was wrong or missing ('locked'), or the Kalshi side is off.
+    ...(ladder ? { kalshi: !!B.kalshi, knote: B.knote || null, kkey: kalshiOk ? 'ok' : NV_KALSHI_ON ? 'locked' : 'off' } : {}),
   });
 });
-// The boards the All tab gathers (the hidden NHL boards are left out).
-const NV_ALL_BOARDS = ['nba', 'ladder', 'nbateam', 'nfl', 'nflladder', 'soccer', 'cfb', 'cbb', 'kalshinba3', 'kalshinba', 'kalshinbatri', 'kalshinbaline', 'kalshinfl', 'kalshinflline', 'kalshinfltri', 'kalshicbb', 'kalshicfb'];   // DK NBA's tab was removed 11-18
+// The boards the All tab gathers (the hidden NHL boards are left out; the Ladder boards have their own tab since 11-27).
+const NV_ALL_BOARDS = ['nba', 'nbateam', 'nfl', 'soccer', 'cfb', 'cbb', 'kalshinba3', 'kalshinba', 'kalshinbatri', 'kalshinbaline', 'kalshinfl', 'kalshinflline', 'kalshinfltri', 'kalshicbb', 'kalshicfb'];   // DK NBA's tab was removed 11-18
 
 // GET /n/<outcome id,outcome id,...> — a slip's link into Novig, for the
 // scanner's rows (and for alerts sent off the page). Novig's own app routes
@@ -3098,7 +3115,8 @@ function nvBetsAuth(req, res) {
 // it may run beside a pass (one more quote inside Novig's per-IP limit).
 let NV_REQUOTE = false;
 // cb(error text or null, the new row, http status for the error)
-function nvRequote(league, wide, key, cb) {
+// kalshi: a Ladder row is also asked of Kalshi (the request carried the Kalshi passcode).
+function nvRequote(league, wide, key, cb, kalshi) {
   const B = NV_BOARDS.get(`${league}:${wide ? 1 : 0}`), row = B && B.rows.get(String(key));
   if (!row) return cb('that slip is no longer on the board', null, 404);
   const onKalshi = nvKalshi(league);
@@ -3106,7 +3124,8 @@ function nvRequote(league, wide, key, cb) {
   if (NV_REQUOTE) return cb('another slip is being refreshed', null, 429);
   NV_REQUOTE = true;
   const lg = NV_PY_LEAGUE(league);
-  const args = [onKalshi ? NV_KALSHI_PY : NV_SCAN_PY, '--requote', '--league', lg].concat(wide ? ['--max-spread', '0.08'] : []);
+  const args = [onKalshi ? NV_KALSHI_PY : NV_SCAN_PY, '--requote', '--league', lg].concat(wide ? ['--max-spread', '0.08'] : [])
+    .concat(kalshi && NV_LADDERS.includes(league) ? ['--kalshi'] : []);
   let out = '', err = '', done = false, timer = null;
   const finish = (why, r, code) => { if (done) return; done = true; NV_REQUOTE = false; clearTimeout(timer); cb(why, r, code); };
   let proc;
@@ -3211,7 +3230,9 @@ app.post('/api/nba/novig-requote', (req, res) => {
   if (!nvBetsAuth(req, res)) return;
   const { league, wide, key } = req.body || {};
   if (nvKalshi(league) && !nvKalshiAuth(req, res)) return;
-  nvRequote(league, wide, key, (why, row, code) => why ? res.status(code).json({ error: why }) : res.json({ row, now: Date.now() }));
+  // A Ladder row's refresh asks Kalshi too when the Kalshi passcode came with it (no passcode sent is not a wrong guess).
+  const kalshi = NV_LADDERS.includes(league) && nvCheck(req, 'kalshi').ok;
+  nvRequote(league, wide, key, (why, row, code) => why ? res.status(code).json({ error: why }) : res.json({ row, now: Date.now() }), kalshi);
 });
 
 

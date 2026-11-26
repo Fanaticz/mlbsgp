@@ -6,6 +6,7 @@ player, ranked by EV at what Novig's slip pays.
   python3 scan.py --scope all     # everything listed below (many more quotes)
   python3 scan.py --scope ladder  # NBA shooters' higher lines only, one-way lines included
   python3 scan.py --league nfl --scope ladder   # NFL: higher yards lines + TD / receptions / passing TDs
+  python3 scan.py --scope ladder --kalshi       # the Ladder boards as the server runs them: Kalshi's price for the same slip too
   python3 scan.py --tier 1        # Points + Threes only (about 2 minutes)
   python3 scan.py --max 120       # stop after 120 quotes
   python3 scan.py --min-ev 3      # print only rows at +3% or better
@@ -264,6 +265,7 @@ quarter Kelly, 1u = 1% of bankroll = --unit dollars.
 """
 import argparse
 import concurrent.futures
+import heapq
 import itertools
 import json
 import math
@@ -271,6 +273,7 @@ import os
 import sys
 import threading
 import time
+import types
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -711,6 +714,68 @@ def kalshi_blend(nm, rows, max_spread):
             b = two_books(r, k["bid"], k["ask"], max_spread, ksize=k.get("size"))
             if b and b[3] != "novig":
                 r.update(fo=b[0], fu=b[1], spread=b[2], src=b[3], kal=k["ticker"])
+
+
+# The Ladder boards' second price (Max, 11-27: when we do ladders, look up Novig and Kalshi;
+# make sure a slip taken on Novig isn't better on Kalshi). ev: Kalshi is asked for a slip Novig
+# priced at this EV% or better, best first. max: asks a pass. stake: dollars a request is sized at.
+KALSHI_LOOK = {"ev": -10.0, "max": 120, "stake": 100.0, "nfl": None}
+KALSHI_FIELDS = ("kalshi_x", "kalshi_ev", "kalshi_quote", "kalshi_why", "kalshi_url", "kalshi_at")
+
+
+def kalshi_same(c, league):
+    """A Novig slip as the same bet on Kalshi: ([{"id", "event"} a leg], its game's
+    page on Kalshi, None), or (None, None, why) when Kalshi does not list every
+    leg on the same line (its milestones are 5 points or 10 yards apart where
+    Novig's ladder has every line). An Over is Yes on the milestone: Over 24.5
+    is "25+". Reads Kalshi's open props once a run; no key needed."""
+    import scan_kalshi
+    nfl = league == "nfl"
+    try:
+        if nfl and KALSHI_LOOK["nfl"] is None:
+            KALSHI_LOOK["nfl"] = scan_kalshi.kalshi_props(series=scan_kalshi.NFL_SERIES)
+        if not nfl and not KALSHI["props"]:   # not read yet, or the fair values' read failed: once more
+            KALSHI["props"] = scan_kalshi.kalshi_props()
+    except (SystemExit, Exception) as e:  # noqa: BLE001
+        return None, None, f"Kalshi's props could not be read ({e})"
+    who = (KALSHI_LOOK["nfl"] if nfl else KALSHI["props"]).get(novig.norm(c["player"]))
+    if not who:
+        return None, None, "Kalshi lists no props for him"
+    legs = []
+    for L in c["legs"]:
+        k = next((k for k in who["stats"].get(L["stat"], []) if k["line"] == L["line"]), None) if L["side"] == "over" else None
+        if not k:
+            return None, None, f"Kalshi does not list {leg_text(L)}"
+        legs.append({"id": k["ticker"], "event": k["event"]})
+    game = "kxnflgame" if nfl else "kxnbagame"
+    return legs, f"https://kalshi.com/markets/{game}/game/{game}-{who['game'].lower()}", None
+
+
+def kalshi_look(c, league, stake=None):
+    """Kalshi's price for a row Novig has priced, as the fields to put on it:
+    kalshi_x (what $1 pays on the same slip after Kalshi's taker fee),
+    kalshi_ev (at this row's fair value), kalshi_quote (Yes a contract before
+    the fee) and kalshi_url; or kalshi_why where there is no price. One
+    request for quote, signed with the server's Kalshi key (scan_kalshi.ask);
+    nothing is accepted. Raises scan_kalshi.Refused, and SystemExit when the
+    key is not set."""
+    import scan_kalshi
+    legs, url, why = kalshi_same(c, league)
+    if not legs:
+        return {"kalshi_why": why, "kalshi_at": time.time()}
+    yes, why = scan_kalshi.ask({"legs": legs}, types.SimpleNamespace(stake=stake or KALSHI_LOOK["stake"], wait=3.0, polls=2))
+    if not yes:
+        return {"kalshi_why": why, "kalshi_url": url, "kalshi_at": time.time()}
+    x = scan_kalshi.slip_x(yes)
+    return {"kalshi_x": x, "kalshi_ev": x / c["fair_x"] - 1, "kalshi_quote": yes, "kalshi_url": url, "kalshi_at": time.time()}
+
+
+def kalshi_set(c, got):
+    """Put a look's fields on the row, dropping the last look's."""
+    for k in KALSHI_FIELDS:
+        c.pop(k, None)
+    c.update(got)
+    return c
 
 
 def leg(stat, row, side):
@@ -2359,6 +2424,7 @@ def requote(c, league, max_spread, unit, kelly):
     quote, why = novig.parlay([L["id"] for L in c["legs"]])
     if not quote:
         return None, why
+    kalshi_set(c, {})   # Kalshi's price from the last look does not stay beside a new Novig one
     return finish(c, quote, unit, kelly), None
 
 
@@ -2480,6 +2546,52 @@ def scan(a, emit):
     # alone 90 seconds and 6.27x on about every other ask 36 seconds apart, so
     # the second ask was itself what found the worse price, and an ask from
     # the board shortly before the app's did the same to the app.
+    # --kalshi (the Ladder boards): each slip Novig prices is then asked of Kalshi
+    # as the same combo, one request at a time on its own thread, the best Novig
+    # EV waiting first. The row goes out with Novig's price at once; Kalshi's
+    # follows as a "kalshi" event that sets its kalshi_* fields.
+    kq, kcv, kst = [], threading.Condition(), {"open": True, "n": 0, "asked": 0, "got": 0, "refused": 0, "off": None}
+
+    def kalshi_worker():
+        import scan_kalshi
+        while True:
+            with kcv:
+                while not kq and kst["open"]:
+                    kcv.wait()
+                if not kq:
+                    return
+                _, _, c = heapq.heappop(kq)
+            if kst["off"]:
+                got = {"kalshi_why": "not asked: " + kst["off"], "kalshi_at": time.time()}
+            elif c["ev"] * 100 < a.kalshi_ev:
+                got = {"kalshi_why": f"not asked: Novig is more than {-a.kalshi_ev:g}% under fair (the row's refresh asks)", "kalshi_at": time.time()}
+            elif kst["asked"] >= a.kalshi_max and kalshi_same(c, a.league)[0]:
+                got = {"kalshi_why": f"not asked: this pass's {a.kalshi_max} Kalshi asks were used (the row's refresh asks)", "kalshi_at": time.time()}
+            else:
+                try:
+                    got = kalshi_look(c, a.league, a.kalshi_stake)
+                    if got.get("kalshi_quote") or got.get("kalshi_url"):   # a request went out
+                        kst["asked"] += 1
+                        kst["got"] += 1 if got.get("kalshi_quote") else 0
+                        time.sleep(scan_kalshi.PACE_S)
+                except scan_kalshi.Refused as e:
+                    kst["refused"] += 1
+                    got = {"kalshi_why": f"Kalshi refused the request: {e}", "kalshi_at": time.time()}
+                    if not kst["got"] and kst["refused"] >= scan_kalshi.REFUSED_AFTER:
+                        kst["off"] = f"Kalshi is refusing this key's requests: {e}{scan_kalshi.refused_fix(str(e))}"
+                except SystemExit as e:   # no key on the server, or one that can't be read
+                    kst["off"] = str(e)
+                    got = {"kalshi_why": "not asked: " + kst["off"], "kalshi_at": time.time()}
+                if kst["off"]:
+                    emit({"type": "kalshi_off", "why": kst["off"]})
+            with lock:
+                kalshi_set(c, got)
+                emit({"type": "kalshi", "key": c["key"], "set": got})
+
+    kthread = threading.Thread(target=kalshi_worker, daemon=True) if a.kalshi else None
+    if kthread:
+        kthread.start()
+
     def one(c):
         pace.wait()
         quote, why = novig.parlay([L["id"] for L in c["legs"]])
@@ -2490,6 +2602,11 @@ def scan(a, emit):
                 emit(dict(c, type="row"))
             else:
                 emit({"type": "miss", "key": c["key"], "player": c["player"], "label": c["label"], "why": why})
+        if quote and kthread:
+            with kcv:
+                kst["n"] += 1
+                heapq.heappush(kq, (-c["ev"], kst["n"], c))
+                kcv.notify()
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=a.workers) as pool:
         first = soonest(c for c in cands if c["tier"] == 1)
@@ -2536,6 +2653,11 @@ def scan(a, emit):
             emit({"type": "more", "add": len(more)})
             cands = cands + more
             list(pool.map(one, soonest(more)))
+    if kthread:   # Kalshi's answers for the slips still waiting, before the pass is done
+        with kcv:
+            kst["open"] = False
+            kcv.notify()
+        kthread.join()
     emit({"type": "done", "quoted": len(cands), "priced": len(rows), "seconds": time.time() - t0, "at": time.time()})
     return rows
 
@@ -2630,6 +2752,14 @@ def main():
     ap.add_argument("--first", default=None, metavar="FILE",
                     help="a JSON list of slip keys to ask before the rest, in that order (server.js: the last pass's best rows)")
     ap.add_argument("--games", action="store_true", help="list the league's open pregame games as JSON and stop")
+    ap.add_argument("--kalshi", action="store_true",
+                    help="--scope ladder, or --requote of a Ladder row: also ask Kalshi for the same slip, where it lists "
+                         "every leg on the same line (needs KALSHI_KEY_ID / KALSHI_PRIVATE_KEY; one request for quote a slip, "
+                         "nothing accepted)")
+    ap.add_argument("--kalshi-ev", type=float, default=KALSHI_LOOK["ev"],
+                    help="--kalshi: ask Kalshi only for slips Novig prices at this EV%% or better (default -10)")
+    ap.add_argument("--kalshi-max", type=int, default=KALSHI_LOOK["max"], help="--kalshi: Kalshi asks a pass, best Novig EV first (default 120)")
+    ap.add_argument("--kalshi-stake", type=float, default=KALSHI_LOOK["stake"], help="--kalshi: dollars each Kalshi request is sized at")
     a = ap.parse_args()
     a.events = set(a.events) if a.events else None
     if a.games:
@@ -2638,6 +2768,14 @@ def main():
     if a.requote:
         row, why = requote(json.load(sys.stdin), a.league, a.max_spread,
                            a.unit or (500.0 if a.league == "nhl" else 250.0), a.kelly)
+        if row and a.kalshi:   # a Ladder row: Kalshi's price for the same slip, whatever Novig's EV
+            try:
+                kalshi_set(row, kalshi_look(row, a.league, a.kalshi_stake))
+            except SystemExit as e:
+                kalshi_set(row, {"kalshi_why": f"not asked: {e}", "kalshi_at": time.time()})
+            except Exception as e:  # noqa: BLE001  scan_kalshi.Refused, or Kalshi unreachable: Novig's new price still stands
+                kalshi_set(row, {"kalshi_why": f"{'Kalshi refused the request' if type(e).__name__ == 'Refused' else 'no answer from Kalshi'}: {e}",
+                                 "kalshi_at": time.time()})
         print(json.dumps(row if row else {"error": why}))
         return
     BOOKS["on"] = not a.no_books
@@ -2681,6 +2819,8 @@ def main():
         a.tri, a.dd, a.ladder = 0, False, True
         if a.league == "nba":
             a.tier = 1
+    if a.kalshi and a.scope != "ladder":
+        raise SystemExit("--kalshi is for --scope ladder (and --requote of a Ladder row)")
     if a.scope == "main":
         # Max, 11-10: every quote is an auction the pricers see, and plays were
         # being repriced while the wider scans ran. One ask per player.
@@ -2711,13 +2851,15 @@ def main():
     shown = shown[:a.top] if a.top else shown
     print(f"Novig SGP scan · {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime())} · "
           f"{len(rows)} priced, {sum(c['ev'] > 0 for c in rows)} above fair")
-    print("| Player | Legs | Leg fairs | r | Fair | Novig | EV | QK | Wager |")
-    print("|---|---|---|---|---|---|---|---|---|")
+    print("| Player | Legs | Leg fairs | r | Fair | Novig | EV | QK | Wager |" + (" Kalshi |" if a.kalshi else ""))
+    print("|---|---|---|---|---|---|---|---|---|" + ("---|" if a.kalshi else ""))
     for c in shown:
         legs = " / ".join(f"{L['fair']:+d}" for L in c["legs"])
         rtxt = "unrel." if c["r"] is None else f"{c['r']:+.2f}"
         print(f"| {c['player']} {c['team']} | {c['label']}{' *' if c.get('model') else ''}{' ~' if c['rough'] else ''} | {legs} | {rtxt} | "
-              f"{c['fair']:+d} | {c['slip_x']:.2f}x | {c['ev']:+.1%} | {c['qk']:.2f}u | ${c['wager']:,.0f} |")
+              f"{c['fair']:+d} | {c['slip_x']:.2f}x | {c['ev']:+.1%} | {c['qk']:.2f}u | ${c['wager']:,.0f} |"
+              + ((f" {c['kalshi_x']:.2f}x ({c['kalshi_ev']:+.1%}){' BETTER' if c['kalshi_x'] > c['slip_x'] else ''} |" if c.get("kalshi_x")
+                  else f" {c.get('kalshi_why') or ''} |") if a.kalshi else ""))
     if any(c.get("model") for c in shown):
         print("* a higher line: fair value modelled from the main line, not read off a book")
     if any(c["rough"] for c in shown):

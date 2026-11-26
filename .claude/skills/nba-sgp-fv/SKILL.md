@@ -194,7 +194,9 @@ while the wider scans ran. Everything below about higher lines, other pairs,
 double- and triple-doubles and three legs needs `--scope all`, which Max has
 asked not to run on his board; use it only if he asks.
 
-`--scope ladder` (the page's **Ladder** tab) is the one wider scan Max runs
+`--scope ladder` (the **Ladder Scan** tab, its own page since 11-27: `nba_scan.html?ladders=1`; with
+`--kalshi` each slip Novig prices within 10% of fair is also asked of Kalshi as the same combo, where
+Kalshi lists every leg on the same line, and the row carries `kalshi_x`) is the one wider scan Max runs
 (asked for 11-11): only shooters with PTS·3PM r at least 0.70 (43 on the
 11-11 slate). The main-line slips are not asked or shown here (the NBA tab
 has them; showing both was all overlap), so there is no gate: every higher
