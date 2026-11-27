@@ -2902,7 +2902,10 @@ app.post('/api/nba/novig-alert-test', async (req, res) => {
 // NV_CYCLE_REACH days on. A Monday night game is still priced alone.
 // Soccer runs through the weekend the same way (Max, 11-19): to the end of
 // Sunday, from Thursday on.
-const NV_CYCLE_BOARDS = ['nba', 'nbateam', 'nfl', 'cbb', 'cfb', 'soccer'];   // NFL Ladder 11-18, out again 11-19 (Max: Fetch only, like NBA Ladder), to leave the time to the NFL's Sunday
+// Novig's CFB board is off (Max, 11-27: turn off CFB until I tell you, they aren't very good): out of Auto-scan
+// and the All tab, and its tab is hidden on the page. To bring it back: 'cfb' after 'cbb' here, in NV_ALL_BOARDS
+// below, and the CFB button's `hidden` in nba_scan.html. The Kalshi CFB board is not touched.
+const NV_CYCLE_BOARDS = ['nba', 'nbateam', 'nfl', 'cbb', 'soccer'];   // NFL Ladder 11-18, out again 11-19 (Max: Fetch only, like NBA Ladder), to leave the time to the NFL's Sunday
 const NV_CYCLE_THROUGH = { nfl: 0, cfb: 6, soccer: 0 };   // board -> the weekday its window runs through (0 = Sunday)
 const NV_CYCLE_REACH_DAYS = { soccer: 3 }, NV_CYCLE_REACH = 4;   // soccer: a midweek match day is priced alone
 // Boards priced in full only from the day before a game (Max, 11-20: Novig's
@@ -3115,7 +3118,7 @@ app.get('/api/nba/novig-scan', (req, res) => {
   });
 });
 // The boards the All tab gathers (the hidden NHL boards are left out; the Ladder boards have their own tab since 11-27).
-const NV_ALL_BOARDS = ['nba', 'nbateam', 'nfl', 'soccer', 'cfb', 'cbb', 'kalshinba3', 'kalshinba', 'kalshinbatri', 'kalshinbaline', 'kalshinfl', 'kalshinflline', 'kalshinfltri', 'kalshicbb', 'kalshicfb'];   // DK NBA's tab was removed 11-18
+const NV_ALL_BOARDS = ['nba', 'nbateam', 'nfl', 'soccer', 'cbb', 'kalshinba3', 'kalshinba', 'kalshinbatri', 'kalshinbaline', 'kalshinfl', 'kalshinflline', 'kalshinfltri', 'kalshicbb', 'kalshicfb'];   // DK NBA's tab was removed 11-18
 
 // GET /n/<outcome id,outcome id,...> — a slip's link into Novig, for the
 // scanner's rows (and for alerts sent off the page). Novig's own app routes
