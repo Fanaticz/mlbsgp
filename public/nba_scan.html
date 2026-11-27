@@ -811,6 +811,8 @@ function render() {
     // Where each board's last pass stands, in the order they'd be worth a look.
     const at = b => b.scanning ? (b.total ? `scanning ${b.done} / ${b.total}` : "reading lines") :
       b.queued ? "next" :
+      // the book has not opened the next games' props: nothing is broken, so not a red "failed" (Max, 11-27)
+      b.error && b.error.startsWith("Nothing listed yet") ? `<span title="${esc(b.error)}">no props listed yet</span>` :
       b.error ? `<span style="color:var(--neg)" title="${esc(b.error)}">failed</span>` :
       Math.max(b.finished, b.stopped) ? ago(nowMs - Math.max(b.finished, b.stopped)) : "";
     st.classList.remove("err");
@@ -870,6 +872,8 @@ function render() {
     rowsEl.innerHTML = `<div class="empty">${
       q ? "No combo for that name." :
       GROUP() ? (S.scanning ? `Pricing the ${GROUP().n} ${GROUP().sport} boards, one after another. Plays appear as Kalshi answers.` :
+        // boards with nothing to price say why, in place of "press Fetch" on a board just fetched
+        S.boards.some(b => b.error && b.error.startsWith("Nothing listed yet")) ? esc(S.boards.find(b => b.error && b.error.startsWith("Nothing listed yet")).error) :
         `No play at ${MINEV > 0 ? "+" : ""}${MINEV}% or better on the ${GROUP().n} ${GROUP().sport} boards right now. Press <b>Fetch</b> to price all ${GROUP().n}.`) :
       ALL() ? `No play at ${MINEV > 0 ? "+" : ""}${MINEV}% or better on any board right now.${S.cycle && S.cycle.on ? "" : " Fetch a board, or switch <b>Auto-scan</b> on to keep every board priced."}` :
       !all.length ? (S.scanning ? (KALSHI(LEAGUE) ? "Pricing the slate. Rows appear as Kalshi answers." : "Pricing the slate. Rows appear as Novig answers (about one a second).") :
