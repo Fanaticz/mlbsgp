@@ -811,13 +811,14 @@ function render() {
     const m = !ALL() && !pair && !(KALSHI(LEAGUE) && LEAGUE !== "kalshinba" && LEAGUE !== "kalshinba3") && mainOf(g);
     // A kept bet row (the board has no such row now) heads a card only when the card has no priced row.
     const byQk = (a, b) => !!a.ghost - !!b.ghost || worth(b) - worth(a) || b.ev - a.ev;
-    if (KNBA()) shown.sort(byQk);
-    const head = KNBA() ? shown[0] : (m && shown.includes(m) && m) || shown.slice().sort((a, b) => !!a.ghost - !!b.ghost || b.ev - a.ev)[0];
+    // Every tab (Max, 11-27: rank all tabs like that). A Novig NBA card is still headed by his main-line row.
+    shown.sort(byQk);
+    const head = KNBA() ? shown[0] : (m && shown.includes(m) && m) || shown[0];
     cards.push({ head, others: shown.filter(c => c !== head), g });   // g: his rows under Min EV too, for alsoLine
   }
   // Kept bet rows go under the priced ones, below a line of their own (Max, 11-27: after a Fetch
   // his bets from 13 hours before sat among the new plays, ranked by their old EV).
-  cards.sort((a, b) => !!a.head.ghost - !!b.head.ghost || (KNBA() ? worth(b.head) - worth(a.head) : 0) || b.head.ev - a.head.ev);
+  cards.sort((a, b) => !!a.head.ghost - !!b.head.ghost || worth(b.head) - worth(a.head) || b.head.ev - a.head.ev);
   if (!TOPRUN) TOP = cards.filter(c => !c.head.ghost).map(c => rk(c.head));
 
   // Status line.
@@ -917,7 +918,7 @@ function render() {
       `<div class="num${LPAGE ? " both" : ""}">${priceCell(c) || `<span class="lab">${c.book === "dk" ? "DK" : c.book === "kalshi" ? "Kalshi" : "Novig"}</span>${c.stub ? (c.nox ? "—" : c.slip_x.toFixed(2) + "x") : nvLink(c, c.slip_x.toFixed(2) + "x")}${c.book === "kalshi" && c.novig_x ? `<small style="display:block;color:var(--muted)" title="What Novig's slip pays for the same legs">NV ${c.novig_x.toFixed(2)}x</small>` : ""}`}</div>` +
       `<div class="num ev ${c.ev >= 0 ? "pos" : "neg"}">${c.stub && (c.nox || !c.fair) ? "" : pct(c.ev)}${c.best ? `<small class="evbk" title="The EV, QK and QK $ on this row are at ${c.best === "kalshi" ? "Kalshi" : "Novig"}’s price, the better of the two">${c.best === "kalshi" ? "Kalshi" : "Novig"}</small>` : ""}</div>` +
       `<div class="num qk"><span class="lab">QK</span>${c.qk > 0 ? c.qk.toFixed(2) + "u" : "—"}</div>` +
-      `<div class="num"><span class="lab">QK $</span>${c.qk > 0 ? "$" + Math.round(c.qk * UNIT).toLocaleString() : "—"}${KNBA() && c.qk > 0 && c.ev > 0 ? `<small style="display:block;color:var(--muted)" title="Expected profit at the QK $: QK $ x EV. The cards are ranked by it.">exp +$${Math.round(c.qk * UNIT * c.ev)}</small>` : ""}</div>` +
+      `<div class="num"><span class="lab">QK $</span>${c.qk > 0 ? "$" + Math.round(c.qk * UNIT).toLocaleString() : "—"}${c.qk > 0 && c.ev > 0 && !c.stub ? `<small style="display:block;color:var(--muted)" title="Expected profit at the QK $: QK $ x EV. The cards are ranked by it.">exp +$${Math.round(c.qk * UNIT * c.ev)}</small>` : ""}</div>` +
       `<div class="num rr">${c.r === null ? "" : (c.r >= 0 ? "+" : "−") + Math.abs(c.r).toFixed(2)}</div>` +
       `<div class="num"><span class="lab">Age</span>${age(c)}${c.ghost ? "" : `<button type="button" class="re${BUSY.has(rk(c)) ? " spin" : ""}" data-re="${esc(rk(c))}" title="Price this slip again: today’s leg prices and a new Novig quote${LPAGE ? ", and Kalshi’s price for the same slip" : ""}"${BUSY.has(rk(c)) ? " disabled" : ""}>↻</button>`}</div>` +
       betLine(c, group) + kbetLine(c) + lbetLine(c) + (OPEN.has(rk(c)) ? detail(c) : "") + `</div>`;
