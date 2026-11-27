@@ -431,14 +431,24 @@ const KMSG = new Map();
 // device's own note of it, so a bet Kalshi's list hasn't caught up with is not placed twice. 0 once the QK $ is on.
 const kbetFull = c => Math.max(1, Math.round(c.qk * UNIT) || 1);
 const kbetOn = c => Math.max(held(c).reduce((s, x) => s + (x.contracts > 0 ? x.cost : 0), 0), total(liveBets().filter(b => b.key === c.key)));
-const kbetStake = c => (kbetOn(c) > 0 ? Math.max(0, Math.round(kbetFull(c) - kbetOn(c))) : kbetFull(c));
+// A Kalshi NBA slip (Max, 11-27: don't put too much on that player): also less what is on the player's
+// other slips, on any of the four boards. His slips win and lose together, so one slip's QK $ is the
+// most the button puts on him; the first press takes the best slip, the rest offer what is left of theirs.
+const KNBA = () => String(LEAGUE).startsWith("kalshinba");
+const kbetOther = c => { if (!KNBA() || !S || c.id == null) return 0;
+  const ids = String(c.id).split("+");
+  return S.rows.concat(GHOSTS).filter(o => o !== c && rk(o) !== rk(c) && o.book === "kalshi" && o.id != null && String(o.id).split("+").some(i => ids.includes(i)))
+    .reduce((t, o) => t + kbetOn(o), 0); };
+const kbetStake = c => { const on = kbetOn(c) + kbetOther(c); return on > 0 ? Math.max(0, Math.round(kbetFull(c) - on)) : kbetFull(c); };
+const kbetText = c => kbetOn(c) + kbetOther(c) > 0 ? (kbetStake(c) > 0 ? `Bet $${kbetStake(c)} more` :
+  kbetOn(c) >= kbetFull(c) ? `QK $${kbetFull(c)} is on · bet a typed stake` : `$${Math.round(kbetOn(c) + kbetOther(c))} is on ${c.player.split(" ").slice(-1)[0]} · bet a typed stake`) : `Bet $${kbetStake(c)}`;
 let KBETTING = false;
 async function kalshiBet(b) {
   const id = b.dataset.kbet, c = S && S.rows.find(r => rk(r) === id), f = b.closest(".row") && b.closest(".row").querySelector(".det");
   if (!c || KBETTING) return;
   const typed = f ? parseFloat(f.querySelector(".stake").value) : NaN;
   const stake = typed > 0 ? typed : kbetStake(c);
-  if (!(stake > 0)) { KMSG.set(id, "The QK $ is already on this slip. To add more, open the row and type a stake."); render(); return; }
+  if (!(stake > 0)) { KMSG.set(id, "The QK $ is already on this slip or this player. To add more, open the row and type a stake."); render(); return; }
   // The typed stake is this bet's: empty the box so the "I bet this" form doesn't save it a second time.
   if (f) { f.querySelector(".stake").value = ""; f.querySelector(".stake").closest(".betform").dataset.saved = "1"; }
   KBETTING = true; b.disabled = true; KMSG.set(id, `placing $${stake}…`); render();
@@ -582,7 +592,7 @@ function kbetLine(c) {
   if (c.book !== "kalshi" || c.ghost || !(c.ev > 0 || msg)) return "";
   return `<div class="betform kbetrow" style="grid-column:1 / -1">` + (c.ev > 0 ? `<button type="button" class="kbet" data-kbet="${esc(rk(c))}"` +
     ` title="Buys this combo on Kalshi now: the row's QK $ less what is already on this slip, or the stake typed in the opened row. Not placed if the price is more than 1% worse than shown or the slip is no longer above fair.">` +
-    (kbetOn(c) > 0 ? (kbetStake(c) > 0 ? `Bet $${kbetStake(c)} more` : `QK $${kbetFull(c)} is on · bet a typed stake`) : `Bet $${kbetStake(c)}`) + ` at ${c.slip_x.toFixed(2)}x</button>` : "") + `<span class="kmsg">${esc(msg)}</span></div>`;
+    kbetText(c) + ` at ${c.slip_x.toFixed(2)}x</button>` : "") + `<span class="kmsg">${esc(msg)}</span></div>`;
 }
 // group: every row of his card. A row with nothing on it says what is on his other slips (Max, 11-25: a
 // row under a bet of his looked like nothing was down on him), in grey so it can't pass for this row's bet.
@@ -675,7 +685,7 @@ function lbetLine(c) {
     c.kalshi_x ? `Kalshi pays ${c.kalshi_x.toFixed(2)}x (${pct(c.kalshi_ev)})` : c.kalshi_why ? kwhy(c) : "";
   const btn = !(c.ev > 0) ? "" : c.best === "kalshi" ?
     `<button type="button" class="kbet" data-kbet="${esc(rk(c))}" title="Buys this combo on Kalshi now: the row's QK $ at Kalshi's price less what is already on this slip, or the stake typed in the opened row. Not placed if Kalshi's price is more than 1% worse than shown, the slip is no longer above fair, or the row is over 10 minutes old.">` +
-      (kbetOn(c) > 0 ? (kbetStake(c) > 0 ? `Bet $${kbetStake(c)} more` : `QK $${kbetFull(c)} is on · bet a typed stake`) : `Bet $${kbetStake(c)}`) + ` at ${c.kalshi_x.toFixed(2)}x on Kalshi</button>` :
+      kbetText(c) + ` at ${c.kalshi_x.toFixed(2)}x on Kalshi</button>` :
     nvLink(c, `Open on Novig at ${c.slip_x.toFixed(2)}x`).replace('class="nv"', 'class="nv nbtn"');
   return `<div class="betform kbetrow" style="grid-column:1 / -1">${btn}<span class="kother">${esc(other)}</span><span class="kmsg">${esc(msg)}</span></div>`;
 }
@@ -780,7 +790,9 @@ function render() {
   // All: a slip and the same slip at other lines (XAV Under 96.5 + CLEV Under
   // 62.5, then Under 97.5 + Under 62.5) are one card, headed by the best of them.
   const shape = c => [c.board, c.id, c.kind || "", ...c.legs.map(L => [L.stat, L.team || "", L.name || L.player || "", L.side || "", L.half ? 1 : 0].join(":"))].join("|");
-  const cardOf = c => ALL() ? shape(c) : LEAGUE === "nfl" || LEAGUE === "nbateam" || LEAGUE.startsWith("nhl") ? c.key : c.id;
+  // Kalshi NBA (Max, 11-27: group one player, even if different lines; rank by recommended QK): every
+  // slip of his on the four boards is one card, headed by the slip with the largest QK, cards largest QK first.
+  const cardOf = c => KNBA() && !c.stub ? "p|" + c.id : ALL() ? shape(c) : LEAGUE === "nfl" || LEAGUE === "nbateam" || LEAGUE.startsWith("nhl") ? c.key : c.id;
   for (const c of rows) (byId.get(cardOf(c)) || byId.set(cardOf(c), []).get(cardOf(c))).push(c);
   const mainOf = g => g.find(c => c.main) ||
     g.filter(c => c.tier === 1).sort((a, b) => Math.abs(a.legs[1].p - 0.5) - Math.abs(b.legs[1].p - 0.5))[0];
@@ -794,12 +806,14 @@ function render() {
     // tier 1), so the card is headed by its best row, not the one nearest 50%.
     const m = !ALL() && !pair && !(KALSHI(LEAGUE) && LEAGUE !== "kalshinba" && LEAGUE !== "kalshinba3") && mainOf(g);
     // A kept bet row (the board has no such row now) heads a card only when the card has no priced row.
-    const head = (m && shown.includes(m) && m) || shown.slice().sort((a, b) => !!a.ghost - !!b.ghost || b.ev - a.ev)[0];
+    const byQk = (a, b) => !!a.ghost - !!b.ghost || b.qk - a.qk || b.ev - a.ev;
+    if (KNBA()) shown.sort(byQk);
+    const head = KNBA() ? shown[0] : (m && shown.includes(m) && m) || shown.slice().sort((a, b) => !!a.ghost - !!b.ghost || b.ev - a.ev)[0];
     cards.push({ head, others: shown.filter(c => c !== head), g });   // g: his rows under Min EV too, for alsoLine
   }
   // Kept bet rows go under the priced ones, below a line of their own (Max, 11-27: after a Fetch
   // his bets from 13 hours before sat among the new plays, ranked by their old EV).
-  cards.sort((a, b) => !!a.head.ghost - !!b.head.ghost || b.head.ev - a.head.ev);
+  cards.sort((a, b) => !!a.head.ghost - !!b.head.ghost || (KNBA() ? b.head.qk - a.head.qk : 0) || b.head.ev - a.head.ev);
   if (!TOPRUN) TOP = cards.filter(c => !c.head.ghost).map(c => rk(c.head));
 
   // Status line.
@@ -891,9 +905,9 @@ function render() {
   } else {
     const one = (c, sub, others, group) =>
       `<div class="row${sub ? " sub" : ""}${c.ghost || isOld(c) ? " old" : ""}${kbetOn(c) > 0 ? " has" : ""}" data-k="${esc(rk(c))}">` +
-      `<div class="who">${sub ? "" : `${c.board ? `<span class="tag">${BOARD[c.board]}</span>` : ""}<b>${esc(c.player)}</b>${c.gtd ? `<span class="tag q" title="${esc(c.gtd)}">GTD</span>` : ""}<small>${esc(c.team)}${c.starts ? " · " + tip(c.starts) : ""}</small>` +
+      `<div class="who">${sub ? (KNBA() && c.board ? `<span class="tag">${BOARD[c.board]}</span>` : "") : `${c.board ? `<span class="tag">${BOARD[c.board]}</span>` : ""}<b>${esc(c.player)}</b>${c.gtd ? `<span class="tag q" title="${esc(c.gtd)}">GTD</span>` : ""}<small>${esc(c.team)}${c.starts ? " · " + tip(c.starts) : ""}</small>` +
         (others && others.length ? `<button type="button" class="more" data-g="${esc(cardOf(c))}">${GOPEN.has(cardOf(c)) ? "hide" :
-          `+${others.length} more${others[0].ev > c.ev ? `, to ${pct(others[0].ev)}` : ""}`}</button>` : "")}</div>` +
+          `+${others.length} more${Math.max(...others.map(o => o.ev)) > c.ev ? `, to ${pct(Math.max(...others.map(o => o.ev)))}` : ""}`}</button>` : "")}</div>` +
       `<div class="legs">${esc(c.label)}${c.model ? `<span class="rough" title="A higher line: fair value is modelled from the main line, not read off a book.">*</span>` : ""}${c.rough ? `<span class="rough" title="A leg sits on a Novig book wider than 4¢: rough fair value. Check sharp odds.">~</span>` : ""}</div>` +
       `<div class="num fair"><span class="lab">Fair</span>${c.stub && !c.fair ? "—" : am(c.fair)}</div>` +
       `<div class="num${LPAGE ? " both" : ""}">${priceCell(c) || `<span class="lab">${c.book === "dk" ? "DK" : c.book === "kalshi" ? "Kalshi" : "Novig"}</span>${c.stub ? (c.nox ? "—" : c.slip_x.toFixed(2) + "x") : nvLink(c, c.slip_x.toFixed(2) + "x")}${c.book === "kalshi" && c.novig_x ? `<small style="display:block;color:var(--muted)" title="What Novig's slip pays for the same legs">NV ${c.novig_x.toFixed(2)}x</small>` : ""}`}</div>` +
