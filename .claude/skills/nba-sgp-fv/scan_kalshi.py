@@ -1564,6 +1564,7 @@ def main():
     ap.add_argument("--stake", type=float, default=100.0, help="dollars each request for quote is sized at")
     ap.add_argument("--wait", type=float, default=3.0, help="seconds to wait for makers' answers")
     ap.add_argument("--polls", type=int, default=2, help="reads of the answers within --wait")
+    ap.add_argument("--workers", type=int, default=4, help="slips asked at once on a pass (1: one at a time, as before 11-27)")
     ap.add_argument("--before", type=float, default=None, metavar="MS", help="only games starting before this time (epoch ms)")
     ap.add_argument("--unit", type=float, default=200.0, help="dollars in one unit on the Kalshi boards (Max, 11-24: 1u = $200; $100 from 11-16)")
     ap.add_argument("--kelly", type=float, default=0.25)
@@ -1631,22 +1632,40 @@ def main():
               f"{sum(1 for c in cands if c['rough'])} slips with a leg on a book wider than {a.max_spread * 100:g}c")
         return
     rows, refused, why_refused = [], 0, ""
-    for c in cands:
+    # --workers slips in flight at once (Max, 11-27: Kalshi is taking a long time). A slip is about
+    # 5 seconds, 3 of them waiting on the makers, so one at a time the four NBA boards were well
+    # over an hour. The same number of asks, sooner: nothing here raises what a pass asks for.
+    # Novig's second opinion stays one quote a second (its keyless limit), under a lock.
+    import concurrent.futures
+    import threading
+    nv_lock, nv_last = threading.Lock(), [0.0]
+
+    def one(c):
         try:
             yes, why = ask(c, a)
         except Refused as e:
-            refused, why_refused, yes, why = refused + 1, str(e), None, "Kalshi refused the key"
-            if not rows and refused >= REFUSED_AFTER:
-                # Its own line on stderr: server.js shows the last one as the board's error.
-                raise SystemExit(f"Kalshi is refusing this key's requests: {why_refused}{refused_fix(why_refused)}")
+            return c, None, "Kalshi refused the key", str(e)
         if yes:
             finish(c, yes, a.unit, a.kelly)
-            novig_price(c)
-            rows.append(c)
-            emit(dict(c, type="row"))
-        else:
-            emit({"type": "miss", "key": c["key"], "player": c["player"], "label": c["label"], "why": why})
-        time.sleep(PACE_S)
+            with nv_lock:
+                time.sleep(max(0.0, nv_last[0] + 1.05 - time.time()))
+                novig_price(c)
+                nv_last[0] = time.time()
+        time.sleep(PACE_S / max(1, a.workers))
+        return c, yes, why, None
+    with concurrent.futures.ThreadPoolExecutor(max(1, a.workers)) as pool:
+        for c, yes, why, ref in pool.map(one, cands):
+            if ref:
+                refused, why_refused = refused + 1, ref
+                if not rows and refused >= REFUSED_AFTER:
+                    pool.shutdown(wait=False, cancel_futures=True)
+                    # Its own line on stderr: server.js shows the last one as the board's error.
+                    raise SystemExit(f"Kalshi is refusing this key's requests: {why_refused}{refused_fix(why_refused)}")
+            if yes:
+                rows.append(c)
+                emit(dict(c, type="row"))
+            else:
+                emit({"type": "miss", "key": c["key"], "player": c["player"], "label": c["label"], "why": why})
     emit({"type": "done", "quoted": len(cands), "priced": len(rows), "seconds": time.time() - t0, "at": time.time()})
     if not a.json:
         rows.sort(key=lambda c: -c["ev"])
