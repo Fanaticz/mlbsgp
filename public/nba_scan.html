@@ -427,6 +427,7 @@ setInterval(kposLoad, 60 * 1000);
 // One press stakes the row's QK $ (quarter Kelly at $200 a unit) unless a stake is typed (Max, 11-18; it was a flat $25).
 // No cap on one bet (Max, 11-24); the server refuses a stake over KALSHI_BET_MAX only if that is set.
 const KMSG = new Map();
+const KSTAKE = new Map();   // a stake typed in a Kalshi row's box, by row, until it is bet
 // Less what is already on the slip (Max, 11-25): the larger of what Kalshi says is held (dollars in) and this
 // device's own note of it, so a bet Kalshi's list hasn't caught up with is not placed twice. 0 once the QK $ is on.
 const kbetFull = c => Math.max(1, Math.round(c.qk * UNIT) || 1);
@@ -447,7 +448,10 @@ let KBETTING = false;
 async function kalshiBet(b) {
   const id = b.dataset.kbet, c = S && S.rows.find(r => rk(r) === id), f = b.closest(".row") && b.closest(".row").querySelector(".det");
   if (!c || KBETTING) return;
-  const typed = f ? parseFloat(f.querySelector(".stake").value) : NaN;
+  const typed = (f ? parseFloat(f.querySelector(".stake").value) : NaN) || parseFloat(KSTAKE.get(id));
+  // the button beside the box bets what is typed in it, never the QK $ on an empty box
+  if (b.dataset.need && !(typed > 0)) { if (f) f.querySelector(".stake").focus(); return; }
+  KSTAKE.delete(id);
   const stake = typed > 0 ? typed : kbetStake(c);
   if (!(stake > 0)) { KMSG.set(id, "The QK $ is already on this slip or this player. To add more, open the row and type a stake."); render(); return; }
   // The typed stake is this bet's: empty the box so the "I bet this" form doesn't save it a second time.
@@ -733,12 +737,19 @@ function detail(c) {
       c.games ? `${c.games} games${c.kind === "mate" ? " together" : ""}` : c.role ? "league-wide r for his position and ice time" : "position average r") : null,
     `books ${c.legs.map(L => L.width == null ? "none" : (100 * L.width).toFixed(1)).join(" / ")}¢`,
     c.book === "dk" ? `DraftKings’ parlay price; its two legs multiplied would pay ${c.legs_x.toFixed(2)}x` :
-    c.book === "kalshi" ? `Kalshi’s best answer: Yes at ${(c.quote * 100).toFixed(1)}¢ a contract (${c.raw_x.toFixed(2)}x) before its fee` + (c.novig_x ? ` · Novig pays ${c.novig_x.toFixed(2)}x for the same slip (${c.novig_ev >= 0 ? "+" : ""}${(100 * c.novig_ev).toFixed(1)}%)` : ` · Novig has no price for this slip`) : `quote ${c.raw_x.toFixed(2)}x before fee`,
+    c.book === "kalshi" ? `Kalshi’s best answer: Yes at ${(c.quote * 100).toFixed(1)}¢ a contract (${c.raw_x.toFixed(2)}x) before its fee` + (c.novig_x ? ` · Novig pays ${c.novig_x.toFixed(2)}x for the same slip (${c.novig_ev >= 0 ? "+" : ""}${(100 * c.novig_ev).toFixed(1)}%)` : c.ev > 0 ? ` · Novig has no price for this slip` : ` · Novig not asked (the slip is not above fair): press ↻ to ask`) : `quote ${c.raw_x.toFixed(2)}x before fee`,
     c.qk > 0 ? `${c.qk.toFixed(2)}u` : null,
     c.forced ? "threes alone clear the points line" : null,
   ].filter(Boolean).join(" · ") + (kalTech(c) ? `<div>${kalTech(c)}</div>` : "");
   const mine = liveBets().filter(b => b.key === c.key);
-  const form = `<div class="betform">` +
+  // A Kalshi row's box places the bet (Max, 11-27: I type $100 and Save and it just saves it, doesn't bet it).
+  // It was the "I bet this" note of the Novig rows, which buys nothing; what is held on Kalshi is read from
+  // the account, so a Kalshi row needs no note. The typed stake is kept in KSTAKE so a redraw doesn't empty the box.
+  const form = c.book === "kalshi" && !c.ghost ? `<div class="betform">` +
+    mine.map(b => `<span class="mine">${usd(b.stake)}${b.x ? ` at ${b.x.toFixed(2)}x` : ""}<button type="button" class="x" data-del="${b.id}" title="Remove this note. It does not sell anything on Kalshi.">×</button></span>`).join("") +
+    `<span>Stake: $</span><input type="number" class="stake" data-ks="${esc(rk(c))}" min="0" step="1" placeholder="stake" value="${esc(KSTAKE.get(rk(c)) || "")}" />` +
+    `<button type="button" class="kbet" data-need="1" data-kbet="${esc(rk(c))}" title="Buys this combo on Kalshi now for the stake typed. Not placed if the price is more than 1% worse than shown or the slip is no longer above fair.">Bet on Kalshi at ${c.slip_x.toFixed(2)}x</button></div>` :
+    `<div class="betform">` +
     mine.map(b => `<span class="mine">${usd(b.stake)}${b.x ? ` at ${b.x.toFixed(2)}x` : ""}<button type="button" class="x" data-del="${b.id}" title="Remove this bet">×</button></span>`).join("") +
     `<span>${mine.length ? "Add" : "I bet this"}: $</span><input type="number" class="stake" min="0" step="1" placeholder="stake" />` +
     `<span>at</span><input type="number" class="px" min="1" step="0.01" value="${(c.best === "kalshi" ? c.kalshi_x : c.slip_x).toFixed(2)}" /><span>x</span>` +
@@ -950,7 +961,9 @@ function render() {
     });
     rowsEl.querySelectorAll("[data-del]").forEach(b => b.onclick = () => bets({ del: b.dataset.del }));
     rowsEl.querySelectorAll("[data-kbet]").forEach(b => b.onclick = () => kalshiBet(b));
-    rowsEl.querySelectorAll(".betform input").forEach(i => { i.onkeydown = e => { if (e.key === "Enter") i.closest(".betform").querySelector("[data-add]").click(); }; 
+    rowsEl.querySelectorAll("[data-ks]").forEach(i => i.oninput = () => { i.value ? KSTAKE.set(i.dataset.ks, i.value) : KSTAKE.delete(i.dataset.ks); });
+    rowsEl.querySelectorAll(".betform input").forEach(i => { i.onkeydown = e => { if (e.key === "Enter") i.closest(".betform").querySelector("[data-add], [data-kbet]").click(); };
+      if (i.dataset.ks) { i.onblur = () => setTimeout(() => { if (!i.closest(".betform").contains(document.activeElement)) render(); }, 150); return; }   // a Kalshi stake is bet with its button, never saved on leaving the box
       // Leaving the form with a stake typed saves it: the iPhone keyboard's
       // check mark only closes the keyboard, it sends no Enter. (Moving
       // between the form's own boxes, or pressing Save, is not leaving.)
