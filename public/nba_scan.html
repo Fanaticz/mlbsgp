@@ -175,8 +175,8 @@
     <button data-league="soccer">Soccer</button>
     <button data-league="cfb" title="College football: slips across one game's lines (moneyline, spread, total, team total)">CFB</button>
     <button data-league="cbb" title="College basketball: a game's spread with its total">CBB</button>
-    <button data-league="kalshinbaall" hidden title="NBA: the four NBA boards in one list, best first. Fetch prices all four, one after another. The dropdown below shows one board alone.">Kalshi NBA</button>
-    <button data-league="kalshinflall" hidden title="NFL: the three NFL boards in one list, best first. Fetch prices all three, one after another. The dropdown below shows one board alone.">Kalshi NFL</button>
+    <button data-league="kalshinbaall" hidden title="NBA: the four NBA boards in one list, best first. Fetch prices all four in one pass, player by player. The dropdown below shows one board alone.">Kalshi NBA</button>
+    <button data-league="kalshinflall" hidden title="NFL: the three NFL boards in one list, best first. Fetch prices all three in one pass, player by player. The dropdown below shows one board alone.">Kalshi NFL</button>
     <button data-league="kalshinba3" hidden title="NBA: one player's Points + Threes, asked as Kalshi combos. Fetch only: Auto-scan leaves it out.">Kalshi Pts + 3s</button>
     <button data-league="kalshinba" hidden title="NBA: a player's other pairs and each team's top two scorers, asked as Kalshi combos. Fetch only: Auto-scan leaves it out.">Kalshi NBA Pairs</button>
     <button data-league="kalshinbatri" hidden title="NBA: three legs on one high scorer (points with two of rebounds, assists and threes), asked as Kalshi combos. Fetch only: Auto-scan leaves it out.">Kalshi NBA 3-Leg</button>
@@ -836,7 +836,7 @@ function render() {
       Math.max(b.finished, b.stopped) ? ago(nowMs - Math.max(b.finished, b.stopped)) : "";
     st.classList.remove("err");
     st.innerHTML = `${n} on ${GROUP() ? `the ${GROUP().n} ${GROUP().sport} boards` : "all boards"}${S.out ? ` · ${S.out} hidden, player out` : ""}<div>` + S.boards.filter(b => at(b)).map(b => `${BOARD[b.league]} <b>${at(b)}</b>`).join(" · ") + `</div>` +
-      (GROUP() && S.busy ? `<div>A ${BOARD[S.busy] || S.busy} pass is running. Wait for it, or stop it and fetch these.</div>` : "") +
+      (GROUP() && S.busy ? `<div>A ${BOARD[S.busy] || (KGROUPS[S.busy] ? `Kalshi ${KGROUPS[S.busy].sport}` : S.busy)} pass is running. Wait for it, or stop it and fetch these.</div>` : "") +
       (GROUP() && !S.scanning && !S.busy && !S.boards.some(b => at(b)) ? `<div>Press Fetch to price all ${GROUP().n} boards.</div>` : "");
   } else if (S.scanning) {
     st.innerHTML = S.total ? `Scanning ${S.done} / ${S.total} combos on ${S.players} players · ${n}` : "Reading Novig’s lines…";
@@ -844,14 +844,14 @@ function render() {
     st.textContent = idle ? S.error : `Scan failed: ${S.error}`;
   } else if (S.stopped) {
     st.innerHTML = `Stopped at ${S.done} / ${S.total} combos (${ago(S.now + (Date.now() - GOT) - S.stopped)}); rows it didn’t reach keep their earlier prices · ${n}` +
-      (S.busy ? ` · a ${BOARD[S.busy] || S.busy} pass is running` : "");
+      (S.busy ? ` · a ${BOARD[S.busy] || (KGROUPS[S.busy] ? `Kalshi ${KGROUPS[S.busy].sport}` : S.busy)} pass is running` : "");
   } else if (S.finished) {
     const since = S.now + (Date.now() - GOT) - S.finished;
     st.innerHTML = `Saved from ${clock(Date.now() - since)} (${ago(since)}) · ${S.total} combos · ${n}` +
       (started ? ` · ${started} hidden, game started` : "") + (S.out ? ` · ${S.out} hidden, player out` : "") +
-      (S.busy ? ` · a ${BOARD[S.busy] || S.busy} pass is running` : since > 20 * 60000 ? " · prices are old: Fetch before betting" : "");
+      (S.busy ? ` · a ${BOARD[S.busy] || (KGROUPS[S.busy] ? `Kalshi ${KGROUPS[S.busy].sport}` : S.busy)} pass is running` : since > 20 * 60000 ? " · prices are old: Fetch before betting" : "");
   } else {
-    st.textContent = S.busy ? `A ${BOARD[S.busy] || S.busy} pass is running. Wait for it, or stop it and fetch this board.` : "Press Fetch to scan.";
+    st.textContent = S.busy ? `A ${BOARD[S.busy] || (KGROUPS[S.busy] ? `Kalshi ${KGROUPS[S.busy].sport}` : S.busy)} pass is running. Wait for it, or stop it and fetch this board.` : "Press Fetch to scan.";
   }
   // Slips the pass asked and got no price for, by the reason given: a board of misses is not an empty slate.
   const whys = !ALL() && S.why ? Object.entries(S.why).sort((a, b) => b[1] - a[1]) : [];
@@ -890,7 +890,7 @@ function render() {
     const best = all[0];
     rowsEl.innerHTML = `<div class="empty">${
       q ? "No combo for that name." :
-      GROUP() ? (S.scanning ? `Pricing the ${GROUP().n} ${GROUP().sport} boards, one after another. Plays appear as Kalshi answers.` :
+      GROUP() ? (S.scanning ? `Pricing the ${GROUP().n} ${GROUP().sport} boards in one pass, player by player. Plays appear as Kalshi answers.` :
         // boards with nothing to price say why, in place of "press Fetch" on a board just fetched
         S.boards.some(b => b.error && b.error.startsWith("Nothing listed yet")) ? esc(S.boards.find(b => b.error && b.error.startsWith("Nothing listed yet")).error) :
         `No play at ${MINEV > 0 ? "+" : ""}${MINEV}% or better on the ${GROUP().n} ${GROUP().sport} boards right now. Press <b>Fetch</b> to price all ${GROUP().n}.`) :
@@ -910,10 +910,10 @@ function render() {
   } else {
     const one = (c, sub, others, group) =>
       `<div class="row${sub ? " sub" : ""}${c.ghost || isOld(c) ? " old" : ""}${kbetOn(c) > 0 ? " has" : ""}" data-k="${esc(rk(c))}">` +
-      `<div class="who">${sub ? (KNBA() && c.board ? `<span class="tag">${BOARD[c.board]}</span>` : "") : `${c.board ? `<span class="tag">${BOARD[c.board]}</span>` : ""}<b>${esc(c.player)}</b>${c.gtd ? `<span class="tag q" title="${esc(c.gtd)}">GTD</span>` : ""}<small>${esc(c.team)}${c.starts ? " · " + tip(c.starts) : ""}</small>` +
+      `<div class="who">${sub ? "" : `${c.board ? `<span class="tag">${BOARD[c.board]}</span>` : ""}<b>${esc(c.player)}</b>${c.gtd ? `<span class="tag q" title="${esc(c.gtd)}">GTD</span>` : ""}<small>${esc(c.team)}${c.starts ? " · " + tip(c.starts) : ""}</small>` +
         (others && others.length ? `<button type="button" class="more" data-g="${esc(cardOf(c))}">${GOPEN.has(cardOf(c)) ? "hide" :
           `+${others.length} more${Math.max(...others.map(o => o.ev)) > c.ev ? `, to ${pct(Math.max(...others.map(o => o.ev)))}` : ""}`}</button>` : "")}</div>` +
-      `<div class="legs">${esc(c.label)}${c.model ? `<span class="rough" title="A higher line: fair value is modelled from the main line, not read off a book.">*</span>` : ""}${c.rough ? `<span class="rough" title="A leg sits on a Novig book wider than 4¢: rough fair value. Check sharp odds.">~</span>` : ""}</div>` +
+      `<div class="legs">${sub && KNBA() && c.board ? `<span class="tag" style="margin-right:6px">${BOARD[c.board]}</span>` : ""}${esc(c.label)}${c.model ? `<span class="rough" title="A higher line: fair value is modelled from the main line, not read off a book.">*</span>` : ""}${c.rough ? `<span class="rough" title="A leg sits on a Novig book wider than 4¢: rough fair value. Check sharp odds.">~</span>` : ""}</div>` +
       `<div class="num fair"><span class="lab">Fair</span>${c.stub && !c.fair ? "—" : am(c.fair)}</div>` +
       `<div class="num${LPAGE ? " both" : ""}">${priceCell(c) || `<span class="lab">${c.book === "dk" ? "DK" : c.book === "kalshi" ? "Kalshi" : "Novig"}</span>${c.stub ? (c.nox ? "—" : c.slip_x.toFixed(2) + "x") : nvLink(c, c.slip_x.toFixed(2) + "x")}${c.book === "kalshi" && c.novig_x ? `<small style="display:block;color:var(--muted)" title="What Novig's slip pays for the same legs">NV ${c.novig_x.toFixed(2)}x</small>` : ""}`}</div>` +
       `<div class="num ev ${c.ev >= 0 ? "pos" : "neg"}">${c.stub && (c.nox || !c.fair) ? "" : pct(c.ev)}${c.best ? `<small class="evbk" title="The EV, QK and QK $ on this row are at ${c.best === "kalshi" ? "Kalshi" : "Novig"}’s price, the better of the two">${c.best === "kalshi" ? "Kalshi" : "Novig"}</small>` : ""}</div>` +
@@ -968,7 +968,7 @@ function render() {
     });
   }
   document.getElementById("foot").innerHTML = GROUP() ?
-    `Kalshi ${GROUP().sport}: the ${GROUP().n} ${GROUP().sport} boards in one list, slips at Min EV or better, best first, for games that haven’t started. <b>Fetch</b> prices all ${GROUP().n}, one after another on the one Kalshi connection: ${GROUP().boards.map(b => BOARD[b]).join(", then ")}; the line at the top says which is running and which are next, and <b>Stop</b> ends the one running and drops the rest. Fetch empties the list first: it then holds only what this Fetch has priced, filling in board by board as Kalshi answers (a slip you have bet keeps a dimmed row until its board reaches it). A run you stop leaves the boards it didn’t reach empty. All ${GROUP().n} is as many new combos as fetching each board in turn, against Kalshi’s 5,000 a week${LEAGUE === "kalshinflall" ? " (up to 200 a board, 600 a Fetch, next day of games first)" : ""}. ` +
+    `Kalshi ${GROUP().sport}: the ${GROUP().n} ${GROUP().sport} boards in one list, slips at Min EV or better, best first, for games that haven’t started. <b>Fetch</b> prices all ${GROUP().n} in one pass (${GROUP().boards.map(b => BOARD[b]).join(", ")}), player by player: every slip of a player on every board is asked together, so his prices are seconds apart and his card shows which is best. The line at the top says how far each board is, and <b>Stop</b> ends the pass. Fetch empties the list first: it then holds only what this Fetch has priced, filling in board by board as Kalshi answers (a slip you have bet keeps a dimmed row until its board reaches it). A run you stop leaves the boards it didn’t reach empty. All ${GROUP().n} is as many new combos as fetching each board in turn, against Kalshi’s 5,000 a week${LEAGUE === "kalshinflall" ? " (up to 200 a board, 600 a Fetch, next day of games first)" : ""}. ` +
     `Each row carries its board; pick that board in the dropdown beside the name filter for how its fair value is made, for the slips under Min EV, and to fetch that board alone. A 3-Leg fair value is rougher than a two-leg one, and ${LEAGUE === "kalshinflall" ? "a slip across two players or with a game line" : "an NBA Lines row"} uses a league-wide correlation, not the player’s own. A dimmed row is over an hour old, or its board is being priced and hasn’t reached it yet. Press ↻ on a row to price it again now; a row’s refresh and Bet ask Kalshi again at the fair value from the last Fetch.` :
     ALL() ?
     `All: every board’s slips at Min EV or better, best first, for games that haven’t started. Each row carries its board; open that board’s tab for how its fair value is made and for the rest of its slips. A dimmed row is over an hour old, or its board is being priced and hasn’t reached it yet; a pass prices its board’s best rows from last time first, so those clear within minutes. Press ↻ on a row to price it again now. ` +
@@ -1045,7 +1045,7 @@ async function poll() {
     if (S.scanning) NOW = false;
     // While a pass runs the button stops it: this board's own, or another
     // board's to fetch this one in its place.
-    document.getElementById("now").textContent = S.scanning ? "Stop" : S.busy ? `Stop ${BOARD[S.busy] || S.busy} and fetch` : "Fetch";
+    document.getElementById("now").textContent = S.scanning ? "Stop" : S.busy ? `Stop ${BOARD[S.busy] || (KGROUPS[S.busy] ? `Kalshi ${KGROUPS[S.busy].sport}` : S.busy)} and fetch` : "Fetch";
     render();
   } catch (e) {
     const st = document.getElementById("status");

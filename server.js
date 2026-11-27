@@ -2710,6 +2710,67 @@ function startNovigScan(league, wide, events, auto, before, full, kalshi) {
   if (onKalshi) NV_KRUN = run; else NV_RUN = run;
 }
 
+// A Kalshi tab's Fetch (Max, 11-27: it looks like we do 3s first, then other plays; do everything at
+// the same time): one pass over every board of the group (scan_kalshi.py --league nbaall / nflall),
+// asked player by player, so a player's slips on all its boards are priced seconds apart. Each event
+// names its board and is filed under that board, which is read and bet on as before. It holds the one
+// Kalshi slot; run.keys are the boards it is pricing.
+function startKalshiGroup(name, wide) {
+  if (NV_KRUN) return;
+  const leagues = NV_KGROUPS[name], keyOf = l => `${l}:${wide ? 1 : 0}`;
+  const Bs = new Map(leagues.map(l => [l, nvBoard(keyOf(l))]));
+  let proc;
+  try {
+    proc = require('child_process').spawn(PYTHON, [NV_KALSHI_PY, '--json', '--league', name.slice(6)], { stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (e) {
+    for (const B of Bs.values()) B.error = 'scan could not start: ' + e.message;
+    return;
+  }
+  let live = true, buf = '', err = '', ok = false;
+  for (const B of Bs.values()) {
+    Object.assign(B, { started: Date.now(), total: 0, done: 0, error: null, stopped: 0, seen: new Set(), events: [], before: 0, why: {}, kalshi: false, knote: null });
+    B.rows.clear();
+  }
+  const timer = setTimeout(() => { if (NV_KRUN && NV_KRUN.proc === proc) proc.kill(); }, NV_SCAN_MAX_MS);
+  const onEvent = e => {
+    if (!live) return;
+    const B = Bs.get(e.board);
+    if (!B) { if (e.type === 'done') ok = true; return; }
+    if (e.type === 'start') { B.total = e.total; B.players = e.players; B.data = e.data; B.books = null; }
+    else if (e.type === 'row') {
+      // filed without its board: a board's own rows carry none (the page keys a row by it only on a tab of several boards)
+      const row = Object.assign({}, e); delete row.board;
+      B.done++; B.seen.add(row.key); B.rows.set(row.key, row); nvAlert(e.board, wide, row);
+    }
+    else if (e.type === 'miss') { B.done++; B.rows.delete(e.key); const w = String(e.why || 'no reason given').slice(0, 120); B.why[w] = (B.why[w] || 0) + 1; }
+    else if (e.type === 'done') { B.seconds = e.seconds; }
+  };
+  proc.stdout.on('data', chunk => {
+    buf += chunk;
+    for (let i; (i = buf.indexOf('\n')) >= 0; buf = buf.slice(i + 1)) {
+      try { onEvent(JSON.parse(buf.slice(0, i))); } catch (_) { /* not an event line */ }
+    }
+  });
+  proc.stderr.on('data', c => { err = (err + c).slice(-4000); });
+  const end = (why, stopped) => {
+    if (!live) return;
+    live = false;
+    clearTimeout(timer);
+    NV_KRUN = null;
+    if (stopped) NV_KQUEUE = [];
+    for (const B of Bs.values()) {
+      if (stopped && !ok) B.stopped = Date.now();   // the rows it reached are kept
+      else if (ok) B.finished = Date.now();
+      else B.error = (why || err.trim().split('\n').pop() || 'scan stopped early').slice(0, 500);
+    }
+    nvSaveBoards();
+    nvKNext();
+  };
+  proc.on('error', e => end('scan could not start: ' + e.message));
+  proc.on('close', () => end(''));
+  NV_KRUN = { proc, key: `${name}:${wide ? 1 : 0}`, keys: leagues.map(keyOf), auto: false, stop: () => { end('', true); proc.kill(); } };
+}
+
 // Players who are out: ESPN's injury report for the NFL and the NBA, read
 // again every ten minutes while the boards are being looked at or auto-scan
 // is on. Novig keeps a ruled-out player's props open for hours (11-14: T.J.
@@ -3007,7 +3068,7 @@ app.get('/api/nba/novig-scan', (req, res) => {
     if (group && req.query.now === '1' && !NV_KRUN) {
       for (const league of group) nvBoard(`${league}:${wide ? 1 : 0}`).rows.clear();
       nvSaveBoards();
-      NV_KQUEUE = group.map(league => ({ league, wide })); nvKNext();
+      startKalshiGroup(req.query.league, wide);   // one pass over all of them, player by player (it was one board after another)
     }
     const floor = Number.isFinite(parseFloat(req.query.min)) ? parseFloat(req.query.min) / 100 : 0;
     const boards = [], rows = [];
@@ -3024,7 +3085,7 @@ app.get('/api/nba/novig-scan', (req, res) => {
         if (r.ev >= floor) rows.push(Object.assign({}, nvFlag(league, r), { board: league }));
       }
       const R = nvKalshi(league) ? NV_KRUN : NV_RUN;
-      boards.push({ league, scanning: !!R && R.key === k, started: B.started || 0, finished: B.finished || 0,
+      boards.push({ league, scanning: !!R && (R.key === k || (R.keys || []).includes(k)), started: B.started || 0, finished: B.finished || 0,
                     stopped: B.stopped || 0, total: B.total || 0, done: B.done || 0, error: B.error || null, priced,
                     queued: !!group && NV_KQUEUE.some(q => q.league === league && q.wide === wide) });
     }
@@ -3042,7 +3103,7 @@ app.get('/api/nba/novig-scan', (req, res) => {
   const other = events.join() !== (B.events || []).join();   // other games than the last pass: no minute's wait
   const ladder = NV_LADDERS.includes(league);
   if (req.query.now === '1' && !RUN && (B.stopped || other || now - Math.max(B.finished, B.started) > NV_SCAN_NOW_MS)) startNovigScan(league, wide, events, false, 0, 0, ladder && kalshiOk);
-  const mine = !!RUN && RUN.key === key;
+  const mine = !!RUN && (RUN.key === key || (RUN.keys || []).includes(key));
   const shown = [...B.rows.values()].filter(r => !nvLong(league, r) && !nvOut(league, r)).map(r => nvFlag(league, r));
   res.json({
     now, league, wide, scanning: mine, busy: RUN && !mine ? busyName() : null,

@@ -92,7 +92,9 @@ COLLECTIONS = ("KXMVECROSSCATEGORY-R", "KXMVESPORTSMULTIGAMEEXTENDED-R")
 TIP_S = 3 * 3600      # a market's occurrence_datetime is about this long after the game starts
 FEE = 0.07            # taker fee = FEE x price x (1 - price) a contract
 PACE_S = 1.0          # between two slips
-REFUSED_AFTER = 3     # this many 401 / 403 answers with no price at all: stop
+# A tab's boards priced in one pass (--league nbaall, nflall), in the order server.js lists them.
+GROUPS = {"nbaall": ("nba3", "nba", "nbatri", "nbaline"), "nflall": ("nfl", "nflline", "nfltri")}
+REFUSED_AFTER = 3    # this many 401 / 403 answers with no price at all: stop
 
 
 SEEN = {}             # what the NBA props boards read, for the reason an empty pass gives
@@ -1536,7 +1538,7 @@ def positions():
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--league", default="nba", choices=("nba", "nba3", "nbatri", "nbaline", "nfl", "nflline", "nfltri", "cbb", "cfb"))
+    ap.add_argument("--league", default="nba", choices=("nba", "nba3", "nbatri", "nbaline", "nfl", "nflline", "nfltri", "cbb", "cfb") + tuple(GROUPS))
     ap.add_argument("--json", action="store_true", help="stream events as JSON lines (server.js)")
     ap.add_argument("--dry", action="store_true", help="list the slips, ask Kalshi for no price (no key needed)")
     ap.add_argument("--requote", action="store_true", help="re-ask the one slip given as JSON on stdin; print it as JSON")
@@ -1572,10 +1574,24 @@ def main():
     ap.add_argument("--first", default=None, help="accepted for server.js; not used")
     ap.add_argument("--events", nargs="+", default=None, help="accepted for server.js; not used")
     a = ap.parse_args()
-    if a.per is None:
-        a.per = 3 if a.league == "nfltri" else 2
-    if a.max is None:
-        a.max = {"nba": 300, "nba3": 400}.get(a.league, 200)
+    raw_per, raw_max = a.per, a.max
+
+    def board_args(league):
+        """The options as one board reads them: its own --per and --max where none was given."""
+        import copy
+        b = copy.copy(a)
+        b.league = league
+        b.per = raw_per if raw_per is not None else 3 if league == "nfltri" else 2
+        b.max = raw_max if raw_max is not None else {"nba": 300, "nba3": 400}.get(league, 200)
+        return b
+
+    def build(b):
+        lg = b.league
+        return (nfl_candidates(b) if lg == "nfl" else nfltri_candidates(b) if lg == "nfltri" else nflline_candidates(b) if lg == "nflline"
+                else cbb_candidates(b) if lg == "cbb" else cfb_candidates(b) if lg == "cfb" else nbaline_candidates(b) if lg == "nbaline" else candidates(b))
+    group = GROUPS.get(a.league)
+    if not group:
+        a.per, a.max = board_args(a.league).per, board_args(a.league).max
     t0 = time.time()
 
     def emit(e):
@@ -1608,9 +1624,19 @@ def main():
         return
     if not a.dry:
         _signer()   # no key, or one that can't be read: say so before anything is fetched
-    cands, d = nfl_candidates(a) if a.league == "nfl" else nfltri_candidates(a) if a.league == "nfltri" else nflline_candidates(a) if a.league == "nflline" else cbb_candidates(a) if a.league == "cbb" else cfb_candidates(a) if a.league == "cfb" else nbaline_candidates(a) if a.league == "nbaline" else candidates(a)
+    # A group (--league nbaall, nflall; Max, 11-27: do everything at the same time): every board of the tab
+    # in one pass, each board's slips cut at its own --max as on a pass of its own, then all of them asked
+    # player by player. Each event carries its board ("kalshinba3", ...) for server.js to file it under.
+    cands, d, boards = [], None, []
+    for lg in group or (a.league,):
+        cs, d = build(board_args(lg) if group else a)
+        if group:
+            for c in cs:
+                c["board"] = "kalshi" + lg
+            boards.append(("kalshi" + lg, cs))
+        cands += cs
     # Each row links to its game's page on Kalshi, where the combo is built (no link fills the slip in).
-    game = {"nba": "kxnbagame", "nba3": "kxnbagame", "nbatri": "kxnbagame", "nbaline": "kxnbagame", "nfl": "kxnflgame", "nflline": "kxnflgame", "nfltri": "kxnflgame", "cbb": "kxncaambgame", "cfb": "kxncaafgame"}[a.league]
+    game = "kxncaambgame" if a.league == "cbb" else "kxncaafgame" if a.league == "cfb" else "kxnflgame" if a.league.startswith("nfl") else "kxnbagame"
     if a.league.startswith(("nba", "nfl")):
         # One player at once (Max, 11-27: so I know which of his SGPs is best): his slips are asked together,
         # players in the order of their first slip, so his prices are seconds apart, not a pass apart.
@@ -1627,8 +1653,9 @@ def main():
                              "Fetch again once it lists the next games' props.")
         raise SystemExit(f"No slip to ask: Kalshi lists open props on {SEEN['kalshi']} players in games that have not started "
                          f"({SEEN['known']} of them in the data), and Novig lists {SEEN['novig']} NBA prop markets.")
-    emit({"type": "start", "total": len(cands), "players": len({c["id"] for c in cands}), "league": "kalshi" + a.league,
-          "data": d["generated_at"][:10], "at": t0})
+    for board, cs in boards or [(None, cands)]:
+        emit(dict({"type": "start", "total": len(cs), "players": len({c["id"] for c in cs}), "league": board or "kalshi" + a.league,
+                   "data": d["generated_at"][:10], "at": t0}, **({"board": board} if board else {})))
     if a.dry:
         for c in cands:
             print(f"{c['player'][:30]:30s} {c['label'][:36]:36s} r {c['r']:+.2f} fair {sgp.american(c['j']):+5d}  legs "
@@ -1672,7 +1699,10 @@ def main():
                 rows.append(c)
                 emit(dict(c, type="row"))
             else:
-                emit({"type": "miss", "key": c["key"], "player": c["player"], "label": c["label"], "why": why})
+                emit(dict({"type": "miss", "key": c["key"], "player": c["player"], "label": c["label"], "why": why},
+                          **({"board": c["board"]} if c.get("board") else {})))
+    for board, cs in boards:
+        emit({"type": "done", "board": board, "quoted": len(cs), "seconds": time.time() - t0, "at": time.time()})
     emit({"type": "done", "quoted": len(cands), "priced": len(rows), "seconds": time.time() - t0, "at": time.time()})
     if not a.json:
         rows.sort(key=lambda c: -c["ev"])
