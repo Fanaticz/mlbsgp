@@ -434,7 +434,8 @@ const kbetOn = c => Math.max(held(c).reduce((s, x) => s + (x.contracts > 0 ? x.c
 // A Kalshi NBA slip (Max, 11-27: don't put too much on that player): also less what is on the player's
 // other slips, on any of the four boards. His slips win and lose together, so one slip's QK $ is the
 // most the button puts on him; the first press takes the best slip, the rest offer what is left of theirs.
-const KNBA = () => String(LEAGUE).startsWith("kalshinba");
+// The Kalshi NFL boards the same (Max, 11-27: for NFL, group by players too).
+const KNBA = () => String(LEAGUE).startsWith("kalshinba") || String(LEAGUE).startsWith("kalshinfl");
 const kbetOther = c => { if (!KNBA() || !S || c.id == null) return 0;
   const ids = String(c.id).split("+");
   return S.rows.concat(GHOSTS).filter(o => o !== c && rk(o) !== rk(c) && o.book === "kalshi" && o.id != null && String(o.id).split("+").some(i => ids.includes(i)))

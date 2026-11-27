@@ -1611,7 +1611,7 @@ def main():
     cands, d = nfl_candidates(a) if a.league == "nfl" else nfltri_candidates(a) if a.league == "nfltri" else nflline_candidates(a) if a.league == "nflline" else cbb_candidates(a) if a.league == "cbb" else cfb_candidates(a) if a.league == "cfb" else nbaline_candidates(a) if a.league == "nbaline" else candidates(a)
     # Each row links to its game's page on Kalshi, where the combo is built (no link fills the slip in).
     game = {"nba": "kxnbagame", "nba3": "kxnbagame", "nbatri": "kxnbagame", "nbaline": "kxnbagame", "nfl": "kxnflgame", "nflline": "kxnflgame", "nfltri": "kxnflgame", "cbb": "kxncaambgame", "cfb": "kxncaafgame"}[a.league]
-    if a.league.startswith("nba"):
+    if a.league.startswith(("nba", "nfl")):
         # One player at once (Max, 11-27: so I know which of his SGPs is best): his slips are asked together,
         # players in the order of their first slip, so his prices are seconds apart, not a pass apart.
         first = {}
