@@ -2821,8 +2821,55 @@ async function nvOutRefresh() {
       }
       NV_OUT[lg].names = names; NV_OUT[lg].last = last; NV_OUT[lg].maybe = maybe;
     } catch (e) { console.warn(`Novig scan: could not read ESPN's ${lg.toUpperCase()} injury report: ${e.message}`); }
+    if (lg === 'nba') {
+      try { NV_OUT.nba.league = await nvNbaReport(); }
+      catch (e) { console.warn(`Novig scan: could not read the NBA's injury report: ${e.message}`); }
+    }
   }
   NV_OUT_BUSY = false;
+}
+// The NBA's own injury report (Max, 11-27: Dean Wade, downgraded to questionable at noon, headed the
+// board at +31% ninety minutes later with no tag; ESPN's report and Rotowire's page still had no line
+// on him). The league posts it as a PDF every half hour (ak-static.cms.nba.com/referee/injury/
+// Injury-Report_2026-11-27_02_30PM.pdf, Eastern time), and it is where the news accounts read a
+// downgrade from. Read beside ESPN's: Out or Doubtful hides a player, Questionable flags him.
+// Its text has no spaces ("Wade,DeanQuestionable", "Philadelphia76ersBrown,JaylenOut"), so players
+// are keyed by their names with the spaces out.
+const NV_NBA_TEAMS = ['AtlantaHawks', 'BostonCeltics', 'BrooklynNets', 'CharlotteHornets', 'ChicagoBulls', 'ClevelandCavaliers', 'DallasMavericks', 'DenverNuggets',
+  'DetroitPistons', 'GoldenStateWarriors', 'HoustonRockets', 'IndianaPacers', 'LAClippers', 'LosAngelesClippers', 'LosAngelesLakers', 'MemphisGrizzlies', 'MiamiHeat',
+  'MilwaukeeBucks', 'MinnesotaTimberwolves', 'NewOrleansPelicans', 'NewYorkKnicks', 'OklahomaCityThunder', 'OrlandoMagic', 'Philadelphia76ers', 'PhoenixSuns',
+  'PortlandTrailBlazers', 'SacramentoKings', 'SanAntonioSpurs', 'TorontoRaptors', 'UtahJazz', 'WashingtonWizards'];
+const nvKeyX = n => nvName(n).replace(/ /g, '');
+// { out: Map(key -> status), maybe: Map(key -> note), stamp } from the report's text
+function nvNbaReportParse(text, stamp) {
+  const out = new Map(), maybe = new Map();
+  const teamRe = new RegExp('^.*?(?:' + NV_NBA_TEAMS.join('|') + ')');
+  for (const raw of String(text || '').split('\n')) {
+    const line = raw.trim().replace(teamRe, '');
+    const m = line.match(/^([A-Za-z'.\- ]+?),([A-Za-z'.\- ]+?)(Out|Questionable|Doubtful|Probable|Available)(.*)$/);
+    if (!m) continue;
+    const key = nvKeyX(m[2] + ' ' + m[1].replace(/(Jr\.?|Sr\.?|III|II|IV)$/, ''));
+    if (!key || out.has(key) || maybe.has(key)) continue;   // the first line on a player is his next game
+    const why = m[4].replace(/^Injury\/Illness-/, '').replace(/([a-z])([A-Z])/g, '$1 $2').trim();
+    if (m[3] === 'Out' || m[3] === 'Doubtful') out.set(key, m[3]);
+    else if (m[3] === 'Questionable') maybe.set(key, `Questionable${why ? ': ' + why : ''} (NBA injury report, ${stamp} ET)`);
+  }
+  return { out, maybe, stamp };
+}
+async function nvNbaReport() {
+  // the newest report: this half hour's, or the one before it, back three hours
+  for (let back = 0; back < 7; back++) {
+    const t = new Date(Math.floor(Date.now() / 1800000) * 1800000 - back * 1800000);
+    const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: true }).formatToParts(t).map(x => [x.type, x.value]));
+    const url = `https://ak-static.cms.nba.com/referee/injury/Injury-Report_${p.year}-${p.month}-${p.day}_${p.hour}_${p.minute}${p.dayPeriod.toUpperCase()}.pdf`;
+    const r = await fetch(url, { signal: AbortSignal.timeout(20000) });
+    if (!r.ok) continue;   // not posted yet (403 until it is)
+    const data = await require('pdf-parse')(Buffer.from(await r.arrayBuffer()));
+    const got = nvNbaReportParse(data.text, `${Number(p.hour)}:${p.minute} ${p.dayPeriod.toUpperCase()}`);
+    if (got.out.size + got.maybe.size === 0) throw new Error('no player line read in ' + url);
+    return got;
+  }
+  throw new Error('no report posted in the last three hours');
 }
 // Is this row's player (either one of a two-player slip, or a quarterback a
 // leg names) out?
@@ -2831,6 +2878,7 @@ async function nvOutRefresh() {
 const nvLong = (league, row) => (league === 'kalshinba' || league === 'kalshinba3' || league === 'kalshinbatri') && (row.legs || []).some(L => L.p < 0.30 - 1e-9);
 function nvOut(league, row) {
   const O = NV_OUT[NV_PY_LEAGUE(league)];
+  if (O && O.league && String(row.player || '').split(' + ').some(n => O.league.out.has(nvKeyX(n)))) return true;   // the NBA's own report
   if (!O || !O.names.size) return false;
   if (String(row.player || '').split(' + ').some(n => O.names.has(nvName(n)))) return true;
   const team = String(row.team || '').toUpperCase();
@@ -2844,8 +2892,8 @@ function nvOut(league, row) {
 // (gtd), for the page to flag: he may sit, and the price may know it.
 function nvFlag(league, row) {
   const O = NV_OUT[NV_PY_LEAGUE(league)];
-  if (!O || !O.maybe.size) return row;
-  const note = String(row.player || '').split(' + ').map(n => O.maybe.get(nvName(n))).find(Boolean);
+  if (!O || !(O.maybe.size || O.league)) return row;
+  const note = String(row.player || '').split(' + ').map(n => (O.league && O.league.maybe.get(nvKeyX(n))) || O.maybe.get(nvName(n))).find(Boolean);
   return note ? Object.assign({}, row, { gtd: note }) : row;
 }
 
