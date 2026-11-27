@@ -1411,37 +1411,50 @@ def place(c, a, stake, min_x, min_ev):
             break
     if not ticker:
         return None, f"the combo could not be created: {d.get('code') or d.get('message') or st}"
-    st, d = call("POST", "/communications/rfqs", {"market_ticker": ticker, "rest_remainder": False, "target_cost_dollars": f"{stake:.2f}"})
-    rfq = d.get("id") or (d.get("rfq") or {}).get("id")
-    if st not in (200, 201) or not rfq:
-        return None, f"request for quote refused: {st} {d.get('code') or d.get('message') or ''}".strip()
-    best, accepted = None, False
-    try:
-        for _ in range(a.polls):
-            time.sleep(a.wait / a.polls)
-            _, d = call("GET", "/communications/quotes", query={"rfq_id": rfq, "rfq_user_filter": "self", "limit": 100})
-            for q in d.get("quotes") or []:
-                try:
-                    nb = float(q.get("no_bid_dollars") or 0)
-                except ValueError:
-                    continue
-                if q.get("status", "open") == "open" and 0 < nb < 1 and q.get("id") and (not best or nb > best[0]):
-                    best = (nb, q["id"])
-        if not best:
-            return None, "no maker answered"
-        yes = 1 - best[0]
-        x, p = slip_x(yes), sgp.prob(sgp.american(c["j"]))
-        if x < min_x - 1e-9:
-            return None, f"not bet: Kalshi now pays {x:.2f}x, under the {min_x:.2f}x asked for"
-        if p * x - 1 < min_ev - 1e-9:
-            return None, f"not bet: at {x:.2f}x the slip is {p * x - 1:+.1%} against today's fair value"
-        st, d = call("PUT", f"/communications/rfqs/{rfq}/quotes/{best[1]}/accept", {"accepted_side": "no"})
-        if st not in (200, 204):
-            return None, f"Kalshi did not take the acceptance: {st} {d.get('code') or d.get('message') or ''}".strip()
-        accepted = True
-    finally:
-        if not accepted:
-            call("DELETE", f"/communications/rfqs/{rfq}")
+    # Makers answer for the size asked, and the board's price was asked at --stake ($100): a larger
+    # stake is often quoted lower and nothing was bought (Max, 11-27: Burrow, $134 at 3.21x, "now pays
+    # 2.81x"). When the full stake's answer misses the price, the board's own size is asked once more,
+    # under the same two limits; the bet returned says what was staked, and the page's button asks for the rest.
+    yes = x = why = None
+    first_stake = stake
+    for stake in [stake] + ([a.stake] if stake > a.stake + 0.5 else []):
+        st, d = call("POST", "/communications/rfqs", {"market_ticker": ticker, "rest_remainder": False, "target_cost_dollars": f"{stake:.2f}"})
+        rfq = d.get("id") or (d.get("rfq") or {}).get("id")
+        if st not in (200, 201) or not rfq:
+            return None, why or f"request for quote refused: {st} {d.get('code') or d.get('message') or ''}".strip()
+        best, accepted = None, False
+        try:
+            for _ in range(a.polls):
+                time.sleep(a.wait / a.polls)
+                _, d = call("GET", "/communications/quotes", query={"rfq_id": rfq, "rfq_user_filter": "self", "limit": 100})
+                for q in d.get("quotes") or []:
+                    try:
+                        nb = float(q.get("no_bid_dollars") or 0)
+                    except ValueError:
+                        continue
+                    if q.get("status", "open") == "open" and 0 < nb < 1 and q.get("id") and (not best or nb > best[0]):
+                        best = (nb, q["id"])
+            if not best:
+                why = why or "no maker answered"
+                continue
+            yes = 1 - best[0]
+            x, p = slip_x(yes), sgp.prob(sgp.american(c["j"]))
+            if x < min_x - 1e-9:
+                why = why or f"not bet: Kalshi now pays {x:.2f}x for ${stake:g}, under the {min_x:.2f}x asked for"
+                continue
+            if p * x - 1 < min_ev - 1e-9:
+                why = why or f"not bet: at {x:.2f}x the slip is {p * x - 1:+.1%} against today's fair value"
+                continue
+            st, d = call("PUT", f"/communications/rfqs/{rfq}/quotes/{best[1]}/accept", {"accepted_side": "no"})
+            if st not in (200, 204):
+                return None, f"Kalshi did not take the acceptance: {st} {d.get('code') or d.get('message') or ''}".strip()
+            accepted = True
+            break
+        finally:
+            if not accepted:
+                call("DELETE", f"/communications/rfqs/{rfq}")
+    else:
+        return None, why + (f" (nor for ${a.stake:g})" if stake != first_stake and why.startswith("not bet: Kalshi now pays") else "")
     # The maker confirms within 3 seconds and the trade prints a second later: read the position.
     pos = cost = None
     for _ in range(6):
