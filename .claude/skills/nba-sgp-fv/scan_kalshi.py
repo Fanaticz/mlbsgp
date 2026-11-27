@@ -1640,10 +1640,15 @@ def main():
     if a.league.startswith(("nba", "nfl")):
         # One player at once (Max, 11-27: so I know which of his SGPs is best): his slips are asked together,
         # players in the order of their first slip, so his prices are seconds apart, not a pass apart.
-        first = {}
+        # Early games first (Max, 11-27): players in the order their games start, the soonest game's
+        # players asked before anyone in a later one.
+        first, tip = {}, {}
         for i, c in enumerate(cands):
             first.setdefault(c["id"], i)
-        cands.sort(key=lambda c: first[c["id"]])
+            tip[c["id"]] = min(tip.get(c["id"], float("inf")), c.get("starts") or float("inf"))
+        cands.sort(key=lambda c: (tip[c["id"]], first[c["id"]]))
+    else:
+        cands.sort(key=lambda c: c.get("starts") or float("inf"))   # stable: a game's slips keep their order
     for c in cands:
         c["url"] = f"https://kalshi.com/markets/{game}/game/{game}-{c['event'].lower()}"
     if not cands and SEEN and not a.dry:
