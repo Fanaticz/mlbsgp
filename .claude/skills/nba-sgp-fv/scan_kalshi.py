@@ -1566,7 +1566,7 @@ def main():
     ap.add_argument("--stake", type=float, default=100.0, help="dollars each request for quote is sized at")
     ap.add_argument("--wait", type=float, default=3.0, help="seconds to wait for makers' answers")
     ap.add_argument("--polls", type=int, default=2, help="reads of the answers within --wait")
-    ap.add_argument("--workers", type=int, default=4, help="slips asked at once on a pass (1: one at a time, as before 11-27)")
+    ap.add_argument("--workers", type=int, default=8, help="slips asked at once on a pass (1: one at a time, as before 11-27; 4 until later that day)")
     ap.add_argument("--before", type=float, default=None, metavar="MS", help="only games starting before this time (epoch ms)")
     ap.add_argument("--unit", type=float, default=200.0, help="dollars in one unit on the Kalshi boards (Max, 11-24: 1u = $200; $100 from 11-16)")
     ap.add_argument("--kelly", type=float, default=0.25)
@@ -1686,10 +1686,14 @@ def main():
             return c, None, "Kalshi refused the key", str(e)
         if yes:
             finish(c, yes, a.unit, a.kelly)
-            with nv_lock:
-                time.sleep(max(0.0, nv_last[0] + 1.05 - time.time()))
-                novig_price(c)
-                nv_last[0] = time.time()
+            # Novig's price for the same slip only where the slip is above fair (Max, 11-27: I only care
+            # if the play is actually EV): at one Novig quote a second it was half a pass's time. A row's
+            # refresh still asks it.
+            if c["ev"] > 0:
+                with nv_lock:
+                    time.sleep(max(0.0, nv_last[0] + 1.05 - time.time()))
+                    novig_price(c)
+                    nv_last[0] = time.time()
         time.sleep(PACE_S / max(1, a.workers))
         return c, yes, why, None
     with concurrent.futures.ThreadPoolExecutor(max(1, a.workers)) as pool:
