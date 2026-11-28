@@ -23,8 +23,8 @@ What it asks, per player with open Kalshi props on a game that has not started:
   N  Combined stats (Max, 11-28; Novig refuses these, Kalshi combines them), for every
      player: a stat with a combined stat it is part of (points, rebounds or assists with
      PRA, points + rebounds, points + assists or rebounds + assists), and two combined stats
-     that share a part; 15 pairings. Each three ways: both Yes, and each Yes with the other's
-     No. Each leg on the milestone beside his main line. The r is worked out from the spreads
+     that share a part; 15 pairings, both Yes. Each leg on the milestone beside his main line.
+     Novig is never asked for its price on these (it won't combine them). The r is worked out from the spreads
      of points, rebounds and assists and how they move together (nest_r), which gave the
      counted share of games within 0.004 for every pairing on four seasons
      (scripts/nba_nested_check.py); 0.005 comes off each slip's chance. Their own allowance,
@@ -766,7 +766,6 @@ NEST_SD = {"pts": [(4.4, 4.3), (6.9, 4.8), (9.6, 5.5), (12.4, 6.1), (15.4, 6.8),
            "ast": [(0.8, 1.25), (1.5, 1.4), (2.4, 1.75), (3.4, 2.1), (4.5, 2.4), (5.4, 2.6), (6.7, 2.8), (8.8, 3.25), (11.0, 3.7)]}
 NEST_RHO = {("pts", "reb"): 0.19, ("pts", "ast"): 0.09, ("reb", "ast"): 0.14}
 NEST_ERR = 0.005     # the model's miss on a pairing's counted share (0.004 at most): taken off each slip's chance
-NEST_MIN_J = 0.05    # a one-Yes-one-No slip under this chance is not asked: the miss is too much of it
 NEST_WORD = {"pra": "PRA", "pr": "pts + reb", "pa": "pts + ast", "ra": "reb + ast"}
 
 
@@ -876,8 +875,8 @@ def candidates(a):
                 if r is not None and r >= a.min_r:
                     out += [dict(row_of(2, r, la, lb), alt=0 if la is legs[x] and lb is legs[y] else 1) for la in opts[x] for lb in opts[y]]
         # A stat with a combined stat it is part of, or two combined stats sharing a part (Max, 11-28:
-        # every player, every such pairing), three ways: both Yes, and each Yes with the other's
-        # No. Each leg on the milestone beside his main line only. The lines must leave both ways
+        # every player, every such pairing), both Yes (Max, the same day: no No legs, just the
+        # Overs). Each leg on the milestone beside his main line only. The lines must leave both ways
         # open (25+ points with 25+ PRA is one leg).
         mean = {k: p.get(k + "_mean") for k in ("pts", "reb", "ast")}
         for n, (x, y) in enumerate(NEST_PAIRS if nest and all(mean.values()) else ()):
@@ -888,25 +887,19 @@ def candidates(a):
             if inside and lb["line"] <= la["line"]:
                 continue
             r = nest_r(x, y, mean)
-            both = sgp.joint(r, la["p"], lb["p"])
-            for way, (ya, yb, j) in enumerate(((True, True, both), (True, False, la["p"] - both), (False, True, lb["p"] - both))):
-                j -= NEST_ERR
-                if j <= 0 or (not (ya and yb) and j < NEST_MIN_J):
-                    continue
-                ls = [dict(L, yes=yes, side="over" if yes else "under", p=L["p"] if yes else 1 - L["p"],
-                           fair=sgp.american(L["p"] if yes else 1 - L["p"]),
-                           text=L["text"] if yes else "under " + L["text"].replace("+ ", " ", 1))
-                      for L, yes in ((la, ya), (lb, yb))]
-                for L in ls:
-                    L.pop("nv", None)   # Novig refuses these slips: no second price to ask
-                lo, hi = -0.999, 0.999   # the copula r that gives this chance, for the page and for a refresh
-                for _ in range(30):
-                    mid = (lo + hi) / 2
-                    lo, hi = (mid, hi) if sgp.joint(mid, ls[0]["p"], ls[1]["p"]) < j else (lo, mid)
-                c = row_of(2, (lo + hi) / 2, ls[0], ls[1], kind="nest")
-                c.update(key=",".join(L["id"] + ("" if L["yes"] else ":n") for L in ls), j=j, nest_r=r,
-                         devig_r=sgp.devig_r(j, ls[0]["p"], ls[1]["p"]), nest=f"{x}+{y}", turn=3 * n + way)
-                nested.append(c)
+            j = sgp.joint(r, la["p"], lb["p"]) - NEST_ERR
+            if j <= 0:
+                continue
+            ls = [dict(la, yes=True), dict(lb, yes=True)]
+            for L in ls:
+                L.pop("nv", None)   # Novig won't combine these: its price for the slip is never asked (novig_price needs every leg's id)
+            lo, hi = -0.999, 0.999   # the copula r that gives this chance after the 0.005, for a refresh
+            for _ in range(30):
+                mid = (lo + hi) / 2
+                lo, hi = (mid, hi) if sgp.joint(mid, la["p"], lb["p"]) < j else (lo, mid)
+            c = row_of(2, (lo + hi) / 2, ls[0], ls[1], kind="nest")
+            c.update(j=j, nest_r=r, devig_r=sgp.devig_r(j, la["p"], lb["p"]), nest=f"{x}+{y}", turn=n)
+            nested.append(c)
         # Teammates are ranked by each player's own main points line, priced
         # leg or not: ranked by priced legs alone, a second scorer with no
         # tight book on a Kalshi milestone handed his place to the third
@@ -935,13 +928,13 @@ def candidates(a):
     out.sort(key=lambda c: (c.get("alt", 0), c["tier"], c["starts"], -c["r"]))
     out = out[:a.max] if a.max else out
     # The combined-stat slips have their own allowance (--nest-max), after the board's own. There
-    # are far more of them than a pass can ask (45 a player), so they go round the players: every
+    # can be more of them than a pass asks (15 a player once Kalshi lists every combined stat), so they go round the players: every
     # player's first slip, then every player's second. Which pairing comes first moves on each
     # hour, so passes through an evening cover them all.
     nested = [c for c in nested if all(L["p"] >= a.leg_min - 1e-9 for L in c["legs"])]
-    first = int(time.time() // 3600) % (3 * len(NEST_PAIRS)) // 3 * 3
+    first = int(time.time() // 3600) % len(NEST_PAIRS)
     seen = {}
-    for c in sorted(nested, key=lambda c: ((c["turn"] - first) % (3 * len(NEST_PAIRS)), c["starts"])):
+    for c in sorted(nested, key=lambda c: ((c["turn"] - first) % len(NEST_PAIRS), c["starts"])):
         c["turn"] = seen[c["id"]] = seen.get(c["id"], -1) + 1
     nested.sort(key=lambda c: (c["turn"], c["starts"]))
     nmax = getattr(a, "nest_max", 0)

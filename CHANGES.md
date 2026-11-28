@@ -2,6 +2,14 @@
 
 ## 2026-11-28 session
 
+### Kalshi NBA combined-stat slips: Overs only, and Novig is not asked
+Max, 11-28: remove the Nos, just do Overs for this; no reason to ask Novig for these, it doesn't let you combine them.
+
+- **Overs only** (`candidates` in `scan_kalshi.py`): each pairing is asked once, both Yes. The slips with one Yes and one No are gone. Tonight: 150 slips (points + PRA, rebounds + PRA, assists + PRA), from 398.
+- **Novig**: its price for one of these slips was already never asked (the legs carry no Novig id, so `novig_price` returns at once), on a pass, a refresh or a bet. The opened row said "Novig has no price for this slip" or "press ↻ to ask" all the same; it now says Novig won't combine these legs and is not asked. Novig's own book on each leg's line is still read, as on every Kalshi board: that is where a leg's fair value comes from, not a parlay quote.
+- **Weekly count**: a full pass of the board is 258 slips tonight, not about 500.
+- **Checked**: a dry run on tonight's board (no row with a No leg, no leg with a Novig id); the page's script parses; `node --check server.js`.
+
 ### Kalshi NBA Pairs: every combined-stat pairing, for every player
 Max, 11-28, after the points + PRA entry below: do all players' combos, not just him; and points + PRA, rebounds + PRA, etc., all combos.
 
