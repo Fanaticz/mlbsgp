@@ -29,6 +29,17 @@ next day: rebounds + rebounds implied r +0.04 to +0.055 at the median (61 to
 64 slips a read, -0.09 to +0.11), assists + a fed teammate's points +0.10 to
 +0.115 (17 to 18 slips). After the parlay fee: medians -11% to -12%; four
 slips of about 240 above fair (best +3.2%), none of them on the next read.
+
+Measured again 11-28 (1,516 games), every pairing between two of a team's
+top four scorers (top_four): points + points +0.01, rebounds + rebounds
+0.00, assists + assists -0.01, threes + threes 0.00, points with the
+other's rebounds +0.02 to +0.03, points or threes with the other's assists
++0.05 to +0.07, points with the other's threes -0.01; each +/- 0.01.
+Novig, 549 quotes on that night's 10 teams: its implied r was within 0.03
+of each of those at the median and between -0.17 and +0.23 slip to slip
+(the NFL's teammates ran to -0.30). After the fee every pairing's median was
+-7% to -10%; 5 slips at +3% or better, 2 of them still there on two more
+asks, one of those because a leg's own price had moved.
 """
 import argparse
 import collections
@@ -148,6 +159,24 @@ def measure(sel, tag):
     return rb
 
 
+def top_four(sel):
+    """Every stat pairing between two of a team's top four scorers (by points
+    line, among those at 20+ minutes with a line), A the higher points line."""
+    by = collections.defaultdict(dict)
+    for r in sel:
+        if r[4]["pts"] is not None:
+            by[(r[0], r[1])][r[2]] = r[4]["pts"]
+    rank = {k: {a: i for i, (a, _) in enumerate(sorted(v.items(), key=lambda kv: -kv[1]))} for k, v in by.items()}
+    low = {"pts": 8, "reb": 2.5, "ast": 1.5, "tpm": 1}
+    print("\n== two of a team's top four scorers, A the higher points line ==")
+    for sa in ("pts", "reb", "ast", "tpm"):
+        for sb in ("pts", "reb", "ast", "tpm"):
+            if {sa, sb} == {"reb", "ast"} or {sa, sb} == {"reb", "tpm"}:
+                continue
+            bucket([r for r in sel if ok(r, sa, sb) and r[4][sa] >= low[sa] and r[5][sb] >= low[sb]
+                    and rank[(r[0], r[1])].get(r[2], 9) < rank[(r[0], r[1])].get(r[3], 9) < 4], sa, sb, f"A's {sa} + B's {sb}", boots=80)
+
+
 def split(sa, sb, sel, lab):
     """Is a pair's own r real? Its r on odd games against its r on even games."""
     by = collections.defaultdict(list)
@@ -227,6 +256,7 @@ def main():
     first = min(i for i, g in enumerate(games) if g["season"] == 2027)
     measure([r for r in rows if r[0] >= first], "2026-27 to date")
     rb = measure(rows, "both seasons")
+    top_four(rows)
     print("\n== a pair's own r, pairs with 40+ games together ==")
     split("ast", "pts", [r for r in rows if ok(r, "ast", "pts") and r[4]["ast"] >= 3 and r[5]["pts"] >= 10], "assists + points")
     split("ast", "tpm", [r for r in rows if ok(r, "ast", "tpm") and r[4]["ast"] >= 3 and r[5]["tpm"] >= 1], "assists + threes")

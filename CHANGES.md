@@ -2,6 +2,17 @@
 
 ## 2026-11-28 session
 
+### NBA teammates, every stat pairing among a team's top four scorers: still nothing to add
+Max, 11-28, after the NFL teammates slips below: and NBA as well.
+
+The question was whether Novig prices some NBA pairs far off the rest, as it does in the NFL. It does not.
+
+- **Measured** (`top_four` in `scripts/nba_mate_research.py`; `public/data/nba_teammate_logs.json` rebuilt through today, 1,516 games): two of a team's top four scorers, each leg Over his median of his previous 15 games. Points + points +0.01, rebounds + rebounds 0.00, assists + assists -0.01, threes + threes 0.00, points with the other's rebounds +0.02 to +0.03, points or threes with the other's assists +0.05 to +0.07, points with the other's threes -0.01, each ± 0.01. The top two, the top scorer with the third or fourth, and the rest do not differ beyond that.
+- **Novig**, 549 quotes on tonight's 10 teams (Over + Over at main lines, books to 4c, all twelve pairings on each pair of the top four): its implied r is within 0.03 of the measured one for every pairing at the median, and runs -0.17 to +0.23 slip to slip. The NFL's ran to -0.30. After the fee each pairing's median is -7% to -10%.
+- **Above fair**: 21 of 549, 5 at +3% or better. Asked twice more: Reid 3+ assists + White 5+ assists held (+6.6%, then +3.7% and +3.2%). Gilgeous-Alexander 33+ points + McCain 15+ points went from +8.1% to +10%, but McCain's own book had moved between the asks, so that is a line on the move, not a standing price. The other three fell to +1% or under.
+- **Not changed**: any board. The teammates slip stays a team's top two points lines at r -0.05. Widening it to the top four would add about 50 asks a night for one or two marginal rows.
+- **Not looked at**: steals and blocks (no box scores for them on disk), one Over with the other's Under (11-16: -6% to -30%).
+
 ### Novig NFL: two teammates who are not the QB
 Max, 11-28: we are running out of Novig edges; can you look at teammate correlations.
 
