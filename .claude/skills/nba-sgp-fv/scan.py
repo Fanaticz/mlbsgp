@@ -11,8 +11,8 @@ player, ranked by EV at what Novig's slip pays.
   python3 scan.py --max 120       # stop after 120 quotes
   python3 scan.py --min-ev 3      # print only rows at +3% or better
   python3 scan.py --kind team     # NBA Team board: a player's prop with the spread, and a game's own lines
-  python3 scan.py --league nfl    # NFL: a player's own props, QB + receiver stacks, props + game lines, three legs
-  python3 scan.py --league nfl --kind stacks   # one kind only: props, stacks, lines or tri
+  python3 scan.py --league nfl    # NFL: a player's own props, QB + receiver stacks, props + game lines, three legs, teammates
+  python3 scan.py --league nfl --kind stacks   # one kind only: props, stacks, lines, tri or mates
   python3 scan.py --league nfl --kind tri      # NFL three-leg slips alone
   python3 scan.py --league nhl    # NHL: a skater's goals, assists, points and shots on goal, every pair
   python3 scan.py --league cfb    # college football: slips across a game's own lines
@@ -158,6 +158,16 @@ leg with two of the receiver's, or two QB legs with one. The joint is the
 three-leg Gaussian copula on the three pair r's (the player's own for his
 two props, role r's across players and with lines). Each player leads his
 --per (3) best by lift, at most two of a shape and one of each line kind.
+
+NFL teammates (the same pass; --kind mates for these alone; --no-mates
+leaves them out): two of a team's players, neither the QB, Over + Over at
+main lines (nfl_mate_candidates). The top three receivers' yards,
+receptions and touchdowns pair by pair, the lead back's rushing yards and
+touchdown with a receiver's, the top two backs' rushing yards and
+touchdowns. The legs are close to unrelated league-wide
+(public/data/nfl_mate_correlations.json, by role, each priced at its r less
+one standard error); the slip is there for the pairs Novig prices as if one
+player's day cost the other's.
 
 NHL (--league nhl): skaters in public/data/nhl_correlations.json (40+ games
 of 10+ minutes; scripts/nhl_fetch_correlations.py, history from
@@ -1214,6 +1224,79 @@ def nflx_candidates(a, game):
                         keep |= {c["key"] for c in [c for c in mine if c["kind"] == line][:1]}
                     out += [c for c in mine if c["key"] in keep]
     out.sort(key=lambda c: -c["j"] / (c["legs"][0]["p"] * c["legs"][1]["p"]))
+    return out[:a.max] if a.max else out
+
+
+NFL_MATES = os.path.join(HERE, "..", "..", "..", "public", "data", "nfl_mate_correlations.json")
+# what is asked of two teammates, by their kinds (R: a WR or TE, B: a back): (the first's stat, the second's)
+NFL_MATE_STATS = {"RR": (("yds", "yds"), ("rec", "rec"), ("td", "td")), "BR": (("ryds", "yds"), ("td", "td")),
+                  "BB": (("ryds", "ryds"), ("td", "td"))}
+
+
+def nfl_mate_role(p, vol, edges):
+    """'R3', 'B1', ... as scripts/nfl_mate_correlations.py names roles: a
+    receiver by his targets a game, a back by his carries; None under the
+    lowest edge or for a QB."""
+    kind = "R" if p["group"] in ("WR", "TE") else "B" if p["group"] == "RB" else None
+    v = kind and vol(p, "tgt_mean" if kind == "R" else "car_mean")
+    if not v or v < edges[kind][0]:
+        return None
+    return kind + str(sum(v >= e for e in edges[kind]))
+
+
+def nfl_mate_r(M, ra, rb, sa, sb):
+    """(r, the fitted r) for two teammates' Overs: the cell's lower fit, with
+    or without the games one of them was blanked, less one standard error.
+    (None, None) for a pairing with no row."""
+    for e in M["rows"]:
+        if (e["a"], e["b"], e["sa"], e["sb"]) in ((ra, rb, sa, sb), (rb, ra, sb, sa)):
+            return min(e["r"], e["r_filled"]) - max(e["se"], e["se_filled"]), e["r"]
+    return None, None
+
+
+def nfl_mate_candidates(a):
+    """NFL teammates who are not a QB and his receiver, Over + Over at main
+    lines: a team's top three receivers by yards line, each pair's receiving
+    yards, receptions and touchdowns; its lead back's rushing yards and
+    touchdown with each of the top two receivers'; its top two backs' rushing
+    yards and touchdowns. At most 15 slips a team.
+    Ten seasons of nflverse say these legs are close to unrelated
+    (scripts/nfl_mate_correlations.py: two receivers' yards -0.10 to +0.04,
+    touchdowns -0.12 to +0.05, one back's yards with another's +0.03 to
+    +0.20), league-wide by role, and each slip is priced at its
+    role pair's r less one standard error. Novig's price sits on those
+    numbers for most pairs and then charges -0.2 to -0.3 for some (11-28,
+    347 quotes on 22 teams: Jefferson + Jennings yards -0.30, Mason + Jones
+    rushing yards -0.23, Chase + Higgins touchdowns -0.24), which pays more
+    than fair on Over + Over; the 14 slips at +3% or better all held on two
+    more asks, 12 of them at the identical quote. One Over with the other's
+    Under was never above fair (0 of 112) and is not asked. The r's are the
+    same with the closing spread and team total taken out of each stat."""
+    M = json.load(open(NFL_MATES))
+    _, _, people, vol = nfl_slate(a, False)
+    last = lambda p: p["name"].split(" ", 1)[-1]   # noqa: E731
+    out = []
+    for sides in people.values():
+        for team, ps in sides.items():
+            role = {p["athlete_id"]: nfl_mate_role(p, vol, M["roles"]["edges"]) for p, _, _ in ps}
+            ps = [x for x in ps if role[x[0]["athlete_id"]]]
+            recv = sorted((x for x in ps if role[x[0]["athlete_id"]][0] == "R" and "yds" in x[1]), key=lambda x: -x[1]["yds"]["line"])[:3]
+            backs = sorted((x for x in ps if role[x[0]["athlete_id"]][0] == "B" and "ryds" in x[1]), key=lambda x: -x[1]["ryds"]["line"])[:2]
+            pairs = list(itertools.combinations(recv, 2)) + [(backs[0], x) for x in recv[:2] if backs] + ([tuple(backs)] if len(backs) == 2 else [])
+            for (pa, ma, starts), (pb, mb, _) in pairs:
+                ra, rb = role[pa["athlete_id"]], role[pb["athlete_id"]]
+                for sa, sb in NFL_MATE_STATS[ra[0] + rb[0]]:
+                    r, fit = nfl_mate_r(M, ra, rb, sa, sb)
+                    if r is None or sa not in ma or sb not in mb:
+                        continue
+                    la, lb = leg(sa, ma[sa], 1), leg(sb, mb[sb], 1)
+                    la["text"], lb["text"] = f"{last(pa)} {leg_text(la)}", f"{last(pb)} {leg_text(lb)}"
+                    j = sgp.joint(r, la["p"], lb["p"])
+                    out.append({"key": f"{la['id']},{lb['id']}", "tier": 7, "player": f"{pa['name']} + {pb['name']}",
+                                "id": f"{pa['athlete_id']}+{pb['athlete_id']}", "team": team, "starts": starts,
+                                "legs": [la, lb], "kind": "mate", "label": f"{la['text']} · {lb['text']}",
+                                "r": r, "fit_r": fit, "j": j, "forced": False, "devig_r": sgp.devig_r(j, la["p"], lb["p"]),
+                                "rough": max(la["width"], lb["width"]) > novig.MAX_SPREAD + 1e-9})
     return out[:a.max] if a.max else out
 
 
@@ -2458,6 +2541,8 @@ def scan(a, emit):
             cands = cands + nflx_candidates(a, True)
         if a.kind in ("all", "tri"):   # three legs, asked with the rest of the NFL tab
             cands = cands + nfl_tri_candidates(a)
+        if a.kind in ("all", "mates") and a.mates:   # two teammates, neither the QB
+            cands = cands + nfl_mate_candidates(a)
         stats, rfun = NFL_STATS, nfl_r
     elif a.league == "nhl":
         d = json.load(open(NHL_DATA))
@@ -2672,7 +2757,7 @@ def main():
     ap.add_argument("--league", default="nba", choices=("nba", "nfl", "nhl", "soccer", "cfb", "cbb"))
     ap.add_argument("--kind", default="all", choices=("all", "props", "stacks", "lines", "tri", "mates", "team"),
                     help="NFL: one kind of slip only (default: a player's own props, stacks, game lines, "
-                         "then tri, the three-leg slips). "
+                         "then tri, the three-leg slips, and mates, two teammates who are not the QB). "
                          "NHL: props (a skater's own goals + shots), mates (two teammates) or lines (points + a game line). "
                          "NBA: team (the NBA Team board: a player's prop with a game line, and slips across a game's own lines)")
     ap.add_argument("--team", default="all", choices=("all", "props", "game"),
@@ -2719,7 +2804,7 @@ def main():
     ap.add_argument("--alt-gate", type=float, default=-8.0,
                     help="CBB: a spread + total slip at this EV%% or better is asked again with each leg moved one line "
                          "either way (default -8); team-total and first-half slips always are")
-    ap.add_argument("--no-mates", dest="mates", action="store_false", help="NBA: skip the teammates' points slips")
+    ap.add_argument("--no-mates", dest="mates", action="store_false", help="NBA: skip the teammates' points slips. NFL: skip the teammates slips")
     ap.add_argument("--no-alts", dest="alts", action="store_false", help="CBB: skip the moved-line versions")
     ap.add_argument("--no-unders", dest="unders", action="store_false",
                     help="NFL: ask no player-prop Unders (Under + Under, the Over + Under stacks, a prop's Under + a game line)")

@@ -88,7 +88,14 @@ jobs:
       # the file alone if nflverse returns too little or ESPN nothing.
       - name: Refresh NFL stack and game-line correlations
         continue-on-error: true
-        run: python scripts/nfl_stack_correlations.py
+        run: python scripts/nfl_stack_correlations.py --cache .cache/nflverse
+
+      # Two teammates who are not a QB and his receiver (two receivers, a back
+      # and a receiver, two backs), league-wide by role, from the same
+      # nflverse downloads plus its snap counts.
+      - name: Refresh NFL teammate correlations
+        continue-on-error: true
+        run: python scripts/nfl_mate_correlations.py --cache .cache/nflverse
 
       # New NHL games from ESPN box scores, appended to the skater history
       # (public/data/nhl_game_logs.json, seeded from MoneyPuck.com), then the

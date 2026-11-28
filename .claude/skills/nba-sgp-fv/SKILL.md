@@ -336,6 +336,9 @@ total, spread, moneyline, team total, and the first half's total, spread and
 moneyline), from the role r's in `public/data/nfl_stack_correlations.json`.
 It ends with three-leg slips (`--kind tri` asks those alone): three of a player's props, two with a game line, QB + receiver + a
 game line, or three props across the two.
+Then two teammates who are not the QB (`--kind mates` asks those alone, `--no-mates` leaves them out): two
+receivers' yards, receptions or touchdowns, the lead back's with a receiver's, two backs' rushing yards, Over + Over,
+priced at the league-wide r for the two roles less one standard error (`public/data/nfl_mate_correlations.json`).
 `--league cfb` asks college football slips across one game's lines (Novig
 lists no college player props): underdog moneyline + Under, spread + total, team-total Unders, first half + game.
 Fair values are modelled per game; see scan.py's docstring.

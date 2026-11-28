@@ -1,5 +1,28 @@
 # Changes
 
+## 2026-11-28 session
+
+### Novig NFL: two teammates who are not the QB
+Max, 11-28: we are running out of Novig edges; can you look at teammate correlations.
+
+NBA teammates were measured on 11-16 and 11-24 and NHL on 11-13. The NFL's had only ever been a QB with his receiver or back. This is the rest: two receivers, a back and a receiver, two backs.
+
+- **Measured** (`scripts/nfl_mate_correlations.py`, new → `public/data/nfl_mate_correlations.json`; ten seasons of nflverse, the same copula r as the stacks, one row per pair of roles: a receiver by targets a game at 2 / 4 / 7, a back by carries at 2 / 6 / 13). The legs are close to unrelated:
+  - two receivers' yards -0.10 to +0.04 (two 7-target receivers the lowest), receptions +0.02 to +0.09, touchdowns -0.10 to -0.02;
+  - a back's rushing yards with a receiver's yards -0.09 to +0.01, their touchdowns -0.11 to +0.05;
+  - a lead back's rushing yards with the second back's +0.19 ± 0.04 (1,257 games), two backs sharing the carries +0.06, a lead back with a 2-to-6-carry back +0.09.
+- **Two checks on those numbers.** A player with no catch or carry has no line in the weekly stats, so each cell is fitted again with those games in as zeros, where nflverse's snap counts say he was on the field (13,790 pair-games added): no cell moves by more than 0.05. And with the closing spread and team total taken out of each stat first, twelve cells tried: none moves by more than 0.03.
+- **Novig**, 347 quotes on 22 teams for Sunday and Monday. Its price implies about the measured r at the median for every pairing, so after the fee the medians are -4% to -13%. But it is not one number: the same pairing runs from -0.30 to +0.24 slip to slip, and the low end pays more than fair on Over + Over. Jefferson + Jennings yards -0.30, Mason + Jones rushing yards -0.23, Chase + Higgins touchdowns -0.24, Meyers + Cameron yards -0.23.
+  - **They hold.** The 14 slips at +3% or better were asked twice more with the legs re-read: 12 came back at the identical quote both times, one moved by 0.006 and back, one had its line move and stayed above fair. On the NBA (11-24) the few above fair were gone on the next read.
+  - **One Over with the other's Under**: 0 of 112 above fair, medians -9% to -14%. Novig charges both ways; not asked.
+  - **Also fitted and not added**: a QB's attempts with a receiver's receptions (+0.31 to +0.45) or yards (+0.16 to +0.30): Novig is on those numbers, 68 quotes, one at +3%. His attempts against a back's rushing yards (-0.17 to -0.29) were fitted and not quoted.
+- **Added** (`nfl_mate_candidates` in `scan.py`; `--kind mates` alone, `--no-mates` off): on the NFL board, Over + Over at main lines. A team's top three receivers by yards line, pair by pair (yards, receptions, touchdowns); its lead back with each of the top two receivers (rushing yards + receiving yards, touchdown + touchdown); its top two backs (rushing yards, touchdowns). Each is priced at its role pair's r, the lower of the two fits, less one standard error (-0.18 to +0.14). At most 15 a team; the +600 limit on a fair value still applies, which cuts most touchdown pairs.
+- **A pass this afternoon**: 163 slips in three minutes, 17 above fair, 10 at +3% or better (six yards + yards, two backs' rushing yards, one receptions, one back + receiver). Best: Mason 58+ rushing + Jones 38+ rushing +18.1% (fair +273, 4.41x), Jefferson 86+ + Jennings 29+ yards +13.4%, Meyers 69+ + Cameron 44+ yards +10.6%.
+- **The page** (`public/nba_scan.html`): "Two teammates (no QB)" in the NFL filter, a paragraph in the NFL note, and the opened row says the r is the league-wide one for the two roles less one standard error. The daily refresh rebuilds the file after the stack one, from the same downloads.
+- **What could be wrong.** These are league r's by role, and Novig's number is for the pair. A pair is a dozen games a season, so the data cannot say Novig is wrong about Mason and Jones, only that pairs like them have not moved that way in ten seasons. The lead back + second back cell (+0.19) is the thinnest and prices the biggest play. No other book's price for one of these slips was read.
+- **Not changed**: the Kalshi NFL boards (their slips are built in `scan_kalshi.py`), the NBA and NHL teammates slips. NBA steals and blocks are still unmeasured (Novig lists them; the box scores on disk don't have them).
+- **Checked**: `--kind mates` end to end against Novig; the NFL tab opened in a desktop and a phone-sized browser against a local server holding that pass (filter, rows, an opened row, no script errors); `node --check server.js`; the alerts check. Python compiles; no linter is installed here. **Not checked**: on Railway; the refresh workflow's new step (the script was run by hand, 40 seconds with the downloads on disk).
+
 ## 2026-11-27 session
 
 ### Ladders: the DraftKings pull is taken out
