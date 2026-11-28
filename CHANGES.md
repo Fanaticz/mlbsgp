@@ -2,6 +2,20 @@
 
 ## 2026-11-28 session
 
+### Kalshi NBA Pairs: a player's points with his points + rebounds + assists
+Max, 11-28, a Kalshi slip (Franz Wagner 40+ points + rebounds + assists at 2.01x, 25+ points at 1.83x, the two together 2.15x): let's look into these on Kalshi.
+
+Novig refuses a combined stat with one of its own parts ("Invalid parlay combination", 11-16). Kalshi combines them, and nothing here priced them.
+
+- **Why no correlation fits.** One stat is inside the other, so how often both hit turns on how the gap between the two lines compares with what he usually adds in rebounds and assists. On four seasons of box scores (21,066 player-games of scorers at 15+ points, each leg on the 5-apart milestone nearest his median, as Kalshi's are): where the gap is about his usual rebounds + assists, both hit in 87% of the games the less likely leg hits; where it is 3.5 or more either side, 97%.
+- **The model** (`nest_joint` in `scan_kalshi.py`; `scripts/nba_nested_check.py`, new, has the measurement and the check): points and rebounds + assists as two normal counts with the spreads those games show (points 7.2 to 8.3, rebounds + assists 3.2 to 4.9) and their correlation (0.17), set so each leg hits as often as its own price says. Against the counted share of games, in 25 groups by gap, by scorer and by rebounds + assists: both legs within 0.004 everywhere, and so each leg alone (one Yes, one No) within 0.004.
+- **This slip**: legs 0.52 (Novig's book, 25+ points) and 0.49 (both books, 40+ PRA) give both at 0.432, fair **2.31x** (+131). At 2.15x that is **-7%**, and about -10% if Kalshi's fee comes on top of the 2.15x shown. The same legs the other ways: 25+ points without 40 PRA 0.088 (fair 11.4x), 40 PRA on under 25 points 0.058 (17.3x).
+- **Added to Kalshi NBA Pairs** (`candidates`; `--no-nest` off): for each player with a points line of 15 or more and a priced PRA leg, his points milestone with his PRA milestone, both beside his main lines, three ways: both Yes, points Yes + PRA No, points No + PRA Yes. The model's 0.004 miss is taken off every slip's chance, and a one-Yes-one-No slip under a 5% chance is not asked (the miss would be too much of it). A PRA leg is read off Novig's or Kalshi's book on that line or not taken. Tonight: 158 of the board's 264 slips, inside the 300 a pass.
+- **The page**: "Points + PRA" and "Teammates" in the Kalshi NBA Pairs filter, a paragraph in its note, and the opened row says the chance is modelled.
+- **Not known**: what Kalshi's makers pay for any of these beyond the one screenshot. There is no Kalshi key in this session, so no quote was asked; the first pass on Railway will show it. If they price the other two ways off the same joint as the 2.15x (0.465 against a fair 0.432), those are where a price above fair would be.
+- **Not added**: points with points + rebounds or points + assists, and rebounds or assists with a combined stat (Kalshi lists all of them; the model was fitted and checked on points + PRA only).
+- **Checked**: a dry run on tonight's board (Wagner's slip comes out +130); the other Kalshi NBA boards build the same slips as before; the tab opened in a desktop and a phone-sized browser on tonight's slips with made-up prices (filter, rows, an opened row with a No leg, no script errors); `node --check server.js`. **Not checked**: anything that needs the Kalshi key, including whether Kalshi accepts a No leg on a PRA market in a combo, and the Bet button on these rows.
+
 ### NBA teammates, every stat pairing among a team's top four scorers: still nothing to add
 Max, 11-28, after the NFL teammates slips below: and NBA as well.
 
