@@ -2,6 +2,19 @@
 
 ## 2026-11-28 session
 
+### Kalshi NBA Pairs: every combined-stat pairing, for every player
+Max, 11-28, after the points + PRA entry below: do all players' combos, not just him; and points + PRA, rebounds + PRA, etc., all combos.
+
+- **Every player**: the points-line floor of 15 is gone. Anyone with open Kalshi props and a priced leg on both stats.
+- **Every pairing** (`NEST_PAIRS`, `nest_r` in `scan_kalshi.py`): a stat with a combined stat it is part of (points, rebounds or assists with PRA, points + rebounds, points + assists, rebounds + assists) and two combined stats that share a part, 15 in all, each three ways: both Yes, and each Yes with the other's No.
+- **What Kalshi lists tonight**: of the combined stats only PRA has open markets (51 players). Its points + rebounds, points + assists and rebounds + assists series exist and are empty. So tonight this is points + PRA, rebounds + PRA and assists + PRA: 398 slips on 51 players. The other twelve pairings are asked the day Kalshi opens those markets.
+- **One model for all of them**, replacing the points + PRA one below (it gives the same numbers there: Wagner's slip is still 2.31x). Points, rebounds and assists are three counts whose spread goes with the player's average (points 4.3 at 4 a game to 8.4 at 30; rebounds 1.65 to 4.2; assists 1.25 to 3.7) and which move together a little (points with rebounds 0.19, with assists 0.09, rebounds with assists 0.14; 47,223 player-games at 20+ minutes). The r between any two sums follows: a 24-point scorer's points with his PRA about 0.90, his rebounds with it 0.45, his assists 0.35. The slip is the usual copula joint at that r.
+- **Checked on four seasons** (`scripts/nba_nested_check.py`, rewritten), each pairing in groups of games alike in where the lines sit and in r: over all groups the model is within 0.004 of the counted share for every pairing, both legs and each leg alone. 0.005 comes off each slip's chance (it was 0.004).
+- **How many**: these have their own allowance, 600 a pass (`--nest-max`) on top of the board's 300, and each leg is on the milestone beside his main line only (the points + PRA slips below also took the other milestone). They go round the players, each player's first slip before anyone's second, and the pairing that comes first moves on each hour. Tonight's 398 all fit.
+- **Kalshi's limit**: an account may create 5,000 new combos a week. A full pass of this board is now about 500 slips, so about ten passes a week before the other Kalshi boards are counted. `--nest-max` or `--no-nest` in `server.js`'s call brings it down.
+- **The page**: the filter reads "Combined stats"; the note and the opened row are reworded.
+- **Checked**: a dry run on tonight's board; the lint-free compile; `node --check server.js`. **Not checked**: the page in a browser after this change (the rows have the shape of the ones opened for the entry below); anything that needs the Kalshi key.
+
 ### Kalshi NBA Pairs: a player's points with his points + rebounds + assists
 Max, 11-28, a Kalshi slip (Franz Wagner 40+ points + rebounds + assists at 2.01x, 25+ points at 1.83x, the two together 2.15x): let's look into these on Kalshi.
 

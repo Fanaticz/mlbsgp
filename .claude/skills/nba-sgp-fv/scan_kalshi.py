@@ -20,12 +20,15 @@ What it asks, per player with open Kalshi props on a game that has not started:
      points + assists, rebounds + assists, rebounds + threes, assists + threes.
   T  Teammates: each team's two highest main points lines, Yes + Yes, as unrelated
      legs; no slip for a team where either has no priced leg (scan.nba_mate_candidates has the measurement).
-  N  His points with his points + rebounds + assists (Max, 11-28; Novig refuses these, Kalshi
-     combines them), for players with a points line of 15+: both Yes, points Yes + PRA No, and
-     points No + PRA Yes. One stat is inside the other, so the chance comes from a model of
-     points and rebounds + assists set to the two legs' own prices (nest_joint;
-     scripts/nba_nested_check.py checks it against four seasons: within 0.004 of the counted
-     share in 25 groups), less that 0.004. --no-nest leaves them out.
+  N  Combined stats (Max, 11-28; Novig refuses these, Kalshi combines them), for every
+     player: a stat with a combined stat it is part of (points, rebounds or assists with
+     PRA, points + rebounds, points + assists or rebounds + assists), and two combined stats
+     that share a part; 15 pairings. Each three ways: both Yes, and each Yes with the other's
+     No. Each leg on the milestone beside his main line. The r is worked out from the spreads
+     of points, rebounds and assists and how they move together (nest_r), which gave the
+     counted share of games within 0.004 for every pairing on four seasons
+     (scripts/nba_nested_check.py); 0.005 comes off each slip's chance. Their own allowance,
+     --nest-max (600), on top of --max, going round the players. --no-nest leaves them out.
 The three-leg board (--league nbatri; Max, 11-21) asks none of those:
   3  For each player whose main points line is --tri-pts or higher: his points with
      two of rebounds, assists and threes, Yes + Yes + Yes, where all three pair r's
@@ -746,43 +749,45 @@ def nfltri_candidates(a):
     return (out[:a.max] if a.max else out), d
 
 
-# A player's points with his points + rebounds + assists (Max, 11-28: Kalshi combines them, Novig refuses).
-# One stat inside the other: the model is points and rebounds + assists as two normal counts
-# (scripts/nba_nested_check.py has the measurement and the check against four seasons of games).
-NEST_RHO = 0.17                                               # points with rebounds + assists, each about his median
-NEST_SD_PTS = [(17.5, 7.2), (22.5, 7.9), (27.5, 8.2), (32.5, 8.3)]   # spread of points by his line
-NEST_SD_RA = [(6.0, 3.2), (10.0, 3.7), (14.0, 4.4), (18.0, 4.9)]     # spread of rebounds + assists by his average
-NEST_MIN_PTS = 14.5                                           # measured on players whose points median is 15+
-NEST_ERR = 0.004                                              # the model's miss on the counted share, in every group checked: taken off each slip's chance
-NEST_MIN_J = 0.05                                             # a one-Yes-one-No slip under this chance is not asked: the miss is too much of it
-_ND = statistics.NormalDist()
+# A stat with a combined stat it is part of, or two combined stats that share a part (Max, 11-28:
+# points with points + rebounds + assists; then every such pairing, for every player). Kalshi
+# combines them, Novig refuses. Points, rebounds and assists are three counts with the spreads and
+# correlations four seasons of games show (scripts/nba_nested_check.py: each about the player's
+# average of his last 15 games at 20+ minutes); any two sums of them then move together at
+# the r those give, and the slip's chance is the usual copula joint at that r.
+NEST_PARTS = {"pts": ("pts",), "reb": ("reb",), "ast": ("ast",), "pra": ("pts", "reb", "ast"),
+              "pr": ("pts", "reb"), "pa": ("pts", "ast"), "ra": ("reb", "ast")}
+NEST_SERIES = {"KXNBAPRA": "pra", "KXNBAPR": "pr", "KXNBAPA": "pa", "KXNBARA": "ra"}
+NEST_PAIRS = (("pts", "pra"), ("pts", "pr"), ("pts", "pa"), ("reb", "pra"), ("reb", "pr"), ("reb", "ra"),
+              ("ast", "pra"), ("ast", "pa"), ("ast", "ra"), ("pr", "pra"), ("pa", "pra"), ("ra", "pra"),
+              ("pr", "pa"), ("pr", "ra"), ("pa", "ra"))
+NEST_SD = {"pts": [(4.4, 4.3), (6.9, 4.8), (9.6, 5.5), (12.4, 6.1), (15.4, 6.8), (18.4, 7.3), (21.8, 7.8), (25.7, 8.3), (30.5, 8.4)],
+           "reb": [(1.7, 1.65), (2.6, 1.85), (3.5, 2.1), (4.4, 2.4), (5.4, 2.6), (6.8, 3.0), (8.9, 3.4), (11.2, 3.8), (13.8, 4.2)],
+           "ast": [(0.8, 1.25), (1.5, 1.4), (2.4, 1.75), (3.4, 2.1), (4.5, 2.4), (5.4, 2.6), (6.7, 2.8), (8.8, 3.25), (11.0, 3.7)]}
+NEST_RHO = {("pts", "reb"): 0.19, ("pts", "ast"): 0.09, ("reb", "ast"): 0.14}
+NEST_ERR = 0.005     # the model's miss on a pairing's counted share (0.004 at most): taken off each slip's chance
+NEST_MIN_J = 0.05    # a one-Yes-one-No slip under this chance is not asked: the miss is too much of it
+NEST_WORD = {"pra": "PRA", "pr": "pts + reb", "pa": "pts + ast", "ra": "reb + ast"}
 
 
-def nest_joint(pp, pq, lp, lq, ra):
-    """P(points over lp and PRA over lq) where the points leg hits with
-    chance pp and the PRA leg with chance pq; ra is his rebounds + assists a
-    game (it sets their spread only: the two prices set the levels)."""
-    nd = _ND
-    sp, sr, rho = price.interp(NEST_SD_PTS, lp), price.interp(NEST_SD_RA, ra), NEST_RHO
-    tot = math.sqrt(sp * sp + sr * sr + 2 * rho * sp * sr)
-    zp = nd.inv_cdf(1 - pp)                       # points over lp is z over zp
-    mean_rest = (lq - tot * nd.inv_cdf(1 - pq)) - (lp - sp * zp)   # PRA's mean less points' mean: rebounds + assists' mean
-    n, hi, out = 400, 7.0, 0.0
-    h = (hi - zp) / n
-    for i in range(n + 1):                        # Simpson over z from zp up
-        z = zp + i * h
-        pts = lp + sp * (z - zp)
-        need = (lq - pts - mean_rest - sr * rho * z) / (sr * math.sqrt(1 - rho * rho))
-        out += math.exp(-z * z / 2) / math.sqrt(2 * math.pi) * (1 - nd.cdf(need)) * (1 if i in (0, n) else 4 if i % 2 else 2)
-    return min(out * h / 3, pp, pq)
+def nest_r(a, b, mean):
+    """The r between two stats built from points, rebounds and assists
+    (NEST_PARTS), for a player with these averages ({"pts", "reb", "ast"})."""
+    sd = {k: price.interp(NEST_SD[k], mean[k]) for k in NEST_SD}
+
+    def cov(x, y):
+        return sd[x] ** 2 if x == y else (NEST_RHO.get((x, y)) or NEST_RHO[(y, x)]) * sd[x] * sd[y]
+    var = lambda s_: sum(cov(x, y) for x in NEST_PARTS[s_] for y in NEST_PARTS[s_])   # noqa: E731
+    return sum(cov(x, y) for x in NEST_PARTS[a] for y in NEST_PARTS[b]) / math.sqrt(var(a) * var(b))
 
 
 def candidates(a):
     d, by = sgp.load()
     key = {novig.norm(n): p for n, p in by.items()}
     nest = a.league == "nba" and getattr(a, "nest", True)   # points with PRA: the Kalshi NBA (pairs) board only
-    board = kalshi_props(a.before, dict(SERIES, KXNBAPRA="pra") if nest else SERIES)
-    markets = novig.fetch("NBA", scan.STATS + ("pra",)) if nest else novig.fetch()
+    board = kalshi_props(a.before, dict(SERIES, **NEST_SERIES) if nest else SERIES)
+    markets = novig.fetch("NBA", scan.STATS + tuple(NEST_SERIES.values())) if nest else novig.fetch()
+    nested = []
     SEEN.update(kalshi=len(board), known=sum(1 for nm in board if nm in key), novig=len(markets))
     out, teams = [], {}
     for nm, info in board.items():
@@ -797,13 +802,13 @@ def candidates(a):
         # up to four slips.
         legs, opts = {}, {}
         for stat, kal in info["stats"].items():
-            who = p if stat != "pra" else None   # a PRA leg is read off a book or not taken: nothing shifts one from another line
+            who = p if stat in SERIES.values() else None   # a combined leg is read off a book or not taken: nothing shifts one from another line
             L = pick_leg(stat, kal, rows.get(stat, []), a, who)
             if L:
                 L2 = pick_leg(stat, kal, rows.get(stat, []), a, who, skip=(L["line"],))
                 opts[stat] = [L] + ([L2] if L2 else [])
                 for o in opts[stat]:
-                    o["text"] = f"{int(o['line'] + 0.5)}+ {WORD[stat]}"
+                    o["text"] = f"{int(o['line'] + 0.5)}+ {NEST_WORD.get(stat) or WORD[stat]}"
                 legs[stat] = L
 
         def row_of(tier, r, la, lb, who=None, pid=None, label=None, kind=None, info=info, p=p):
@@ -870,36 +875,38 @@ def candidates(a):
                 r = price.shrunk_r(d, by, p, x, y)[0]
                 if r is not None and r >= a.min_r:
                     out += [dict(row_of(2, r, la, lb), alt=0 if la is legs[x] and lb is legs[y] else 1) for la in opts[x] for lb in opts[y]]
-        # His points with his points + rebounds + assists (Max, 11-28), three ways: both Yes, and each
-        # Yes with the other's No (25+ points without 40 PRA; 40 PRA on under 25 points). One stat is
-        # inside the other, so the chance is nest_joint's, not a copula r's; the r on the row is the
-        # one that gives that chance, for the page and for a refresh.
-        if nest and "pts" in legs and "pra" in legs and rank is not None and rank >= NEST_MIN_PTS:
-            ra = (p.get("reb_mean") or 0) + (p.get("ast_mean") or 0)
-            for la in opts["pts"]:
-                for lb in opts["pra"]:
-                    if lb["line"] <= la["line"] or not ra:
-                        continue
-                    both = nest_joint(la["p"], lb["p"], la["line"], lb["line"], ra)
-                    for ya, yb, j in ((True, True, both), (True, False, la["p"] - both), (False, True, lb["p"] - both)):
-                        j -= NEST_ERR
-                        if j < (0.0 if ya and yb else NEST_MIN_J) or j <= 0:
-                            continue
-                        ls = [dict(L, yes=y, side="over" if y else "under", p=L["p"] if y else 1 - L["p"],
-                                   fair=sgp.american(L["p"] if y else 1 - L["p"]),
-                                   text=f"{'' if y else 'under '}{int(L['line'] + 0.5)}{'+' if y else ''} {'PRA' if L['stat'] == 'pra' else WORD[L['stat']]}")
-                              for L, y in ((la, ya), (lb, yb))]
-                        for L in ls:
-                            L.pop("nv", None)   # Novig refuses a combined stat with its own part: no second price to ask
-                        lo, hi = -0.999, 0.999   # the copula r that gives this chance
-                        for _ in range(30):
-                            mid = (lo + hi) / 2
-                            lo, hi = (mid, hi) if sgp.joint(mid, ls[0]["p"], ls[1]["p"]) < j else (lo, mid)
-                        c = row_of(2, (lo + hi) / 2, ls[0], ls[1], kind="nest")
-                        c.update(key=",".join(L["id"] + ("" if L["yes"] else ":n") for L in ls), j=j,
-                                 devig_r=sgp.devig_r(j, ls[0]["p"], ls[1]["p"]),
-                                 alt=0 if la is legs["pts"] and lb is legs["pra"] else 1)
-                        out.append(c)
+        # A stat with a combined stat it is part of, or two combined stats sharing a part (Max, 11-28:
+        # every player, every such pairing), three ways: both Yes, and each Yes with the other's
+        # No. Each leg on the milestone beside his main line only. The lines must leave both ways
+        # open (25+ points with 25+ PRA is one leg).
+        mean = {k: p.get(k + "_mean") for k in ("pts", "reb", "ast")}
+        for n, (x, y) in enumerate(NEST_PAIRS if nest and all(mean.values()) else ()):
+            if x not in legs or y not in legs:
+                continue
+            la, lb = legs[x], legs[y]
+            inside = set(NEST_PARTS[x]) < set(NEST_PARTS[y])
+            if inside and lb["line"] <= la["line"]:
+                continue
+            r = nest_r(x, y, mean)
+            both = sgp.joint(r, la["p"], lb["p"])
+            for way, (ya, yb, j) in enumerate(((True, True, both), (True, False, la["p"] - both), (False, True, lb["p"] - both))):
+                j -= NEST_ERR
+                if j <= 0 or (not (ya and yb) and j < NEST_MIN_J):
+                    continue
+                ls = [dict(L, yes=yes, side="over" if yes else "under", p=L["p"] if yes else 1 - L["p"],
+                           fair=sgp.american(L["p"] if yes else 1 - L["p"]),
+                           text=L["text"] if yes else "under " + L["text"].replace("+ ", " ", 1))
+                      for L, yes in ((la, ya), (lb, yb))]
+                for L in ls:
+                    L.pop("nv", None)   # Novig refuses these slips: no second price to ask
+                lo, hi = -0.999, 0.999   # the copula r that gives this chance, for the page and for a refresh
+                for _ in range(30):
+                    mid = (lo + hi) / 2
+                    lo, hi = (mid, hi) if sgp.joint(mid, ls[0]["p"], ls[1]["p"]) < j else (lo, mid)
+                c = row_of(2, (lo + hi) / 2, ls[0], ls[1], kind="nest")
+                c.update(key=",".join(L["id"] + ("" if L["yes"] else ":n") for L in ls), j=j, nest_r=r,
+                         devig_r=sgp.devig_r(j, ls[0]["p"], ls[1]["p"]), nest=f"{x}+{y}", turn=3 * n + way)
+                nested.append(c)
         # Teammates are ranked by each player's own main points line, priced
         # leg or not: ranked by priced legs alone, a second scorer with no
         # tight book on a Kalshi milestone handed his place to the third
@@ -926,7 +933,19 @@ def candidates(a):
     if a.max_fair:
         out = [c for c in out if c["j"] >= 100 / (a.max_fair + 100) - 1e-9]
     out.sort(key=lambda c: (c.get("alt", 0), c["tier"], c["starts"], -c["r"]))
-    return (out[:a.max] if a.max else out), d
+    out = out[:a.max] if a.max else out
+    # The combined-stat slips have their own allowance (--nest-max), after the board's own. There
+    # are far more of them than a pass can ask (45 a player), so they go round the players: every
+    # player's first slip, then every player's second. Which pairing comes first moves on each
+    # hour, so passes through an evening cover them all.
+    nested = [c for c in nested if all(L["p"] >= a.leg_min - 1e-9 for L in c["legs"])]
+    first = int(time.time() // 3600) % (3 * len(NEST_PAIRS)) // 3 * 3
+    seen = {}
+    for c in sorted(nested, key=lambda c: ((c["turn"] - first) % (3 * len(NEST_PAIRS)), c["starts"])):
+        c["turn"] = seen[c["id"]] = seen.get(c["id"], -1) + 1
+    nested.sort(key=lambda c: (c["turn"], c["starts"]))
+    nmax = getattr(a, "nest_max", 0)
+    return out + (nested[:nmax] if nmax else nested), d
 
 
 def _markets(series):
@@ -1629,7 +1648,8 @@ def main():
     ap.add_argument("--per", type=int, default=None, help="nbaline, nflline: pairings asked per player, highest r first (each as its Over and its Under slip); nfl: stacks per receiver (2). nfltri: slips a player leads (3)")
     ap.add_argument("--team-lines", nargs="+", default=list(scan.NBA_PROP_LINES), choices=tuple(scan.NBA_PROP_LINES),
                     help="nbaline: the game lines a prop is asked with (default: all six)")
-    ap.add_argument("--no-nest", dest="nest", action="store_false", help="nba: no points + PRA slips")
+    ap.add_argument("--no-nest", dest="nest", action="store_false", help="nba: no combined-stat slips (points + PRA and the like)")
+    ap.add_argument("--nest-max", type=int, default=600, help="nba: at most this many combined-stat slips a pass, on top of --max (0: all)")
     ap.add_argument("--no-unders", dest="unders", action="store_false",
                     help="nfl, nflline: ask no player-prop Unders (Under + Under, the Over + Under stacks, a prop's Under + a game line)")
     ap.add_argument("--lo", type=float, default=0.15, help="a leg's fair value is at least this")
